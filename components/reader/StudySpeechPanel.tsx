@@ -138,7 +138,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   const [segIdx, setSegIdx]   = useState(0);
 
-  type PlayState = "idle" | "loading" | "playing" | "error";
+  type PlayState = "idle" | "loading" | "playing" | "paused" | "error";
   const [playState, setPlayState] = useState<PlayState>("idle");
   const [errorMsg, setErrorMsg]   = useState<string | null>(null);
 
@@ -699,14 +699,27 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
     }
   }
 
+  // Pause without aborting the sequential playback loop — the in-flight
+  // fetchAndPlayAudio()/playBrowserSpeech() promise stays pending until resume()
+  // lets the underlying audio/utterance finish naturally.
   function pause() {
-    abortRef.current = true;
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
-      setPlayState("idle");
+      setPlayState("paused");
     } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
-      setPlayState("idle");
+      setPlayState("paused");
+    }
+  }
+
+  // Resume playback of the currently-paused segment — does NOT restart from segIdx 0.
+  function resume() {
+    if (audioRef.current && audioRef.current.paused) {
+      audioRef.current.play().catch(() => {});
+      setPlayState("playing");
+    } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.resume();
+      setPlayState("playing");
     }
   }
 
@@ -722,6 +735,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
   // ── Derived ────────────────────────────────────────────────────────────────
 
   const isPlaying  = playState === "playing";
+  const isPaused   = playState === "paused";
   const isLoading  = playState === "loading";
   const hasContent = segments.length > 0 || activePageText.length > 20;
 
@@ -744,7 +758,10 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
         {isLoading && (
           <span style={{ marginLeft: "auto", fontSize: 10, color: "#fbbf24", fontWeight: 600 }}>⟳ Loading…</span>
         )}
-        <span style={{ marginLeft: (isPlaying || isLoading) ? undefined : "auto", fontSize: 10, color: "#475569" }}>{open ? "▲" : "▼"}</span>
+        {isPaused && (
+          <span style={{ marginLeft: "auto", fontSize: 10, color: "#fbbf24", fontWeight: 600 }}>⏸ Paused</span>
+        )}
+        <span style={{ marginLeft: (isPlaying || isLoading || isPaused) ? undefined : "auto", fontSize: 10, color: "#475569" }}>{open ? "▲" : "▼"}</span>
       </button>
 
       {open && (
@@ -761,18 +778,22 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
 
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {!isPlaying && !isLoading ? (
-              <button type="button" disabled={!hasContent} onClick={() => play(0)}
-                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
-              >▶ Play</button>
-            ) : isLoading ? (
+            {isLoading ? (
               <button type="button" onClick={stop}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >⟳ Loading…</button>
-            ) : (
+            ) : isPlaying ? (
               <button type="button" onClick={pause}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >⏸ Pause</button>
+            ) : isPaused ? (
+              <button type="button" onClick={resume}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.12)", color: "#a5b4fc", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >▶ Resume</button>
+            ) : (
+              <button type="button" disabled={!hasContent} onClick={() => play(0)}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
+              >▶ Play</button>
             )}
             <button type="button" onClick={stop}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
@@ -813,7 +834,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
           )}
 
           {/* Eye Guide — shows the sentence currently being read */}
-          {(isPlaying || isLoading) && eyeText && (() => {
+          {(isPlaying || isLoading || isPaused) && eyeText && (() => {
             const ec = eyeRole ? (ROLE_COLOR[eyeRole] ?? ROLE_COLOR.thesis) : ROLE_COLOR.thesis;
             return (
               <div style={{ borderRadius: 8, border: `1px solid ${ec.border}`, background: ec.bg, padding: "7px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
@@ -856,7 +877,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
           {/* Full Page mode progress */}
           {mode === "fullPage" && fpSentences.length > 0 && (
             <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
-              {isPlaying || isLoading
+              {isPlaying || isLoading || isPaused
                 ? `Sentence ${segIdx + 1} of ${fpSentences.length}`
                 : `${fpSentences.length} sentences · click ▶ Play to start`}
             </p>
