@@ -3,9 +3,20 @@
 // book/document content, covering the whole selected book/chapter/unit (not
 // just one page). Used to find what the student does not understand before
 // building a weakness-driven study plan.
-// SECURITY: OPENAI_API_KEY is server-side only, never sent to browser.
+//
+// Two-stage AI pipeline:
+//   Stage 1 (Claude, optional) — reads the FULL source text (large context
+//     window) and produces a topic map spanning the entire document, so
+//     coverage isn't biased toward the first few pages.
+//   Stage 2 (OpenAI, required) — writes the actual diagnostic questions as
+//     strict JSON, grounded in the topic map (when available) and source
+//     excerpts.
+// If ANTHROPIC_API_KEY is missing, Stage 1 is skipped and Stage 2 runs alone
+// (same behavior as before).
+// SECURITY: API keys are server-side only, never sent to the browser.
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import Anthropic from "@anthropic-ai/sdk";
 import type { DiagnosticQuestion } from "@/lib/studyplan/types";
 
 export const config = {
@@ -29,15 +40,24 @@ type RawQuestion = {
   explanation: string;
 };
 
+const OUTLINE_SYSTEM_PROMPT = `You are an expert curriculum analyst. Read the provided book/chapter content — it may include "[PAGE n]" markers — and produce a TOPIC MAP covering the ENTIRE document, not just the beginning.
+
+For each major topic or concept, output one line in this exact format:
+TOPIC: <2-5 word topic name> | PAGES: <comma-separated page numbers, or "?" if unknown> | <one-sentence description of what is taught>
+
+Aim for 10-25 topics, spread evenly across the full document. Output plain text only — no markdown, no JSON, no commentary.`;
+
 const SYSTEM_PROMPT = `You are an expert exam writer building a DIAGNOSTIC TEST — its purpose is to find what a student does NOT understand yet, not to confirm what they already know.
 
 Cover the FULL range of the provided source material — spread questions across all sections/topics present, not just the beginning. Vary difficulty (mix of easy, medium, hard).
 
+If a TOPIC MAP is provided, use it to ensure your questions span every topic listed (not just the first few) — it was built from the complete document, including sections that may be excerpted or truncated in the source material below.
+
 For each question:
 - Write a clear question testable from the source material.
 - Provide exactly 4 answer options, only one correct.
-- "topic": a short (2-5 word) topic/concept label used to group weak areas later. Reuse the SAME topic label for multiple questions on the same concept so weaknesses can be aggregated.
-- "page": if the source text includes "[PAGE n]" markers, set this to the page number nearest the tested content. Omit if unknown.
+- "topic": a short (2-5 word) topic/concept label used to group weak areas later. Reuse the SAME topic label for multiple questions on the same concept so weaknesses can be aggregated. If a TOPIC MAP is provided, prefer reusing its topic names.
+- "page": if the source text includes "[PAGE n]" markers, set this to the page number nearest the tested content. Otherwise use the PAGES from the matching TOPIC MAP entry if available. Omit if unknown.
 - "explanation": 1-2 sentences explaining the correct answer.
 
 OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
@@ -55,13 +75,55 @@ OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 }
 Return ONLY the JSON object — no markdown fences, no explanation outside the JSON.`;
 
-function buildUserPrompt(sourceText: string, bookTitle: string | undefined, chapterTitle: string | undefined, questionCount: number): string {
+/** Stage 1 — Claude reads the full source text and builds a whole-document
+ *  topic map. Returns null if ANTHROPIC_API_KEY is unset or the call fails;
+ *  callers must treat this as optional. */
+async function buildTopicOutline(sourceText: string, bookTitle?: string, chapterTitle?: string): Promise<string | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const message = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2000,
+      system: [{ type: "text", text: OUTLINE_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      messages: [{
+        role: "user",
+        content: `BOOK: ${bookTitle || "Unknown"}\nCHAPTER/UNIT: ${chapterTitle || "Unknown"}\n\n${sourceText}`,
+      }],
+    } as Parameters<typeof client.messages.create>[0]);
+
+    const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
+    if (!raw) return null;
+
+    console.log("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE]", {
+      lines: raw.split("\n").filter(l => l.trim()).length,
+      inputTokens: message.usage.input_tokens,
+      outputTokens: message.usage.output_tokens,
+    });
+    return raw;
+  } catch (e) {
+    console.error("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE_ERROR]", String(e));
+    return null;
+  }
+}
+
+function buildUserPrompt(sourceText: string, bookTitle: string | undefined, chapterTitle: string | undefined, questionCount: number, topicOutline: string | null): string {
   let prompt = `Build a ${questionCount}-question diagnostic test`;
   if (chapterTitle) prompt += ` for: ${chapterTitle}`;
   if (bookTitle) prompt += ` (book: ${bookTitle})`;
-  prompt += ".\n\n=== SOURCE MATERIAL ===\n\n";
+  prompt += ".\n\n";
+  if (topicOutline) {
+    prompt += `=== TOPIC MAP (covers the full document) ===\n${topicOutline}\n\n`;
+  }
+  prompt += "=== SOURCE MATERIAL ===\n\n";
   prompt += sourceText;
-  prompt += `\n\n=== INSTRUCTION ===\nGenerate exactly ${questionCount} diagnostic questions covering the full range of the source material above. Return only the JSON object.`;
+  prompt += `\n\n=== INSTRUCTION ===\nGenerate exactly ${questionCount} diagnostic questions`;
+  prompt += topicOutline
+    ? ", spreading them across every topic in the TOPIC MAP above."
+    : " covering the full range of the source material above.";
+  prompt += " Return only the JSON object.";
   return prompt;
 }
 
@@ -111,6 +173,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  // Stage 1 (optional) — Claude reads up to ~150k chars to map topics across
+  // the whole document, so Stage 2's coverage isn't biased toward the part of
+  // sourceText that survives the 60k-char cap below.
+  const topicOutline = await buildTopicOutline(sourceText.slice(0, 150_000), bookTitle, chapterTitle);
+
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 80_000);
 
@@ -125,7 +192,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(sourceText.slice(0, 60_000), bookTitle, chapterTitle, count) },
+          { role: "user", content: buildUserPrompt(sourceText.slice(0, 60_000), bookTitle, chapterTitle, count, topicOutline) },
         ],
       }),
     });
@@ -157,8 +224,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    console.log("[STUDYPLAN_DIAGNOSTIC_SUCCESS]", { count: questions.length, bookTitle, chapterTitle });
-    res.status(200).json({ questions, provider: "openai" });
+    const provider = topicOutline ? "openai+claude" : "openai";
+    console.log("[STUDYPLAN_DIAGNOSTIC_SUCCESS]", { count: questions.length, bookTitle, chapterTitle, provider });
+    res.status(200).json({ questions, provider });
   } catch (err) {
     clearTimeout(timeout);
     const isAbort = (err as Error)?.name === "AbortError";

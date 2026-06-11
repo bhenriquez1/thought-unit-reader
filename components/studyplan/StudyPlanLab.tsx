@@ -22,6 +22,7 @@ interface StudyPlanLabProps {
   bookId: string;
   bookTitle?: string;
   pageTextByPage: Map<string, string>; // keyed `${bookId}:${pageNumber}`
+  uploadedFile?: File | null;
   onNavigateToPage?: (page: number) => void;
 }
 
@@ -46,6 +47,13 @@ function buildBookSourceText(bookId: string, pageTextByPage: Map<string, string>
   return { text, pageCount: entries.length };
 }
 
+/** Build [PAGE n] tagged source text from a full per-page PDF extraction. */
+function buildSourceTextFromPages(pages: { page: number; text: string }[]): { text: string; pageCount: number } {
+  const usable = pages.filter(p => p.text?.trim());
+  const text = usable.map(p => `[PAGE ${p.page}]\n${p.text.trim()}`).join("\n\n");
+  return { text, pageCount: usable.length };
+}
+
 const ACTION_ICON: Record<string, string> = {
   read_page: "📖",
   review_note: "📝",
@@ -54,7 +62,7 @@ const ACTION_ICON: Record<string, string> = {
   practice: "✏️",
 };
 
-export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavigateToPage }: StudyPlanLabProps) {
+export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, uploadedFile, onNavigateToPage }: StudyPlanLabProps) {
   const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "history">("intro");
 
   const [diagnostics, setDiagnostics] = useState<DiagnosticAttempt[]>([]);
@@ -68,6 +76,12 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
+
+  // Full-PDF extraction (optional) — gives whole-book diagnostic coverage
+  // regardless of which pages were visited in the Reader.
+  const [fullExtractPages, setFullExtractPages] = useState<{ page: number; text: string }[] | null>(null);
+  const [fullExtractLoading, setFullExtractLoading] = useState(false);
+  const [fullExtractError, setFullExtractError] = useState<string | null>(null);
 
   // Load history for this book and reset transient state when the document changes.
   const isFirstBookRef = useRef(true);
@@ -95,6 +109,8 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
         setDraftAnswers(new Map());
         setError(null);
         setProvider(null);
+        setFullExtractPages(null);
+        setFullExtractError(null);
         if (p.length > 0) {
           setActivePlan(p[0]);
           setActiveAttempt(d.find(x => x.id === p[0].diagnosticId) ?? d[0] ?? null);
@@ -114,12 +130,33 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
     return () => { cancelled = true; };
   }, [bookId]);
 
+  // ── Full-PDF extraction (optional whole-book coverage) ─────────────────
+
+  const handleExtractFullPdf = useCallback(async () => {
+    if (!uploadedFile) return;
+    setFullExtractError(null);
+    setFullExtractLoading(true);
+    try {
+      const { extractTextByPageFromPdf } = await import("@/lib/pdfjs-handler");
+      const pages = await extractTextByPageFromPdf(uploadedFile);
+      setFullExtractPages(pages);
+      console.log("[STUDYPLAN_FULL_EXTRACT]", { bookId, pages: pages.length });
+    } catch (e) {
+      setFullExtractError(e instanceof Error ? e.message : String(e));
+      setFullExtractPages(null);
+    } finally {
+      setFullExtractLoading(false);
+    }
+  }, [uploadedFile, bookId]);
+
   // ── Generate diagnostic ────────────────────────────────────────────────
 
   const handleGenerateDiagnostic = useCallback(async () => {
     setError(null);
     setProvider(null);
-    const { text, pageCount } = buildBookSourceText(bookId, pageTextByPage);
+    const { text, pageCount } = fullExtractPages
+      ? buildSourceTextFromPages(fullExtractPages)
+      : buildBookSourceText(bookId, pageTextByPage);
     if (!text.trim()) {
       setError("No page text available yet. Open this book in the Reader and browse through its pages first.");
       return;
@@ -163,7 +200,7 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
     } finally {
       setLoading(false);
     }
-  }, [bookId, bookTitle, pageTextByPage]);
+  }, [bookId, bookTitle, pageTextByPage, fullExtractPages]);
 
   // ── Submit diagnostic ──────────────────────────────────────────────────
 
@@ -224,6 +261,33 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
           topics, which become a personalized study plan.
         </p>
       </div>
+      {uploadedFile && (
+        <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+          <div className="text-sm font-bold text-white mb-1">Whole-book coverage (optional)</div>
+          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+            By default, the diagnostic only covers pages you've already opened in the Reader. Extract the
+            full PDF to cover every page in the book, regardless of what you've read so far.
+          </p>
+          {fullExtractPages ? (
+            <div className="text-xs text-green-400 bg-green-950/30 border border-green-800/40 rounded-lg px-3 py-2">
+              ✓ Full PDF extracted — {fullExtractPages.length} pages ready for the diagnostic.
+            </div>
+          ) : (
+            <button
+              onClick={handleExtractFullPdf}
+              disabled={fullExtractLoading}
+              className="w-full py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800 text-xs font-bold transition-colors disabled:opacity-40"
+            >
+              {fullExtractLoading ? "Extracting Full PDF…" : "📄 Extract Full PDF for Whole-Book Coverage"}
+            </button>
+          )}
+          {fullExtractError && (
+            <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2 mt-2">
+              {fullExtractError}
+            </div>
+          )}
+        </div>
+      )}
       {error && (
         <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">{error}</div>
       )}
@@ -506,6 +570,11 @@ export default function StudyPlanLab({ bookId, bookTitle, pageTextByPage, onNavi
         {provider === "fallback" && (
           <div className="text-xs text-orange-400 bg-orange-950/30 border border-orange-800/40 rounded-lg px-3 py-2 m-4">
             ⚠ AI unavailable — could not generate diagnostic questions.
+          </div>
+        )}
+        {provider === "openai+claude" && (
+          <div className="text-xs text-green-400 bg-green-950/30 border border-green-800/40 rounded-lg px-3 py-2 m-4">
+            ✓ Generated with Claude (whole-document topic mapping) + OpenAI (question writing).
           </div>
         )}
         {view === "intro" && renderIntro()}

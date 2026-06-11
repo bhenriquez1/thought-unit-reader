@@ -3552,6 +3552,7 @@ export default function ThoughtUnitReader() {
           bookId={bookId}
           bookTitle={uploadedFile?.name ?? undefined}
           pageTextByPage={pageTextByPage}
+          uploadedFile={uploadedFile}
           onNavigateToPage={(page) => {
             syncToPage(page);
             trySwitchShellTab("reader", "reader");
