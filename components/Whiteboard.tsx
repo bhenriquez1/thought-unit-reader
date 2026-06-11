@@ -152,19 +152,19 @@ export default function Whiteboard({
   // Initialize drawing engine when canvas is ready
   useEffect(() => {
     if (!enableDrawing || !drawingCanvasRef.current || drawingEngine) return;
-    
+
     const engine = new SmartDrawingEngine(drawingCanvasRef.current);
     setDrawingEngine(engine);
-    
-    // Initialize semantic context if available
-    if (concept && context) {
-      engine.initializeSemanticContext(context, [concept]);
-    }
-    
-    return () => {
-      // Cleanup if needed
-    };
-  }, [enableDrawing, concept, context, drawingEngine]);
+  }, [enableDrawing, drawingCanvasRef, drawingEngine]);
+
+  // Initialize/re-sync semantic context whenever the engine is (re)created or
+  // the active concept/page changes — without this, the drawing engine kept
+  // analyzing the previous page's concept/text and offered stale "smart
+  // suggestions" after navigating to a new page.
+  useEffect(() => {
+    if (!drawingEngine || !concept || !context) return;
+    drawingEngine.initializeSemanticContext(context, [concept]);
+  }, [drawingEngine, concept, context]);
 
   // Update smart suggestions when drawing engine changes
   useEffect(() => {
