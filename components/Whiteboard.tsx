@@ -88,6 +88,9 @@ export default function Whiteboard({
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  // True once paused mid-playback — drives Play vs Resume so a paused-at-step-0
+  // session resumes the existing utterance instead of restarting from elapsed=0.
+  const [hasPaused, setHasPaused] = useState(false);
 
   // Internal speed UI (used when parent doesn't provide playbackSpeed)
   const [localSpeed, setLocalSpeed] = useState<number>(1.0);
@@ -713,6 +716,11 @@ export default function Whiteboard({
   const play = () => {
     if (currentStepIndex >= steps.length - 1) setCurrentStepIndex(0);
 
+    // Fresh play — clear any leftover paused-elapsed state from a previous session.
+    setHasPaused(false);
+    ttsElapsedRef.current = 0;
+    ttsStartRef.current = null;
+
     if (useAIVoice) {
       if (audioRef.current && audioURL) {
         audioRef.current.playbackRate = clampRate(effectiveSpeed);
@@ -721,9 +729,7 @@ export default function Whiteboard({
     } else {
       const trimmed = (narrationScript || "").trim();
       if ("speechSynthesis" in window && trimmed) {
-        if (ttsElapsedRef.current === 0) {
-          ttsStartRef.current = performance.now();
-        }
+        ttsStartRef.current = performance.now();
         const u = new SpeechSynthesisUtterance(trimmed);
         u.lang = "en-US";
         u.rate = clampRate(effectiveSpeed);
@@ -762,6 +768,7 @@ export default function Whiteboard({
       clearTtsTimer();
     }
     setIsPlaying(false);
+    setHasPaused(true);
   };
 
   const resume = () => {
@@ -774,6 +781,7 @@ export default function Whiteboard({
       startTtsLoop();
     }
     setIsPlaying(true);
+    setHasPaused(false);
   };
 
   const stop = () => {
@@ -786,6 +794,7 @@ export default function Whiteboard({
     ttsElapsedRef.current = 0;
     ttsStartRef.current = null;
     clearTtsTimer();
+    setHasPaused(false);
   };
 
   /** Manual step nav */
@@ -1217,10 +1226,10 @@ export default function Whiteboard({
 
         {!isPlaying ? (
           <button
-            onClick={currentStepIndex === 0 ? play : resume}
+            onClick={hasPaused ? resume : play}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
           >
-            ▶️ {currentStepIndex === 0 ? "Play" : "Resume"}
+            ▶️ {hasPaused ? "Resume" : "Play"}
           </button>
         ) : (
           <button
