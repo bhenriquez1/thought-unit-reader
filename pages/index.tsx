@@ -3422,7 +3422,9 @@ export default function ThoughtUnitReader() {
                     <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Study Plan · {syllabusStudyPlan.length} sessions</div>
                     <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                       {syllabusStudyPlan.map((day, idx) => {
-                        const isStudied = day.pages.some((p) => syllabusStudiedPages.has(p.start));
+                        const isStudied = day.pages.some((p) =>
+                          Array.from(syllabusStudiedPages).some((sp) => sp >= p.start && sp <= p.end)
+                        );
                         const label = day.topics[0] ?? `Session ${idx + 1}`;
                         const targetPage = day.pages[0]?.start ?? 1;
                         const weekNum = idx + 1;
