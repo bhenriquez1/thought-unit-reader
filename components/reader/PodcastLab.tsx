@@ -229,7 +229,11 @@ export default function PodcastLab({
   // ── Stop ──────────────────────────────────────────────────────────────
   const stop = useCallback(() => {
     abortRef.current = true;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = ""; // fires onerror, resolving any pending playBlob() promise
+      audioRef.current = null;
+    }
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     if (countdownRef.current)    { clearInterval(countdownRef.current);    countdownRef.current    = null; }
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
@@ -345,10 +349,35 @@ export default function PodcastLab({
     }
   }, [script, mode, onEvidenceFocus, fetchAndPlay, runCountdown]);
 
+  // Pause without aborting playFrom's loop — the in-flight fetchAndPlay/playBlob
+  // promise stays pending until resume() lets the audio/utterance finish.
+  const pause = useCallback(() => {
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    } else if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+      window.speechSynthesis.pause();
+    }
+    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    setPlayState("paused");
+  }, []);
+
+  const resume = useCallback(() => {
+    if (audioRef.current && audioRef.current.paused) {
+      audioRef.current.play().catch(() => {});
+    } else if (typeof window !== "undefined" && window.speechSynthesis?.paused) {
+      window.speechSynthesis.resume();
+    }
+    if (!elapsedTimerRef.current) {
+      elapsedTimerRef.current = setInterval(() => setElapsed((p) => p + 1), 1000);
+    }
+    setPlayState("playing");
+  }, []);
+
   const handlePlay = useCallback(() => {
-    if (playState === "playing") stop();
-    else playFrom(playState === "paused" ? segIdx : 0);
-  }, [playState, segIdx, playFrom, stop]);
+    if (playState === "playing") pause();
+    else if (playState === "paused") resume();
+    else playFrom(0);
+  }, [playState, pause, resume, playFrom]);
 
   const handleSegmentClick = useCallback((idx: number) => {
     stop();
@@ -494,6 +523,10 @@ export default function PodcastLab({
                 className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white ${playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accent} hover:opacity-90`}`}>
                 {playState === "playing" ? "⏸" : "▶"}
               </button>
+              {playState === "paused" && (
+                <button onClick={stop}
+                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 transition-all" title="Stop">■</button>
+              )}
               <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))}
                 className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip forward">10⟩</button>
               <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))} disabled={segIdx >= script.totalSegments - 1}

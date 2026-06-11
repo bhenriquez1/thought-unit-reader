@@ -97,6 +97,18 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     });
   }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reload + reset to dashboard when the active document changes — without this,
+  // switching PDFs while RecallLab is mounted left `sets` filtered to the
+  // previous document's bookId until refreshKey/lastSetId/event happened to fire.
+  useEffect(() => {
+    if (!initialLoaded) return;
+    setView({ kind: "dashboard" });
+    loadSetsAsync(bookId).then((all) => {
+      setSets(all);
+      console.log("[RECALLLAB_BOOKID_CHANGED]", { bookId, count: all.length });
+    });
+  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // IDB-aware recall-lab-updated event
   useEffect(() => {
     const handler = () => {
