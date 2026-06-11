@@ -1,4 +1,4 @@
-export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'elena' | 'podcast' | 'studyguide';
+export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'elena' | 'podcast' | 'studyguide' | 'studyplan';
 
 export type ReaderPanelState = {
   workspaceMode: WorkspaceMode;
