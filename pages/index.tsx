@@ -42,6 +42,7 @@ import FocusCycleCard from "@/components/FocusCycleCard";
 import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
+import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -3422,7 +3423,9 @@ export default function ThoughtUnitReader() {
                     <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Study Plan · {syllabusStudyPlan.length} sessions</div>
                     <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                       {syllabusStudyPlan.map((day, idx) => {
-                        const isStudied = day.pages.some((p) => syllabusStudiedPages.has(p.start));
+                        const isStudied = day.pages.some((p) =>
+                          Array.from(syllabusStudiedPages).some((sp) => sp >= p.start && sp <= p.end)
+                        );
                         const label = day.topics[0] ?? `Session ${idx + 1}`;
                         const targetPage = day.pages[0]?.start ?? 1;
                         const weekNum = idx + 1;
@@ -3539,6 +3542,21 @@ export default function ThoughtUnitReader() {
           onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
           onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
           onPodcastScript={(script) => setStudyGuideScript(script)}
+        />
+      );
+    }
+
+    if (activeShellTab === "studyplan") {
+      return (
+        <StudyPlanLab
+          bookId={bookId}
+          bookTitle={uploadedFile?.name ?? undefined}
+          pageTextByPage={pageTextByPage}
+          uploadedFile={uploadedFile}
+          onNavigateToPage={(page) => {
+            syncToPage(page);
+            trySwitchShellTab("reader", "reader");
+          }}
         />
       );
     }
@@ -3660,6 +3678,17 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🏗 Study Guide Lab
+          </button>
+          <button
+            onClick={() => trySwitchShellTab("studyplan", "studyplan")}
+            data-testid="nav-studyplan"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeShellTab === "studyplan"
+                ? "bg-fuchsia-500 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🧪 Study Plan Lab
           </button>
           <button
             onClick={() => {

@@ -430,6 +430,25 @@ export default function StudyGuideLab({
     getStudyGuidesByBook(bookId).then(setHistory).catch(() => {});
   }, [bookId]);
 
+  // Reset build state when the active document changes — without this, switching
+  // PDFs left the previous book's generated guide, chapter/topic, and auto-filled
+  // source text visible in the Build tab even though History now shows the new book.
+  const isFirstBookRef = useRef(true);
+  useEffect(() => {
+    if (isFirstBookRef.current) { isFirstBookRef.current = false; return; }
+    setCurrentGuide(null);
+    setChapterTitle("");
+    setTopic("");
+    setSources(prev => prev.map(s => ({ ...s, text: "", fileName: undefined })));
+    setHistoryTab("build");
+    setNoteSaved(false);
+    setRecallSaved(false);
+    setSaveError(null);
+    setError(null);
+    setProvider(null);
+    console.log("[STUDYGUIDE_BOOKID_CHANGED]", { bookId });
+  }, [bookId]);
+
   // Auto-populate from live Reader study model whenever it changes
   useEffect(() => {
     if (!studyModel) return;
