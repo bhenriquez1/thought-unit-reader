@@ -13,8 +13,6 @@ import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
-import type { CurrentPageStudyModel } from '@/lib/insights/currentPageStudyModel';
-import ThoughtUnitStrip from './reader/ThoughtUnitStrip';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -109,8 +107,6 @@ interface PureReaderViewProps {
   aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
-  /** Focus + highlight a thought unit in the PDF — used by the Thought Unit strip, mirrors RightPanel's onEvidenceClick(snippet, evidenceId). */
-  onThoughtUnitClick?: (snippet: string, evidenceId?: string) => void;
   onOpenFocusCycle?: () => void;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
@@ -124,8 +120,6 @@ interface PureReaderViewProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label for badge role pills */
   roleLabelByConceptId?: Map<string, string>;
-  /** Right-panel study model — rendered as the Thought Unit strip above the PDF */
-  studyModel?: CurrentPageStudyModel | null;
 }
 
 export default function PureReaderView({
@@ -146,7 +140,6 @@ export default function PureReaderView({
   aiHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
-  onThoughtUnitClick,
   onOpenFocusCycle,
   onPageTextExtracted,
   pageText,
@@ -154,7 +147,6 @@ export default function PureReaderView({
   pageTruthKey,
   onReadingPath,
   roleLabelByConceptId,
-  studyModel,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -405,13 +397,6 @@ export default function PureReaderView({
           📖 Reader Mode
         </div>
       </div>
-
-      {/* Thought Unit strip — left-panel mirror of RightPanel's Page Thesis + Study Notes */}
-      <ThoughtUnitStrip
-        studyModel={studyModel}
-        focusedEvidenceId={focusedEvidenceId}
-        onEvidenceClick={onThoughtUnitClick}
-      />
 
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
