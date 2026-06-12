@@ -39,7 +39,7 @@ import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
-import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
+import StudySpeechPanel, { type StudySpeechPanelHandle } from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
@@ -545,6 +545,10 @@ export default function ThoughtUnitReader() {
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
+  // True while Study Speech is actively reading a sentence aloud — keeps the
+  // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
+  const [speechReadingActive, setSpeechReadingActive] = useState(false);
+  const speechPanelRef = useRef<StudySpeechPanelHandle>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
@@ -3320,10 +3324,12 @@ export default function ThoughtUnitReader() {
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
+                  focusHighlightPersist={speechReadingActive}
+                  onTextClick={(snippet) => speechPanelRef.current?.playFromSnippet(snippet)}
                   aiHighlightAnchors={safeHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
-                  studyTip={currentPageStudyModel?.studyNotes?.quickMemory ?? null}
+                  studyModel={currentPageStudyModel}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={undefined}
@@ -3990,6 +3996,7 @@ export default function ThoughtUnitReader() {
               }}
             >
               <StudySpeechPanel
+                ref={speechPanelRef}
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
                 bookId={bookId ?? undefined}
@@ -4001,6 +4008,7 @@ export default function ThoughtUnitReader() {
                 onSnippetFocus={(snippet) => {
                   setFocusSnippet(snippet);
                 }}
+                onPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
               />
             </div>
           )}

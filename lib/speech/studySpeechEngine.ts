@@ -323,9 +323,9 @@ export interface ModeInfo {
 }
 
 export const STUDY_SPEECH_MODES: ModeInfo[] = [
-  { id: "focus",      label: "Focus",      description: "Core idea only" },
-  { id: "study",      label: "Study",      description: "Thesis + all study notes" },
-  { id: "highlights", label: "Highlights", description: "Key anchors, Right Panel order" },
-  { id: "full",       label: "Full",       description: "All content + concept blocks" },
-  { id: "fullPage",   label: "Full Page",  description: "Whole page text sentence-by-sentence" },
+  { id: "focus",      label: "Focus",        description: "Core idea only" },
+  { id: "study",      label: "Study",        description: "Thesis + all study notes" },
+  { id: "highlights", label: "Highlight Only", description: "Read just the highlighted anchors, Right Panel order" },
+  { id: "full",       label: "Full",         description: "All content + concept blocks" },
+  { id: "fullPage",   label: "Current Page", description: "Whole page text sentence-by-sentence, click any sentence to start there" },
 ];

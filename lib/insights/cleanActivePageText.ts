@@ -43,18 +43,20 @@ const TRAILING_PAGE_NUMBER_RE = /\s+\d{1,4}\s*$/;
 // Copyright / publisher / footer debris that can appear anywhere on the page.
 // Each alternative is anchored to its keyword and consumes to the end of its
 // sentence (the next period, inclusive) so it strips the whole footer clause.
+// [^.\n] (not just [^.]) so these never reach across a paragraph break inserted
+// by the geometry-based page text reconstruction.
 const FOOTER_DEBRIS_RE =
-  /\b(?:Copyright\b[^.]*\.?|©\s*\d{0,4}[^.]*\.?|All rights reserved[^.]*\.?|Cengage Learning[^.]*\.?|Pearson Education[^.]*\.?|McGraw[-\s]?Hill[^.]*\.?|ISBN[-\s:]*[\dX\- ]+|Printed in (?:the )?U\.?S\.?A?\.?|No part of this (?:work|book)[^.]*\.?|may not be (?:copied|scanned|duplicated)[^.]*\.?)/gi;
+  /\b(?:Copyright\b[^.\n]*\.?|©\s*\d{0,4}[^.\n]*\.?|All rights reserved[^.\n]*\.?|Cengage Learning[^.\n]*\.?|Pearson Education[^.\n]*\.?|McGraw[-\s]?Hill[^.\n]*\.?|ISBN[-\s:]*[\dX\- ]+|Printed in (?:the )?U\.?S\.?A?\.?|No part of this (?:work|book)[^.\n]*\.?|may not be (?:copied|scanned|duplicated)[^.\n]*\.?)/gi;
 
 // Figure / table caption fragments: "Figure 3.2 The ATP structure." — a number followed
 // by an optional short title phrase. Only strips when followed by a terminal period so
 // we don't accidentally eat mid-sentence "see Figure 3.2" references.
 const FIGURE_CAPTION_RE =
-  /\b(?:Figure|FIGURE|Fig\.|Table|TABLE|Photo|PHOTO|Illustration|ILLUSTRATION)\s+\d+[\.\-]?\d*(?:\s+[A-Z▲►][^.?!]{0,140})?[.]/g;
+  /\b(?:Figure|FIGURE|Fig\.|Table|TABLE|Photo|PHOTO|Illustration|ILLUSTRATION)\s+\d+[\.\-]?\d*(?:\s+[A-Z▲►][^.?!\n]{0,140})?[.]/g;
 
 // Checkpoint / review section markers — these are section headings, NOT body prose.
 const CHECKPOINT_MARKER_RE =
-  /\b(?:Check(?:\s+Your)?\s+Understanding|Concept\s+Check|Review\s+Questions?|Chapter\s+(?:Summary|Review)|Self[\s-]?Test|Quick\s+Check|Think\s+About\s+It|Critical\s+Thinking|Did\s+You\s+Know\??)\b[^.]*\./gi;
+  /\b(?:Check(?:\s+Your)?\s+Understanding|Concept\s+Check|Review\s+Questions?|Chapter\s+(?:Summary|Review)|Self[\s-]?Test|Quick\s+Check|Think\s+About\s+It|Critical\s+Thinking|Did\s+You\s+Know\??)\b[^.\n]*\./gi;
 
 // All-caps callout/sidebar labels that prefix a box element, not body prose.
 const CALLOUT_LABEL_RE =

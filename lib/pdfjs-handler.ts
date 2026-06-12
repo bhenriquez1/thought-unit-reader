@@ -1,6 +1,8 @@
 // lib/pdfjs-handler.ts
 // Unified, SSR-safe PDF.js handler (v4) with worker auto-config and text extraction.
 
+import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
+
 /**
  * Public API
  * - configurePdfjs(): ensure worker is set (no-op on server)
@@ -71,16 +73,17 @@ async function extractPageTexts(file: File): Promise<string[]> {
 
       const content = await page.getTextContent();
 
-      const pageText = (content.items as any[])
-        .map((item: any) => {
-          // v4 items have `str`; keep fallbacks for safety
-          if (typeof item?.str === "string") return item.str;
-          if (typeof item?.unicode === "string") return item.unicode;
-          if (typeof item?.text === "string") return item.text;
-          return "";
-        })
-        .filter(text => text.trim().length > 0) // Remove empty strings
-        .join(" ");
+      // Reconstruct line/paragraph structure from item geometry rather than
+      // flattening to a single space-joined string — see lib/pdf/structuredPageText.
+      const normalizedItems = (content.items as any[]).map((item: any) => ({
+        // v4 items have `str`; keep fallbacks for safety
+        str: typeof item?.str === "string" ? item.str
+          : typeof item?.unicode === "string" ? item.unicode
+          : typeof item?.text === "string" ? item.text
+          : "",
+        transform: item?.transform,
+      }));
+      const pageText = buildStructuredPageText(normalizedItems);
 
       pages.push(pageText);
       totalCharsExtracted += pageText.length;
