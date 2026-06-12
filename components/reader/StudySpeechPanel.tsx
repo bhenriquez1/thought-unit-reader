@@ -5,7 +5,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import {
   buildSpeechScript,
@@ -50,6 +50,56 @@ function splitIntoSentences(text: string): string[] {
     }
   }
   return merged.filter(s => s.length >= 15);
+}
+
+// ── Quick page-text → sentence splitter (used by Current Page mode + Read From Click) ──
+const QUICK_ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
+
+function buildQuickSentences(activePageText: string): string[] {
+  if (!activePageText) return [];
+  const pipeStripped = activePageText.replace(/\s*\|\s*/g, " ");
+  const rawLines = pipeStripped.split("\n").map(l => l.trim()).filter(Boolean);
+  const bodyLines = rawLines.filter(line => !isHeaderOrFooter(line));
+  const quickCleaned = normalizeDropCaps(bodyLines.join(" "));
+
+  const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
+  const merged: string[] = [];
+  for (const chunk of rawChunks) {
+    const t = chunk.trim();
+    if (!t) continue;
+    const isLowercaseContinuation = merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !QUICK_ABBREV_RE.test(merged[merged.length - 1]);
+    if (isLowercaseContinuation) {
+      merged[merged.length - 1] += " " + t;
+    } else {
+      merged.push(t);
+    }
+  }
+  const withHeadings: string[] = [];
+  for (let i = 0; i < merged.length; i++) {
+    const s = merged[i];
+    const isShortHeading = s.length < 30 && !/[!?]$/.test(s);
+    if (isShortHeading && i + 1 < merged.length) {
+      merged[i + 1] = s + " " + merged[i + 1];
+    } else {
+      withHeadings.push(s);
+    }
+  }
+  return withHeadings.filter((s) => s.length >= 10);
+}
+
+// ── "Read From Click" — find the sentence that best matches a clicked snippet ──
+function findBestSentenceIndex(sentences: string[], snippet: string): number {
+  const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2);
+  const snippetWords = new Set(words(snippet));
+  if (snippetWords.size === 0) return 0;
+  let bestIdx = 0;
+  let bestScore = -1;
+  sentences.forEach((s, i) => {
+    let score = 0;
+    for (const w of words(s)) if (snippetWords.has(w)) score++;
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  });
+  return bestIdx;
 }
 
 // ── Role colour map ──────────────────────────────────────────────────────────
@@ -126,11 +176,23 @@ interface Props {
   onEvidenceFocus?: (id: string | null) => void;
   /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
   onSnippetFocus?: (snippet: string | null) => void;
+  /** Fires whenever active read-aloud playback starts/stops — drives the persistent
+   *  reading highlight in the PDF (focusHighlightPersist). */
+  onPlayStateChange?: (isReading: boolean) => void;
+}
+
+export interface StudySpeechPanelHandle {
+  /** "Read From Click" — switch to Current Page mode and start reading from the
+   *  sentence that best matches the clicked PDF text. */
+  playFromSnippet: (snippet: string) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus }: Props) {
+const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
+  { studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus, onPlayStateChange },
+  ref,
+) {
   const [open, setOpen]       = useState(false);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -183,10 +245,11 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Full Page mode: sentence count for progress display
+  // Page sentences — built whenever activePageText changes, regardless of mode, so
+  // "Read From Click" can jump into Current Page playback from any mode.
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
-    if (mode === "fullPage" && activePageText) {
+    if (activePageText) {
       console.log("[SPEECH_RAW_TEXT]", {
         page:     pageNumber,
         chars:    activePageText.length,
@@ -303,7 +366,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
         willRepair:       corruptionScore > 0.08,
       });
 
-      if (corruptionScore > 0.08) {
+      if (corruptionScore > 0.08 && mode === "fullPage") {
         const textToRepair = quickSents.join(" ").slice(0, 3000);
         fetch("/api/speech-preprocess", {
           method: "POST",
@@ -381,6 +444,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
     setPlayState("idle");
     setEyeText(null);
     setEyeRole(null);
+    onPlayStateChange?.(false);
   }
 
   useEffect(() => () => stopAudio(), []);
@@ -466,6 +530,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
   async function playFullPageSequential(sentences: string[], fromIdx: number) {
     abortRef.current = false;
     setPlayState("loading");
+    onPlayStateChange?.(true);
 
     // [DIAGNOSIS] State at play start — reveals stale segIdx and sentence zero issue
     console.log("[EYE_GUIDE_START_INDEX]", {
@@ -526,6 +591,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
       setPlayState("idle");
       onSnippetFocus?.(null);
     }
+    onPlayStateChange?.(false);
   }
 
   // ── Per-segment sequential playback (highlights mode) ─────────────────────
@@ -732,6 +798,23 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
     onEvidenceFocus?.(null);
   }
 
+  // ── "Read From Click" ───────────────────────────────────────────────────────
+  // Switch to Current Page mode and start reading from the sentence the reader
+  // clicked on in the PDF.
+  function playFromSnippet(snippet: string) {
+    const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
+    if (!sents.length) return;
+    const idx = findBestSentenceIndex(sents, snippet);
+    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60) });
+    setOpen(true);
+    setMode("fullPage");
+    stop();
+    setSegIdx(idx);
+    setTimeout(() => playFullPageSequential(sents, idx), 80);
+  }
+
+  useImperativeHandle(ref, () => ({ playFromSnippet }), [fpSentences, activePageText, pageNumber]);
+
   // ── Derived ────────────────────────────────────────────────────────────────
 
   const isPlaying  = playState === "playing";
@@ -874,12 +957,17 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
             </div>
           )}
 
-          {/* Full Page mode progress */}
+          {/* Current Page mode progress + Read From Click hint */}
           {mode === "fullPage" && fpSentences.length > 0 && (
             <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
               {isPlaying || isLoading || isPaused
                 ? `Sentence ${segIdx + 1} of ${fpSentences.length}`
-                : `${fpSentences.length} sentences · click ▶ Play to start`}
+                : `${fpSentences.length} sentences · click ▶ Play, or click any sentence in the PDF to start there`}
+            </p>
+          )}
+          {mode !== "fullPage" && fpSentences.length > 0 && !isPlaying && !isLoading && (
+            <p style={{ fontSize: 10, color: "#475569", margin: 0 }}>
+              👆 Click any sentence in the PDF to read from there.
             </p>
           )}
 
@@ -893,4 +981,6 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
       )}
     </div>
   );
-}
+});
+
+export default StudySpeechPanel;

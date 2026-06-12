@@ -101,6 +101,10 @@ interface PureReaderViewProps {
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
   focusSnippet?: string | null;
+  /** When true, the focusSnippet highlight persists while Study Speech reads a sentence aloud. */
+  focusHighlightPersist?: boolean;
+  /** Fires when the reader clicks PDF body text — used for "Read From Click". */
+  onTextClick?: (snippet: string) => void;
   /** Highlight anchors from currentPageStudyModel — single source of truth */
   aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
@@ -135,6 +139,8 @@ export default function PureReaderView({
   fontFamily = 'Georgia',
   onActiveParagraphChange,
   focusSnippet,
+  focusHighlightPersist,
+  onTextClick,
   aiHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
@@ -481,6 +487,8 @@ export default function PureReaderView({
               onOutline={onOutline}
               onActiveParagraphChange={onActiveParagraphChange}
               focusSnippet={focusSnippet}
+              focusHighlightPersist={focusHighlightPersist}
+              onTextClick={onTextClick}
               highlightTargets={(() => {
                 if (effectiveHighlightTargets.length === 0) {
                   console.log("[LEFT_PANEL_CLEAR] effectiveHighlightTargets empty — zero overlays", { page: currentPage });

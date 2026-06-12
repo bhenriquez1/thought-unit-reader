@@ -109,6 +109,14 @@ export interface SmartPDFViewerProps {
   onActiveParagraphChange?: (snippet: string | null) => void;
   /** Focus and scroll to a snippet from right-panel evidence cards. */
   focusSnippet?: string | null;
+  /** When true, the focusSnippet highlight persists until replaced instead of auto-clearing after ~2s — used while Study Speech is reading a sentence aloud. */
+  focusHighlightPersist?: boolean;
+  /**
+   * Fires when the reader clicks on body text in the PDF (not a drag-selection).
+   * The argument is a ~150-char snippet of the clicked line, used to start
+   * "Read From Click" playback at that sentence.
+   */
+  onTextClick?: (snippet: string) => void;
   highlightTargets?: HighlightTarget[];
   /** Structured neighborhood highlights — when present, uses layered matching pipeline */
   highlightNeighborhoods?: HighlightNeighborhood[];
@@ -204,6 +212,8 @@ export default function SmartPDFViewer({
   onOutline,
   onActiveParagraphChange,
   focusSnippet,
+  focusHighlightPersist,
+  onTextClick,
   highlightTargets,
   highlightNeighborhoods,
   focusedEvidenceId,
@@ -383,11 +393,18 @@ export default function SmartPDFViewer({
     if (!target) return;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
+
+    // While speech is actively reading (focusHighlightPersist), keep this sentence
+    // highlighted until the next sentence's focusSnippet replaces it — the cleanup
+    // below removes it then. Otherwise (one-off "Focus" clicks), auto-clear after 2.2s.
+    if (focusHighlightPersist) {
+      return () => target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
+    }
     const timer = window.setTimeout(() => {
       target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
     }, 2200);
     return () => window.clearTimeout(timer);
-  }, [focusSnippet, currentPage]);
+  }, [focusSnippet, currentPage, focusHighlightPersist]);
 
   useEffect(() => {
     const container = viewerRef.current;
@@ -879,9 +896,35 @@ export default function SmartPDFViewer({
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
     const selection = window.getSelection()?.toString().trim();
-    if (selection && onTextSelect) onTextSelect(selection);
+    if (selection) {
+      if (onTextSelect) onTextSelect(selection);
+      return;
+    }
+
+    // No drag-selection — treat as a click on body text for "Read From Click".
+    if (!onTextClick) return;
+    const target = e.target as HTMLElement;
+    const span = target.closest('.react-pdf__Page__textContent span, .textLayer span') as HTMLElement | null;
+    if (!span) return;
+
+    // Gather nearby spans on the same line (±6px) to form a sentence-ish snippet,
+    // mirroring the paragraph-detection logic used for scroll sync.
+    const spans = Array.from(
+      (span.closest('.react-pdf__Page__textContent, .textLayer') ?? viewerRef.current)?.querySelectorAll('span') ?? []
+    ) as HTMLElement[];
+    const targetTop = span.getBoundingClientRect().top;
+    let snippet = '';
+    for (const s of spans) {
+      const top = s.getBoundingClientRect().top;
+      if (Math.abs(top - targetTop) <= 6) {
+        snippet += (s.textContent || '') + ' ';
+        if (snippet.length > 150) break;
+      }
+    }
+    snippet = snippet.trim();
+    if (snippet.length >= 8) onTextClick(snippet);
   };
 
   return (
