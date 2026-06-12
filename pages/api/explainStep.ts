@@ -12,25 +12,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import type { ExplainStepMessage, ExplainStepStudyNotes } from "@/lib/explainStep/types";
 
 export const config = {
   maxDuration: 30,
   api: { bodyParser: { sizeLimit: "512kb" } },
 };
-
-export interface ExplainStepMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ExplainStepStudyNotes {
-  whyThisMatters?: string | null;
-  keyMechanism?: string | null;
-  commonConfusion?: string | null;
-  quickMemory?: string | null;
-  reasoningFlow?: string | null;
-  examSignal?: string | null;
-}
 
 export interface ExplainStepRequest {
   /** The exact text/equation/step the student selected in the LeftPanel */
