@@ -109,6 +109,8 @@ interface PureReaderViewProps {
   aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
+  /** Focus + highlight a thought unit in the PDF — used by the Thought Unit strip, mirrors RightPanel's onEvidenceClick(snippet, evidenceId). */
+  onThoughtUnitClick?: (snippet: string, evidenceId?: string) => void;
   onOpenFocusCycle?: () => void;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
@@ -144,6 +146,7 @@ export default function PureReaderView({
   aiHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
+  onThoughtUnitClick,
   onOpenFocusCycle,
   onPageTextExtracted,
   pageText,
@@ -407,7 +410,7 @@ export default function PureReaderView({
       <ThoughtUnitStrip
         studyModel={studyModel}
         focusedEvidenceId={focusedEvidenceId}
-        onEvidenceFocus={onEvidenceFocus}
+        onEvidenceClick={onThoughtUnitClick}
       />
 
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
