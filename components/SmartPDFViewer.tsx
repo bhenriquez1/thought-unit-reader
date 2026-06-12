@@ -8,6 +8,7 @@ import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
+import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 
@@ -1010,22 +1011,10 @@ export default function SmartPDFViewer({
                 }}
                 onGetTextSuccess={(textContent: any) => {
                   if (!onPageTextExtracted) return;
-                  // Sort items top-to-bottom then left-to-right using PDF.js transform coords.
-                  // transform[5] = Y (PDF bottom-up, so higher = higher on page → sort desc).
-                  // transform[4] = X (left-to-right → sort asc within same row).
-                  const items: any[] = [...(textContent?.items ?? [])];
-                  items.sort((a, b) => {
-                    const ay = a.transform?.[5] ?? 0;
-                    const by = b.transform?.[5] ?? 0;
-                    const yDiff = by - ay; // desc (top of page first)
-                    if (Math.abs(yDiff) > 4) return yDiff;
-                    return (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0); // asc X
-                  });
-                  const text = items
-                    .map((item: any) => item.str ?? "")
-                    .join(" ")
-                    .replace(/\s+/g, " ")
-                    .trim();
+                  // Reconstruct line/paragraph structure from item geometry (transform
+                  // y-coordinates) rather than flattening to a single space-joined
+                  // string — see lib/pdf/structuredPageText for why this matters.
+                  const text = buildStructuredPageText(textContent?.items ?? []);
                   if (text.length > 20) onPageTextExtracted(currentPage, text);
                 }}
               />

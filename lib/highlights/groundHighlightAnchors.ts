@@ -177,6 +177,39 @@ function termOverlapRatio(a: string, b: string): number {
   return matched / Math.min(termsA.size, termsB.length);
 }
 
+// Split the page (already structured into "\n\n"-separated paragraphs by
+// buildStructuredPageText) into paragraph-level text blocks for thought-unit spans.
+function splitIntoParagraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n+/)
+    .map(p => p.replace(/\s+/g, ' ').trim())
+    .filter(p => p.length > 0);
+}
+
+// If `core`'s containing paragraph is a reasonable "thought unit" size — bigger than
+// the sentence itself but not the whole page — span the highlight across the full
+// paragraph. Returns undefined when no such paragraph is found (e.g. the page text
+// has no recovered paragraph breaks) or the paragraph is too large to highlight whole.
+function paragraphSpanFor(
+  core: string,
+  paragraphs: string[],
+): { spanStart: string; spanEnd: string } | undefined {
+  // A single "paragraph" means no real "\n\n" breaks were recovered for this page
+  // (e.g. geometry was too uniform to detect them) — the whole page text would be
+  // an unreliable, overly broad span, so skip paragraph-level expansion entirely.
+  if (paragraphs.length <= 1) return undefined;
+
+  const normedCore = normText(core);
+  const para = paragraphs.find(p => normText(p).includes(normedCore));
+  if (!para) return undefined;
+
+  const paraWords = wordCount(para);
+  if (paraWords <= wordCount(core)) return undefined; // paragraph IS the sentence
+  if (paraWords > 70) return undefined;               // too large — avoid over-highlighting
+
+  return { spanStart: firstWords(para, 5), spanEnd: lastWords(para, 5) };
+}
+
 // If `core` (at `sentences[idx]`) is short, pull in an adjacent, topically-related
 // sentence (high key-term overlap) so a highlight reads as a complete thought unit
 // rather than one clipped line. Returns spanStart/spanEnd covering both sentences,
@@ -200,12 +233,24 @@ function mergeWithNeighbor(
   return undefined;
 }
 
+// Thought-unit span for a sentence already identified as the "core" highlight:
+// prefer the full containing paragraph (from real "\n\n" structure); fall back to
+// merging in one topically-related neighboring sentence.
+function thoughtUnitSpan(
+  core: string,
+  sentences: string[],
+  idx: number,
+  paragraphs: string[],
+): { spanStart: string; spanEnd: string } | undefined {
+  return paragraphSpanFor(core, paragraphs) ?? mergeWithNeighbor(sentences, idx);
+}
+
 /**
  * Expand a verbatim-matched span to its containing sentence ("thought unit") so a
  * short phrase like "Diagnosis" highlights the whole sentence it belongs to instead
- * of just the matched word. If that sentence is itself short and a neighboring
- * sentence continues the same idea (high key-term overlap), extend the highlight
- * span across both via spanStart/spanEnd.
+ * of just the matched word. If that sentence's paragraph is a reasonable size, or a
+ * neighboring sentence continues the same idea (high key-term overlap), extend the
+ * highlight span to cover the full thought unit via spanStart/spanEnd.
  *
  * Returns the matched text unchanged when no containing sentence can be found
  * (e.g. the match spans multiple sentences already) or when the match already
@@ -214,6 +259,7 @@ function mergeWithNeighbor(
 function expandToThoughtUnit(
   matchedText: string,
   sentences: string[],
+  paragraphs: string[],
 ): { groundedText: string; spanStart?: string; spanEnd?: string } {
   const normedMatch = normText(matchedText);
   const idx = sentences.findIndex(s => normText(s).includes(normedMatch));
@@ -227,7 +273,7 @@ function expandToThoughtUnit(
     return { groundedText: matchedText };
   }
 
-  const span = mergeWithNeighbor(sentences, idx);
+  const span = thoughtUnitSpan(core, sentences, idx, paragraphs);
   return span ? { groundedText: core, ...span } : { groundedText: core };
 }
 
@@ -258,6 +304,7 @@ export function groundHighlightAnchors(
   const cleanedPage = cleanActivePageText(pageText, "ground");
   const normedPage = normText(cleanedPage);
   const sentences = splitIntoSentences(cleanedPage);
+  const paragraphs = splitIntoParagraphs(cleanedPage);
   const grounded: GroundedAnchor[] = [];
 
   for (const anchor of anchors) {
@@ -276,7 +323,7 @@ export function groundHighlightAnchors(
     if (!anchorIsHeader && cleanedPage.includes(anchor.text)) {
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
-        : expandToThoughtUnit(anchor.text, sentences);
+        : expandToThoughtUnit(anchor.text, sentences, paragraphs);
       console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "exact" });
       grounded.push({
@@ -293,7 +340,7 @@ export function groundHighlightAnchors(
     if (!anchorIsHeader && normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
-        : expandToThoughtUnit(anchor.text, sentences);
+        : expandToThoughtUnit(anchor.text, sentences, paragraphs);
       console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "normalized" });
       // Keep anchor.text (or its expanded sentence) — SmartPDFViewer's normForMatch
@@ -351,7 +398,7 @@ export function groundHighlightAnchors(
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
       const bestIdx = sentences.indexOf(bestSentence);
       const span = !(anchor.spanStart && anchor.spanEnd) && bestIdx !== -1
-        ? mergeWithNeighbor(sentences, bestIdx)
+        ? thoughtUnitSpan(bestSentence, sentences, bestIdx, paragraphs)
         : undefined;
       grounded.push({
         ...anchor,
