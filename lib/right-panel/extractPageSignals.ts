@@ -24,6 +24,25 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const lineGroups = lines.length;
 
+  // Universal instructional body check — book-agnostic; works for any subject/discipline.
+  // A page has an instructional body if it has real paragraphs (not just titles/headings).
+  // Computed up front so every classification below (including "cover") can use it as a guard.
+  // "bodyLines" = lines long enough to be prose, not one-word section numbers.
+  const bodyLines = lines.filter(l => l.length > 45);
+  const bodyCharCount = bodyLines.join(" ").length;
+  // Figure/table captions are also instructional proof
+  const figureCaptionCount = lines.filter(l => /^(figure|fig\.?|table|plate|diagram)\s*[\d.]/i.test(l)).length;
+  // Instructional sentences end with punctuation and have actual words
+  const instructionalSentenceCount = lines.filter(l =>
+    l.length > 60 && /[.!?]$/.test(l)
+  ).length;
+  // Any of these signals = real instructional content, regardless of heading
+  const hasInstructionalBody =
+    bodyLines.length >= 3 ||
+    bodyCharCount > 500 ||
+    figureCaptionCount > 0 ||
+    instructionalSentenceCount >= 2;
+
   // Empty / near-empty — only fire image_scan_heavy when the ORIGINAL (pre-strip)
   // page text is also short. Pages with >500 chars of raw text always have enough
   // instructional content to run synthesis; figures/tables/formulas coexist with text.
@@ -77,24 +96,6 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   const hasInstructionalVocab = /\b(define|definition|element|compound|molecule|cell|organism|function|mechanism|example|figure|table|section|key|concept|essential|trace|synthesis|process|structure|property)\b/i.test(pageText);
   if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12 && !hasInstructionalVocab) return "chapter_opener";
 
-  // Universal instructional body check — book-agnostic; works for any subject/discipline.
-  // A page has an instructional body if it has real paragraphs (not just titles/headings).
-  // "bodyLines" = lines long enough to be prose, not one-word section numbers.
-  const bodyLines = lines.filter(l => l.length > 45);
-  const bodyCharCount = bodyLines.join(" ").length;
-  // Figure/table captions are also instructional proof
-  const figureCaptionCount = lines.filter(l => /^(figure|fig\.?|table|plate|diagram)\s*[\d.]/i.test(l)).length;
-  // Instructional sentences end with punctuation and have actual words
-  const instructionalSentenceCount = lines.filter(l =>
-    l.length > 60 && /[.!?]$/.test(l)
-  ).length;
-  // Any of these signals = real instructional content, regardless of heading
-  const hasInstructionalBody =
-    bodyLines.length >= 3 ||
-    bodyCharCount > 500 ||
-    figureCaptionCount > 0 ||
-    instructionalSentenceCount >= 2;
-
   // Learning objectives / Key concepts overview — non-instructional structural pages.
   // Fires when the page is dominated by an objectives/concepts list (3+ bullet items)
   // and does NOT contain active instructional prose (mechanisms, formulas, worked examples).
@@ -124,7 +125,7 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   ) return "section_opener";
 
   // Cover — single large all-caps title, very sparse
-  if (/^\s*[A-Z][A-Z\s]{6,}$/m.test(pageText) && lineGroups < 10) return "cover";
+  if (/^\s*[A-Z][A-Z\s]{6,}$/m.test(pageText) && lineGroups < 10 && !hasInstructionalBody) return "cover";
 
   // History / background (non-instructional) — only when no teaching markers present
   if (/\bhistory of|historical|origin of|milestone|evolution of|timeline\b/.test(text) &&

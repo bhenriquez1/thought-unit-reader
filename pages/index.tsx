@@ -1305,6 +1305,35 @@ export default function ThoughtUnitReader() {
     })?.id;
   }, [currentPageStudyModel]);
 
+  // Shared "focus this evidence" handler — used by RightPanel cards, the left-panel
+  // Thought Unit strip, and speech segment focus. Sets focusedEvidenceId (drives the
+  // PDF overlay glow/scroll) and re-fires focusSnippet (drives the text-search yellow
+  // flash + scrollIntoView), and auto-zooms so the target paragraph fills the screen.
+  const focusEvidence = useCallback((snippet: string, evidenceId?: string) => {
+    setFocusSnippet(null);
+    setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
+    const { zoom: currentZoom, setZoom } = useZoomStore.getState();
+    if (currentZoom < 1.5) setZoom(1.5);
+    window.setTimeout(() => setFocusSnippet(snippet), 0);
+  }, [resolveEvidenceId]);
+
+  // Thought Unit card click — "Read From Click": focuses/highlights the evidence
+  // (same as RightPanel card clicks) AND starts speech reading from that thought
+  // unit. Highlights themselves are always visible (driven by finalHighlightAnchors,
+  // not by clicks) — clicking only controls speech focus/playback.
+  const playThoughtUnit = useCallback((snippet: string, evidenceId?: string) => {
+    focusEvidence(snippet, evidenceId);
+    speechPanelRef.current?.playFromSnippet(snippet);
+  }, [focusEvidence]);
+
+  // Clicking a highlighted PDF overlay rect — "Read From Click": focuses the rect
+  // (existing glow behavior) AND starts speech from that thought unit's text.
+  const onPdfHighlightFocus = useCallback((id: string) => {
+    setFocusedEvidenceId(id);
+    const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
+    if (anchor?.text) speechPanelRef.current?.playFromSnippet(anchor.text);
+  }, [finalHighlightAnchors]);
+
   useEffect(() => {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
@@ -3331,7 +3360,8 @@ export default function ThoughtUnitReader() {
                   pageTruthKey={pageTruthKey}
                   studyModel={currentPageStudyModel}
                   focusedEvidenceId={focusedEvidenceId}
-                  onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+                  onEvidenceFocus={onPdfHighlightFocus}
+                  onThoughtUnitClick={playThoughtUnit}
                   onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
@@ -3380,12 +3410,7 @@ export default function ThoughtUnitReader() {
                   trySwitchShellTab("study", "study");
                 }}
                 onEvidenceClick={(snippet, evidenceId) => {
-                  setFocusSnippet(null);
-                  setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
-                  // Auto-zoom to 1.5 on Focus click so the target paragraph fills the screen.
-                  const { zoom: currentZoom, setZoom } = useZoomStore.getState();
-                  if (currentZoom < 1.5) setZoom(1.5);
-                  window.setTimeout(() => setFocusSnippet(snippet), 0);
+                  focusEvidence(snippet, evidenceId);
                 }}
                 onStudyModelReady={(model, key) => {
                     console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {

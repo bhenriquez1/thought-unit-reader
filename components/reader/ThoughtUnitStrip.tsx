@@ -14,7 +14,8 @@ import type { CurrentPageStudyModel, VisualAnchorSourceField } from "@/lib/insig
 type ThoughtUnitStripProps = {
   studyModel: CurrentPageStudyModel | null | undefined;
   focusedEvidenceId?: string | null;
-  onEvidenceFocus?: (id: string) => void;
+  /** Focus + highlight this thought unit in the PDF — mirrors RightPanel's onEvidenceClick(snippet, evidenceId). */
+  onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
 };
 
 type BlockConfig = {
@@ -30,7 +31,7 @@ type BlockConfig = {
   italic?: boolean;
 };
 
-export default function ThoughtUnitStrip({ studyModel, focusedEvidenceId, onEvidenceFocus }: ThoughtUnitStripProps) {
+export default function ThoughtUnitStrip({ studyModel, focusedEvidenceId, onEvidenceClick }: ThoughtUnitStripProps) {
   if (!studyModel) return null;
 
   const findAnchor = (field: VisualAnchorSourceField) =>
@@ -111,7 +112,7 @@ export default function ThoughtUnitStrip({ studyModel, focusedEvidenceId, onEvid
             key={block.field}
             className={`shrink-0 w-[220px] rounded-lg border ${isFocused ? block.borderFocused : block.borderIdle} ${isFocused ? block.glowClass : ""} px-2.5 py-2 transition-all`}
             style={{ background: block.bg, cursor: anchor ? "pointer" : undefined }}
-            onClick={anchor ? () => onEvidenceFocus?.(anchor.id) : undefined}
+            onClick={anchor ? () => onEvidenceClick?.(anchor.exactText, anchor.id) : undefined}
             title={anchor ? "Click to highlight this thought unit in the PDF" : undefined}
             data-testid={`thought-unit-block-${block.field}`}
           >
