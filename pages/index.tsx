@@ -20,7 +20,6 @@ import PatternView from "@/components/PatternView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
-import HighlightActionMenu from "@/components/HighlightActionMenu";
 import NotesList from "@/components/NotesList";
 
 // Integrated components
@@ -930,12 +929,6 @@ export default function ThoughtUnitReader() {
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [hyperChunks, setHyperChunks] = useState<any[]>([]);
   const [highlights, setHighlights] = useState<any[]>([]);
-  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
-  const [highlightMenuPosition, setHighlightMenuPosition] = useState({ x: 0, y: 0 });
-  const [currentSelection, setCurrentSelection] = useState<{
-    text: string;
-    context: any;
-  } | null>(null);
 
   /* =========================================================================
      🔹 Local Storage Persistence for Guest Mode
@@ -1413,20 +1406,6 @@ export default function ThoughtUnitReader() {
     setRecallLabRefreshKey((k) => k + 1);
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
-  /* =========================================================================
-     🔹 Surgeon View: Text Selection Handler
-  ========================================================================= */
-  useEffect(() => {
-    const handleMouseUp = () => {
-      // Only trigger in Surgeon View or when PDF is loaded
-      if (fileUrl) {
-        setTimeout(handleTextSelection, 100);
-      }
-    };
-
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [fileUrl, bookId, currentPage, currentThoughtUnit, tableOfContents]);
 
   // 🧠 Chapter Absorption Pipeline State
   const [chapterPipeline, setChapterPipeline] = useState<ChapterAbsorptionPipeline | null>(null);
@@ -2527,173 +2506,6 @@ export default function ThoughtUnitReader() {
     } else {
       setPdfLibrary((prev) => prev.filter((p) => p.id !== id));
     }
-  };
-
-  /* =========================================================================
-     🔹 Surgeon View PDRM: Highlight → Action Handlers
-  ========================================================================= */
-  
-  // Handle text selection and show action menu
-  const handleTextSelection = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.toString().trim().length === 0) {
-      setShowHighlightMenu(false);
-      return;
-    }
-
-    const selectedText = selection.toString().trim();
-    if (selectedText.length < 3) return; // Ignore very short selections
-
-    // Get selection position for menu placement
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    
-    setHighlightMenuPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.bottom,
-    });
-
-    setCurrentSelection({
-      text: selectedText,
-      context: {
-        bookId,
-        chapterId: tableOfContents[0]?.title || 'Unknown',
-        thoughtUnitIndex: currentThoughtUnit,
-        pageNumber: currentPage,
-      },
-    });
-
-    setShowHighlightMenu(true);
-  };
-
-  // Handle highlight action menu actions
-  const handleHighlightAction = (action: any) => {
-    if (!currentSelection) return;
-
-    const timestamp = Date.now();
-    const sourceRef = {
-      bookId,
-      selectedText: currentSelection.text,
-      pageNumber: currentPage,
-      thoughtUnitIndex: currentThoughtUnit,
-      chapterId: currentSelection.context.chapterId,
-    };
-
-    switch (action.type) {
-      case 'note': {
-        const newNote = {
-          id: `note_${timestamp}`,
-          content: '', // Will be filled by user in NoteLab
-          source: sourceRef,
-          tags: [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          archived: false,
-        };
-        setNotes((prev) => [...prev, newNote]);
-        
-        // Create highlight
-        const highlight = {
-          id: `hl_${timestamp}`,
-          source: sourceRef,
-          tags: [],
-          noteId: newNote.id,
-          color: '#3b82f6',
-          createdAt: timestamp,
-        };
-        setHighlights((prev) => [...prev, highlight]);
-        
-        console.log('📝 Note created:', newNote.id);
-        // TODO: Show note editor modal or switch to NoteLab
-        break;
-      }
-
-      case 'flashcard': {
-        const newFlashcard = {
-          id: `card_${timestamp}`,
-          front: currentSelection.text,
-          back: '', // Will be filled by user
-          source: sourceRef,
-          tags: [],
-          confidence: 0,
-          reviewCount: 0,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        };
-        setFlashcards((prev) => [...prev, newFlashcard]);
-        
-        // Create highlight
-        const highlight = {
-          id: `hl_${timestamp}`,
-          source: sourceRef,
-          tags: [],
-          flashcardId: newFlashcard.id,
-          color: '#10b981',
-          createdAt: timestamp,
-        };
-        setHighlights((prev) => [...prev, highlight]);
-        
-        console.log('🎴 Flashcard created:', newFlashcard.id);
-        break;
-      }
-
-      case 'tag': {
-        // Create or update highlight with PDRM tag
-        const tagColor = {
-          P: '#a855f7', // Purple
-          D: '#3b82f6', // Blue
-          R: '#ef4444', // Red
-          M: '#f59e0b', // Yellow
-        }[action.tagType] || '#6b7280';
-
-        const highlight = {
-          id: `hl_${timestamp}`,
-          source: sourceRef,
-          tags: [action.tagType],
-          color: tagColor,
-          createdAt: timestamp,
-        };
-        setHighlights((prev) => [...prev, highlight]);
-        
-        console.log(`🏷️ PDRM tag applied: ${action.tagType}`);
-        break;
-      }
-
-      case 'hyperchunk': {
-        // Add to existing or create new hyper-chunk
-        // For now, create a new one - can be merged later in NoteLab
-        const newChunk = {
-          id: `chunk_${timestamp}`,
-          title: `Chunk: ${currentSelection.text.substring(0, 30)}...`,
-          description: '',
-          noteIds: [],
-          flashcardIds: [],
-          tags: [],
-          ruleState: 'draft',
-          crossDomainTags: [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        };
-        setHyperChunks((prev) => [...prev, newChunk]);
-        
-        // Create highlight linked to chunk
-        const highlight = {
-          id: `hl_${timestamp}`,
-          source: sourceRef,
-          tags: [],
-          hyperChunkId: newChunk.id,
-          color: '#f97316', // Orange
-          createdAt: timestamp,
-        };
-        setHighlights((prev) => [...prev, highlight]);
-        
-        console.log('🔗 Hyper-chunk created:', newChunk.id);
-        break;
-      }
-    }
-
-    setShowHighlightMenu(false);
-    setCurrentSelection(null);
   };
 
   // Persist Surgeon View data to localStorage
@@ -4196,6 +4008,23 @@ export default function ThoughtUnitReader() {
               </div>
             </button>
           )}
+
+          {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection */}
+          <button
+            onClick={handleOpenExplainStep}
+            disabled={!sel.selectionText?.trim()}
+            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${
+              explainStepContext
+                ? "bg-[rgba(99,102,241,0.45)] border-indigo-400/60"
+                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
+            }`}
+            title={sel.selectionText?.trim() ? "Explain This Step — open chatbox for the selected text" : "Select text in the reader first"}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">💬</span>
+              <span className="text-sm font-medium hidden sm:block">Explain This Step</span>
+            </div>
+          </button>
         </div>
 
 
@@ -4504,7 +4333,6 @@ export default function ThoughtUnitReader() {
           }}
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
-          onExplainStep={handleOpenExplainStep}
           onClose={() => sel.clearSelection()}
         />
       )}
@@ -4748,18 +4576,6 @@ export default function ThoughtUnitReader() {
           </div>
         </div>
       )}
-
-      {/* Surgeon View: Highlight Action Menu */}
-      <HighlightActionMenu
-        selectedText={currentSelection?.text || ''}
-        position={highlightMenuPosition}
-        onAction={handleHighlightAction}
-        onClose={() => {
-          setShowHighlightMenu(false);
-          setCurrentSelection(null);
-        }}
-        visible={showHighlightMenu}
-      />
 
     </div>
   );
