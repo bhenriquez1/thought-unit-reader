@@ -1414,110 +1414,6 @@ export default function ThoughtUnitReader() {
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   /* =========================================================================
-     🔹 Explain This Step — contextual chatbox triggered from a LeftPanel selection
-  ========================================================================= */
-  const handleOpenExplainStep = useCallback(() => {
-    const text = sel.selectionText?.trim();
-    if (!text) return;
-    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
-    const sm = currentPageStudyModel;
-    setExplainStepContext({
-      selectedText: text,
-      pageText,
-      surroundingParagraph: findSurroundingParagraph(pageText, text),
-      pageThesis: sm?.pageThesis ?? null,
-      studyNotes: sm?.studyNotes ?? null,
-      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
-      documentTitle: uploadedFile?.name,
-      pageNumber: currentPage,
-    });
-    sel.clearSelection();
-  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile]);
-
-  const handleExplainStepSaveNote = useCallback(async (question: string, explanation: string) => {
-    const ctx = explainStepContext;
-    if (!ctx) return;
-    const note = buildUltraNote(
-      bookId,
-      ctx.pageNumber,
-      `Explain This Step — p.${ctx.pageNumber}`,
-      explanation,
-      [],
-      uploadedFile?.name,
-      undefined,
-      ctx.pageThesis ?? undefined,
-    );
-    note.sections = [
-      { label: "Question", content: question },
-      { label: "Explanation", content: explanation },
-    ];
-    await saveUltraNote(note);
-    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber });
-    setNoteLabRefreshKey((k) => k + 1);
-  }, [explainStepContext, bookId, uploadedFile]);
-
-  const handleExplainStepCreateRecallCard = useCallback(async (question: string, explanation: string) => {
-    const ctx = explainStepContext;
-    if (!ctx) return;
-    const card: RecallCard = {
-      id: `card-explain-${Date.now()}`,
-      type: "core",
-      front: question,
-      back: explanation,
-      reviewCount: 0,
-      isMissed: false,
-    };
-    const set: RecallSet = {
-      id: stableRecallId(bookId, ctx.pageNumber, `explain-${Date.now()}`),
-      bookId,
-      bookTitle: uploadedFile?.name,
-      sourceLabel: "right-panel",
-      pageNumber: ctx.pageNumber,
-      subject: inferSubject(bookId),
-      topic: `Explain This Step — p.${ctx.pageNumber}`,
-      cards: [card],
-      createdAt: Date.now(),
-    };
-    await saveRecallSet(set);
-    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber });
-    setLastRecallSetId(set.id);
-    setRecallLabRefreshKey((k) => k + 1);
-  }, [explainStepContext, bookId, uploadedFile]);
-
-  const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string) => {
-    const ctx = explainStepContext;
-    if (!ctx) return;
-    const entry = `${question} — ${explanation}`;
-    const existing = await getStudyGuidesByBook(bookId);
-    if (existing.length > 0) {
-      const guide = existing[0];
-      const updated: StudyGuideRecord = { ...guide, mustKnow: [...guide.mustKnow, entry] };
-      await saveStudyGuide(updated);
-      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: updated.id, page: ctx.pageNumber, mode: "append" });
-    } else {
-      const guide: StudyGuideRecord = {
-        id: `sg-${bookId}-${Date.now()}`,
-        bookId,
-        mode: "topstudent",
-        chapterTitle: uploadedFile?.name ?? "Study Guide",
-        topic: `Page ${ctx.pageNumber}`,
-        priority: "Medium",
-        mustKnow: [entry],
-        datFacts: [],
-        mechanisms: [],
-        traps: [],
-        recallQuestions: [],
-        memoryHooks: [],
-        dailyTasks: [],
-        sourceLabels: ["Explain This Step"],
-        createdAt: Date.now(),
-      };
-      await saveStudyGuide(guide);
-      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: guide.id, page: ctx.pageNumber, mode: "create" });
-    }
-  }, [explainStepContext, bookId, uploadedFile]);
-
-  /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
   ========================================================================= */
   useEffect(() => {
@@ -1752,6 +1648,110 @@ export default function ThoughtUnitReader() {
     contextLabel: uploadedFile?.name ? `From ${uploadedFile.name}` : undefined,
     debounceMs: 0,
   });
+
+  /* =========================================================================
+     🔹 Explain This Step — contextual chatbox triggered from a LeftPanel selection
+  ========================================================================= */
+  const handleOpenExplainStep = useCallback(() => {
+    const text = sel.selectionText?.trim();
+    if (!text) return;
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setExplainStepContext({
+      selectedText: text,
+      pageText,
+      surroundingParagraph: findSurroundingParagraph(pageText, text),
+      pageThesis: sm?.pageThesis ?? null,
+      studyNotes: sm?.studyNotes ?? null,
+      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+    });
+    sel.clearSelection();
+  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile]);
+
+  const handleExplainStepSaveNote = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const note = buildUltraNote(
+      bookId,
+      ctx.pageNumber,
+      `Explain This Step — p.${ctx.pageNumber}`,
+      explanation,
+      [],
+      uploadedFile?.name,
+      undefined,
+      ctx.pageThesis ?? undefined,
+    );
+    note.sections = [
+      { label: "Question", content: question },
+      { label: "Explanation", content: explanation },
+    ];
+    await saveUltraNote(note);
+    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber });
+    setNoteLabRefreshKey((k) => k + 1);
+  }, [explainStepContext, bookId, uploadedFile]);
+
+  const handleExplainStepCreateRecallCard = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const card: RecallCard = {
+      id: `card-explain-${Date.now()}`,
+      type: "core",
+      front: question,
+      back: explanation,
+      reviewCount: 0,
+      isMissed: false,
+    };
+    const set: RecallSet = {
+      id: stableRecallId(bookId, ctx.pageNumber, `explain-${Date.now()}`),
+      bookId,
+      bookTitle: uploadedFile?.name,
+      sourceLabel: "right-panel",
+      pageNumber: ctx.pageNumber,
+      subject: inferSubject(bookId),
+      topic: `Explain This Step — p.${ctx.pageNumber}`,
+      cards: [card],
+      createdAt: Date.now(),
+    };
+    await saveRecallSet(set);
+    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber });
+    setLastRecallSetId(set.id);
+    setRecallLabRefreshKey((k) => k + 1);
+  }, [explainStepContext, bookId, uploadedFile]);
+
+  const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const entry = `${question} — ${explanation}`;
+    const existing = await getStudyGuidesByBook(bookId);
+    if (existing.length > 0) {
+      const guide = existing[0];
+      const updated: StudyGuideRecord = { ...guide, mustKnow: [...guide.mustKnow, entry] };
+      await saveStudyGuide(updated);
+      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: updated.id, page: ctx.pageNumber, mode: "append" });
+    } else {
+      const guide: StudyGuideRecord = {
+        id: `sg-${bookId}-${Date.now()}`,
+        bookId,
+        mode: "topstudent",
+        chapterTitle: uploadedFile?.name ?? "Study Guide",
+        topic: `Page ${ctx.pageNumber}`,
+        priority: "Medium",
+        mustKnow: [entry],
+        datFacts: [],
+        mechanisms: [],
+        traps: [],
+        recallQuestions: [],
+        memoryHooks: [],
+        dailyTasks: [],
+        sourceLabels: ["Explain This Step"],
+        createdAt: Date.now(),
+      };
+      await saveStudyGuide(guide);
+      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: guide.id, page: ctx.pageNumber, mode: "create" });
+    }
+  }, [explainStepContext, bookId, uploadedFile]);
 
   /* =========================================================================
      🔹 Handle Thought Detection

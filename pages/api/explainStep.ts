@@ -113,21 +113,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       const openai = new OpenAI({ apiKey: openaiKey });
       const model = useWebSearch ? "gpt-4o-search-preview" : "gpt-4o-mini";
 
-      const params: Record<string, unknown> = {
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...body.messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      };
-      if (useWebSearch) {
-        params.web_search_options = {};
-      } else {
-        params.temperature = 0.3;
-        params.max_tokens = 500;
-      }
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        { role: "system", content: systemPrompt },
+        ...body.messages.map((m) => ({ role: m.role, content: m.content }) as OpenAI.Chat.ChatCompletionMessageParam),
+      ];
 
-      const completion = await openai.chat.completions.create(params as Parameters<typeof openai.chat.completions.create>[0]);
+      const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = useWebSearch
+        ? { model, messages, web_search_options: {} }
+        : { model, messages, temperature: 0.3, max_tokens: 500 };
+
+      const completion = await openai.chat.completions.create(params);
       const reply = completion.choices[0]?.message?.content?.trim() || "";
 
       if (reply) {
@@ -138,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           usedWebSearch: useWebSearch,
           replyPreview: reply.slice(0, 100),
         });
-        return res.status(200).json({ reply, provider: "openai", usedWebSearch });
+        return res.status(200).json({ reply, provider: "openai", usedWebSearch: useWebSearch });
       }
     } catch (err: any) {
       console.error("[EXPLAIN_STEP_OPENAI_ERROR]", err?.message ?? String(err));
