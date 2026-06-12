@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { ExplainStepMessage, ExplainStepStudyNotes } from "@/pages/api/explainStep";
+import type { ExplainStepMessage, ExplainStepStudyNotes } from "@/lib/explainStep/types";
 
 export interface ExplainStepContext {
   selectedText: string;
