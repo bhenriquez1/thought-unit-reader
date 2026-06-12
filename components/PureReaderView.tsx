@@ -13,6 +13,8 @@ import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
+import type { CurrentPageStudyModel } from '@/lib/insights/currentPageStudyModel';
+import ThoughtUnitStrip from './reader/ThoughtUnitStrip';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -116,8 +118,8 @@ interface PureReaderViewProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label for badge role pills */
   roleLabelByConceptId?: Map<string, string>;
-  /** Quick memory / study tip from right-panel study model — shown as footer in left panel */
-  studyTip?: string | null;
+  /** Right-panel study model — rendered as the Thought Unit strip above the PDF */
+  studyModel?: CurrentPageStudyModel | null;
 }
 
 export default function PureReaderView({
@@ -143,7 +145,7 @@ export default function PureReaderView({
   pageTruthKey,
   onReadingPath,
   roleLabelByConceptId,
-  studyTip,
+  studyModel,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -395,6 +397,13 @@ export default function PureReaderView({
         </div>
       </div>
 
+      {/* Thought Unit strip — left-panel mirror of RightPanel's Page Thesis + Study Notes */}
+      <ThoughtUnitStrip
+        studyModel={studyModel}
+        focusedEvidenceId={focusedEvidenceId}
+        onEvidenceFocus={onEvidenceFocus}
+      />
+
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
@@ -490,17 +499,6 @@ export default function PureReaderView({
               roleLabelByConceptId={roleLabelByConceptId}
             />
           </div>
-
-          {/* ── Study Tip footer ─────────────────────────────────────────── */}
-          {studyTip && (
-            <div className="shrink-0 flex items-start gap-2 px-3 py-2 bg-[#0d1a12] border-t border-emerald-900/40">
-              <span className="text-[11px] shrink-0 mt-0.5">💡</span>
-              <p className="text-[11px] text-emerald-300/80 leading-[1.55]">
-                <span className="font-semibold text-emerald-300/90">Study Tip: </span>
-                {studyTip}
-              </p>
-            </div>
-          )}
         </div>
 
       </div>

@@ -3323,7 +3323,7 @@ export default function ThoughtUnitReader() {
                   aiHighlightAnchors={safeHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
-                  studyTip={currentPageStudyModel?.studyNotes?.quickMemory ?? null}
+                  studyModel={currentPageStudyModel}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={undefined}
