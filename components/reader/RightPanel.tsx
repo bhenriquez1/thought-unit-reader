@@ -22,6 +22,7 @@ import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIM
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, isUltraNotePersisted, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
+import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
 // Validates a synthesis field before it can replace a heuristic field.
@@ -3699,6 +3700,8 @@ function GenerateNoteButton({
       console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: pageNumber, bookId, topic: note.topic });
       console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { noteId: note.id, found: true });
 
+      await persistVisualAnchorsAsHighlights(bookId, pageNumber, studyModel, "note", note.id);
+
       setSaved(true);
       setSaveError(null);
       onNoteSaved?.();
@@ -3804,6 +3807,8 @@ function GenerateStudySetButton({
       console.log("[RECALL_READ_KEY]", { storageKey: "recallSets_v1", setId: set.id });
       console.log("[RECALL_SAVE_SUCCESS]", { id: set.id, page: pageNumber, bookId, cardCount: set.cards.length, topic: set.topic });
       console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { setId: set.id, found: true });
+
+      await persistVisualAnchorsAsHighlights(bookId, pageNumber, studyModel, "recall", set.id);
 
       setSaved(true);
       setSaveError(null);

@@ -57,6 +57,7 @@ import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnch
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets } from "@/lib/recalllab/recallStore";
+import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -583,12 +584,46 @@ export default function ThoughtUnitReader() {
   // Rule: if visualAnchors is empty, render zero highlights — no fallback.
   const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
 
+  // savedHighlightAnchors: highlights persisted via RightPanel "Save to NoteLab" /
+  // "Save to Recall" actions (lib/highlights/savedHighlightsStore.ts), loaded for the
+  // active book/page. Merged into finalHighlightAnchors below so a saved item's source
+  // anchor renders in the LeftPanel even if the live studyModel for this visit differs.
+  const [savedHighlightAnchors, setSavedHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
+
   // Ref mirrors currentPageRole (declared later via useActivePageIntelligence) so the
   // finalHighlightAnchors effect can read it without a TDZ TypeScript error.
   const currentPageRoleRef = useRef<string | null>(null);
 
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
+
+    // Ground saved highlights (from RightPanel "Save to NoteLab" / "Save to Recall")
+    // against this page's text using the same exact/normalized/semantic-recovery
+    // fallback matching as live anchors. Anchors that fail grounding are still
+    // included as a last resort so a saved highlight is never silently dropped.
+    const groundSavedAnchors = (text: string): SynthHighlightAnchor[] => {
+      if (!savedHighlightAnchors.length) return [];
+      const sanitizedSaved = sanitizeHighlightAnchors(savedHighlightAnchors);
+      const groundedSaved = groundHighlightAnchors(sanitizedSaved, text);
+      const groundedKeys = new Set(groundedSaved.map(a => a.groundedText.toLowerCase().trim()));
+      const fromGrounded = groundedSaved.map((a) => ({
+        text:       a.groundedText,
+        anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
+        reason:     a.reason,
+        spanStart:  a.spanStart ?? null,
+        spanEnd:    a.spanEnd ?? null,
+      }));
+      const fallback = sanitizedSaved
+        .filter(a => !groundedKeys.has(a.text.toLowerCase().trim()))
+        .map((a) => ({
+          text:       a.text,
+          anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
+          reason:     a.reason,
+          spanStart:  a.spanStart ?? null,
+          spanEnd:    a.spanEnd ?? null,
+        }));
+      return [...fromGrounded, ...fallback];
+    };
 
     // ── No studyModel (loading) — keep existing highlights until new model arrives ──
     if (!currentPageStudyModel) {
@@ -613,10 +648,13 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    // ── Stale model for wrong page — clear ─────────────────────────────────
+    // ── Stale model for wrong page — clear live anchors, keep saved highlights ──
     if (currentPageStudyModel.page !== currentPage) {
-      setFinalHighlightAnchors([]);
+      const savedGrounded = groundSavedAnchors(pageText);
+      setFinalHighlightAnchors(savedGrounded);
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
+      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "stale-page" });
+      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
@@ -675,7 +713,10 @@ export default function ThoughtUnitReader() {
     if (NON_INSTRUCTIONAL_TYPES.has(pageType ?? "")) {
       console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "OpenAI pageType confirmed non-instructional", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "openai-non-instructional-type", pageType });
-      setFinalHighlightAnchors([]);
+      const savedGrounded = groundSavedAnchors(pageText);
+      setFinalHighlightAnchors(savedGrounded);
+      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "openai-non-instructional-type" });
+      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
@@ -683,7 +724,10 @@ export default function ThoughtUnitReader() {
     if (!aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
       console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "local pageRole + AI found zero anchors", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
-      setFinalHighlightAnchors([]);
+      const savedGrounded = groundSavedAnchors(pageText);
+      setFinalHighlightAnchors(savedGrounded);
+      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "local-page-role-structural" });
+      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
@@ -700,10 +744,13 @@ export default function ThoughtUnitReader() {
 
     console.log("[VISUAL_ANCHOR_COUNT_BEFORE_SKIP]", { page: currentPage, count: visualAnchors.length });
 
-    // ── Empty visualAnchors — no highlights, no fallback ───────────────────
+    // ── Empty visualAnchors — no live highlights; saved highlights still render ──
     if (!visualAnchors.length) {
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "visual-anchors-empty", note: "AI returned no highlight anchors for this page" });
-      setFinalHighlightAnchors([]);
+      const savedGrounded = groundSavedAnchors(pageText);
+      setFinalHighlightAnchors(savedGrounded);
+      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "visual-anchors-empty" });
+      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
@@ -772,14 +819,29 @@ export default function ThoughtUnitReader() {
       finalCount:    groundedAnchors.length,
     });
 
-    setFinalHighlightAnchors(groundedAnchors as SynthHighlightAnchor[]);
+    // ── Merge in saved highlights from RightPanel "Save to NoteLab" / "Save to Recall" ──
+    // Saved highlights are deduped against live anchors by normalized text; saved
+    // entries are checked first so a previously-saved highlight is never dropped.
+    const savedGrounded = groundSavedAnchors(pageText);
+    const seenTexts = new Set<string>();
+    const merged: SynthHighlightAnchor[] = [];
+    for (const a of [...savedGrounded, ...(groundedAnchors as SynthHighlightAnchor[])]) {
+      const key = (a.text ?? "").toLowerCase().trim();
+      if (!key || seenTexts.has(key)) continue;
+      seenTexts.add(key);
+      merged.push(a);
+    }
+
+    setFinalHighlightAnchors(merged);
+    console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: groundedAnchors.length, savedCount: savedGrounded.length, mergedCount: merged.length });
+    console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: merged.length });
     console.log("[HIGHLIGHT_SOURCE_AUDIT]", {
       page:                       currentPage,
-      source:                     "ONLY finalStudyModel.visualAnchors",
+      source:                     "finalStudyModel.visualAnchors + savedHighlightsStore",
       legacyHighlightTargets:     "removed",
       legacyHighlightNeighborhoods: "removed",
       legacyPriorityHighlights:   "not-passed-to-render",
-      finalAnchors:               groundedAnchors.length,
+      finalAnchors:               merged.length,
     });
     console.log("[LEFT_PANEL_LEGACY_DISABLED]", {
       page: currentPage,
@@ -787,9 +849,9 @@ export default function ThoughtUnitReader() {
     });
     console.log("[LEFT_PANEL_FALLBACK_DISABLED]", {
       page: currentPage,
-      note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors only",
+      note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors + savedHighlightsStore only",
     });
-  }, [currentPageStudyModel, currentPage, pageTextByPage]);
+  }, [currentPageStudyModel, currentPage, pageTextByPage, savedHighlightAnchors]);
 
   const whiteboardSteps = useMemo(
     () => currentPageStudyModel ? buildWhiteboardStepsFromStudyModel(currentPageStudyModel) : [],
@@ -953,6 +1015,26 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+
+  // Load saved highlights (from RightPanel "Save to NoteLab" / "Save to Recall")
+  // for the active book/page so they can be merged into finalHighlightAnchors below.
+  useEffect(() => {
+    let cancelled = false;
+    getHighlightsForPage(bookId, currentPage).then((saved: SavedHighlight[]) => {
+      if (cancelled) return;
+      console.log("[SAVED_HIGHLIGHTS_LOADED]", { bookId, page: currentPage, count: saved.length });
+      setSavedHighlightAnchors(saved.map((h) => ({
+        text: h.text,
+        anchorType: h.anchorType as SynthHighlightAnchor["anchorType"],
+        reason: h.reason,
+        spanStart: null,
+        spanEnd: null,
+      })));
+    }).catch((e) => {
+      console.warn("[SAVED_HIGHLIGHTS_LOAD_ERROR]", { bookId, page: currentPage, error: String(e) });
+    });
+    return () => { cancelled = true; };
+  }, [bookId, currentPage]);
 
   // Clear stale left-panel highlight state on page or book identity change so the
   // overlay never shows highlights computed for a different page/book.
