@@ -18,7 +18,6 @@ import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import PatternView from "@/components/PatternView";
 // NoteLabView removed — replaced by UltraNotesList (components/notelab/UltraNotesList.tsx)
 import CleanHybridReader from "@/components/CleanHybridReader";
-import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
 import NotesList from "@/components/NotesList";
 
@@ -1632,14 +1631,13 @@ export default function ThoughtUnitReader() {
      🔹 Explain This Step — contextual chatbox triggered from a LeftPanel selection
   ========================================================================= */
   const handleOpenExplainStep = useCallback(() => {
-    const text = sel.selectionText?.trim();
-    if (!text) return;
+    const text = sel.selectionText?.trim() ?? "";
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
     setExplainStepContext({
       selectedText: text,
       pageText,
-      surroundingParagraph: findSurroundingParagraph(pageText, text),
+      surroundingParagraph: text ? findSurroundingParagraph(pageText, text) : pageText.slice(0, 800),
       pageThesis: sm?.pageThesis ?? null,
       studyNotes: sm?.studyNotes ?? null,
       conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
@@ -4009,16 +4007,16 @@ export default function ThoughtUnitReader() {
             </button>
           )}
 
-          {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection */}
+          {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection,
+              or for the current page/thought-unit when nothing is selected */}
           <button
             onClick={handleOpenExplainStep}
-            disabled={!sel.selectionText?.trim()}
-            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${
+            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
               explainStepContext
                 ? "bg-[rgba(99,102,241,0.45)] border-indigo-400/60"
                 : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
             }`}
-            title={sel.selectionText?.trim() ? "Explain This Step — open chatbox for the selected text" : "Select text in the reader first"}
+            title={sel.selectionText?.trim() ? "Explain This Step — open chatbox for the selected text" : "Explain This Step — ask about the current page"}
           >
             <div className="flex items-center gap-2">
               <span className="text-lg">💬</span>
@@ -4312,29 +4310,6 @@ export default function ThoughtUnitReader() {
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>
-      )}
-
-      {/* Highlight Popup (unified selection) */}
-      {sel.popupPosition && sel.selectionText && (
-        <HighlightPopup
-          position={sel.popupPosition}
-          selectionText={sel.selectionText}
-          onCreateNote={() => handleOpenRightBrainNote(sel.selectionText)}
-          onCreateDetailedNote={async () => {
-            const note = await sel.createDetailedNote({
-              discipline: "dentistry",
-              style: "detailed",
-            });
-            if (note) {
-              await handleOpenRightBrainNote(note, undefined, "highYield");
-            } else {
-              console.log("📝 Note creation completed");
-            }
-          }}
-          onAddFlashcard={() => console.log("Flashcard created")}
-          onAttachLink={() => setShowLinkModal(true)}
-          onClose={() => sel.clearSelection()}
-        />
       )}
 
       {/* Explain This Step — contextual chatbox for the active selection */}

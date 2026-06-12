@@ -97,14 +97,27 @@ export default function ExplainStepChat({
     }
   };
 
-  // Auto-send the initial "explain this" turn on open
+  // Auto-send the initial "explain this" turn on open. If nothing is
+  // selected, skip the API call and just prompt the student for what
+  // they'd like explained on this page.
   useEffect(() => {
     if (initialSentRef.current) return;
     initialSentRef.current = true;
+    const selected = context.selectedText.trim();
+    if (!selected) {
+      setTurns([
+        {
+          id: "a-0",
+          role: "assistant",
+          content: `No text is selected. What would you like explained on page ${context.pageNumber}?`,
+        },
+      ]);
+      return;
+    }
     const firstTurn: ChatTurn = {
       id: "u-0",
       role: "user",
-      content: `Explain this step: "${context.selectedText.trim().slice(0, 300)}"`,
+      content: `Explain this step: "${selected.slice(0, 300)}"`,
     };
     setTurns([firstTurn]);
     sendTurn([firstTurn]);
@@ -148,7 +161,9 @@ export default function ExplainStepChat({
           <div className="min-w-0">
             <div className="text-sm font-semibold leading-tight">Explain This Step</div>
             <div className="text-xs text-gray-400 truncate max-w-[260px]">
-              “{context.selectedText.trim().replace(/\s+/g, " ").slice(0, 80)}”
+              {context.selectedText.trim()
+                ? `"${context.selectedText.trim().replace(/\s+/g, " ").slice(0, 80)}"`
+                : `Page ${context.pageNumber} context`}
             </div>
           </div>
         </div>
@@ -176,7 +191,7 @@ export default function ExplainStepChat({
             {t.content}
           </div>
         ))}
-        {turns.length === 1 && !loading && (
+        {turns.length === 1 && turns[0]?.id === "u-0" && !loading && (
           <div className="mr-8 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-400">
             Reading the selected step…
           </div>

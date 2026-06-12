@@ -60,20 +60,20 @@ function buildSystemPrompt(body: ExplainStepRequest): string {
       ].filter(Boolean).join("\n")
     : "";
 
+  const hasSelection = Boolean(body.selectedText?.trim());
+
   return `You are "Explain This Step" — a tutor embedded inside a PDF reader.
 
-A student selected a specific piece of text, equation, or step on the page below and wants it explained clearly and simply. Stay grounded in the book's page content first. You may add outside (web) context only to enrich the explanation, never to replace or contradict the page content.
+${hasSelection
+    ? "A student selected a specific piece of text, equation, or step on the page below and wants it explained clearly and simply."
+    : "The student has not selected any specific text. They will ask about the current page / thought-unit context below — answer their question directly using that context."} Stay grounded in the book's page content first. You may add outside (web) context only to enrich the explanation, never to replace or contradict the page content.
 
 DOCUMENT: ${body.documentTitle ?? "(unknown)"}
 PAGE: ${body.pageNumber ?? "unknown"}
 PAGE THESIS: ${body.pageThesis ?? "(none)"}
 ${noteLines ? `\nRIGHT PANEL NOTES:\n${noteLines}\n` : ""}
 ${body.conceptTitles?.length ? `\nCONCEPT BLOCKS ON THIS PAGE: ${body.conceptTitles.join(", ")}\n` : ""}
-SELECTED TEXT / STEP:
-"""
-${body.selectedText}
-"""
-
+${hasSelection ? `SELECTED TEXT / STEP:\n"""\n${body.selectedText}\n"""\n` : ""}
 SURROUNDING PARAGRAPH / THOUGHT UNIT:
 """
 ${(body.surroundingParagraph || "").slice(0, 1500)}
@@ -85,7 +85,9 @@ ${(body.pageText || "").slice(0, 3000)}
 """
 
 Rules:
-- Explain the SELECTED step concretely, referencing the actual numbers/terms/words in it. Never give a generic definition when a worked calculation is selected — walk through how the numbers were derived.
+- ${hasSelection
+    ? "Explain the SELECTED step concretely, referencing the actual numbers/terms/words in it. Never give a generic definition when a worked calculation is selected — walk through how the numbers were derived."
+    : "Answer the student's question using the page/thought-unit context above. If their question is vague, ask a brief clarifying question about what on this page they want explained."}
 - Keep answers short, clear, and conversational — a few sentences, not an essay.
 - If the student asks a follow-up ("explain simpler", "give me an example", "make a recall card from this"), respond directly to that request using the same grounded context.
 - Never mention "OpenAI", "Claude", "the study tool", or internal system names.
@@ -99,7 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
 
   const body = req.body as ExplainStepRequest;
-  if (!body?.selectedText || !Array.isArray(body.messages) || body.messages.length === 0) {
+  if (typeof body?.selectedText !== "string" || !Array.isArray(body.messages) || body.messages.length === 0) {
     return res.status(400).json({ reply: "", provider: "openai", usedWebSearch: false, error: "selectedText and messages are required" });
   }
 
