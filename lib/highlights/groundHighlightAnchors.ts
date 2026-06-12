@@ -154,6 +154,83 @@ function scoreSentenceMatch(anchor: RawAnchor, sentence: string): number {
   return Math.max(0, score);
 }
 
+function wordCount(s: string): number {
+  return s.split(/\s+/).filter(Boolean).length;
+}
+
+function firstWords(s: string, n: number): string {
+  return s.split(/\s+/).filter(Boolean).slice(0, n).join(' ');
+}
+
+function lastWords(s: string, n: number): string {
+  const words = s.split(/\s+/).filter(Boolean);
+  return words.slice(Math.max(0, words.length - n)).join(' ');
+}
+
+// Ratio of the smaller sentence's key terms that also appear in the other sentence —
+// used to decide whether a neighboring sentence continues the same thought.
+function termOverlapRatio(a: string, b: string): number {
+  const termsA = new Set(extractKeyTerms(a));
+  const termsB = extractKeyTerms(b);
+  if (termsA.size === 0 || termsB.length === 0) return 0;
+  const matched = termsB.filter(t => termsA.has(t)).length;
+  return matched / Math.min(termsA.size, termsB.length);
+}
+
+// If `core` (at `sentences[idx]`) is short, pull in an adjacent, topically-related
+// sentence (high key-term overlap) so a highlight reads as a complete thought unit
+// rather than one clipped line. Returns spanStart/spanEnd covering both sentences,
+// or undefined when no neighbor qualifies.
+function mergeWithNeighbor(
+  sentences: string[],
+  idx: number,
+): { spanStart: string; spanEnd: string } | undefined {
+  const core = sentences[idx];
+  if (wordCount(core) > 14) return undefined;
+
+  const next = sentences[idx + 1];
+  const prev = sentences[idx - 1];
+
+  if (next && termOverlapRatio(core, next) >= 0.2) {
+    return { spanStart: firstWords(core, 5), spanEnd: lastWords(next, 5) };
+  }
+  if (prev && termOverlapRatio(core, prev) >= 0.2) {
+    return { spanStart: firstWords(prev, 5), spanEnd: lastWords(core, 5) };
+  }
+  return undefined;
+}
+
+/**
+ * Expand a verbatim-matched span to its containing sentence ("thought unit") so a
+ * short phrase like "Diagnosis" highlights the whole sentence it belongs to instead
+ * of just the matched word. If that sentence is itself short and a neighboring
+ * sentence continues the same idea (high key-term overlap), extend the highlight
+ * span across both via spanStart/spanEnd.
+ *
+ * Returns the matched text unchanged when no containing sentence can be found
+ * (e.g. the match spans multiple sentences already) or when the match already
+ * covers most of its sentence.
+ */
+function expandToThoughtUnit(
+  matchedText: string,
+  sentences: string[],
+): { groundedText: string; spanStart?: string; spanEnd?: string } {
+  const normedMatch = normText(matchedText);
+  const idx = sentences.findIndex(s => normText(s).includes(normedMatch));
+
+  if (idx === -1) return { groundedText: matchedText };
+
+  const core = sentences[idx];
+
+  // Match already covers (most of) the sentence — nothing to expand.
+  if (wordCount(matchedText) >= wordCount(core) * 0.9) {
+    return { groundedText: matchedText };
+  }
+
+  const span = mergeWithNeighbor(sentences, idx);
+  return span ? { groundedText: core, ...span } : { groundedText: core };
+}
+
 /**
  * Ground AI-generated anchors against the current page's raw text.
  *
@@ -192,19 +269,42 @@ export function groundHighlightAnchors(
     // ── Stage 1: Exact substring match (case-sensitive) ──────────────────
     // Skip exact/normalized echo when the anchor text itself is a header artifact —
     // force semantic recovery to a clean body sentence instead.
+    // Anchors that already carry an explicit AI-provided span are trusted as-is —
+    // don't second-guess a multi-sentence span the model already chose.
+    const hasExplicitSpan = !!(anchor.spanStart && anchor.spanEnd);
+
     if (!anchorIsHeader && cleanedPage.includes(anchor.text)) {
-      console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
-      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, method: "exact" });
-      grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "exact", confidence: 1.0 });
+      const expansion = hasExplicitSpan
+        ? { groundedText: anchor.text }
+        : expandToThoughtUnit(anchor.text, sentences);
+      console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
+      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "exact" });
+      grounded.push({
+        ...anchor,
+        ...(expansion.spanStart ? { spanStart: expansion.spanStart, spanEnd: expansion.spanEnd } : {}),
+        groundedText: expansion.groundedText,
+        groundMethod: "exact",
+        confidence: 1.0,
+      });
       continue;
     }
 
     // ── Stage 2: Normalized match (ligatures, smart quotes, dashes, whitespace)
     if (!anchorIsHeader && normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
-      console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
-      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, method: "normalized" });
-      // Keep anchor.text — SmartPDFViewer's normForMatch will find it via normalized comparison
-      grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "normalized", confidence: 0.95 });
+      const expansion = hasExplicitSpan
+        ? { groundedText: anchor.text }
+        : expandToThoughtUnit(anchor.text, sentences);
+      console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
+      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "normalized" });
+      // Keep anchor.text (or its expanded sentence) — SmartPDFViewer's normForMatch
+      // will find it via normalized comparison
+      grounded.push({
+        ...anchor,
+        ...(expansion.spanStart ? { spanStart: expansion.spanStart, spanEnd: expansion.spanEnd } : {}),
+        groundedText: expansion.groundedText,
+        groundMethod: "normalized",
+        confidence: 0.95,
+      });
       continue;
     }
 
@@ -249,8 +349,13 @@ export function groundHighlightAnchors(
         from:   anchor.text.slice(0, 50),
       });
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
+      const bestIdx = sentences.indexOf(bestSentence);
+      const span = !(anchor.spanStart && anchor.spanEnd) && bestIdx !== -1
+        ? mergeWithNeighbor(sentences, bestIdx)
+        : undefined;
       grounded.push({
         ...anchor,
+        ...(span ? { spanStart: span.spanStart, spanEnd: span.spanEnd } : {}),
         text:         bestSentence, // replace semantic text with grounded text
         groundedText: bestSentence,
         groundMethod: "recovered",
