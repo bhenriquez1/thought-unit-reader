@@ -3452,7 +3452,7 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
+              <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
                 {console.log("[LEFT_PANEL_INPUT_SOURCES]", {
                   source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
