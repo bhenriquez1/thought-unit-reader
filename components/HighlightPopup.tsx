@@ -21,6 +21,10 @@ interface HighlightPopupProps {
 
   onAddFlashcard: () => void;
   onAttachLink: () => void;
+
+  /** Opens the contextual "Explain This Step" chatbox for the current selection. */
+  onExplainStep?: () => void;
+
   onClose: () => void;
 
   /** ms before auto-close. Set 0 to disable. Default: 5000 */
@@ -35,6 +39,7 @@ export default function HighlightPopup({
   creatingDetailedNote,
   onAddFlashcard,
   onAttachLink,
+  onExplainStep,
   onClose,
   autoCloseMs = 5000,
 }: HighlightPopupProps) {
@@ -188,6 +193,18 @@ export default function HighlightPopup({
           >
             🔗
           </button>
+
+          {onExplainStep && (
+            <button
+              onClick={onExplainStep}
+              className="hover:text-purple-400 transition-colors disabled:opacity-50"
+              title="Explain This Step"
+              aria-label="Explain This Step"
+              disabled={isBusy}
+            >
+              💬
+            </button>
+          )}
 
           <div className="flex-1" />
 

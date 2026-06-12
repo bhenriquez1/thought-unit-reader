@@ -55,9 +55,12 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, getAllRecallSets } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
+import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
+import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
+import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/ExplainStepChat";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -145,6 +148,21 @@ type StickyNote = { pageNumber: number; content: string };
 /* ----------------------- helpers ----------------------- */
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** Find the paragraph/thought-unit in pageText that contains the selected text. */
+function findSurroundingParagraph(pageText: string, selectedText: string): string {
+  if (!pageText) return selectedText;
+  const needle = selectedText.trim().slice(0, 60);
+  if (!needle) return pageText.slice(0, 800);
+  const paragraphs = pageText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const match = paragraphs.find((p) => p.includes(needle));
+  if (match) return match;
+  const idx = pageText.indexOf(needle);
+  if (idx === -1) return pageText.slice(0, 800);
+  const start = Math.max(0, idx - 400);
+  const end = Math.min(pageText.length, idx + needle.length + 400);
+  return pageText.slice(start, end);
 }
 
 function toYouTubeEmbed(url: string): string | null {
@@ -541,6 +559,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
+  const [explainStepContext, setExplainStepContext] = useState<ExplainStepContext | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
@@ -1393,6 +1412,110 @@ export default function ThoughtUnitReader() {
     setSessionCardsCount((n) => n + 1);
     setRecallLabRefreshKey((k) => k + 1);
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
+
+  /* =========================================================================
+     🔹 Explain This Step — contextual chatbox triggered from a LeftPanel selection
+  ========================================================================= */
+  const handleOpenExplainStep = useCallback(() => {
+    const text = sel.selectionText?.trim();
+    if (!text) return;
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setExplainStepContext({
+      selectedText: text,
+      pageText,
+      surroundingParagraph: findSurroundingParagraph(pageText, text),
+      pageThesis: sm?.pageThesis ?? null,
+      studyNotes: sm?.studyNotes ?? null,
+      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+    });
+    sel.clearSelection();
+  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile]);
+
+  const handleExplainStepSaveNote = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const note = buildUltraNote(
+      bookId,
+      ctx.pageNumber,
+      `Explain This Step — p.${ctx.pageNumber}`,
+      explanation,
+      [],
+      uploadedFile?.name,
+      undefined,
+      ctx.pageThesis ?? undefined,
+    );
+    note.sections = [
+      { label: "Question", content: question },
+      { label: "Explanation", content: explanation },
+    ];
+    await saveUltraNote(note);
+    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber });
+    setNoteLabRefreshKey((k) => k + 1);
+  }, [explainStepContext, bookId, uploadedFile]);
+
+  const handleExplainStepCreateRecallCard = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const card: RecallCard = {
+      id: `card-explain-${Date.now()}`,
+      type: "core",
+      front: question,
+      back: explanation,
+      reviewCount: 0,
+      isMissed: false,
+    };
+    const set: RecallSet = {
+      id: stableRecallId(bookId, ctx.pageNumber, `explain-${Date.now()}`),
+      bookId,
+      bookTitle: uploadedFile?.name,
+      sourceLabel: "right-panel",
+      pageNumber: ctx.pageNumber,
+      subject: inferSubject(bookId),
+      topic: `Explain This Step — p.${ctx.pageNumber}`,
+      cards: [card],
+      createdAt: Date.now(),
+    };
+    await saveRecallSet(set);
+    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber });
+    setLastRecallSetId(set.id);
+    setRecallLabRefreshKey((k) => k + 1);
+  }, [explainStepContext, bookId, uploadedFile]);
+
+  const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string) => {
+    const ctx = explainStepContext;
+    if (!ctx) return;
+    const entry = `${question} — ${explanation}`;
+    const existing = await getStudyGuidesByBook(bookId);
+    if (existing.length > 0) {
+      const guide = existing[0];
+      const updated: StudyGuideRecord = { ...guide, mustKnow: [...guide.mustKnow, entry] };
+      await saveStudyGuide(updated);
+      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: updated.id, page: ctx.pageNumber, mode: "append" });
+    } else {
+      const guide: StudyGuideRecord = {
+        id: `sg-${bookId}-${Date.now()}`,
+        bookId,
+        mode: "topstudent",
+        chapterTitle: uploadedFile?.name ?? "Study Guide",
+        topic: `Page ${ctx.pageNumber}`,
+        priority: "Medium",
+        mustKnow: [entry],
+        datFacts: [],
+        mechanisms: [],
+        traps: [],
+        recallQuestions: [],
+        memoryHooks: [],
+        dailyTasks: [],
+        sourceLabels: ["Explain This Step"],
+        createdAt: Date.now(),
+      };
+      await saveStudyGuide(guide);
+      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: guide.id, page: ctx.pageNumber, mode: "create" });
+    }
+  }, [explainStepContext, bookId, uploadedFile]);
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -4381,7 +4504,19 @@ export default function ThoughtUnitReader() {
           }}
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
+          onExplainStep={handleOpenExplainStep}
           onClose={() => sel.clearSelection()}
+        />
+      )}
+
+      {/* Explain This Step — contextual chatbox for the active selection */}
+      {explainStepContext && (
+        <ExplainStepChat
+          context={explainStepContext}
+          onClose={() => setExplainStepContext(null)}
+          onSaveNote={handleExplainStepSaveNote}
+          onCreateRecallCard={handleExplainStepCreateRecallCard}
+          onAddToStudyGuide={handleExplainStepAddToStudyGuide}
         />
       )}
 
