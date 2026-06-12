@@ -1317,6 +1317,23 @@ export default function ThoughtUnitReader() {
     window.setTimeout(() => setFocusSnippet(snippet), 0);
   }, [resolveEvidenceId]);
 
+  // Thought Unit card click — "Read From Click": focuses/highlights the evidence
+  // (same as RightPanel card clicks) AND starts speech reading from that thought
+  // unit. Highlights themselves are always visible (driven by finalHighlightAnchors,
+  // not by clicks) — clicking only controls speech focus/playback.
+  const playThoughtUnit = useCallback((snippet: string, evidenceId?: string) => {
+    focusEvidence(snippet, evidenceId);
+    speechPanelRef.current?.playFromSnippet(snippet);
+  }, [focusEvidence]);
+
+  // Clicking a highlighted PDF overlay rect — "Read From Click": focuses the rect
+  // (existing glow behavior) AND starts speech from that thought unit's text.
+  const onPdfHighlightFocus = useCallback((id: string) => {
+    setFocusedEvidenceId(id);
+    const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
+    if (anchor?.text) speechPanelRef.current?.playFromSnippet(anchor.text);
+  }, [finalHighlightAnchors]);
+
   useEffect(() => {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
@@ -3343,8 +3360,8 @@ export default function ThoughtUnitReader() {
                   pageTruthKey={pageTruthKey}
                   studyModel={currentPageStudyModel}
                   focusedEvidenceId={focusedEvidenceId}
-                  onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
-                  onThoughtUnitClick={focusEvidence}
+                  onEvidenceFocus={onPdfHighlightFocus}
+                  onThoughtUnitClick={playThoughtUnit}
                   onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
