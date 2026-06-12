@@ -1317,10 +1317,10 @@ export default function ThoughtUnitReader() {
     window.setTimeout(() => setFocusSnippet(snippet), 0);
   }, [resolveEvidenceId]);
 
-  // Thought Unit card click — "Read From Click": focuses/highlights the evidence
-  // (same as RightPanel card clicks) AND starts speech reading from that thought
-  // unit. Highlights themselves are always visible (driven by finalHighlightAnchors,
-  // not by clicks) — clicking only controls speech focus/playback.
+  // RightPanel card click — "Read From Click": focuses/highlights the evidence
+  // in the PDF AND starts speech reading from that thought unit. Highlights
+  // themselves are always visible (driven by finalHighlightAnchors, not by
+  // clicks) — clicking only controls speech focus/playback.
   const playThoughtUnit = useCallback((snippet: string, evidenceId?: string) => {
     focusEvidence(snippet, evidenceId);
     speechPanelRef.current?.playFromSnippet(snippet);
@@ -3358,10 +3358,8 @@ export default function ThoughtUnitReader() {
                   aiHighlightAnchors={safeHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
-                  studyModel={currentPageStudyModel}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={onPdfHighlightFocus}
-                  onThoughtUnitClick={playThoughtUnit}
                   onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
@@ -3410,7 +3408,7 @@ export default function ThoughtUnitReader() {
                   trySwitchShellTab("study", "study");
                 }}
                 onEvidenceClick={(snippet, evidenceId) => {
-                  focusEvidence(snippet, evidenceId);
+                  playThoughtUnit(snippet, evidenceId);
                 }}
                 onStudyModelReady={(model, key) => {
                     console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
