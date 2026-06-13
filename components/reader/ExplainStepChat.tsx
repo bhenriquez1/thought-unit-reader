@@ -1,10 +1,10 @@
 // components/reader/ExplainStepChat.tsx
-// "Explain This Step" — a contextual chatbox anchored to the current selection.
+// "Explain This Step" — a centered AI Tutor modal anchored to the current selection.
 //
-// Opens when the student clicks "Explain This Step" on a LeftPanel selection.
+// Opens when the student clicks "Explain This Step" in the left toolbar.
 // The selected text + page context is sent automatically as the first turn.
-// Follow-up questions reuse the same context. Each assistant reply can be
-// saved into NoteLab, RecallLab, or Study Guide Lab.
+// Follow-up questions reuse the same context. The latest answer can be
+// saved into NoteLab, RecallLab, or Study Guide Lab via a single "Save" menu.
 
 "use client";
 
@@ -33,11 +33,42 @@ interface ExplainStepChatProps {
 
 type ChatTurn = ExplainStepMessage & { id: string };
 
-const QUICK_PROMPTS = [
-  "Explain this simpler",
-  "Give me an example",
-  "Make a recall card from this",
+const QUICK_CHIPS: { label: string; prompt: string }[] = [
+  { label: "Simpler", prompt: "Explain this simpler" },
+  { label: "Example", prompt: "Give me an example" },
+  { label: "Visual Analogy", prompt: "Give me a visual analogy for this" },
+  { label: "Quiz Me", prompt: "Quiz me on this" },
 ];
+
+// Section headers the AI Tutor prompt is instructed to use.
+const SECTION_MARKERS = ["📌", "🔍", "💡", "⚠️", "❓"];
+
+interface AnswerSection {
+  header: string;
+  body: string;
+}
+
+/** Split a structured AI Tutor reply into header/body sections for display. */
+function parseSections(content: string): AnswerSection[] {
+  const lines = content.split("\n");
+  const sections: AnswerSection[] = [];
+  let current: { header: string; body: string[] } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isHeader = SECTION_MARKERS.some((marker) => trimmed.startsWith(marker));
+    if (isHeader) {
+      if (current) sections.push({ header: current.header, body: current.body.join("\n").trim() });
+      current = { header: trimmed, body: [] };
+    } else if (current) {
+      current.body.push(line);
+    } else {
+      current = { header: "", body: [line] };
+    }
+  }
+  if (current) sections.push({ header: current.header, body: current.body.join("\n").trim() });
+  return sections.filter((s) => s.header || s.body);
+}
 
 export default function ExplainStepChat({
   context,
@@ -51,6 +82,7 @@ export default function ExplainStepChat({
   const [loading, setLoading] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [savingAction, setSavingAction] = useState<"note" | "recall" | "studyguide" | null>(null);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
@@ -136,6 +168,7 @@ export default function ExplainStepChat({
 
   const runSave = async (kind: "note" | "recall" | "studyguide") => {
     if (!lastAnswer || savingAction) return;
+    setShowSaveMenu(false);
     setSavingAction(kind);
     try {
       if (kind === "note") await onSaveNote(lastQuestion, lastAnswer);
@@ -147,139 +180,172 @@ export default function ExplainStepChat({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.97 }}
-      transition={{ type: "spring", stiffness: 350, damping: 28, mass: 0.8 }}
-      className="fixed bottom-6 right-6 z-[10000] w-[min(420px,92vw)] h-[min(560px,80vh)] flex flex-col bg-gray-900 text-white rounded-xl shadow-2xl border border-gray-700 overflow-hidden"
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.78)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/60 bg-gray-950/60">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg">💬</span>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold leading-tight">Explain This Step</div>
-            <div className="text-xs text-gray-400 truncate max-w-[260px]">
-              {context.selectedText.trim()
-                ? `"${context.selectedText.trim().replace(/\s+/g, " ").slice(0, 80)}"`
-                : `Page ${context.pageNumber} context`}
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 350, damping: 28, mass: 0.8 }}
+        className="relative bg-[#0d1424] text-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-700/60"
+        style={{ width: "min(94vw, 760px)", height: "min(88vh, 720px)" }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-lg">🧠</span>
+            <span className="text-sm font-semibold tracking-wide text-gray-200">Explain This Step</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
+            aria-label="Close Explain This Step"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Selected step preview */}
+        {context.selectedText.trim() && (
+          <div className="px-5 py-2 border-b border-gray-700/60 shrink-0">
+            <div className="uppercase tracking-wide text-[10px] text-gray-500 mb-1">Selected Step</div>
+            <div className="text-sm text-gray-300 line-clamp-2">
+              “{context.selectedText.trim().replace(/\s+/g, " ").slice(0, 220)}”
             </div>
           </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="hover:text-red-400 transition-colors text-sm px-1"
-          title="Close"
-          aria-label="Close Explain This Step"
-        >
-          ✖
-        </button>
-      </div>
+        )}
 
-      {/* Messages */}
-      <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-sm">
-        {turns.filter((t) => t.id !== "u-0").map((t) => (
-          <div
-            key={t.id}
-            className={
-              t.role === "user"
-                ? "self-end ml-8 bg-blue-600/30 border border-blue-500/40 rounded-lg px-3 py-2"
-                : "mr-8 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+        {/* Messages */}
+        <div ref={listRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-sm">
+          {turns.filter((t) => t.id !== "u-0").map((t) => {
+            if (t.role === "user") {
+              return (
+                <div key={t.id} className="flex justify-end">
+                  <div className="max-w-[85%] bg-blue-600/30 border border-blue-500/40 rounded-lg px-3 py-2">
+                    {t.content}
+                  </div>
+                </div>
+              );
             }
-          >
-            {t.content}
-          </div>
-        ))}
-        {turns.length === 1 && turns[0]?.id === "u-0" && !loading && (
-          <div className="mr-8 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-400">
-            Reading the selected step…
-          </div>
-        )}
-        {loading && (
-          <div className="mr-8 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-400">
-            Thinking…
-          </div>
-        )}
-        {error && (
-          <div className="mr-8 bg-red-900/40 border border-red-700/60 rounded-lg px-3 py-2 text-red-200">
-            {error}
-          </div>
-        )}
-      </div>
 
-      {/* Save actions */}
-      {lastAnswer && (
-        <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-700/60 bg-gray-950/40 text-xs">
-          <button
-            onClick={() => runSave("note")}
-            disabled={savingAction !== null}
-            className="px-2 py-1 rounded bg-amber-600/20 border border-amber-600/40 hover:bg-amber-600/30 transition-colors disabled:opacity-50"
-          >
-            {savingAction === "note" ? "Saving…" : "📝 Save to NoteLab"}
-          </button>
-          <button
-            onClick={() => runSave("recall")}
-            disabled={savingAction !== null}
-            className="px-2 py-1 rounded bg-green-600/20 border border-green-600/40 hover:bg-green-600/30 transition-colors disabled:opacity-50"
-          >
-            {savingAction === "recall" ? "Saving…" : "🎯 Create Recall Card"}
-          </button>
-          <button
-            onClick={() => runSave("studyguide")}
-            disabled={savingAction !== null}
-            className="px-2 py-1 rounded bg-purple-600/20 border border-purple-600/40 hover:bg-purple-600/30 transition-colors disabled:opacity-50"
-          >
-            {savingAction === "studyguide" ? "Saving…" : "📚 Add to Study Guide"}
-          </button>
-        </div>
-      )}
-
-      {/* Quick prompts */}
-      <div className="flex items-center gap-1.5 px-3 pt-2 flex-wrap">
-        {QUICK_PROMPTS.map((p) => (
-          <button
-            key={p}
-            onClick={() => handleSend(p)}
-            disabled={loading}
-            className="text-xs px-2 py-1 rounded-full bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            {p}
-          </button>
-        ))}
-        <label className="ml-auto flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={useWebSearch}
-            onChange={(e) => setUseWebSearch(e.target.checked)}
-          />
-          Web enrichment
-        </label>
-      </div>
-
-      {/* Input */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
+            const sections = parseSections(t.content);
+            const isStructured = sections.some((s) => s.header);
+            if (!isStructured) {
+              return (
+                <div key={t.id} className="text-gray-200 leading-relaxed">
+                  {t.content}
+                </div>
+              );
             }
-          }}
-          placeholder="Ask a follow-up question…"
-          disabled={loading}
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-        />
-        <button
-          onClick={() => handleSend()}
-          disabled={loading || !input.trim()}
-          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          Send
-        </button>
-      </div>
-    </motion.div>
+
+            return (
+              <div key={t.id} className="divide-y divide-gray-700/60 -mx-1">
+                {sections.map((s, i) => (
+                  <div key={i} className="px-1 py-2.5 first:pt-0 last:pb-0">
+                    {s.header && (
+                      <div className="text-xs font-semibold tracking-wide text-indigo-300 mb-1">
+                        {s.header}
+                      </div>
+                    )}
+                    <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">{s.body}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {turns.length === 1 && turns[0]?.id === "u-0" && !loading && (
+            <div className="text-gray-400">Reading the selected step…</div>
+          )}
+          {loading && <div className="text-gray-400">Thinking…</div>}
+          {error && (
+            <div className="bg-red-900/40 border border-red-700/60 rounded-lg px-3 py-2 text-red-200">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer: quick chips, save menu, input */}
+        <div className="border-t border-gray-700/60 px-5 py-3 space-y-2 shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {QUICK_CHIPS.map((chip) => (
+              <button
+                key={chip.label}
+                onClick={() => handleSend(chip.prompt)}
+                disabled={loading}
+                className="text-xs px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {chip.label}
+              </button>
+            ))}
+            <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useWebSearch}
+                onChange={(e) => setUseWebSearch(e.target.checked)}
+              />
+              Web
+            </label>
+
+            <div className="relative ml-auto">
+              <button
+                onClick={() => setShowSaveMenu((v) => !v)}
+                disabled={!lastAnswer || savingAction !== null}
+                className="text-xs px-3 py-1 rounded-full bg-indigo-600/30 border border-indigo-500/50 hover:bg-indigo-600/40 transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {savingAction ? "Saving…" : "Save"} <span className="text-[10px]">▼</span>
+              </button>
+              {showSaveMenu && (
+                <div className="absolute bottom-full right-0 mb-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden text-xs z-10">
+                  <button
+                    onClick={() => runSave("note")}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors"
+                  >
+                    📝 Save to NoteLab
+                  </button>
+                  <button
+                    onClick={() => runSave("recall")}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors"
+                  >
+                    🎯 Create Recall Card
+                  </button>
+                  <button
+                    onClick={() => runSave("studyguide")}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors"
+                  >
+                    📚 Add to Study Guide
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Ask a follow-up question…"
+              disabled={loading}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={loading || !input.trim()}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }
