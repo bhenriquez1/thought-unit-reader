@@ -16,3 +16,15 @@ export interface ExplainStepStudyNotes {
   reasoningFlow?: string | null;
   examSignal?: string | null;
 }
+
+/** Minimal reference to an existing NoteLab note for this page, for tutor context. */
+export interface ExplainStepNoteRef {
+  topic: string;
+  coreIdea: string;
+}
+
+/** Minimal reference to an existing RecallLab card for this page, for tutor context. */
+export interface ExplainStepRecallRef {
+  front: string;
+  back: string;
+}

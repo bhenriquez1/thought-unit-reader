@@ -12,7 +12,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ExplainStepMessage, ExplainStepStudyNotes } from "@/lib/explainStep/types";
+import type { ExplainStepMessage, ExplainStepStudyNotes, ExplainStepNoteRef, ExplainStepRecallRef } from "@/lib/explainStep/types";
 
 export const config = {
   maxDuration: 30,
@@ -32,6 +32,10 @@ export interface ExplainStepRequest {
   studyNotes?: ExplainStepStudyNotes | null;
   /** Concept block titles already identified for this page */
   conceptTitles?: string[];
+  /** Existing NoteLab notes the student already wrote for this page */
+  relatedNotes?: ExplainStepNoteRef[];
+  /** Existing RecallLab cards the student already has for this page */
+  relatedRecallCards?: ExplainStepRecallRef[];
   documentTitle?: string;
   pageNumber?: number;
   /** Full conversation so far (excluding system prompt) */
@@ -62,6 +66,16 @@ function buildSystemPrompt(body: ExplainStepRequest): string {
 
   const hasSelection = Boolean(body.selectedText?.trim());
 
+  const noteRefLines = (body.relatedNotes || [])
+    .slice(0, 3)
+    .map((n) => `- "${n.topic}": ${n.coreIdea}`)
+    .join("\n");
+
+  const recallRefLines = (body.relatedRecallCards || [])
+    .slice(0, 5)
+    .map((c) => `- Q: ${c.front} / A: ${c.back}`)
+    .join("\n");
+
   return `You are "Explain This Step" — a tutor embedded inside a PDF reader.
 
 ${hasSelection
@@ -73,6 +87,8 @@ PAGE: ${body.pageNumber ?? "unknown"}
 PAGE THESIS: ${body.pageThesis ?? "(none)"}
 ${noteLines ? `\nRIGHT PANEL NOTES:\n${noteLines}\n` : ""}
 ${body.conceptTitles?.length ? `\nCONCEPT BLOCKS ON THIS PAGE: ${body.conceptTitles.join(", ")}\n` : ""}
+${noteRefLines ? `\nSTUDENT'S OWN NOTELAB NOTES FOR THIS PAGE (reference these naturally, e.g. "your notes say..." — never edit or restate them in full):\n${noteRefLines}\n` : ""}
+${recallRefLines ? `\nSTUDENT'S OWN RECALLLAB CARDS FOR THIS PAGE (use these to vary Try It Yourself questions so they don't just repeat existing cards):\n${recallRefLines}\n` : ""}
 ${hasSelection ? `SELECTED TEXT / STEP:\n"""\n${body.selectedText}\n"""\n` : ""}
 SURROUNDING PARAGRAPH / THOUGHT UNIT:
 """
@@ -100,6 +116,7 @@ Rules:
     ? "this is the FIRST message in the conversation, so respond with ONLY 📌 Direct Answer (1-3 concrete sentences) and ❓ Follow-Up (briefly offer to go deeper, e.g. \"Want me to explain why, give an example, or quiz you on this?\"). Do NOT include 🔍, 💡, ⚠️, or 🧠 yet — wait for the student to ask."
     : "respond ONLY to what the student just asked. If they ask \"why\" -> answer with 🔍 Why? (and nothing else unless it truly adds clarity). If they ask for an example -> 💡 Example. If they ask to quiz them or try it themselves -> 🧠 Try It Yourself with exactly ONE short practice question and nothing else. Never dump every section at once — this is a back-and-forth conversation, not a report."}
 - TRY IT YOURSELF FEEDBACK: If your previous turn ended with a 🧠 Try It Yourself question and the student's latest message is their attempt at answering it, start your reply by evaluating that answer (say clearly whether it's correct, partially correct, or incorrect, with a one-line explanation) before anything else.
+- QUIZ SESSIONS: If the student asked to be quizzed ("Quiz Me") and has now answered one or more 🧠 Try It Yourself questions correctly, after grading their latest answer you may pose ONE new, slightly harder 🧠 Try It Yourself question to keep the quiz going — unless they've answered 2-3 in a row, in which case wrap up with a short ❓ encouragement instead of another question.
 - Never mention "OpenAI", "Claude", "the study tool", or internal system names.
 - ${body.useWebSearch ? "If the book context above is not enough to fully answer, you may use web search to add outside context — but always anchor your answer back to the selected page content first." : "Do not use outside/web sources — answer using only the page content and notes above."}`;
 }
