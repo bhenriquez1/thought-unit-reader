@@ -101,8 +101,10 @@ export default function ExplainStepChat({
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const lastQuestion = turns.filter((t) => t.role === "user").slice(-1)[0]?.content ?? context.selectedText;
   const lastAnswer = turns.filter((t) => t.role === "assistant").slice(-1)[0]?.content ?? "";
@@ -112,6 +114,14 @@ export default function ExplainStepChat({
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [turns, loading]);
+
+  // Stop any in-flight speech when the chat closes/unmounts.
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
+  }, []);
 
   useEffect(() => {
     if (turns.length === 0) return;
@@ -202,6 +212,50 @@ export default function ExplainStepChat({
       else next.add(key);
       return next;
     });
+  };
+
+  // "Speak Answer" — reads the tutor's latest reply aloud via /api/tts (OpenAI
+  // TTS, with a browser speechSynthesis fallback when the API is unavailable).
+  // Clicking again while speaking stops playback.
+  const handleSpeakAnswer = async () => {
+    if (speaking) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    if (!lastAnswer) return;
+    setSpeaking(true);
+    try {
+      const cleaned = lastAnswer.replace(/[📌🔍💡⚠️🧠❓]/g, "").trim();
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: cleaned.slice(0, 3000), voice: "alloy", format: "mp3", return: "json" }),
+      });
+      const data = await res.json();
+      if (data?.audioBase64 && !data?.useBrowserSpeech) {
+        const bin = atob(data.audioBase64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
+        const audio = new Audio(URL.createObjectURL(blob));
+        audioRef.current = audio;
+        audio.onended = () => setSpeaking(false);
+        audio.onerror = () => setSpeaking(false);
+        await audio.play();
+      } else if (data?.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new SpeechSynthesisUtterance(data.script || cleaned);
+        utter.onend = () => setSpeaking(false);
+        utter.onerror = () => setSpeaking(false);
+        window.speechSynthesis.speak(utter);
+      } else {
+        setSpeaking(false);
+      }
+    } catch {
+      setSpeaking(false);
+    }
   };
 
   const runSave = async (kind: "note" | "recall" | "studyguide") => {
@@ -368,6 +422,15 @@ export default function ExplainStepChat({
               Web
             </label>
 
+            <button
+              onClick={handleSpeakAnswer}
+              disabled={!lastAnswer}
+              className="text-xs px-3 py-1 rounded-full bg-emerald-600/30 border border-emerald-500/50 hover:bg-emerald-600/40 transition-colors disabled:opacity-40 ml-auto"
+              title={speaking ? "Stop reading the tutor's answer aloud" : "Read the tutor's answer aloud"}
+            >
+              {speaking ? "⏹ Stop" : "🔊 Speak Answer"}
+            </button>
+
             {onVisualize && (
               <button
                 onClick={() =>
@@ -378,7 +441,7 @@ export default function ExplainStepChat({
                   })
                 }
                 disabled={!lastAnswer}
-                className="text-xs px-3 py-1 rounded-full bg-amber-600/30 border border-amber-500/50 hover:bg-amber-600/40 transition-colors disabled:opacity-40 ml-auto"
+                className="text-xs px-3 py-1 rounded-full bg-amber-600/30 border border-amber-500/50 hover:bg-amber-600/40 transition-colors disabled:opacity-40"
                 title="Draw this step out on the Whiteboard"
               >
                 🎨 Visualize on Whiteboard

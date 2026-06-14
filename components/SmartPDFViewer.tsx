@@ -38,6 +38,17 @@ function normForMatch(s: string): string {
 }
 
 /**
+ * Punctuation-stripped variant of normForMatch, matching the normalization
+ * used for AI-highlight-anchor matching (see normForConcat/spanNorm below).
+ * Used as a fallback when exact punctuation-sensitive matching fails, so
+ * snippet/click/speech matching tolerates punctuation differences the same
+ * way AI-anchor matching already does.
+ */
+function stripPunctForMatch(s: string): string {
+  return normForMatch(s).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Finds the best span element in the PDF text layer for the given snippet.
  * Strategy 1: single-span substring (fast path for short snippets / exact OCR).
  * Strategy 2: multi-span sliding window — concatenate 4 adjacent spans and check
@@ -46,15 +57,19 @@ function normForMatch(s: string): string {
  * Strategy 3: token-overlap fallback — find the 4-span window with the highest
  *             fraction of query words (handles OCR variants / reordered text).
  */
-function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement | null {
-  const q = normForMatch(snippet);
+function findSpanForSnippetWithNorm(
+  spans: HTMLElement[],
+  snippet: string,
+  norm: (s: string) => string,
+): HTMLElement | null {
+  const q = norm(snippet);
   if (q.length < 8) return null;
 
   // Strategy 1 — single span substring
   const n40 = q.slice(0, 40);
   const n20 = q.slice(0, 20);
-  const hit1 = spans.find(s => normForMatch(s.textContent || '').includes(n40))
-    ?? spans.find(s => normForMatch(s.textContent || '').includes(n20));
+  const hit1 = spans.find(s => norm(s.textContent || '').includes(n40))
+    ?? spans.find(s => norm(s.textContent || '').includes(n20));
   if (hit1) return hit1;
 
   // Strategy 2 — multi-span window: first 5 words of the query.
@@ -63,7 +78,7 @@ function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement 
   const firstWords = q.split(/\s+/).slice(0, 5).join(' ');
   if (firstWords.length >= 10) {
     for (let i = 0; i < spans.length - 1; i++) {
-      const win = spans.slice(i, i + 10).map(s => normForMatch(s.textContent || '')).join(' ');
+      const win = spans.slice(i, i + 10).map(s => norm(s.textContent || '')).join(' ');
       if (win.includes(firstWords)) return spans[i];
     }
   }
@@ -74,12 +89,26 @@ function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement 
   let bestSpan: HTMLElement | null = null;
   let bestScore = 0;
   for (let i = 0; i < spans.length; i++) {
-    const win = spans.slice(i, i + 10).map(s => normForMatch(s.textContent || '')).join(' ');
+    const win = spans.slice(i, i + 10).map(s => norm(s.textContent || '')).join(' ');
     const overlap = qWords.filter(w => win.includes(w)).length;
     const score = overlap / qWords.length;
     if (score > bestScore) { bestScore = score; bestSpan = spans[i]; }
   }
   return bestScore >= 0.45 ? bestSpan : null;
+}
+
+/**
+ * Finds the best span element in the PDF text layer for the given snippet.
+ * Tries punctuation-sensitive matching first (normForMatch), then falls back
+ * to punctuation-stripped matching (stripPunctForMatch) so snippets that
+ * differ only in punctuation/quoting still resolve — matching the tolerance
+ * AI-highlight-anchor matching already gets via normForConcat/spanNorm.
+ */
+function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement | null {
+  return (
+    findSpanForSnippetWithNorm(spans, snippet, normForMatch)
+    ?? findSpanForSnippetWithNorm(spans, snippet, stripPunctForMatch)
+  );
 }
 
 /** Outline (TOC) shape bubbled up to the page */
