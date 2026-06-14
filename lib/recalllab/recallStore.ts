@@ -8,7 +8,7 @@ import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel
 
 export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank" | "cause-effect" | "application";
 export type CardDifficulty = "easy" | "medium" | "hard";
-export type SourceLabel = "right-panel" | "notelab";
+export type SourceLabel = "right-panel" | "notelab" | "explain-step";
 
 export interface RecallCard {
   id: string;
@@ -16,6 +16,8 @@ export interface RecallCard {
   front: string;
   back: string;
   hint?: string;
+  /** Weak-topic tag shown as a small chip on the card (e.g. concept title). */
+  tag?: string;
   difficulty?: CardDifficulty;
   reviewCount: number;
   isMissed: boolean;

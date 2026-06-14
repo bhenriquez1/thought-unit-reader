@@ -28,9 +28,9 @@ export interface ExplainStepContext {
 interface ExplainStepChatProps {
   context: ExplainStepContext;
   onClose: () => void;
-  onSaveNote: (question: string, explanation: string) => void | Promise<void>;
-  onCreateRecallCard: (question: string, explanation: string) => void | Promise<void>;
-  onAddToStudyGuide: (question: string, explanation: string) => void | Promise<void>;
+  onSaveNote: (question: string, explanation: string, turns: ExplainStepMessage[]) => void | Promise<void>;
+  onCreateRecallCard: (question: string, explanation: string, turns: ExplainStepMessage[]) => void | Promise<void>;
+  onAddToStudyGuide: (question: string, explanation: string, turns: ExplainStepMessage[]) => void | Promise<void>;
   /** Resume a prior conversation for this same selection/page, if one exists. */
   initialTurns?: ExplainStepMessage[];
   /** Called whenever the conversation changes, so the host can persist it for this selection/page. */
@@ -263,9 +263,10 @@ export default function ExplainStepChat({
     setShowSaveMenu(false);
     setSavingAction(kind);
     try {
-      if (kind === "note") await onSaveNote(lastQuestion, lastAnswer);
-      else if (kind === "recall") await onCreateRecallCard(lastQuestion, lastAnswer);
-      else await onAddToStudyGuide(lastQuestion, lastAnswer);
+      const plainTurns = turns.map(({ role, content }) => ({ role, content }));
+      if (kind === "note") await onSaveNote(lastQuestion, lastAnswer, plainTurns);
+      else if (kind === "recall") await onCreateRecallCard(lastQuestion, lastAnswer, plainTurns);
+      else await onAddToStudyGuide(lastQuestion, lastAnswer, plainTurns);
     } finally {
       setSavingAction(null);
     }

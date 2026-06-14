@@ -48,6 +48,7 @@ const CARD_TYPE_ICON: Record<string, string> = {
 const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
   "right-panel": { label: "Right Panel", color: "#fbbf24" },
   notelab: { label: "NoteLab", color: "#93c5fd" },
+  "explain-step": { label: "Explain This Step", color: "#34d399" },
 };
 
 type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet };
@@ -526,6 +527,11 @@ function RecallSession({
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 13 }}>{CARD_TYPE_ICON[card.type] ?? "•"}</span>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: cardTypeColor(card.type), textTransform: "uppercase" }}>{card.type}</span>
+            {card.tag && (
+              <span style={{ fontSize: 9, fontWeight: 600, color: "#c4b5fd", background: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 4, padding: "1px 6px" }}>
+                {card.tag}
+              </span>
+            )}
             {card.isMissed && <span style={{ fontSize: 9, color: "#f87171", marginLeft: "auto" }}>MISSED</span>}
           </div>
 

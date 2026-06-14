@@ -53,10 +53,12 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
+import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
+import type { ExplainStepMessage } from "@/lib/explainStep/types";
 import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
 import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/ExplainStepChat";
 
@@ -1666,36 +1668,64 @@ export default function ThoughtUnitReader() {
     sel.clearSelection();
   }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile]);
 
-  const handleExplainStepSaveNote = useCallback(async (question: string, explanation: string) => {
+  // Convert the tutor conversation into a polished NoteLab note: source
+  // page/selected text + the tutor's Direct Answer / Why / Example / Common
+  // Mistake sections (aggregated across the whole conversation), rather than
+  // a raw chat transcript.
+  const handleExplainStepSaveNote = useCallback(async (question: string, explanation: string, turns: ExplainStepMessage[]) => {
     const ctx = explainStepContext;
     if (!ctx) return;
+    const parsed = parseExplainStepConversation(turns);
+    const coreIdea = parsed.directAnswer || explanation;
     const note = buildUltraNote(
       bookId,
       ctx.pageNumber,
       `Explain This Step — p.${ctx.pageNumber}`,
-      explanation,
+      coreIdea,
       [],
       uploadedFile?.name,
       undefined,
       ctx.pageThesis ?? undefined,
     );
-    note.sections = [
-      { label: "Question", content: question },
-      { label: "Explanation", content: explanation },
+    const sections: NoteSection[] = [
+      {
+        label: "Source",
+        content: [`Page ${ctx.pageNumber}`, ctx.selectedText ? `"${truncate(ctx.selectedText, 240)}"` : null]
+          .filter(Boolean)
+          .join("\n"),
+      },
+      { label: "Direct Answer", content: coreIdea },
     ];
+    if (parsed.why) sections.push({ label: "Why", content: parsed.why });
+    if (parsed.example) sections.push({ label: "Example", content: parsed.example });
+    if (parsed.commonMistake) sections.push({ label: "Common Mistake", content: parsed.commonMistake });
+    note.sections = sections;
     await saveUltraNote(note);
-    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber });
+    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber, sectionLabels: sections.map((s) => s.label) });
     setNoteLabRefreshKey((k) => k + 1);
   }, [explainStepContext, bookId, uploadedFile]);
 
-  const handleExplainStepCreateRecallCard = useCallback(async (question: string, explanation: string) => {
+  // Convert the tutor conversation into a clean RecallLab flashcard:
+  // front = the concept/selected text, back = the Direct Answer, hint =
+  // Why + Example combined, tag = a weak-topic label for this page.
+  const handleExplainStepCreateRecallCard = useCallback(async (question: string, explanation: string, turns: ExplainStepMessage[]) => {
     const ctx = explainStepContext;
     if (!ctx) return;
+    const parsed = parseExplainStepConversation(turns);
+    const back = parsed.directAnswer || explanation;
+    const front = ctx.selectedText?.trim() ? truncate(ctx.selectedText.trim(), 200) : question;
+    const hintParts = [
+      parsed.why ? `Why: ${parsed.why}` : null,
+      parsed.example ? `Example: ${parsed.example}` : null,
+    ].filter(Boolean) as string[];
+    const tag = ctx.conceptTitles?.[0] || (ctx.pageThesis ? truncate(ctx.pageThesis, 40) : undefined);
     const card: RecallCard = {
       id: `card-explain-${Date.now()}`,
-      type: "core",
-      front: question,
-      back: explanation,
+      type: parsed.commonMistake ? "trap" : "core",
+      front,
+      back,
+      hint: hintParts.length ? hintParts.join("\n\n") : undefined,
+      tag,
       reviewCount: 0,
       isMissed: false,
     };
@@ -1703,7 +1733,7 @@ export default function ThoughtUnitReader() {
       id: stableRecallId(bookId, ctx.pageNumber, `explain-${Date.now()}`),
       bookId,
       bookTitle: uploadedFile?.name,
-      sourceLabel: "right-panel",
+      sourceLabel: "explain-step",
       pageNumber: ctx.pageNumber,
       subject: inferSubject(bookId),
       topic: `Explain This Step — p.${ctx.pageNumber}`,
@@ -1711,15 +1741,16 @@ export default function ThoughtUnitReader() {
       createdAt: Date.now(),
     };
     await saveRecallSet(set);
-    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber });
+    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber, tag });
     setLastRecallSetId(set.id);
     setRecallLabRefreshKey((k) => k + 1);
   }, [explainStepContext, bookId, uploadedFile]);
 
-  const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string) => {
+  const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string, turns: ExplainStepMessage[]) => {
     const ctx = explainStepContext;
     if (!ctx) return;
-    const entry = `${question} — ${explanation}`;
+    const parsed = parseExplainStepConversation(turns);
+    const entry = `${question} — ${parsed.directAnswer || explanation}`;
     const existing = await getStudyGuidesByBook(bookId);
     if (existing.length > 0) {
       const guide = existing[0];
