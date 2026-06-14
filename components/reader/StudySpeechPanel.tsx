@@ -165,6 +165,13 @@ function naturalizeSpeech(text: string): string {
   return out;
 }
 
+// Final text-to-speech transform applied to a raw sentence/segment, shared by
+// the playback loops and by prefetch (so the prefetch cache key matches).
+function computeSpeechText(raw: string): string {
+  const { text: norm } = normalizeFormulasForSpeech(raw);
+  return naturalizeSpeech(formulaToSpeech(norm)).slice(0, 500);
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -215,6 +222,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const providerRef = useRef<"openai" | "browser" | null>(null);
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
+
+  // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
+  // segment's audio start fetching while the current segment is still playing.
+  const audioCacheRef = useRef<Map<string, Promise<{ blob: Blob; mimeType: string } | "browser">>>(new Map());
 
   // Reset on book change — new book means new context entirely.
   useEffect(() => {
@@ -451,44 +462,75 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── TTS fetch helper — returns Promise<"done" | "browser"> ─────────────────
 
-  async function fetchAndPlayAudio(text: string): Promise<"done" | "browser"> {
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
-    });
-    if (!res.ok) throw new Error(`TTS API ${res.status}`);
-    const data = await res.json();
+  // Fetches (and caches) the TTS audio for `text` without playing it. Repeated
+  // calls with the same text + voice reuse the in-flight/completed request, so
+  // prefetching the next segment ahead of time is just a fire-and-forget call.
+  function fetchTTS(text: string): Promise<{ blob: Blob; mimeType: string } | "browser"> {
+    const cacheKey = `${voice}::${text}`;
+    const cached = audioCacheRef.current.get(cacheKey);
+    if (cached) return cached;
 
-    if (data.audioBase64) {
-      console.log("[OPENAI_SPEECH_DONE]", { provider: data.provider ?? "openai", bytes: data.audioBase64.length });
-      const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
-      const url   = URL.createObjectURL(blob);
-      blobUrlRef.current = url;
-      const audio = new Audio(url);
-      audio.playbackRate = speed;
-      audioRef.current   = audio;
-      providerRef.current = "openai";
-      return new Promise((resolve, reject) => {
-        audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
-        audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
-        audio.onerror = () => {
-          // stopAudio() clears src which fires onerror — treat as clean stop, not failure
-          if (abortRef.current) { resolve("done"); return; }
-          console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
-          reject(new Error("Audio playback failed"));
-        };
-        audio.play().catch((e) => { if (abortRef.current) resolve("done"); else reject(e); });
+    const promise = (async (): Promise<{ blob: Blob; mimeType: string } | "browser"> => {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
       });
-    }
+      if (!res.ok) throw new Error(`TTS API ${res.status}`);
+      const data = await res.json();
 
-    if (data.useBrowserSpeech) {
-      console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
-      return "browser";
-    }
+      if (data.audioBase64) {
+        console.log("[OPENAI_SPEECH_DONE]", { provider: data.provider ?? "openai", bytes: data.audioBase64.length });
+        const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
+        const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
+        return { blob, mimeType: data.mimeType || "audio/mpeg" };
+      }
 
-    throw new Error("Unexpected TTS response");
+      if (data.useBrowserSpeech) {
+        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
+        return "browser";
+      }
+
+      throw new Error("Unexpected TTS response");
+    })();
+
+    audioCacheRef.current.set(cacheKey, promise);
+    promise.catch(() => audioCacheRef.current.delete(cacheKey)); // don't cache failures
+    return promise;
+  }
+
+  // Kicks off a TTS fetch for the upcoming segment so it's ready by the time
+  // playback reaches it. Safe to call with empty/undefined text.
+  function prefetchTTS(text: string | undefined | null) {
+    if (!text) return;
+    fetchTTS(text).catch(() => {}); // errors surface (again) when actually played
+  }
+
+  async function fetchAndPlayAudio(text: string): Promise<"done" | "browser"> {
+    const cacheKey = `${voice}::${text}`;
+    const result = await fetchTTS(text);
+    audioCacheRef.current.delete(cacheKey); // one-shot — don't replay stale audio on reuse
+
+    if (result === "browser") return "browser";
+
+    const { blob, mimeType } = result;
+    const url = URL.createObjectURL(blob);
+    blobUrlRef.current = url;
+    const audio = new Audio(url);
+    audio.playbackRate = speed;
+    audioRef.current   = audio;
+    providerRef.current = "openai";
+    return new Promise((resolve, reject) => {
+      audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+      audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+      audio.onerror = () => {
+        // stopAudio() clears src which fires onerror — treat as clean stop, not failure
+        if (abortRef.current) { resolve("done"); return; }
+        console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
+        reject(new Error("Audio playback failed"));
+      };
+      audio.play().catch((e) => { if (abortRef.current) resolve("done"); else reject(e); });
+    });
   }
 
   // ── Browser speech fallback ─────────────────────────────────────────────────
@@ -555,11 +597,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
       const raw = sentences[i];
-      const { text: fNorm, hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
+      const { hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
       if (transformations > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
       if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
-      const text = naturalizeSpeech(formulaToSpeech(fNorm)).slice(0, 500);
+      const text = computeSpeechText(raw);
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
       console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: text.slice(0, 200) });
       setSegIdx(i);
@@ -569,6 +611,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
+
+      // Prefetch the next sentence's audio while this one plays.
+      if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
 
       try {
         const result = await fetchAndPlayAudio(text);
@@ -614,13 +659,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         onEvidenceFocus?.(seg.evidenceRefId);
       }
 
-      const { text: hNorm, hasMath: hMath, hasScience: hSci, transformations: hTx } = normalizeFormulasForSpeech(seg.text);
+      const { hasMath: hMath, hasScience: hSci, transformations: hTx } = normalizeFormulasForSpeech(seg.text);
       if (hTx > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: hTx, hasMath: hMath, hasScience: hSci });
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
-      const hText = naturalizeSpeech(formulaToSpeech(hNorm)).slice(0, 500);
+      const hText = computeSpeechText(seg.text);
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
+
+      // Prefetch the next segment's audio while this one plays.
+      if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text));
+
       try {
         const result = await fetchAndPlayAudio(hText);
         if (abortRef.current) break; // user stopped during fetch
@@ -656,27 +705,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
-      // Use pre-computed fpSentences (two-pass splitter); fall back to simple split.
-      const sents = fpSentences.length > 0 ? fpSentences : (() => {
-        const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc)\.\s*$/i;
-        const raw = activePageText.split(/(?<=[.!?…])\s+/);
-        const merged: string[] = [];
-        for (const chunk of raw) {
-          const t = chunk.trim();
-          if (!t) continue;
-          if (merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1])) {
-            merged[merged.length - 1] += " " + t;
-          } else { merged.push(t); }
-        }
-        const withHeadings: string[] = [];
-        for (let i = 0; i < merged.length; i++) {
-          const s = merged[i];
-          if (s.length < 30 && !/[!?]$/.test(s) && i + 1 < merged.length) {
-            merged[i + 1] = s + " " + merged[i + 1];
-          } else { withHeadings.push(s); }
-        }
-        return withHeadings.filter((s) => s.length >= 10);
-      })();
+      // Use pre-computed fpSentences (two-pass splitter, includes header/footer
+      // filtering); fall back to the same canonical quick-splitter (not a
+      // degraded inline copy) if the mount-time effect hasn't populated it yet.
+      const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
@@ -733,13 +765,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.log("[SPEECH_SEGMENT_START]", {
         segIdx: i, mode, role: seg.role, charCount: seg.text.length,
       });
-      const { text: segNorm, hasMath: segMath, hasScience: segSci, transformations: segTx } = normalizeFormulasForSpeech(seg.text);
+      const { hasMath: segMath, hasScience: segSci, transformations: segTx } = normalizeFormulasForSpeech(seg.text);
       if (segTx > 0)  console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: segTx, hasMath: segMath, hasScience: segSci });
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
-      const segText = naturalizeSpeech(formulaToSpeech(segNorm)).slice(0, 500);
+      const segText = computeSpeechText(seg.text);
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
+
+      // Prefetch the next segment's audio while this one plays.
+      if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text));
 
       try {
         const result = await fetchAndPlayAudio(segText);
