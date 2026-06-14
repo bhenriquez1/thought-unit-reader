@@ -4217,7 +4217,7 @@ export default function ThoughtUnitReader() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.78)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowWhiteboardPanel(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); } }}
         >
           {(console.log("[WHITEBOARD_CENTERED_MODAL]", {
             page: currentPage,
@@ -4231,7 +4231,7 @@ export default function ThoughtUnitReader() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
               <span className="text-sm font-semibold tracking-wide text-gray-200">Whiteboard</span>
               <button
-                onClick={() => setShowWhiteboardPanel(false)}
+                onClick={() => { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); }}
                 className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
                 aria-label="Close whiteboard"
               >
@@ -4249,9 +4249,9 @@ export default function ThoughtUnitReader() {
                 pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
               }) as any) && null}
               <WhiteboardPanel
-                key={`wb-${bookId ?? "book"}-p${currentPage}`}
-                concept={currentPageStudyModel?.pageThesis ?? ""}
-                context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
+                key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
+                concept={wbConcept || currentPageStudyModel?.pageThesis || ""}
+                context={wbContext || currentPageStudyModel?.studyNotes?.keyMechanism || ""}
                 studyModel={currentPageStudyModel as any}
                 pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
@@ -4338,6 +4338,19 @@ export default function ThoughtUnitReader() {
               turns
             )
           }
+          onVisualize={({ selectedText, explanation, pageContext }) => {
+            const concept = selectedText || explanation;
+            const context = [explanation, pageContext].filter(Boolean).join("\n\n");
+            console.log("[EXPLAIN_STEP_VISUALIZE]", {
+              page: explainStepContext.pageNumber,
+              conceptChars: concept.length,
+              contextChars: context.length,
+            });
+            setWbConcept(truncate(concept, 600));
+            setWbContext(truncate(context, 1200));
+            setExplainStepContext(null);
+            setShowWhiteboardPanel(true);
+          }}
         />
       )}
 

@@ -35,6 +35,8 @@ interface ExplainStepChatProps {
   initialTurns?: ExplainStepMessage[];
   /** Called whenever the conversation changes, so the host can persist it for this selection/page. */
   onTurnsChange?: (turns: ExplainStepMessage[]) => void;
+  /** Called when the student wants to see this step/explanation drawn out on the Whiteboard. */
+  onVisualize?: (payload: { selectedText: string; explanation: string; pageContext: string }) => void;
 }
 
 type ChatTurn = ExplainStepMessage & { id: string };
@@ -89,6 +91,7 @@ export default function ExplainStepChat({
   onAddToStudyGuide,
   initialTurns,
   onTurnsChange,
+  onVisualize,
 }: ExplainStepChatProps) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -365,7 +368,24 @@ export default function ExplainStepChat({
               Web
             </label>
 
-            <div className="relative ml-auto">
+            {onVisualize && (
+              <button
+                onClick={() =>
+                  onVisualize({
+                    selectedText: context.selectedText,
+                    explanation: lastAnswer,
+                    pageContext: context.surroundingParagraph || context.pageText,
+                  })
+                }
+                disabled={!lastAnswer}
+                className="text-xs px-3 py-1 rounded-full bg-amber-600/30 border border-amber-500/50 hover:bg-amber-600/40 transition-colors disabled:opacity-40 ml-auto"
+                title="Draw this step out on the Whiteboard"
+              >
+                🎨 Visualize on Whiteboard
+              </button>
+            )}
+
+            <div className="relative">
               <button
                 onClick={() => setShowSaveMenu((v) => !v)}
                 disabled={!lastAnswer || savingAction !== null}

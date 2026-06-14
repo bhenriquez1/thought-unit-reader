@@ -59,6 +59,23 @@ type Props = {
   onAnchorStep?: (anchorId: string | null) => void;
   /** Level 4 sync: when set, Whiteboard jumps to the step whose evidenceRefId matches */
   activeAnchorId?: string | null;
+
+  /**
+   * Debug mode (P3): when true, a failure in the new Whiteboard pipeline shows a
+   * diagnostics panel (prompt, model, raw response, failure reason) instead of
+   * silently rendering the generic buildFallbackSteps() content.
+   * Defaults to NEXT_PUBLIC_WHITEBOARD_DEBUG === "1".
+   */
+  debugMode?: boolean;
+};
+
+type WhiteboardDebugInfo = {
+  failureReason: string;
+  model?: string;
+  promptSent?: { system: string; user: string };
+  rawResponse?: string;
+  httpStatus?: number;
+  error?: string;
 };
 
 /** In-memory LRU-ish cache (oldest evicted on overflow) */
@@ -85,13 +102,16 @@ export default function WhiteboardPanel({
   pageText,
   onAnchorStep,
   activeAnchorId,
+  debugMode,
 }: Props) {
+  const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
   const [narrationScript, setNarrationScript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [wbProvider, setWbProvider] = useState<string>("unknown");
+  const [debugInfo, setDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -247,9 +267,29 @@ export default function WhiteboardPanel({
           context:    effectiveContext || null,
           studyModel: studyModel ?? null,
           pageText:   (pageText ?? "").slice(0, 1500),
+          debug:      isDebugMode,
         }),
       });
       const data = await resp.json();
+
+      // P3 debug mode: the new pipeline failed and returned diagnostics
+      // instead of the silent buildFallbackSteps() fallback. Surface them —
+      // do NOT render generic fallback content.
+      if (isDebugMode && data.error && data.debugInfo) {
+        console.error("[WHITEBOARD_DEBUG_FAILURE]", {
+          page: currentPage ?? null,
+          error: data.error,
+          ...data.debugInfo,
+        });
+        setDebugInfo({ ...data.debugInfo, error: data.error });
+        setSteps([]);
+        setNarrationScript("");
+        setAudioBlob(null);
+        setWbProvider("debug-error");
+        return;
+      }
+      setDebugInfo(null);
+
       const newSteps: WhiteboardStep[] = (data.steps ?? []).map((s: any) => ({
         title:       String(s?.title ?? "").trim(),
         description: String(s?.content ?? s?.description ?? "").trim(),
@@ -545,6 +585,44 @@ export default function WhiteboardPanel({
             </div>
           )}
 
+          {/* P3 debug panel — shown instead of the silent fallback when debugMode is on
+              and the new Whiteboard pipeline failed. */}
+          {isDebugMode && debugInfo && (
+            <div className="text-xs bg-red-950/60 text-red-200 border border-red-800/60 rounded-lg p-3 space-y-2">
+              <div className="font-semibold text-red-300">
+                ⚠ Whiteboard pipeline failed — debug mode (no silent fallback)
+              </div>
+              <div><span className="text-red-400">Failure reason:</span> {debugInfo.failureReason}</div>
+              {debugInfo.error && (
+                <div><span className="text-red-400">Error:</span> {debugInfo.error}</div>
+              )}
+              {typeof debugInfo.httpStatus === "number" && (
+                <div><span className="text-red-400">HTTP status:</span> {debugInfo.httpStatus}</div>
+              )}
+              {debugInfo.model && (
+                <div><span className="text-red-400">Model:</span> {debugInfo.model}</div>
+              )}
+              <div><span className="text-red-400">Selected text / concept:</span> {effectiveConcept || "(none)"}</div>
+              <div><span className="text-red-400">Page context:</span> {effectiveContext || "(none)"}</div>
+              {debugInfo.promptSent && (
+                <details>
+                  <summary className="cursor-pointer text-red-400">Prompt sent</summary>
+                  <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+{`SYSTEM:\n${debugInfo.promptSent.system}\n\nUSER:\n${debugInfo.promptSent.user}`}
+                  </pre>
+                </details>
+              )}
+              {debugInfo.rawResponse && (
+                <details>
+                  <summary className="cursor-pointer text-red-400">Raw model/API response</summary>
+                  <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+{debugInfo.rawResponse}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+
           {/* Whiteboard stage (scaled wrapper + glow when new) */}
           {canRender ? (
             <motion.div
@@ -580,7 +658,7 @@ export default function WhiteboardPanel({
                 />
               </div>
             </motion.div>
-          ) : (
+          ) : !(isDebugMode && debugInfo) ? (
             <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
               {loading
                 ? "Preparing whiteboard…"
@@ -588,7 +666,7 @@ export default function WhiteboardPanel({
                 ? "⏳ Whiteboard waiting for current page study model."
                 : "Click 'Explain with Whiteboard' to generate."}
             </div>
-          )}
+          ) : null}
 
           {/* Sticky notes */}
           {stickyNotes.length > 0 && (

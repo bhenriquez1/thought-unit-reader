@@ -27,8 +27,17 @@ type Step = {
   objects?: string[];
 };
 
-type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean };
-type Err = { error: string; aiDisabled?: boolean };
+/** Diagnostics returned only when the request opts into `debug: true`. */
+type DebugInfo = {
+  failureReason: string;
+  model?: string;
+  promptSent?: { system: string; user: string };
+  rawResponse?: string;
+  httpStatus?: number;
+};
+
+type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean; debugInfo?: DebugInfo };
+type Err = { error: string; aiDisabled?: boolean; debugInfo?: DebugInfo };
 
 /* ─── Whiteboard mode derivation ────────────────────────────────────────────── */
 
@@ -188,11 +197,15 @@ export default async function handler(
       context?: string;
       studyModel?: any;
       pageText?: string;
+      debug?: boolean;
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
     const studyModel = body.studyModel ?? null;
     const pageText   = (body.pageText  ?? "").slice(0, 1200);
+    // Debug mode (P3): on any failure, return diagnostics instead of silently
+    // falling back to buildFallbackSteps() generic content.
+    const debug      = Boolean(body.debug);
 
     if (!concept && !studyModel?.pageThesis) {
       return res.status(400).json({ error: "Missing concept/studyModel" });
@@ -200,6 +213,13 @@ export default async function handler(
 
     const key = process.env.OPENAI_API_KEY?.trim();
     if (!key) {
+      if (debug) {
+        return res.status(200).json({
+          error: "No OpenAI API key configured",
+          aiDisabled: true,
+          debugInfo: { failureReason: "OPENAI_API_KEY is not set — AI generation is disabled." },
+        });
+      }
       const fb = buildFallbackSteps(concept, context, studyModel);
       return res.status(200).json({
         steps: fb,
@@ -274,6 +294,20 @@ export default async function handler(
     }).finally(() => clearTimeout(to));
 
     if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      if (debug) {
+        return res.status(200).json({
+          error: "OpenAI request failed",
+          aiDisabled: true,
+          debugInfo: {
+            failureReason: `OpenAI API returned HTTP ${resp.status}`,
+            model: "gpt-4o-mini",
+            promptSent: { system, user },
+            rawResponse: errText.slice(0, 2000),
+            httpStatus: resp.status,
+          },
+        });
+      }
       const fb = buildFallbackSteps(concept, context, studyModel);
       return res.status(200).json({
         steps: fb,
@@ -307,11 +341,35 @@ export default async function handler(
         .slice(0, 6);
       narrationScript = String(j.narrationScript ?? "");
     } catch {
+      if (debug) {
+        return res.status(200).json({
+          error: "Failed to parse model response as JSON",
+          aiDisabled: true,
+          debugInfo: {
+            failureReason: "JSON.parse(model response) threw — response was not valid JSON.",
+            model: "gpt-4o-mini",
+            promptSent: { system, user },
+            rawResponse: rawContent.slice(0, 2000),
+          },
+        });
+      }
       steps = buildFallbackSteps(concept, context, studyModel);
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
     if (!steps || steps.length === 0) {
+      if (debug) {
+        return res.status(200).json({
+          error: "Model response contained no usable steps",
+          aiDisabled: true,
+          debugInfo: {
+            failureReason: "Parsed JSON had no `steps` array, or all steps were empty.",
+            model: "gpt-4o-mini",
+            promptSent: { system, user },
+            rawResponse: rawContent.slice(0, 2000),
+          },
+        });
+      }
       const fb = buildFallbackSteps(concept, context, studyModel);
       return res.status(200).json({
         steps: fb,
@@ -328,11 +386,18 @@ export default async function handler(
 
     return res.status(200).json({ steps, narrationScript });
 
-  } catch {
+  } catch (err: any) {
     const body    = (req.body || {}) as any;
     const concept = String(body?.concept  || req.query?.concept  || "");
     const context = String(body?.context  || req.query?.context  || "");
     const sm      = body?.studyModel ?? null;
+    if (body?.debug) {
+      return res.status(200).json({
+        error: "Unexpected error generating whiteboard",
+        aiDisabled: true,
+        debugInfo: { failureReason: `Exception: ${err?.message ?? String(err)}` },
+      });
+    }
     const fb      = buildFallbackSteps(concept, context, sm);
     return res.status(200).json({
       steps: fb,
