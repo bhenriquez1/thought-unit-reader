@@ -113,6 +113,16 @@ export default function WhiteboardPanel({
   const [wbProvider, setWbProvider] = useState<string>("unknown");
   const [debugInfo, setDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
 
+  // "AI Drawing" mode — Armando-style hand-drawn illustration generated from a
+  // GPT visual-teaching-script via OpenAI Images or Ideogram (dual provider).
+  const [wbMode, setWbMode] = useState<"steps" | "aiDrawing">("steps");
+  const [imageProvider, setImageProvider] = useState<"openai" | "ideogram">("openai");
+  const [aiImageLoading, setAiImageLoading] = useState(false);
+  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
+  const [aiTeachingScript, setAiTeachingScript] = useState("");
+  const [aiImageError, setAiImageError] = useState<string | null>(null);
+  const [aiImageDebugInfo, setAiImageDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
+
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
   const [zoom, setZoom] = useState(0.95); // not "too zoomed" by default
@@ -386,6 +396,50 @@ export default function WhiteboardPanel({
     await runGenerate();
   };
 
+  /** "AI Drawing" mode — Phase 1 (GPT teaching script) + Phase 2 (image model). */
+  const generateAIDrawing = useCallback(async () => {
+    if (!effectiveConcept) return;
+    setAiImageLoading(true);
+    setAiImageError(null);
+    setAiImageDebugInfo(null);
+    try {
+      const resp = await fetch("/api/whiteboard-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          concept: effectiveConcept,
+          context: effectiveContext,
+          provider: imageProvider,
+          debug: isDebugMode,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.error) {
+        console.error("[WHITEBOARD_IMAGE_CLIENT_FAILURE]", { provider: imageProvider, error: data.error, ...(data.debugInfo ?? {}) });
+        setAiImageUrl(null);
+        setAiTeachingScript("");
+        if (isDebugMode && data.debugInfo) {
+          setAiImageDebugInfo({ ...data.debugInfo, error: data.error });
+        } else {
+          setAiImageError(data.error);
+        }
+        return;
+      }
+
+      setAiImageUrl(data.imageUrl ?? null);
+      setAiTeachingScript(data.teachingScript ?? "");
+      console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
+    } catch (err: any) {
+      console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
+      setAiImageUrl(null);
+      setAiTeachingScript("");
+      setAiImageError(err?.message ?? "Something went wrong generating the drawing.");
+    } finally {
+      setAiImageLoading(false);
+    }
+  }, [effectiveConcept, effectiveContext, imageProvider, isDebugMode]);
+
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
     const shouldTrigger = studyModel ? !!studyModel : (autoTrigger && !!effectiveConcept && !!effectiveContext);
@@ -510,7 +564,7 @@ export default function WhiteboardPanel({
                 </Button>
               </motion.div>
 
-              {canRender && (
+              {canRender && wbMode === "steps" && (
                 <>
                   <div className="h-6 w-px bg-gray-700 mx-1" />
                   <label className="text-xs opacity-80">Zoom</label>
@@ -543,9 +597,26 @@ export default function WhiteboardPanel({
               )}
             </div>
 
+            <div className="h-6 w-px bg-gray-700 mx-1" />
+            <div className="flex items-center rounded-lg border border-gray-700 overflow-hidden text-xs">
+              <button
+                onClick={() => setWbMode("steps")}
+                className={`px-2.5 py-1.5 transition-colors ${wbMode === "steps" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
+              >
+                Diagram Steps
+              </button>
+              <button
+                onClick={() => setWbMode("aiDrawing")}
+                className={`px-2.5 py-1.5 transition-colors ${wbMode === "aiDrawing" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
+                title="Generate an Armando-style hand-drawn AI illustration"
+              >
+                🖌️ AI Drawing
+              </button>
+            </div>
+
             <div className="flex-1" />
 
-            {canRender && (
+            {canRender && wbMode === "steps" && (
               <div className="flex items-center gap-2">
                 <label className="text-sm opacity-80">Speed</label>
                 <select
@@ -624,7 +695,7 @@ export default function WhiteboardPanel({
           )}
 
           {/* Whiteboard stage (scaled wrapper + glow when new) */}
-          {canRender ? (
+          {wbMode === "steps" && (canRender ? (
             <motion.div
               ref={scrollRef}
               initial={false}
@@ -666,7 +737,96 @@ export default function WhiteboardPanel({
                 ? "⏳ Whiteboard waiting for current page study model."
                 : "Click 'Explain with Whiteboard' to generate."}
             </div>
-          ) : null}
+          ) : null)}
+
+          {/* AI Drawing mode — Armando-style hand-drawn illustration */}
+          {wbMode === "aiDrawing" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs opacity-80">Image provider</label>
+                <select
+                  value={imageProvider}
+                  onChange={(e) => setImageProvider(e.target.value as "openai" | "ideogram")}
+                  className="border rounded px-2 py-1 bg-gray-900 text-xs"
+                >
+                  <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
+                  <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
+                </select>
+                <Button onClick={generateAIDrawing} disabled={aiImageLoading || !effectiveConcept}>
+                  {aiImageLoading ? "Drawing..." : "🖌️ Generate Drawing"}
+                </Button>
+              </div>
+
+              {/* Debug panel — failure with diagnostics instead of silent fallback */}
+              {isDebugMode && aiImageDebugInfo && (
+                <div className="text-xs bg-red-950/60 text-red-200 border border-red-800/60 rounded-lg p-3 space-y-2">
+                  <div className="font-semibold text-red-300">
+                    ⚠ AI Drawing failed — debug mode (no silent fallback)
+                  </div>
+                  <div><span className="text-red-400">Failure reason:</span> {aiImageDebugInfo.failureReason}</div>
+                  {aiImageDebugInfo.error && (
+                    <div><span className="text-red-400">Error:</span> {aiImageDebugInfo.error}</div>
+                  )}
+                  {typeof aiImageDebugInfo.httpStatus === "number" && (
+                    <div><span className="text-red-400">HTTP status:</span> {aiImageDebugInfo.httpStatus}</div>
+                  )}
+                  {aiImageDebugInfo.model && (
+                    <div><span className="text-red-400">Model:</span> {aiImageDebugInfo.model}</div>
+                  )}
+                  <div><span className="text-red-400">Provider:</span> {imageProvider}</div>
+                  <div><span className="text-red-400">Concept:</span> {effectiveConcept || "(none)"}</div>
+                  {aiImageDebugInfo.promptSent && (
+                    <details>
+                      <summary className="cursor-pointer text-red-400">Prompt sent</summary>
+                      <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+{`SYSTEM:\n${aiImageDebugInfo.promptSent.system}\n\nUSER:\n${aiImageDebugInfo.promptSent.user}`}
+                      </pre>
+                    </details>
+                  )}
+                  {aiImageDebugInfo.rawResponse && (
+                    <details>
+                      <summary className="cursor-pointer text-red-400">Raw model/API response</summary>
+                      <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+{aiImageDebugInfo.rawResponse}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              {/* Non-debug failure — point at the SVG/process-map fallback instead of hiding it */}
+              {!isDebugMode && aiImageError && (
+                <div className="text-xs bg-red-900/60 text-red-300 border border-red-700/50 px-3 py-2 rounded">
+                  ⚠ AI Drawing unavailable ({aiImageError}). Try "Diagram Steps" instead.
+                </div>
+              )}
+
+              {aiImageUrl ? (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={aiImageUrl} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[60vh] object-contain bg-white" />
+                  {aiTeachingScript && (
+                    <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
+                      <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
+                      <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
+                    </details>
+                  )}
+                </motion.div>
+              ) : (
+                !aiImageLoading && !aiImageDebugInfo && !aiImageError && (
+                  <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
+                    {effectiveConcept
+                      ? "Click 'Generate Drawing' for an Armando-style hand-drawn illustration of this concept."
+                      : "⏳ Select text or open Explain This Step → Visualize to set a concept first."}
+                  </div>
+                )
+              )}
+            </div>
+          )}
 
           {/* Sticky notes */}
           {stickyNotes.length > 0 && (
