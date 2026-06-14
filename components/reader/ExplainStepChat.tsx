@@ -34,14 +34,19 @@ interface ExplainStepChatProps {
 type ChatTurn = ExplainStepMessage & { id: string };
 
 const QUICK_CHIPS: { label: string; prompt: string }[] = [
+  { label: "Why?", prompt: "Why?" },
   { label: "Simpler", prompt: "Explain this simpler" },
   { label: "Example", prompt: "Give me an example" },
   { label: "Visual Analogy", prompt: "Give me a visual analogy for this" },
+  { label: "Try It", prompt: "Let me try it myself" },
   { label: "Quiz Me", prompt: "Quiz me on this" },
 ];
 
 // Section headers the AI Tutor prompt is instructed to use.
-const SECTION_MARKERS = ["📌", "🔍", "💡", "⚠️", "❓"];
+const SECTION_MARKERS = ["📌", "🔍", "💡", "⚠️", "🧠", "❓"];
+
+// Sections that start collapsed — the student expands them to go deeper.
+const COLLAPSIBLE_HEADERS = ["🔍", "💡", "⚠️"];
 
 interface AnswerSection {
   header: string;
@@ -83,6 +88,7 @@ export default function ExplainStepChat({
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [savingAction, setSavingAction] = useState<"note" | "recall" | "studyguide" | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
@@ -166,6 +172,15 @@ export default function ExplainStepChat({
     await sendTurn(next);
   };
 
+  const toggleSection = (key: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const runSave = async (kind: "note" | "recall" | "studyguide") => {
     if (!lastAnswer || savingAction) return;
     setShowSaveMenu(false);
@@ -243,16 +258,33 @@ export default function ExplainStepChat({
 
             return (
               <div key={t.id} className="divide-y divide-gray-700/60 -mx-1">
-                {sections.map((s, i) => (
-                  <div key={i} className="px-1 py-2.5 first:pt-0 last:pb-0">
-                    {s.header && (
-                      <div className="text-xs font-semibold tracking-wide text-indigo-300 mb-1">
-                        {s.header}
-                      </div>
-                    )}
-                    <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">{s.body}</div>
-                  </div>
-                ))}
+                {sections.map((s, i) => {
+                  const isCollapsible = COLLAPSIBLE_HEADERS.some((marker) => s.header.startsWith(marker));
+                  const sectionKey = `${t.id}-${i}`;
+                  const isOpen = !isCollapsible || expandedSections.has(sectionKey);
+                  return (
+                    <div key={i} className="px-1 py-2.5 first:pt-0 last:pb-0">
+                      {s.header && (
+                        isCollapsible ? (
+                          <button
+                            onClick={() => toggleSection(sectionKey)}
+                            className="w-full flex items-center justify-between text-xs font-semibold tracking-wide text-indigo-300 mb-1 hover:text-indigo-200 transition-colors"
+                          >
+                            <span>{s.header}</span>
+                            <span className="text-[10px] text-gray-500">{isOpen ? "▲" : "▼ tap to expand"}</span>
+                          </button>
+                        ) : (
+                          <div className="text-xs font-semibold tracking-wide text-indigo-300 mb-1">
+                            {s.header}
+                          </div>
+                        )
+                      )}
+                      {isOpen && (
+                        <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">{s.body}</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
