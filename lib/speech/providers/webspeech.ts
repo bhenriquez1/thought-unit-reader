@@ -129,6 +129,31 @@ function approxWordBoundaryFromCharset(
 }
 
 // ============================================================================
+// Voice cache — speechSynthesis.getVoices() can be a slow synchronous browser
+// call; cache the result and only refresh on the 'voiceschanged' event.
+// ============================================================================
+
+let cachedVoices: SpeechSynthesisVoice[] | null = null;
+
+function getCachedVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  if (cachedVoices && cachedVoices.length > 0) return cachedVoices;
+
+  cachedVoices = speechSynthesis.getVoices();
+
+  if (cachedVoices.length === 0) {
+    // Voices not loaded yet — refresh the cache once they arrive.
+    speechSynthesis.addEventListener(
+      'voiceschanged',
+      () => { cachedVoices = speechSynthesis.getVoices(); },
+      { once: true },
+    );
+  }
+
+  return cachedVoices;
+}
+
+// ============================================================================
 // Provider
 // ============================================================================
 
@@ -156,7 +181,7 @@ export function createWebSpeechSession(
 
   function getVoice(): SpeechSynthesisVoice | null {
     if (!voiceURI) return null;
-    const voices = speechSynthesis.getVoices();
+    const voices = getCachedVoices();
     return voices.find(v => v.voiceURI === voiceURI) ?? null;
   }
 
@@ -276,8 +301,7 @@ export function createWebSpeechSession(
 // ============================================================================
 
 export function getWebSpeechVoices(): SpeechSynthesisVoice[] {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
-  return speechSynthesis.getVoices();
+  return getCachedVoices();
 }
 
 export function isWebSpeechAvailable(): boolean {
