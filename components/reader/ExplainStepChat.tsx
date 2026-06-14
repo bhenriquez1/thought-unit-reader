@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { ExplainStepMessage, ExplainStepStudyNotes } from "@/lib/explainStep/types";
+import type { ExplainStepMessage, ExplainStepStudyNotes, ExplainStepNoteRef, ExplainStepRecallRef } from "@/lib/explainStep/types";
 
 export interface ExplainStepContext {
   selectedText: string;
@@ -19,6 +19,8 @@ export interface ExplainStepContext {
   pageThesis: string | null;
   studyNotes: ExplainStepStudyNotes | null;
   conceptTitles: string[];
+  relatedNotes?: ExplainStepNoteRef[];
+  relatedRecallCards?: ExplainStepRecallRef[];
   documentTitle?: string;
   pageNumber: number;
 }
@@ -29,6 +31,10 @@ interface ExplainStepChatProps {
   onSaveNote: (question: string, explanation: string) => void | Promise<void>;
   onCreateRecallCard: (question: string, explanation: string) => void | Promise<void>;
   onAddToStudyGuide: (question: string, explanation: string) => void | Promise<void>;
+  /** Resume a prior conversation for this same selection/page, if one exists. */
+  initialTurns?: ExplainStepMessage[];
+  /** Called whenever the conversation changes, so the host can persist it for this selection/page. */
+  onTurnsChange?: (turns: ExplainStepMessage[]) => void;
 }
 
 type ChatTurn = ExplainStepMessage & { id: string };
@@ -81,6 +87,8 @@ export default function ExplainStepChat({
   onSaveNote,
   onCreateRecallCard,
   onAddToStudyGuide,
+  initialTurns,
+  onTurnsChange,
 }: ExplainStepChatProps) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -102,6 +110,12 @@ export default function ExplainStepChat({
     }
   }, [turns, loading]);
 
+  useEffect(() => {
+    if (turns.length === 0) return;
+    onTurnsChange?.(turns.map(({ role, content }) => ({ role, content })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns]);
+
   const sendTurn = async (history: ChatTurn[]) => {
     setLoading(true);
     setError(null);
@@ -116,6 +130,8 @@ export default function ExplainStepChat({
           pageThesis: context.pageThesis,
           studyNotes: context.studyNotes,
           conceptTitles: context.conceptTitles,
+          relatedNotes: context.relatedNotes,
+          relatedRecallCards: context.relatedRecallCards,
           documentTitle: context.documentTitle,
           pageNumber: context.pageNumber,
           messages: history.map(({ role, content }) => ({ role, content })),
@@ -141,6 +157,10 @@ export default function ExplainStepChat({
   useEffect(() => {
     if (initialSentRef.current) return;
     initialSentRef.current = true;
+    if (initialTurns && initialTurns.length > 0) {
+      setTurns(initialTurns.map((t, i) => ({ ...t, id: `restored-${i}` })));
+      return;
+    }
     const selected = context.selectedText.trim();
     if (!selected) {
       setTurns([
@@ -226,7 +246,17 @@ export default function ExplainStepChat({
         {/* Selected step preview */}
         {context.selectedText.trim() && (
           <div className="px-5 py-2 border-b border-gray-700/60 shrink-0">
-            <div className="uppercase tracking-wide text-[10px] text-gray-500 mb-1">Selected Step</div>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="uppercase tracking-wide text-[10px] text-gray-500">Selected Step</div>
+              {(context.relatedNotes?.length || context.relatedRecallCards?.length) ? (
+                <div className="text-[10px] text-indigo-300/80 shrink-0">
+                  📎 Using your {[
+                    context.relatedNotes?.length ? "notes" : null,
+                    context.relatedRecallCards?.length ? "recall cards" : null,
+                  ].filter(Boolean).join(" & ")} for this page
+                </div>
+              ) : null}
+            </div>
             <div className="text-sm text-gray-300 line-clamp-2">
               “{context.selectedText.trim().replace(/\s+/g, " ").slice(0, 220)}”
             </div>
@@ -312,6 +342,20 @@ export default function ExplainStepChat({
                 {chip.label}
               </button>
             ))}
+            {context.conceptTitles
+              .filter((title) => !context.selectedText.toLowerCase().includes(title.toLowerCase()))
+              .slice(0, 2)
+              .map((title) => (
+                <button
+                  key={`relate-${title}`}
+                  onClick={() => handleSend(`How does this relate to "${title}"?`)}
+                  disabled={loading}
+                  className="text-xs px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50 max-w-[160px] truncate"
+                  title={`How does this relate to "${title}"?`}
+                >
+                  Relate to {title}
+                </button>
+              ))}
             <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
               <input
                 type="checkbox"

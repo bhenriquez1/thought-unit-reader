@@ -53,8 +53,8 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, inferSubject } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
@@ -558,6 +558,7 @@ export default function ThoughtUnitReader() {
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
   const [explainStepContext, setExplainStepContext] = useState<ExplainStepContext | null>(null);
+  const explainStepTurnsRef = useRef<Map<string, import("@/lib/explainStep/types").ExplainStepMessage[]>>(new Map());
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
@@ -1634,6 +1635,12 @@ export default function ThoughtUnitReader() {
     const text = sel.selectionText?.trim() ?? "";
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    const relatedNotes = getNotesByBook(bookId)
+      .filter((n) => n.pageNumber === currentPage)
+      .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
+    const relatedRecallCards = getRecallSetsByBook(bookId)
+      .filter((r) => r.pageNumber === currentPage)
+      .flatMap((r) => r.cards.map((c) => ({ front: c.front, back: c.back })));
     setExplainStepContext({
       selectedText: text,
       pageText,
@@ -1641,6 +1648,8 @@ export default function ThoughtUnitReader() {
       pageThesis: sm?.pageThesis ?? null,
       studyNotes: sm?.studyNotes ?? null,
       conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      relatedNotes,
+      relatedRecallCards,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
     });
@@ -4320,6 +4329,15 @@ export default function ThoughtUnitReader() {
           onSaveNote={handleExplainStepSaveNote}
           onCreateRecallCard={handleExplainStepCreateRecallCard}
           onAddToStudyGuide={handleExplainStepAddToStudyGuide}
+          initialTurns={explainStepTurnsRef.current.get(
+            `${bookId}:${explainStepContext.pageNumber}:${explainStepContext.selectedText}`
+          )}
+          onTurnsChange={(turns) =>
+            explainStepTurnsRef.current.set(
+              `${bookId}:${explainStepContext.pageNumber}:${explainStepContext.selectedText}`,
+              turns
+            )
+          }
         />
       )}
 
