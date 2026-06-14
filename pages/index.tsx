@@ -149,10 +149,20 @@ function truncate(s: string, n: number) {
 }
 
 /** Find the paragraph/thought-unit in pageText that contains the selected text. */
-function findSurroundingParagraph(pageText: string, selectedText: string): string {
+// Uses the same thought-unit/paragraph boundaries as RightPanel sync and
+// highlight grounding (extractParagraphBlocks/findBestMatchingBlock), so the
+// "surrounding paragraph" sent to Explain This Step matches the thought unit
+// the rest of the reader treats as containing this selection.
+function findSurroundingParagraph(pageText: string, selectedText: string, pageNumber: number, docId: string): string {
   if (!pageText) return selectedText;
   const needle = selectedText.trim().slice(0, 60);
   if (!needle) return pageText.slice(0, 800);
+
+  const blocks = extractParagraphBlocks(pageText, pageNumber, docId);
+  const matched = findBestMatchingBlock(needle, blocks);
+  if (matched) return matched.text;
+
+  // Fallback: legacy double-line-break split, then a character window.
   const paragraphs = pageText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const match = paragraphs.find((p) => p.includes(needle));
   if (match) return match;
@@ -1644,7 +1654,7 @@ export default function ThoughtUnitReader() {
     setExplainStepContext({
       selectedText: text,
       pageText,
-      surroundingParagraph: text ? findSurroundingParagraph(pageText, text) : pageText.slice(0, 800),
+      surroundingParagraph: text ? findSurroundingParagraph(pageText, text, currentPage, bookId) : pageText.slice(0, 800),
       pageThesis: sm?.pageThesis ?? null,
       studyNotes: sm?.studyNotes ?? null,
       conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
@@ -4016,6 +4026,26 @@ export default function ThoughtUnitReader() {
             </button>
           )}
 
+          {/* Read Selection — starts study-speech playback from the active LeftPanel
+              text selection, connecting selection -> speech tracking (P4) */}
+          {sel.selectionText?.trim() && (
+            <button
+              onClick={() => {
+                const snippet = sel.selectionText?.trim() ?? "";
+                if (!snippet) return;
+                focusEvidence(snippet);
+                speechPanelRef.current?.playFromSnippet(snippet);
+              }}
+              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
+              title="Read Selection — start speech playback from the selected text"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔊</span>
+                <span className="text-sm font-medium hidden sm:block">Read Selection</span>
+              </div>
+            </button>
+          )}
+
           {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection,
               or for the current page/thought-unit when nothing is selected */}
           <button
@@ -4217,7 +4247,7 @@ export default function ThoughtUnitReader() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.78)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowWhiteboardPanel(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); } }}
         >
           {(console.log("[WHITEBOARD_CENTERED_MODAL]", {
             page: currentPage,
@@ -4231,7 +4261,7 @@ export default function ThoughtUnitReader() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
               <span className="text-sm font-semibold tracking-wide text-gray-200">Whiteboard</span>
               <button
-                onClick={() => setShowWhiteboardPanel(false)}
+                onClick={() => { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); }}
                 className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
                 aria-label="Close whiteboard"
               >
@@ -4249,9 +4279,9 @@ export default function ThoughtUnitReader() {
                 pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
               }) as any) && null}
               <WhiteboardPanel
-                key={`wb-${bookId ?? "book"}-p${currentPage}`}
-                concept={currentPageStudyModel?.pageThesis ?? ""}
-                context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
+                key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
+                concept={wbConcept || currentPageStudyModel?.pageThesis || ""}
+                context={wbContext || currentPageStudyModel?.studyNotes?.keyMechanism || ""}
                 studyModel={currentPageStudyModel as any}
                 pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
@@ -4338,6 +4368,19 @@ export default function ThoughtUnitReader() {
               turns
             )
           }
+          onVisualize={({ selectedText, explanation, pageContext }) => {
+            const concept = selectedText || explanation;
+            const context = [explanation, pageContext].filter(Boolean).join("\n\n");
+            console.log("[EXPLAIN_STEP_VISUALIZE]", {
+              page: explainStepContext.pageNumber,
+              conceptChars: concept.length,
+              contextChars: context.length,
+            });
+            setWbConcept(truncate(concept, 600));
+            setWbContext(truncate(context, 1200));
+            setExplainStepContext(null);
+            setShowWhiteboardPanel(true);
+          }}
         />
       )}
 
