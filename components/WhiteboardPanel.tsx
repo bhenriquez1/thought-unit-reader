@@ -115,7 +115,7 @@ export default function WhiteboardPanel({
 
   // "AI Drawing" mode — Armando-style hand-drawn illustration generated from a
   // GPT visual-teaching-script via OpenAI Images or Ideogram (dual provider).
-  const [wbMode, setWbMode] = useState<"steps" | "aiDrawing">("steps");
+  const [wbMode, setWbMode] = useState<"steps" | "aiDrawing">("aiDrawing");
   const [imageProvider, setImageProvider] = useState<"openai" | "ideogram">("openai");
   const [aiImageLoading, setAiImageLoading] = useState(false);
   const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
@@ -439,6 +439,15 @@ export default function WhiteboardPanel({
       setAiImageLoading(false);
     }
   }, [effectiveConcept, effectiveContext, imageProvider, isDebugMode]);
+
+  /** AI Drawing mode is the default — auto-generate once on mount when a concept is available
+   *  (e.g. came from "Explain This Step → Visualize"). */
+  useEffect(() => {
+    if (wbMode !== "aiDrawing") return;
+    if (!effectiveConcept) return;
+    generateAIDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only — new concept means a new key/remount of this panel
 
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {

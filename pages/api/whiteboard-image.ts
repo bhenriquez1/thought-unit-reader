@@ -50,21 +50,25 @@ type Err = {
   debugInfo?: DebugInfo;
 };
 
-const DIRECTOR_SYSTEM_PROMPT = `You are a visual-teaching director, in the style of Armando Hasudungan's hand-drawn educational videos. Given a concept and page context, write a short "visual teaching script" describing exactly what should be drawn to teach this concept visually.
+const DIRECTOR_SYSTEM_PROMPT = `You are a visual-teaching director, in the style of Armando Hasudungan's hand-drawn educational videos. Given a concept and page context, write a short "visual teaching script" describing exactly what should be drawn to teach THIS SPECIFIC concept visually — not a generic diagram.
 
 Your script must describe:
-- The key structures/objects to draw, with labels.
-- Arrows showing relationships, flow, or sequence between them.
+- 3-5 key structures/objects to draw, each with a SHORT label (1-3 words) in a fixed position (e.g. "top-left", "center", "bottom-right") so labels never overlap.
+- Arrows showing relationships, flow, or sequence between them, with a short verb/label on each arrow (e.g. "releases", "becomes").
 - Color-coding for related elements (e.g. "carbon atoms = blue, oxygen = red").
-- A sequential, step-by-step layout (so the diagram tells a story / shows a mechanism happening).
+- A left-to-right or top-to-bottom sequential layout (numbered steps 1, 2, 3...) so the diagram tells the story of this concept.
 
-Keep it concise (under 150 words), concrete, and visual — describe shapes, positions, labels, arrows, and colors, not abstract prose. This script will be sent directly to an image-generation model.`;
+Keep it concise (under 150 words), concrete, and visual — describe shapes, positions, labels, arrows, and colors, not abstract prose. Every label must be SHORT and large enough to read. This script will be sent directly to an image-generation model.`;
 
-async function buildTeachingScript(concept: string, context: string): Promise<{ script: string; raw: string }> {
+async function buildTeachingScript(concept: string, context: string, debug: boolean): Promise<{ script: string; raw: string }> {
   const userPrompt = [
     `Concept to visualize: ${concept}`,
     context ? `Page context: ${context.slice(0, 1200)}` : null,
   ].filter(Boolean).join("\n\n");
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_DIRECTOR_REQUEST]", { model: "gpt-4o-mini", concept: concept.slice(0, 120), userPromptChars: userPrompt.length });
+  }
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -77,48 +81,86 @@ async function buildTeachingScript(concept: string, context: string): Promise<{ 
   });
 
   const script = completion.choices?.[0]?.message?.content?.trim() ?? "";
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_DIRECTOR_RESPONSE]", { scriptChars: script.length, script: script.slice(0, 500) });
+  }
+
   return { script, raw: JSON.stringify(completion).slice(0, 4000) };
 }
 
 function imagePromptFromScript(script: string, concept: string): string {
   return [
-    `Educational hand-drawn whiteboard-style illustration teaching the concept: "${concept}".`,
+    `A hand-drawn educational whiteboard illustration teaching the concept: "${concept}".`,
     script,
-    "Style: clean hand-drawn lines on a white background, like a teacher's whiteboard sketch (Armando Hasudungan style). Clearly readable labels next to each structure, directional arrows showing relationships and sequence, distinct colors for related elements as described.",
+    "Style: Armando Hasudungan style — clean black ink hand-drawn lines and simple shapes on a plain white background, like a teacher's whiteboard sketch. VERY LARGE, BOLD, CLEARLY READABLE handwritten-style text labels (short, 1-3 words each) placed next to each structure with generous spacing so NO labels overlap or touch. Bold directional arrows showing relationships, flow, and sequence between elements, each with a short label on the arrow. Use a few distinct colors (as described) to color-code related elements. Lay the diagram out left-to-right or top-to-bottom in numbered steps so it tells a clear visual story. Avoid clutter — prioritize large legible text and generous whitespace over decorative detail.",
   ].join("\n\n");
 }
 
-async function generateWithOpenAI(prompt: string): Promise<{ imageUrl: string; raw: string }> {
-  const result = await openai.images.generate({
+async function generateWithOpenAI(prompt: string, debug: boolean): Promise<{ imageUrl: string; raw: string }> {
+  const requestPayload = {
     model: "dall-e-3",
     prompt: prompt.slice(0, 4000),
-    size: "1024x1024",
-    quality: "standard",
-    response_format: "b64_json",
+    size: "1024x1024" as const,
+    quality: "standard" as const,
     n: 1,
-  });
-  const b64 = result.data?.[0]?.b64_json;
-  if (!b64) throw new Error("OpenAI image response missing b64_json");
-  return { imageUrl: `data:image/png;base64,${b64}`, raw: JSON.stringify({ created: result.created, hasB64: !!b64 }) };
+  };
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_OPENAI_REQUEST]", { ...requestPayload, promptChars: requestPayload.prompt.length });
+  }
+
+  const result = await openai.images.generate(requestPayload);
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_OPENAI_RESPONSE]", {
+      created: result.created,
+      dataCount: result.data?.length ?? 0,
+      hasB64: !!result.data?.[0]?.b64_json,
+      hasUrl: !!result.data?.[0]?.url,
+    });
+  }
+
+  const item = result.data?.[0];
+  const b64 = item?.b64_json;
+  const url = item?.url;
+  if (b64) {
+    return { imageUrl: `data:image/png;base64,${b64}`, raw: JSON.stringify({ created: result.created, hasB64: true }) };
+  }
+  if (url) {
+    return { imageUrl: url, raw: JSON.stringify({ created: result.created, hasUrl: true }) };
+  }
+  throw new Error("OpenAI image response missing both b64_json and url");
 }
 
-async function generateWithIdeogram(prompt: string): Promise<{ imageUrl: string; raw: string; status: number }> {
+async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ imageUrl: string; raw: string; status: number }> {
+  const requestBody = {
+    image_request: {
+      prompt: prompt.slice(0, 2000),
+      aspect_ratio: "ASPECT_1_1",
+      model: "V_2",
+      magic_prompt_option: "AUTO",
+    },
+  };
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_IDEOGRAM_REQUEST]", { ...requestBody.image_request, promptChars: requestBody.image_request.prompt.length });
+  }
+
   const resp = await fetch("https://api.ideogram.ai/generate", {
     method: "POST",
     headers: {
       "Api-Key": process.env.IDEOGRAM_API_KEY!,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      image_request: {
-        prompt: prompt.slice(0, 2000),
-        aspect_ratio: "ASPECT_1_1",
-        model: "V_2",
-        magic_prompt_option: "AUTO",
-      },
-    }),
+    body: JSON.stringify(requestBody),
   });
   const raw = await resp.text();
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_IDEOGRAM_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
+  }
+
   if (!resp.ok) throw Object.assign(new Error("Ideogram request failed"), { httpStatus: resp.status, raw });
   const data = JSON.parse(raw);
   const imageUrl = data?.data?.[0]?.url;
@@ -163,7 +205,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   let script = "";
   let directorRaw = "";
   try {
-    const directed = await buildTeachingScript(concept, context);
+    const directed = await buildTeachingScript(concept, context, debug);
     script = directed.script;
     directorRaw = directed.raw;
     if (!script) throw new Error("Empty teaching script returned by gpt-4o-mini");
@@ -190,8 +232,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   try {
     const drawn = provider === "ideogram"
-      ? await generateWithIdeogram(prompt)
-      : await generateWithOpenAI(prompt);
+      ? await generateWithIdeogram(prompt, debug)
+      : await generateWithOpenAI(prompt, debug);
 
     console.log("[WHITEBOARD_IMAGE_READY]", { provider, concept: concept.slice(0, 80), scriptChars: script.length });
     return res.status(200).json({ imageUrl: drawn.imageUrl, teachingScript: script, provider });
