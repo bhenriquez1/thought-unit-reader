@@ -28,6 +28,7 @@ import type {
   PageReadingMode,
   PageStoryV3,
   ParagraphNoteV3,
+  ParagraphRoleAssignmentV3,
   StoryBlockV3,
   StoryEvidenceV3,
 } from "./types";

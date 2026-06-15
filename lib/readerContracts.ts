@@ -79,6 +79,7 @@ export type ParagraphKind =
   | "formula"
   | "reference"
   | "filler"
+  | "dat_fact"
   | "unknown";
 
 export type HighlightLevel = "important" | "support" | "additional" | "trap";

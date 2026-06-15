@@ -161,6 +161,7 @@ const ANCHOR_ROLE_LABEL: Record<VisualAnchorRole, string> = {
   exampleEvidence: "Example",
   keyDetail:       "Key Detail",
   confusionTrap:   "Watch Out",
+  datFact:         "High-Yield Fact",
 };
 
 const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
@@ -170,6 +171,7 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   exampleEvidence: 1.00,
   keyDetail:       0.98,
   confusionTrap:   0.85,
+  datFact:         0.92,
 };
 
 // Returns the id of the first visualAnchor whose sourceField matches — used to

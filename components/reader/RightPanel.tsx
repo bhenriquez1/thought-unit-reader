@@ -7,7 +7,8 @@ import { compressToNote, isFieldRenderable } from "@/lib/insights/sentenceCleanu
 import type { EvidenceAnchor, OperatorCard } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
-import type { PageStoryV2, StoryBlockV2 } from "@/lib/insights/buildPageStoryV2";
+import type { PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
+import type { StoryBlockV2 } from "@/lib/insights/types";
 import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNotes";
 import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
 import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } from "@/lib/insights/buildNarrativeBlocks";
