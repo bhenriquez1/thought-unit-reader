@@ -1647,6 +1647,17 @@ export default function ThoughtUnitReader() {
     const text = sel.selectionText?.trim() ?? "";
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+
+    // Keep the LeftPanel highlight in sync with whatever is being explained — when
+    // text is selected, resolve it to its thought-unit so the same evidenceRefId
+    // drives the PDF glow here, in Speech, and in Whiteboard for this concept. When
+    // nothing is selected, focusedEvidenceId already reflects the active thought-unit
+    // (set by RightPanel/speech) and is left as-is.
+    if (text) {
+      const resolvedId = resolveEvidenceId(text);
+      if (resolvedId) setFocusedEvidenceId(resolvedId);
+    }
+
     const relatedNotes = getNotesByBook(bookId)
       .filter((n) => n.pageNumber === currentPage)
       .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
@@ -1668,7 +1679,7 @@ export default function ThoughtUnitReader() {
       pageNumber: currentPage,
     });
     sel.clearSelection();
-  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile]);
+  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, resolveEvidenceId, focusedEvidenceId]);
 
   // Convert the tutor conversation into a polished NoteLab note: source
   // page/selected text + the tutor's Direct Answer / Why / Example / Common

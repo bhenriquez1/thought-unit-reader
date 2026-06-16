@@ -222,6 +222,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const providerRef = useRef<"openai" | "browser" | null>(null);
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
+  // Monotonic session id — bumped every play() call so stale async loops from a
+  // superseded call can detect they've been overtaken and stop producing audio,
+  // even though abortRef gets reset to false by the new call.
+  const sessionRef = useRef(0);
+  const isStale = (session: number) => abortRef.current || sessionRef.current !== session;
+  // Allocates a fresh session id and clears the abort flag — call this once per
+  // user-initiated playback request, right before kicking off the async loop.
+  function beginSession(): number {
+    abortRef.current = false;
+    return ++sessionRef.current;
+  }
 
   // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
   // segment's audio start fetching while the current segment is still playing.
@@ -438,6 +449,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
   function stopAudio() {
+    if (providerRef.current) {
+      console.log("[SPEECH_CANCEL_PREVIOUS]", { provider: providerRef.current, mode, segIdx });
+    }
     abortRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
@@ -536,10 +550,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── Browser speech fallback ─────────────────────────────────────────────────
 
-  function playBrowserSpeech(text: string, onDone?: () => void) {
+  function playBrowserSpeech(text: string, onDone?: () => void, session?: number) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setPlayState("error");
       setErrorMsg("Speech not available in this browser.");
+      onDone?.();
+      return;
+    }
+    // A newer play() call has already superseded this request — don't speak.
+    if (session !== undefined && isStale(session)) {
       onDone?.();
       return;
     }
@@ -554,23 +573,26 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const utt = new SpeechSynthesisUtterance(normalized);
     utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
 
+    const superseded = () => session !== undefined && isStale(session);
+
     // Watchdog: if onend never fires (stalled synthesis engine), cancel and continue.
     const timeoutMs = Math.min(60000, Math.max(15000, normalized.length * 45));
     let watchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       console.warn("[SPEECH_WATCHDOG]", { source: "browser", charCount: normalized.length, timeoutMs });
       window.speechSynthesis.cancel();
-      setPlayState("idle");
+      if (!superseded()) setPlayState("idle");
       onDone?.();
     }, timeoutMs);
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
-    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); setPlayState("playing"); };
-    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); setPlayState("idle"); onDone?.(); };
+    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
+    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
       if (e.error === "canceled" || e.error === "interrupted") { onDone?.(); return; }
       if (providerRef.current !== "browser") { onDone?.(); return; } // OpenAI took over
+      if (superseded()) { onDone?.(); return; }
       console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
       setPlayState("error");
       setErrorMsg("Speech is temporarily unavailable. Please try again.");
@@ -582,8 +604,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── Full Page: sentence-by-sentence playback ──────────────────────────────
 
-  async function playFullPageSequential(sentences: string[], fromIdx: number) {
-    abortRef.current = false;
+  async function playFullPageSequential(sentences: string[], fromIdx: number, session: number) {
     setPlayState("loading");
     onPlayStateChange?.(true);
 
@@ -608,7 +629,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
-      if (abortRef.current) break;
+      if (isStale(session)) break;
       if (i === effectiveFromIdx) console.log("[SPEECH_PLAY_START]", { mode: "fullPage", fromIdx, totalSentences: sentences.length, page: pageNumber, first: sentences[i]?.slice(0, 80) });
       const raw = sentences[i];
       const { hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
@@ -631,22 +652,22 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       try {
         const result = await fetchAndPlayAudio(text);
-        if (abortRef.current) break;
+        if (isStale(session)) break;
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(text, resolve));
+          await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
         }
-        if (!abortRef.current && i < sentences.length - 1) {
+        if (!isStale(session) && i < sentences.length - 1) {
           await new Promise((r) => setTimeout(r, 150));
         }
       } catch (err: unknown) {
-        if (abortRef.current) break;
+        if (isStale(session)) break;
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode: "fullPage" });
-        await new Promise<void>((resolve) => playBrowserSpeech(text, resolve));
+        await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
       }
     }
 
-    if (!abortRef.current) {
+    if (!isStale(session)) {
       setPlayState("idle");
       onSnippetFocus?.(null);
     }
@@ -655,12 +676,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── Per-segment sequential playback (highlights mode) ─────────────────────
 
-  async function playHighlightsSequential(segs: SpeechSegment[], fromIdx: number) {
-    abortRef.current = false;
+  async function playHighlightsSequential(segs: SpeechSegment[], fromIdx: number, session: number) {
     setPlayState("loading");
 
     for (let i = fromIdx; i < segs.length; i++) {
-      if (abortRef.current) break;
+      if (isStale(session)) break;
       const seg = segs[i];
       setSegIdx(i);
 
@@ -686,24 +706,24 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       try {
         const result = await fetchAndPlayAudio(hText);
-        if (abortRef.current) break; // user stopped during fetch
+        if (isStale(session)) break; // user stopped, or a newer play() superseded this loop
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve));
+          await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
         }
         // Small pause between segments
-        if (!abortRef.current && i < segs.length - 1) {
+        if (!isStale(session) && i < segs.length - 1) {
           await new Promise((r) => setTimeout(r, 250));
         }
       } catch (err: unknown) {
-        if (abortRef.current) break; // user stopped — not an OpenAI failure, no fallback
+        if (isStale(session)) break; // user stopped — not an OpenAI failure, no fallback
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve));
+        await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
       }
     }
 
-    if (!abortRef.current) {
+    if (!isStale(session)) {
       setPlayState("idle");
       onEvidenceFocus?.(null);
     }
@@ -712,10 +732,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── Main play ──────────────────────────────────────────────────────────────
 
   async function play(fromIdx = 0) {
-    console.log("[SPEECH_PLAY_CLICK]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
+    console.log("[SPEECH_PLAY_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
     stopAudio();
-    abortRef.current = false;
+    const session = beginSession();
     setErrorMsg(null);
+    console.log("[SPEECH_START]", { mode, fromIdx, session });
 
     // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
@@ -726,7 +747,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
-      playFullPageSequential(sents, fromIdx);
+      playFullPageSequential(sents, fromIdx, session);
       return;
     }
 
@@ -741,7 +762,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         evidenceRefIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
         note: "each evidenceRefId will drive focusedEvidenceId → PDF rect scroll",
       });
-      playHighlightsSequential(segsToPlay, fromIdx);
+      playHighlightsSequential(segsToPlay, fromIdx, session);
       return;
     }
 
@@ -760,11 +781,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
     });
 
-    abortRef.current = false;
     setPlayState("loading");
 
     for (let i = fromIdx; i < segsToPlay.length; i++) {
-      if (abortRef.current) break;
+      if (isStale(session)) break;
       const seg = segsToPlay[i];
       setSegIdx(i);
 
@@ -792,23 +812,23 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       try {
         const result = await fetchAndPlayAudio(segText);
-        if (abortRef.current) break;
+        if (isStale(session)) break;
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
         }
-        if (!abortRef.current && i < segsToPlay.length - 1) {
+        if (!isStale(session) && i < segsToPlay.length - 1) {
           await new Promise((r) => setTimeout(r, 250));
         }
       } catch (err: unknown) {
-        if (abortRef.current) break;
+        if (isStale(session)) break;
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
       }
     }
 
-    if (!abortRef.current) {
+    if (!isStale(session)) {
       setPlayState("idle");
       onEvidenceFocus?.(null);
     }
@@ -859,7 +879,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setMode("fullPage");
     stop();
     setSegIdx(idx);
-    setTimeout(() => playFullPageSequential(sents, idx), 80);
+    const session = beginSession();
+    setTimeout(() => playFullPageSequential(sents, idx, session), 80);
   }
 
   useImperativeHandle(ref, () => ({ playFromSnippet }), [fpSentences, activePageText, pageNumber]);
