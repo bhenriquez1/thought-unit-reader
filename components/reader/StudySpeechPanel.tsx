@@ -360,6 +360,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       // Set immediately with quick-cleaned result so playback can start
       setFpSentences(quickSents);
+      console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
 
       // ── Step 2: background OCR repair if corruption is detected ──────────
       // Score = ratio of suspiciously short all-caps tokens (not common words)
@@ -552,15 +553,27 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       .trim();
     const utt = new SpeechSynthesisUtterance(normalized);
     utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
+
+    // Watchdog: if onend never fires (stalled synthesis engine), cancel and continue.
+    const timeoutMs = Math.min(60000, Math.max(15000, normalized.length * 45));
+    let watchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      console.warn("[SPEECH_WATCHDOG]", { source: "browser", charCount: normalized.length, timeoutMs });
+      window.speechSynthesis.cancel();
+      setPlayState("idle");
+      onDone?.();
+    }, timeoutMs);
+    const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
+
     utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); setPlayState("playing"); };
-    utt.onend   = () => { console.log("[SPEECH_AUDIO_END]", { source: "browser" }); setPlayState("idle"); onDone?.(); };
+    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
-      // "canceled" fires when speechSynthesis.cancel() is called intentionally — not an error
-      if (e.error === "canceled" || e.error === "interrupted") return;
-      if (providerRef.current !== "browser") return; // OpenAI took over
+      clearWatchdog();
+      // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
+      if (e.error === "canceled" || e.error === "interrupted") { onDone?.(); return; }
+      if (providerRef.current !== "browser") { onDone?.(); return; } // OpenAI took over
       console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
       setPlayState("error");
-      setErrorMsg(`Speech error: ${e.error}`);
+      setErrorMsg("Speech is temporarily unavailable. Please try again.");
       onDone?.();
     };
     window.speechSynthesis.cancel();
@@ -596,6 +609,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
+      if (i === effectiveFromIdx) console.log("[SPEECH_PLAY_START]", { mode: "fullPage", fromIdx, totalSentences: sentences.length, page: pageNumber, first: sentences[i]?.slice(0, 80) });
       const raw = sentences[i];
       const { hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
       if (transformations > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });

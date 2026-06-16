@@ -377,7 +377,7 @@ export function groundHighlightAnchors(
     // 0.45 = at least ~45% key-term overlap plus structural bonus, or very high
     // term overlap alone. Tuned to accept "iodine deficiency causes goiter" → sentence
     // containing "iodine", "deficiency", "goiter" while rejecting weak matches.
-    const RECOVERY_THRESHOLD = 0.45;
+    const RECOVERY_THRESHOLD = 0.55;
 
     // Final guard: never accept a recovered sentence that is itself a header.
     // (splitIntoSentences already filters these, but guard the result defensively.)
