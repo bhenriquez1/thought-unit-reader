@@ -186,6 +186,11 @@ function splitIntoParagraphs(text: string): string[] {
     .filter(p => p.length > 0);
 }
 
+// Cap on "reasonable thought-unit size" — shared by paragraph-level expansion and
+// the chained-neighbor merge below, so both expansion paths agree on what counts
+// as a coherent unit vs. an over-broad span.
+const THOUGHT_UNIT_MAX_WORDS = 70;
+
 // If `core`'s containing paragraph is a reasonable "thought unit" size — bigger than
 // the sentence itself but not the whole page — span the highlight across the full
 // paragraph. Returns undefined when no such paragraph is found (e.g. the page text
@@ -204,16 +209,19 @@ function paragraphSpanFor(
   if (!para) return undefined;
 
   const paraWords = wordCount(para);
-  if (paraWords <= wordCount(core)) return undefined; // paragraph IS the sentence
-  if (paraWords > 70) return undefined;               // too large — avoid over-highlighting
+  if (paraWords <= wordCount(core)) return undefined;          // paragraph IS the sentence
+  if (paraWords > THOUGHT_UNIT_MAX_WORDS) return undefined;    // too large — avoid over-highlighting
 
   return { spanStart: firstWords(para, 5), spanEnd: lastWords(para, 5) };
 }
 
-// If `core` (at `sentences[idx]`) is short, pull in an adjacent, topically-related
-// sentence (high key-term overlap) so a highlight reads as a complete thought unit
-// rather than one clipped line. Returns spanStart/spanEnd covering both sentences,
-// or undefined when no neighbor qualifies.
+// If `core` (at `sentences[idx]`) is short, chain in adjacent, topically-related
+// sentences (high key-term overlap with the core) so a highlight reads as a complete
+// thought unit — e.g. a mechanism step + its example + its result — rather than one
+// clipped line or a single bolted-on neighbor. Walks outward in both directions while
+// overlap with the core holds and the running word count stays under the cap. Returns
+// spanStart/spanEnd covering the full chained range, or undefined when no neighbor
+// qualifies at all.
 function mergeWithNeighbor(
   sentences: string[],
   idx: number,
@@ -221,16 +229,31 @@ function mergeWithNeighbor(
   const core = sentences[idx];
   if (wordCount(core) > 14) return undefined;
 
-  const next = sentences[idx + 1];
-  const prev = sentences[idx - 1];
+  let startIdx = idx;
+  let endIdx = idx;
+  let totalWords = wordCount(core);
 
-  if (next && termOverlapRatio(core, next) >= 0.2) {
-    return { spanStart: firstWords(core, 5), spanEnd: lastWords(next, 5) };
+  while (endIdx + 1 < sentences.length) {
+    const candidate = sentences[endIdx + 1];
+    if (termOverlapRatio(core, candidate) < 0.2) break;
+    const nextTotal = totalWords + wordCount(candidate);
+    if (nextTotal > THOUGHT_UNIT_MAX_WORDS) break;
+    endIdx++;
+    totalWords = nextTotal;
   }
-  if (prev && termOverlapRatio(core, prev) >= 0.2) {
-    return { spanStart: firstWords(prev, 5), spanEnd: lastWords(core, 5) };
+
+  while (startIdx - 1 >= 0) {
+    const candidate = sentences[startIdx - 1];
+    if (termOverlapRatio(core, candidate) < 0.2) break;
+    const nextTotal = totalWords + wordCount(candidate);
+    if (nextTotal > THOUGHT_UNIT_MAX_WORDS) break;
+    startIdx--;
+    totalWords = nextTotal;
   }
-  return undefined;
+
+  if (startIdx === idx && endIdx === idx) return undefined;
+
+  return { spanStart: firstWords(sentences[startIdx], 5), spanEnd: lastWords(sentences[endIdx], 5) };
 }
 
 // Thought-unit span for a sentence already identified as the "core" highlight:
