@@ -145,7 +145,10 @@ function getCachedVoices(): SpeechSynthesisVoice[] {
     // Voices not loaded yet — refresh the cache once they arrive.
     speechSynthesis.addEventListener(
       'voiceschanged',
-      () => { cachedVoices = speechSynthesis.getVoices(); },
+      () => {
+        cachedVoices = speechSynthesis.getVoices();
+        console.log('[SPEECH_VOICES_READY]', { count: cachedVoices.length });
+      },
       { once: true },
     );
   }

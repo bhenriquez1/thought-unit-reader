@@ -1656,7 +1656,9 @@ export default function ThoughtUnitReader() {
     setExplainStepContext({
       selectedText: text,
       pageText,
-      surroundingParagraph: text ? findSurroundingParagraph(pageText, text, currentPage, bookId) : pageText.slice(0, 800),
+      surroundingParagraph: text
+        ? findSurroundingParagraph(pageText, text, currentPage, bookId)
+        : ((finalHighlightAnchors as any[]).find(a => a.evidenceRefId === focusedEvidenceId)?.text ?? pageText.slice(0, 800)),
       pageThesis: sm?.pageThesis ?? null,
       studyNotes: sm?.studyNotes ?? null,
       conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],

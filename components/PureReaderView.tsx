@@ -246,7 +246,7 @@ export default function PureReaderView({
 
     // Span guard: if spanStart..spanEnd covers > 250 chars in the page text, clear the span
     // so the highlight renders from anchor.text only (prevents formula-heavy pages turning fully pink).
-    const SPAN_CHAR_MAX = 150;
+    const SPAN_CHAR_MAX = 500;
     const aiTargets: HighlightTarget[] = scored.map((s, i) => {
       let spanStart: string | undefined = s.anchor.spanStart ?? undefined;
       let spanEnd:   string | undefined = s.anchor.spanEnd   ?? undefined;
