@@ -1,0 +1,241 @@
+import { computeChapterProgress, computeCourseProgress } from "@/lib/syllabus/chapterProgress";
+import type { SyllabusTopic } from "@/lib/stores/syllabusStore";
+import type { RecallSet } from "@/lib/recalllab/recallStore";
+import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
+import type { StudyGuideRecord } from "@/lib/studyguide/types";
+
+function makeTopic(overrides: Partial<SyllabusTopic> = {}): SyllabusTopic {
+  return {
+    id: "topic-1",
+    title: "Chapter 1: Cell Structure",
+    order: 0,
+    chapterIds: ["ch-1"],
+    pageRanges: [{ start: 1, end: 10 }],
+    status: "not_started",
+    completionPercentage: 0,
+    highlightCount: 0,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("computeChapterProgress", () => {
+  it("returns all-zero progress with not_started status when nothing has happened", () => {
+    const topic = makeTopic();
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set(),
+      recallSets: [],
+      notes: [],
+      studyGuides: [],
+    });
+
+    expect(progress.readPct).toBe(0);
+    expect(progress.understandPct).toBe(0);
+    expect(progress.recallPct).toBe(0);
+    expect(progress.masteryPct).toBe(0);
+    expect(progress.status).toBe("not_started");
+  });
+
+  it("computes readPct from visited pages within the chapter's page range only", () => {
+    const topic = makeTopic({ pageRanges: [{ start: 1, end: 10 }] });
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set([1, 2, 3, 4, 5, 99]), // page 99 is outside the range
+      recallSets: [],
+      notes: [],
+      studyGuides: [],
+    });
+
+    expect(progress.visitedPageCount).toBe(5);
+    expect(progress.readPct).toBe(50); // 5 of 10 pages
+  });
+
+  it("computes recallPct from card review state, weighting unreviewed cards as 0", () => {
+    const topic = makeTopic({ pageRanges: [{ start: 1, end: 5 }] });
+    const recallSets: RecallSet[] = [
+      {
+        id: "rs-1",
+        bookId: "book-1",
+        pageNumber: 2,
+        subject: "General Notes",
+        topic: "Cell Membrane",
+        createdAt: Date.now(),
+        cards: [
+          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" },
+          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 0, isMissed: false },
+        ],
+      },
+    ];
+
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set([1, 2]),
+      recallSets,
+      notes: [],
+      studyGuides: [],
+    });
+
+    expect(progress.recallCardCount).toBe(2);
+    expect(progress.recallReviewedCount).toBe(1);
+    expect(progress.recallPct).toBe(50); // (100 + 0) / 2
+  });
+
+  it("ignores recall sets and notes from pages outside the chapter's range", () => {
+    const topic = makeTopic({ pageRanges: [{ start: 1, end: 5 }] });
+    const recallSets: RecallSet[] = [
+      {
+        id: "rs-1",
+        bookId: "book-1",
+        pageNumber: 50, // outside range
+        subject: "General Notes",
+        topic: "Unrelated",
+        createdAt: Date.now(),
+        cards: [{ id: "c1", type: "core", front: "Q", back: "A", reviewCount: 5, isMissed: false, difficulty: "easy" }],
+      },
+    ];
+    const notes: UltraNote[] = [
+      { id: "n1", bookId: "book-1", pageNumber: 50, topic: "Unrelated", subject: "General Notes" } as UltraNote,
+    ];
+
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set([1]),
+      recallSets,
+      notes,
+      studyGuides: [],
+    });
+
+    expect(progress.recallCardCount).toBe(0);
+    expect(progress.noteCount).toBe(0);
+  });
+
+  it("matches study guides to the chapter by loose title containment", () => {
+    const topic = makeTopic({ title: "Cell Structure" });
+    const studyGuides: StudyGuideRecord[] = [
+      {
+        id: "sg-1",
+        bookId: "book-1",
+        mode: "highyield",
+        sourceLabels: [],
+        createdAt: Date.now(),
+        chapterTitle: "Chapter 1: Cell Structure",
+        topic: "Cell Structure",
+        priority: "High",
+        mustKnow: [],
+        datFacts: [],
+        mechanisms: [],
+        traps: [],
+        recallQuestions: [],
+        memoryHooks: [],
+        dailyTasks: [],
+      },
+    ];
+
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set(),
+      recallSets: [],
+      notes: [],
+      studyGuides,
+    });
+
+    expect(progress.studyGuideCount).toBe(1);
+  });
+
+  it("marks a fully-read chapter with poor recall as a weak_area, not mastered", () => {
+    const topic = makeTopic({ pageRanges: [{ start: 1, end: 2 }] });
+    const recallSets: RecallSet[] = [
+      {
+        id: "rs-1",
+        bookId: "book-1",
+        pageNumber: 1,
+        subject: "General Notes",
+        topic: "X",
+        createdAt: Date.now(),
+        cards: [
+          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: true, difficulty: "hard" },
+          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 1, isMissed: true, difficulty: "hard" },
+        ],
+      },
+    ];
+
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set([1, 2]),
+      recallSets,
+      notes: [],
+      studyGuides: [],
+    });
+
+    expect(progress.readPct).toBe(100);
+    expect(progress.status).toBe("weak_area");
+  });
+
+  it("marks a chapter mastered once mastery crosses the 80% threshold", () => {
+    const topic = makeTopic({ pageRanges: [{ start: 1, end: 2 }] });
+    const recallSets: RecallSet[] = [
+      {
+        id: "rs-1",
+        bookId: "book-1",
+        pageNumber: 1,
+        subject: "General Notes",
+        topic: "X",
+        createdAt: Date.now(),
+        cards: [{ id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" }],
+      },
+    ];
+    const notes: UltraNote[] = [
+      { id: "n1", bookId: "book-1", pageNumber: 1, topic: "X", subject: "General Notes" } as UltraNote,
+    ];
+
+    const progress = computeChapterProgress(topic, {
+      visitedPages: new Set([1, 2]),
+      recallSets,
+      notes,
+      studyGuides: [],
+    });
+
+    expect(progress.masteryPct).toBeGreaterThanOrEqual(80);
+    expect(progress.status).toBe("mastered");
+  });
+});
+
+describe("computeCourseProgress", () => {
+  it("aggregates chapter count, completion, and current chapter across the course", () => {
+    const topics = [
+      makeTopic({ id: "t1", pageRanges: [{ start: 1, end: 2 }] }),
+      makeTopic({ id: "t2" }),
+      makeTopic({ id: "t3" }),
+    ];
+    const progressList = [
+      computeChapterProgress(topics[0], {
+        visitedPages: new Set([1, 2]),
+        recallSets: [
+          {
+            id: "rs-1", bookId: "b", pageNumber: 1, subject: "General Notes", topic: "X", createdAt: Date.now(),
+            cards: [{ id: "c1", type: "core", front: "Q", back: "A", reviewCount: 1, isMissed: false, difficulty: "easy" }],
+          },
+        ],
+        notes: [
+          { id: "n1", bookId: "b", pageNumber: 1, topic: "X", subject: "General Notes" } as UltraNote,
+          { id: "n2", bookId: "b", pageNumber: 2, topic: "X", subject: "General Notes" } as UltraNote,
+        ],
+        studyGuides: [],
+      }),
+      computeChapterProgress(topics[1], { visitedPages: new Set([1]), recallSets: [], notes: [], studyGuides: [] }),
+      computeChapterProgress(topics[2], { visitedPages: new Set(), recallSets: [], notes: [], studyGuides: [] }),
+    ];
+
+    const course = computeCourseProgress(topics, progressList);
+
+    expect(course.totalChapters).toBe(3);
+    expect(course.completedChapters).toBe(1); // topic[0] is mastered
+    expect(course.currentChapterId).toBe("t2"); // first non-mastered, non-not_started chapter
+    expect(course.remainingChapters).toBe(2);
+    expect(course.estimatedRemainingMinutes).toBeGreaterThan(0);
+  });
+
+  it("returns zeroed-out progress for an empty topic list", () => {
+    const course = computeCourseProgress([], []);
+    expect(course.totalChapters).toBe(0);
+    expect(course.completedChapters).toBe(0);
+    expect(course.currentChapterId).toBeNull();
+    expect(course.estimatedRemainingMinutes).toBe(0);
+  });
+});

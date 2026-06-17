@@ -27,6 +27,7 @@ import SurgeonView from "@/components/SurgeonView";
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
+import { recordPageVisit } from "@/lib/syllabus/pageVisitStore";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
@@ -1044,6 +1045,13 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+
+  // Record this page as visited — the durable signal Syllabus's chapter-level
+  // "Read %" is computed from (see lib/syllabus/chapterProgress.ts). Without this,
+  // there is no persisted record of which pages a student has actually been on.
+  useEffect(() => {
+    recordPageVisit(bookId, currentPage);
+  }, [bookId, currentPage]);
 
   // Load saved highlights (from RightPanel "Save to NoteLab" / "Save to Recall")
   // for the active book/page so they can be merged into finalHighlightAnchors below.
