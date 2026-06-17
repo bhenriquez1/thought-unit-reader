@@ -5,6 +5,7 @@
 import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 
 export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank" | "cause-effect" | "application";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -448,5 +449,37 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
     cards,
     createdAt:    Date.now(),
     sourceNoteId: note.id,
+  };
+}
+
+// ── Build from a single Thought Unit (Recall Lab v2 "Quiz Me") ────────────
+// Scoped to one VisualAnchor's expanded detail rather than the whole page —
+// the synthetic set is built in-memory for an immediate quiz session and is
+// not persisted, so it doesn't clutter the dashboard.
+
+export function buildRecallSetFromThoughtUnit(detail: ThoughtUnitDetail, opts?: BuildRecallSetOpts): RecallSet {
+  const cards: RecallCard[] = [];
+
+  cards.push(card("tu-recall", "core", detail.recallCard.front, detail.recallCard.back));
+
+  if (detail.mechanism && detail.mechanism !== detail.recallCard.back)
+    cards.push(card("tu-mech", "definition", `What is the mechanism behind: ${detail.title}?`, detail.mechanism));
+  if (detail.commonConfusion && detail.commonConfusion !== detail.recallCard.back)
+    cards.push(card("tu-conf", "trap", `⚠️ What is the common confusion about: ${detail.title}?`, detail.commonConfusion));
+  if (detail.examTrap && detail.examTrap !== detail.recallCard.back)
+    cards.push(card("tu-trap", "trap", `⚠️ What is the exam trap for: ${detail.title}?`, detail.examTrap));
+  if (detail.datFact && detail.datFact !== detail.recallCard.back)
+    cards.push(card("tu-dat", "rule", `What is the DAT high-yield fact for: ${detail.title}?`, detail.datFact));
+
+  return {
+    id:          stableRecallId(detail.bookId, detail.pageNumber, `tu-${detail.evidenceRefId}`),
+    bookId:      detail.bookId,
+    bookTitle:   opts?.bookTitle,
+    sourceLabel: opts?.sourceLabel ?? "right-panel",
+    pageNumber:  detail.pageNumber,
+    subject:     inferSubject(detail.bookId),
+    topic:       detail.title,
+    cards,
+    createdAt:   Date.now(),
   };
 }

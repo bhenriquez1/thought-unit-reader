@@ -8,12 +8,14 @@ import {
   getAllRecallSetsAsync,
   deleteRecallSet,
   updateCardDifficulty,
+  buildRecallSetFromThoughtUnit,
   type RecallSet,
   type RecallCard,
   type CardDifficulty,
   type CardType,
 } from "@/lib/recalllab/recallStore";
 import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
+import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 
 interface RecallLabProps {
   onNavigateToPage?: (pageNumber: number) => void;
@@ -23,6 +25,16 @@ interface RecallLabProps {
   refreshKey?: number;
   /** If set, auto-open this set in a recall session immediately */
   lastSetId?: string;
+  /** When set, immediately opens the Recall Lab v2 thought-unit box layout for this unit */
+  openUnit?: ThoughtUnitDetail | null;
+  /** Called once openUnit has been consumed (opened) — parent should clear it */
+  onOpenUnitConsumed?: () => void;
+  /** "Visualize" — on-demand diagram for just this thought unit */
+  onVisualize?: (detail: ThoughtUnitDetail) => void;
+  /** "Open in Whiteboard" — full-page prebuilt diagram, pre-focused on this unit */
+  onOpenInWhiteboard?: (detail: ThoughtUnitDetail) => void;
+  /** "Open in Explain This Step" — seeds the tutor chat with this unit's source text */
+  onOpenExplainStep?: (detail: ThoughtUnitDetail) => void;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
@@ -51,7 +63,7 @@ const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
   "explain-step": { label: "Explain This Step", color: "#34d399" },
 };
 
-type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet };
+type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet } | { kind: "detail"; detail: ThoughtUnitDetail };
 
 async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
@@ -65,7 +77,17 @@ function loadSetsSync(bookId?: string): RecallSet[] {
   return bookId ? all.filter((s) => s.bookId === bookId) : all;
 }
 
-export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {
+export default function RecallLab({
+  onNavigateToPage,
+  bookId,
+  refreshKey,
+  lastSetId,
+  openUnit,
+  onOpenUnitConsumed,
+  onVisualize,
+  onOpenInWhiteboard,
+  onOpenExplainStep,
+}: RecallLabProps) {
   // Start from LS mirror for instant render; IDB async load fills in on mount
   const [sets, setSets] = useState<RecallSet[]>(() => {
     const sync = loadSetsSync(bookId);
@@ -133,6 +155,13 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     });
   }, [lastSetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Open the Recall Lab v2 box layout for a thought unit pushed in from RightPanel/LeftPanel.
+  useEffect(() => {
+    if (!openUnit) return;
+    setView({ kind: "detail", detail: openUnit });
+    onOpenUnitConsumed?.();
+  }, [openUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleDelete(id: string) {
     await deleteRecallSet(id);
     const updated = await loadSetsAsync(bookId);
@@ -140,6 +169,20 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     if (view.kind === "session" && view.set.id === id) {
       setView({ kind: "dashboard" });
     }
+  }
+
+  // --- Thought Unit detail mode (Recall Lab v2) ---
+  if (view.kind === "detail") {
+    return (
+      <ThoughtUnitDetailView
+        detail={view.detail}
+        onBack={() => setView({ kind: "dashboard" })}
+        onQuizMe={(detail) => setView({ kind: "session", set: buildRecallSetFromThoughtUnit(detail) })}
+        onVisualize={onVisualize}
+        onOpenInWhiteboard={onOpenInWhiteboard}
+        onOpenExplainStep={onOpenExplainStep}
+      />
+    );
   }
 
   // --- Session mode ---
@@ -439,6 +482,96 @@ function RecallSetRow({
         >
           ✕
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Thought Unit detail — Recall Lab v2 "learning workspace" box layout
+// ---------------------------------------------------------------------------
+
+function ThoughtUnitBox({
+  label,
+  color,
+  children,
+}: {
+  label: string;
+  color: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${color}30`, background: `${color}0d`, padding: "10px 12px" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color, textTransform: "uppercase", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.88)" }}>{children}</div>
+    </div>
+  );
+}
+
+function ThoughtUnitDetailView({
+  detail,
+  onBack,
+  onQuizMe,
+  onVisualize,
+  onOpenInWhiteboard,
+  onOpenExplainStep,
+}: {
+  detail: ThoughtUnitDetail;
+  onBack: () => void;
+  onQuizMe: (detail: ThoughtUnitDetail) => void;
+  onVisualize?: (detail: ThoughtUnitDetail) => void;
+  onOpenInWhiteboard?: (detail: ThoughtUnitDetail) => void;
+  onOpenExplainStep?: (detail: ThoughtUnitDetail) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+        <button type="button" onClick={onBack} style={{ background: "none", border: "none", color: "rgba(148,163,184,0.7)", fontSize: 12, cursor: "pointer", padding: 0 }}>← Back</button>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>🧠 {detail.title}</div>
+          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.55)", marginTop: 1 }}>Thought Unit · Page {detail.pageNumber}</div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <ThoughtUnitBox label="Core Idea" color="#fbbf24">{detail.coreIdea}</ThoughtUnitBox>
+        {detail.mechanism && <ThoughtUnitBox label="Mechanism" color="#34d399">{detail.mechanism}</ThoughtUnitBox>}
+        {detail.whyItMatters && <ThoughtUnitBox label="Why It Matters" color="#60a5fa">{detail.whyItMatters}</ThoughtUnitBox>}
+        {detail.commonConfusion && <ThoughtUnitBox label="Common Confusion" color="#f87171">{detail.commonConfusion}</ThoughtUnitBox>}
+        {detail.datFact && <ThoughtUnitBox label="DAT High Yield Fact" color="#c4b5fd">{detail.datFact}</ThoughtUnitBox>}
+        {detail.examTrap && <ThoughtUnitBox label="Exam Trap" color="#fb923c">⚠️ {detail.examTrap}</ThoughtUnitBox>}
+
+        {/* Recall Card */}
+        <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(11,20,40,0.7)", padding: "10px 12px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.7)", textTransform: "uppercase", marginBottom: 6 }}>
+            🎯 Recall Card
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)", marginBottom: 6 }}>{detail.recallCard.front}</div>
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", marginBottom: 6 }} />
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{detail.recallCard.back}</div>
+        </div>
+
+        {/* Source text */}
+        <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", fontStyle: "italic", padding: "0 2px" }}>
+          “{detail.sourceText.length > 220 ? detail.sourceText.slice(0, 220) + "…" : detail.sourceText}”
+        </div>
+      </div>
+
+      {/* Action row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, padding: "10px 14px 14px", flexShrink: 0 }}>
+        <button type="button" onClick={() => onQuizMe(detail)} style={rateBtn("#93c5fd", "rgba(59,130,246,0.1)")}>🎯 Quiz Me</button>
+        {onVisualize && (
+          <button type="button" onClick={() => onVisualize(detail)} style={rateBtn("#c4b5fd", "rgba(167,139,250,0.1)")}>🎨 Visualize</button>
+        )}
+        {onOpenInWhiteboard && (
+          <button type="button" onClick={() => onOpenInWhiteboard(detail)} style={rateBtn("#6ee7b7", "rgba(16,185,129,0.1)")}>🖼️ Open in Whiteboard</button>
+        )}
+        {onOpenExplainStep && (
+          <button type="button" onClick={() => onOpenExplainStep(detail)} style={rateBtn("#fcd34d", "rgba(245,158,11,0.1)")}>💬 Explain This Step</button>
+        )}
       </div>
     </div>
   );
