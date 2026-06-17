@@ -11,6 +11,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { ExplainStepMessage, ExplainStepStudyNotes, ExplainStepNoteRef, ExplainStepRecallRef } from "@/lib/explainStep/types";
+import {
+  claimSpeech,
+  isSpeechStale,
+  registerActiveAudio,
+  registerActiveUtterance,
+  notifySpeechStart,
+  notifySpeechEnd,
+  notifySpeechError,
+  logBlockedDuplicate,
+} from "@/lib/speech/speechController";
+
+const SPEECH_OWNER = "explain-step" as const;
 
 export interface ExplainStepContext {
   selectedText: string;
@@ -105,6 +117,8 @@ export default function ExplainStepChat({
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const globalTokenRef = useRef(0);
+  const isStartingRef = useRef(false);
 
   const lastQuestion = turns.filter((t) => t.role === "user").slice(-1)[0]?.content ?? context.selectedText;
   const lastAnswer = turns.filter((t) => t.role === "assistant").slice(-1)[0]?.content ?? "";
@@ -115,11 +129,15 @@ export default function ExplainStepChat({
     }
   }, [turns, loading]);
 
-  // Stop any in-flight speech when the chat closes/unmounts.
+  // Stop any in-flight speech when the chat closes/unmounts — but only if WE
+  // own the shared controller's active slot. Never force-stop a different
+  // component's speech just because this one is unmounting.
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
-      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+        notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+      }
     };
   }, []);
 
@@ -221,11 +239,22 @@ export default function ExplainStepChat({
     if (speaking) {
       audioRef.current?.pause();
       audioRef.current = null;
-      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (globalTokenRef.current) notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setSpeaking(false);
       return;
     }
     if (!lastAnswer) return;
+    if (isStartingRef.current) {
+      logBlockedDuplicate(SPEECH_OWNER);
+      return;
+    }
+    isStartingRef.current = true;
+    // claimSpeech() force-stops any speech currently active anywhere in the
+    // app (StudySpeechPanel, PodcastLab, Whiteboard, or a prior Explain Step
+    // answer) before this one starts.
+    const token = claimSpeech(SPEECH_OWNER);
+    globalTokenRef.current = token;
+    setTimeout(() => { isStartingRef.current = false; }, 400);
     setSpeaking(true);
     try {
       const cleaned = lastAnswer.replace(/[📌🔍💡⚠️🧠❓]/g, "").trim();
@@ -234,7 +263,9 @@ export default function ExplainStepChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ script: cleaned.slice(0, 3000), voice: "alloy", format: "mp3", return: "json" }),
       });
+      if (isSpeechStale(token)) { setSpeaking(false); return; }
       const data = await res.json();
+      if (isSpeechStale(token)) { setSpeaking(false); return; }
       if (data?.audioBase64 && !data?.useBrowserSpeech) {
         const bin = atob(data.audioBase64);
         const arr = new Uint8Array(bin.length);
@@ -242,18 +273,27 @@ export default function ExplainStepChat({
         const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
         const audio = new Audio(URL.createObjectURL(blob));
         audioRef.current = audio;
-        audio.onended = () => setSpeaking(false);
-        audio.onerror = () => setSpeaking(false);
+        registerActiveAudio(token, audio, () => {
+          audio.pause();
+          setSpeaking(false);
+        });
+        audio.onplay = () => notifySpeechStart(token, SPEECH_OWNER);
+        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
+        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); setSpeaking(false); };
         await audio.play();
       } else if (data?.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(data.script || cleaned);
-        utter.onend = () => setSpeaking(false);
-        utter.onerror = () => setSpeaking(false);
+        registerActiveUtterance(token, utter, () => setSpeaking(false));
+        utter.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
+        utter.onend = () => { notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
+        utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); setSpeaking(false); };
         window.speechSynthesis.speak(utter);
       } else {
+        notifySpeechEnd(token, SPEECH_OWNER);
         setSpeaking(false);
       }
     } catch {
+      notifySpeechError(token, SPEECH_OWNER, "tts-fetch-failed");
       setSpeaking(false);
     }
   };

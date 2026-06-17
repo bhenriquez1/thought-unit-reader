@@ -10,6 +10,18 @@ import { getAllRecallSets } from "@/lib/recalllab/recallStore";
 import { formulaToSpeech } from "@/lib/speech/studySpeechEngine";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { detectSubjectType } from "@/lib/podcast/podcastEngine";
+import {
+  claimSpeech,
+  isSpeechStale,
+  registerActiveAudio,
+  registerActiveUtterance,
+  notifySpeechStart,
+  notifySpeechEnd,
+  notifySpeechError,
+  logBlockedDuplicate,
+} from "@/lib/speech/speechController";
+
+const SPEECH_OWNER = "podcast-lab" as const;
 
 interface Props {
   studyModel: CurrentPageStudyModel | null;
@@ -120,6 +132,8 @@ export default function PodcastLab({
   const audioCacheRef   = useRef<Map<string, Blob>>(new Map());
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [audioReady, setAudioReady] = useState(false);
+  const globalTokenRef = useRef(0);
+  const isStartingRef  = useRef(false);
 
   const cfg = MODE_CONFIG[mode];
   const subject = useMemo(() => detectSubjectType(activePageText, studyModel ?? undefined), [activePageText, studyModel]);
@@ -135,11 +149,17 @@ export default function PodcastLab({
     setSegDuration(0);
     audioCacheRef.current.clear();
     abortRef.current = true;
+    if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+    }
   }, [pageNumber, bookId, mode]);
 
   useEffect(() => () => {
     if (countdownRef.current)    clearInterval(countdownRef.current);
     if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+    }
   }, []);
 
   // Load initialScript when provided (e.g. from StudyGuideLab podcast handoff)
@@ -234,7 +254,9 @@ export default function PodcastLab({
       audioRef.current.src = ""; // fires onerror, resolving any pending playBlob() promise
       audioRef.current = null;
     }
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+    }
     if (countdownRef.current)    { clearInterval(countdownRef.current);    countdownRef.current    = null; }
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
     setQuizCountdown(null);
@@ -245,21 +267,28 @@ export default function PodcastLab({
   }, [onEvidenceFocus]);
 
   // ── Play a single blob ────────────────────────────────────────────────
-  const playBlob = useCallback(async (blob: Blob): Promise<void> => {
+  const playBlob = useCallback(async (blob: Blob, token: number): Promise<void> => {
+    if (isSpeechStale(token)) return;
     const url   = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = playbackSpeed;
     audioRef.current = audio;
+    registerActiveAudio(token, audio, () => stop());
     await new Promise<void>((resolve) => {
-      audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-      audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      audio.onplay  = () => notifySpeechStart(token, SPEECH_OWNER);
+      audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); URL.revokeObjectURL(url); resolve(); };
+      audio.onerror = () => {
+        if (!abortRef.current && !isSpeechStale(token)) notifySpeechError(token, SPEECH_OWNER, "podcast-audio-failed");
+        URL.revokeObjectURL(url);
+        resolve();
+      };
       audio.play().catch(() => resolve());
     });
-  }, [playbackSpeed]);
+  }, [playbackSpeed, stop]);
 
-  const fetchAndPlay = useCallback(async (text: string, voice: string, segId?: string): Promise<void> => {
+  const fetchAndPlay = useCallback(async (text: string, voice: string, token: number, segId?: string): Promise<void> => {
     if (segId && audioCacheRef.current.has(segId)) {
-      if (!abortRef.current) await playBlob(audioCacheRef.current.get(segId)!);
+      if (!abortRef.current && !isSpeechStale(token)) await playBlob(audioCacheRef.current.get(segId)!, token);
       return;
     }
     try {
@@ -269,23 +298,30 @@ export default function PodcastLab({
         body: JSON.stringify({ script: text, voice }),
       });
       const data = await res.json();
-      if (abortRef.current) return;
+      if (abortRef.current || isSpeechStale(token)) return;
 
       if (data.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         await new Promise<void>((resolve) => {
           const utt  = new SpeechSynthesisUtterance(data.script || text);
           utt.rate   = playbackSpeed;
-          utt.onend  = () => resolve();
-          utt.onerror = () => resolve(); // ← resolve on cancel so stop doesn't hang
+          registerActiveUtterance(token, utt, () => resolve());
+          utt.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
+          utt.onend  = () => { notifySpeechEnd(token, SPEECH_OWNER); resolve(); };
+          utt.onerror = (e) => {
+            if (!abortRef.current && !isSpeechStale(token) && e.error !== "canceled" && e.error !== "interrupted") {
+              notifySpeechError(token, SPEECH_OWNER, e.error);
+            }
+            resolve(); // ← resolve on cancel so stop doesn't hang
+          };
           window.speechSynthesis.speak(utt);
         });
         return;
       }
 
-      if (data.audioBase64 && !abortRef.current) {
+      if (data.audioBase64 && !abortRef.current && !isSpeechStale(token)) {
         const bytes = Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0));
         const blob  = new Blob([bytes], { type: data.mimeType ?? "audio/mpeg" });
-        await playBlob(blob);
+        await playBlob(blob, token);
       }
     } catch { /* silent */ }
   }, [playBlob, playbackSpeed]);
@@ -310,12 +346,22 @@ export default function PodcastLab({
   // ── Playback loop ─────────────────────────────────────────────────────
   const playFrom = useCallback(async (startIdx: number) => {
     if (!script) return;
+    if (isStartingRef.current) {
+      logBlockedDuplicate(SPEECH_OWNER);
+      return;
+    }
+    isStartingRef.current = true;
     abortRef.current = false;
+    // claimSpeech() force-stops any speech currently active anywhere in the
+    // app before this podcast segment starts.
+    const token = claimSpeech(SPEECH_OWNER);
+    globalTokenRef.current = token;
+    setTimeout(() => { isStartingRef.current = false; }, 400);
     setPlayState("playing");
     const modeInfo = PODCAST_MODES.find((m) => m.id === mode)!;
 
     for (let i = startIdx; i < script.segments.length; i++) {
-      if (abortRef.current) break;
+      if (abortRef.current || isSpeechStale(token)) break;
       const seg = script.segments[i];
       setSegIdx(i);
 
@@ -332,16 +378,16 @@ export default function PodcastLab({
       if (mode === "quiz_podcast" && seg.type === "recall_quiz" && !abortRef.current) {
         await runCountdown(5);
       }
-      if (abortRef.current) break;
+      if (abortRef.current || isSpeechStale(token)) break;
 
       const voice = seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
-      await fetchAndPlay(prepareSegmentForTTS(seg.text), voice, seg.id);
+      await fetchAndPlay(prepareSegmentForTTS(seg.text), voice, token, seg.id);
 
       if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
-      if (abortRef.current) break;
+      if (abortRef.current || isSpeechStale(token)) break;
     }
 
-    if (!abortRef.current) {
+    if (!abortRef.current && !isSpeechStale(token)) {
       setPlayState("idle");
       setElapsed(0);
       setSegDuration(0);

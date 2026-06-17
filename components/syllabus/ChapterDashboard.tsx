@@ -1,6 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import type { ChapterLike, ChapterProgress, CourseProgress } from "@/lib/syllabus/chapterProgress";
 import { STATUS_LABEL, STATUS_CLASS } from "./chapterStatusStyles";
+
+const ANCHOR_TYPE_LABEL: Record<string, string> = {
+  coreIdea: "Core Idea",
+  definition: "Definition",
+  mechanism: "Mechanism",
+  exampleEvidence: "Example",
+  keyDetail: "Key Detail",
+  confusionTrap: "Confusion Trap",
+  datFact: "DAT Fact",
+};
 
 interface ChapterDashboardProps {
   chapters: Array<{ chapter: ChapterLike; progress: ChapterProgress }>;
@@ -21,6 +31,7 @@ function MetricBar({ label, pct }: { label: string; pct: number }) {
 }
 
 export default function ChapterDashboard({ chapters, course, onJumpToChapter }: ChapterDashboardProps) {
+  const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   if (!chapters.length) return null;
 
   return (
@@ -43,34 +54,72 @@ export default function ChapterDashboard({ chapters, course, onJumpToChapter }: 
         {chapters.map(({ chapter, progress }) => {
           const isCurrent = chapter.id === course.currentChapterId;
           const startPage = chapter.pageRanges[0]?.start ?? 1;
+          const isExpanded = expandedChapterId === chapter.id;
           return (
-            <button
+            <div
               key={chapter.id}
-              onClick={() => onJumpToChapter(startPage)}
-              className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+              className={`w-full rounded-lg border px-3 py-2 transition-colors ${
                 isCurrent
-                  ? "border-indigo-400/50 bg-indigo-900/30 hover:bg-indigo-900/50"
-                  : "border-white/5 bg-slate-800/60 hover:bg-slate-700/60"
+                  ? "border-indigo-400/50 bg-indigo-900/30"
+                  : "border-white/5 bg-slate-800/60"
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-medium text-white">{progress.title}</span>
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CLASS[progress.status]}`}>
-                  {STATUS_LABEL[progress.status]}
-                </span>
-              </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
-                <MetricBar label="Read" pct={progress.readPct} />
-                <MetricBar label="Understand" pct={progress.understandPct} />
-                <MetricBar label="Recall" pct={progress.recallPct} />
-                <MetricBar label="Mastery" pct={progress.masteryPct} />
-              </div>
-              <div className="mt-1.5 flex gap-3 text-[10px] text-slate-400">
-                <span>{progress.recallReviewedCount}/{progress.recallCardCount} cards reviewed</span>
-                <span>{progress.noteCount} notes</span>
-                <span>{progress.studyGuideCount} study guides</span>
-              </div>
-            </button>
+              <button onClick={() => onJumpToChapter(startPage)} className="w-full text-left hover:opacity-90">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium text-white">{progress.title}</span>
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CLASS[progress.status]}`}>
+                    {STATUS_LABEL[progress.status]}
+                  </span>
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                  <MetricBar label="Read" pct={progress.readPct} />
+                  <MetricBar label="Understand" pct={progress.understandPct} />
+                  <MetricBar label="Recall" pct={progress.recallPct} />
+                  <MetricBar label="Mastery" pct={progress.masteryPct} />
+                </div>
+                <div className="mt-1.5 flex gap-3 text-[10px] text-slate-400">
+                  <span>{progress.recallReviewedCount}/{progress.recallCardCount} cards reviewed</span>
+                  <span>{progress.noteCount} notes</span>
+                  <span>{progress.studyGuideCount} study guides</span>
+                </div>
+              </button>
+              {progress.weakTopics.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {progress.weakTopics.map((wt, wi) => (
+                    <span key={wi} className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-orange-950/40 text-orange-300 border border-orange-800/40">
+                      ⚠ {wt}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {progress.thoughtUnitCount > 0 && (
+                <div className="mt-1.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setExpandedChapterId(isExpanded ? null : chapter.id); }}
+                    className="text-[10px] text-indigo-300 hover:text-indigo-200 font-medium"
+                  >
+                    {isExpanded ? "▾" : "▸"} {progress.thoughtUnitCount} thought unit{progress.thoughtUnitCount === 1 ? "" : "s"}
+                  </button>
+                  {isExpanded && (
+                    <div className="mt-1.5 flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+                      {progress.thoughtUnits.map((tu) => (
+                        <button
+                          key={tu.id}
+                          onClick={(e) => { e.stopPropagation(); onJumpToChapter(tu.page); }}
+                          className="text-left rounded border border-white/5 bg-slate-900/60 px-2 py-1 hover:border-indigo-400/40"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[9px] uppercase tracking-wide text-indigo-400">{ANCHOR_TYPE_LABEL[tu.anchorType] ?? tu.anchorType}</span>
+                            <span className="text-[9px] text-slate-500">p.{tu.page}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-300 truncate">{tu.text}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>

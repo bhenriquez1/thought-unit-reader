@@ -1,16 +1,21 @@
 import React, { useMemo } from "react";
 import type { TocNode } from "@/lib/readerContracts";
+import type { NextTopicRecommendation } from "@/lib/syllabus/chapterProgress";
 
 interface SyllabusStudyLauncherProps {
   toc: TocNode[];
   onStudyTopic: (topic: TocNode) => void;
+  /** Real "what should I study next" answer from the chapter-progress engine
+   *  (read/recall gaps), preferred over the naive first-topic-by-page guess
+   *  below once chapter progress data exists. */
+  progressRecommendation?: NextTopicRecommendation | null;
 }
 
 function flatten(nodes: TocNode[]): TocNode[] {
   return nodes.flatMap((node) => [node, ...flatten(node.children || [])]);
 }
 
-export default function SyllabusStudyLauncher({ toc, onStudyTopic }: SyllabusStudyLauncherProps) {
+export default function SyllabusStudyLauncher({ toc, onStudyTopic, progressRecommendation }: SyllabusStudyLauncherProps) {
   const { recommended, fallback, sourceLabel } = useMemo(() => {
     const items = flatten(toc).filter((n) => n.kind !== "frontmatter");
     const first = items.sort((a, b) => a.page - b.page)[0] || null;
@@ -20,6 +25,27 @@ export default function SyllabusStudyLauncher({ toc, onStudyTopic }: SyllabusStu
       sourceLabel: items.find((node) => node.source)?.source || "syllabus",
     };
   }, [toc]);
+
+  if (progressRecommendation) {
+    return (
+      <div className="mb-3 rounded-xl border border-blue-400/30 bg-blue-500/10 p-4 text-white">
+        <div className="flex items-center gap-2">
+          <p className="text-xs uppercase tracking-wide text-blue-200">Recommended next topic</p>
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-300/20 text-emerald-100">
+            From your progress
+          </span>
+        </div>
+        <h3 className="mt-1 text-lg font-semibold">{progressRecommendation.chapterTitle}</h3>
+        <p className="mt-1 text-sm text-blue-100">Page {progressRecommendation.page} — {progressRecommendation.reason}</p>
+        <button
+          onClick={() => onStudyTopic({ id: progressRecommendation.chapterId, title: progressRecommendation.chapterTitle, page: progressRecommendation.page, kind: "chapter" })}
+          className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium hover:bg-blue-500"
+        >
+          Study Now
+        </button>
+      </div>
+    );
+  }
 
   if (!recommended) {
     return (
