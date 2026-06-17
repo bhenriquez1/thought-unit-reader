@@ -4,16 +4,51 @@
 // StudyGuide records are all currently keyed by page (or, for StudyGuides, by
 // a free-text chapter title) — none of them know about "chapters" as a unit.
 // This module rolls those per-page/per-title signals up into one progress
-// reading per Syllabus topic ("chapter"): Read / Understand / Recall / Mastery
-// %, a status label, and cross-link counts.
+// reading per chapter: Read / Understand / Recall / Mastery %, a status
+// label, and cross-link counts.
+//
+// Chapters themselves come from the live Syllabus tab's `TocNode[]` tree
+// (pages/index.tsx's `syllabusToc`), via `buildChaptersFromToc` below — not
+// from `lib/stores/syllabusStore.ts`'s `SyllabusTopic`, which is a separate,
+// unrendered model that nothing in the app currently populates.
 //
 // This is the data layer Study Plan Lab's chapter/unit/exam-prep plans read
 // from — without it, those plans would have nothing real to plan against.
 
-import type { SyllabusTopic } from "@/lib/stores/syllabusStore";
+import type { TocNode } from "@/lib/readerContracts";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
+
+// Minimal shape `computeChapterProgress` needs from a "chapter" — satisfied
+// both by `SyllabusTopic` (structurally) and by the chapters this module
+// derives from the live `TocNode[]` tree via `buildChaptersFromToc`.
+export interface ChapterLike {
+  id: string;
+  title: string;
+  pageRanges: Array<{ start: number; end: number }>;
+}
+
+// Derives chapter-level page ranges from the live Syllabus tab's TocNode
+// tree: each top-level "chapter" node's range runs from its own page up to
+// (but not including) the next chapter's page, with the last chapter running
+// to `totalPages`. Falls back to treating every top-level node as a chapter
+// when none are explicitly tagged "chapter" (e.g. syllabus-only TOCs).
+export function buildChaptersFromToc(toc: TocNode[], totalPages: number): ChapterLike[] {
+  const tagged = toc.filter((n) => n.kind === "chapter");
+  const topLevel = tagged.length > 0 ? tagged : toc;
+  const sorted = [...topLevel].sort((a, b) => a.page - b.page);
+
+  return sorted.map((node, idx) => {
+    const nextPage = sorted[idx + 1]?.page;
+    const end = nextPage !== undefined ? Math.max(node.page, nextPage - 1) : Math.max(node.page, totalPages);
+    return {
+      id: node.id,
+      title: node.title,
+      pageRanges: [{ start: node.page, end }],
+    };
+  });
+}
 
 export type ChapterStatus =
   | "not_started"
@@ -80,7 +115,7 @@ function normalizedTitleMatch(chapterTitle: string, topicTitle: string): boolean
 }
 
 export function computeChapterProgress(
-  topic: SyllabusTopic,
+  topic: ChapterLike,
   inputs: ChapterProgressInputs
 ): ChapterProgress {
   const pages = pagesInRanges(topic.pageRanges);
@@ -159,7 +194,7 @@ const MINUTES_PER_UNREAD_PAGE = 4;
 const MINUTES_PER_UNMASTERED_PAGE_REVIEW = 2;
 
 export function computeCourseProgress(
-  topics: SyllabusTopic[],
+  topics: ChapterLike[],
   progressList: ChapterProgress[]
 ): CourseProgress {
   const totalChapters = topics.length;

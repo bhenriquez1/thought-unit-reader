@@ -1,21 +1,14 @@
-import { computeChapterProgress, computeCourseProgress } from "@/lib/syllabus/chapterProgress";
-import type { SyllabusTopic } from "@/lib/stores/syllabusStore";
+import { computeChapterProgress, computeCourseProgress, buildChaptersFromToc, type ChapterLike } from "@/lib/syllabus/chapterProgress";
+import type { TocNode } from "@/lib/readerContracts";
 import type { RecallSet } from "@/lib/recalllab/recallStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 
-function makeTopic(overrides: Partial<SyllabusTopic> = {}): SyllabusTopic {
+function makeTopic(overrides: Partial<ChapterLike> = {}): ChapterLike {
   return {
     id: "topic-1",
     title: "Chapter 1: Cell Structure",
-    order: 0,
-    chapterIds: ["ch-1"],
     pageRanges: [{ start: 1, end: 10 }],
-    status: "not_started",
-    completionPercentage: 0,
-    highlightCount: 0,
-    createdAt: "2024-01-01T00:00:00.000Z",
-    updatedAt: "2024-01-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -237,5 +230,47 @@ describe("computeCourseProgress", () => {
     expect(course.completedChapters).toBe(0);
     expect(course.currentChapterId).toBeNull();
     expect(course.estimatedRemainingMinutes).toBe(0);
+  });
+});
+
+describe("buildChaptersFromToc", () => {
+  it("derives a page range for each chapter node, ending right before the next chapter", () => {
+    const toc: TocNode[] = [
+      { id: "c1", title: "Chapter 1", page: 1, kind: "chapter" },
+      { id: "s1", title: "1.1 Intro", page: 3, kind: "section" },
+      { id: "c2", title: "Chapter 2", page: 11, kind: "chapter" },
+      { id: "c3", title: "Chapter 3", page: 25, kind: "chapter" },
+    ];
+
+    const chapters = buildChaptersFromToc(toc, 40);
+
+    expect(chapters).toHaveLength(3);
+    expect(chapters[0]).toMatchObject({ id: "c1", pageRanges: [{ start: 1, end: 10 }] });
+    expect(chapters[1]).toMatchObject({ id: "c2", pageRanges: [{ start: 11, end: 24 }] });
+    expect(chapters[2]).toMatchObject({ id: "c3", pageRanges: [{ start: 25, end: 40 }] });
+  });
+
+  it("falls back to treating every top-level node as a chapter when none are tagged 'chapter'", () => {
+    const toc: TocNode[] = [
+      { id: "w1", title: "Week 1", page: 1, kind: "week" },
+      { id: "w2", title: "Week 2", page: 8, kind: "week" },
+    ];
+
+    const chapters = buildChaptersFromToc(toc, 15);
+
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0].pageRanges).toEqual([{ start: 1, end: 7 }]);
+    expect(chapters[1].pageRanges).toEqual([{ start: 8, end: 15 }]);
+  });
+
+  it("sorts nodes by page before deriving ranges, regardless of input order", () => {
+    const toc: TocNode[] = [
+      { id: "c2", title: "Chapter 2", page: 11, kind: "chapter" },
+      { id: "c1", title: "Chapter 1", page: 1, kind: "chapter" },
+    ];
+
+    const chapters = buildChaptersFromToc(toc, 20);
+
+    expect(chapters.map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 });

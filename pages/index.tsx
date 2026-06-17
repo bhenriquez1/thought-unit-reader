@@ -27,7 +27,9 @@ import SurgeonView from "@/components/SurgeonView";
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
-import { recordPageVisit } from "@/lib/syllabus/pageVisitStore";
+import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
+import { computeChapterProgress, computeCourseProgress, buildChaptersFromToc } from "@/lib/syllabus/chapterProgress";
+import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
@@ -3308,6 +3310,35 @@ export default function ThoughtUnitReader() {
     setActiveShellTab("reader");
   }, [syncToPage]);
 
+  // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
+  // cross-link counts need a fetched snapshot — refreshed whenever the
+  // Syllabus tab opens or a note/recall card is saved elsewhere in the app.
+  const [syllabusStudyGuides, setSyllabusStudyGuides] = useState<StudyGuideRecord[]>([]);
+  useEffect(() => {
+    if (activeShellTab !== "syllabus" || !bookId) return;
+    getStudyGuidesByBook(bookId).then(setSyllabusStudyGuides).catch(() => {});
+  }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
+
+  // Chapter Progress Engine (Phase 1+2): derives chapters from the live
+  // syllabusToc tree and rolls up Read/Understand/Recall/Mastery % per
+  // chapter — the data the Course Dashboard renders below.
+  const chapterProgressList = useMemo(() => {
+    if (!syllabusToc.length) return [];
+    const chapters = buildChaptersFromToc(syllabusToc, pdfPageCount || 1);
+    const visitedPages = getVisitedPages(bookId);
+    const recallSets = getRecallSetsByBook(bookId);
+    const notes = getNotesByBook(bookId);
+    return chapters.map((chapter) => ({
+      chapter,
+      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides }),
+    }));
+  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, currentPage, activeShellTab]);
+
+  const courseProgress = useMemo(
+    () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
+    [chapterProgressList]
+  );
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
@@ -3620,6 +3651,12 @@ export default function ThoughtUnitReader() {
                 <div className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
                   <span className="font-medium text-white">Loaded syllabus:</span> {syllabusFileName}
                 </div>
+
+                <ChapterDashboard
+                  chapters={chapterProgressList}
+                  course={courseProgress}
+                  onJumpToChapter={(page) => handleSyllabusNodeClick({ id: `chapter-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                />
 
                 {/* ── CollegeCal-style study plan ── */}
                 {syllabusStudyPlan.length > 0 && (
