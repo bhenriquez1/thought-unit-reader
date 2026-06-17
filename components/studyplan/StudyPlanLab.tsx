@@ -14,7 +14,8 @@ import {
 } from "@/lib/studyplan/studyPlanStore";
 import { buildStudyPlan, computeWeakTopics } from "@/lib/studyplan/buildStudyPlan";
 import { buildChapterPlan } from "@/lib/studyplan/buildChapterPlan";
-import type { DiagnosticAttempt, DiagnosticAnswer, StudyPlanRecord, ChapterStudyPlan, StudyPlanBlock } from "@/lib/studyplan/types";
+import { buildUnitPlan } from "@/lib/studyplan/buildUnitPlan";
+import type { DiagnosticAttempt, DiagnosticAnswer, StudyPlanRecord, ChapterStudyPlan, UnitStudyPlan, StudyPlanBlock } from "@/lib/studyplan/types";
 import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
 import { getRecallSetsByBook } from "@/lib/recalllab/recallStore";
 import { getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
@@ -78,9 +79,11 @@ export default function StudyPlanLab({
   chapterProgressList = [],
   courseProgress,
 }: StudyPlanLabProps) {
-  const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "chapters" | "chapterplan" | "history">("intro");
+  const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "chapters" | "chapterplan" | "unitplan" | "history">("intro");
 
   const [activeChapterPlan, setActiveChapterPlan] = useState<ChapterStudyPlan | null>(null);
+  const [activeUnitPlan, setActiveUnitPlan] = useState<UnitStudyPlan | null>(null);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [chapterPlanLoading, setChapterPlanLoading] = useState(false);
 
   const [diagnostics, setDiagnostics] = useState<DiagnosticAttempt[]>([]);
@@ -130,6 +133,8 @@ export default function StudyPlanLab({
         setFullExtractPages(null);
         setFullExtractError(null);
         setActiveChapterPlan(null);
+        setActiveUnitPlan(null);
+        setSelectedChapterIds(new Set());
         if (p.length > 0) {
           setActivePlan(p[0]);
           setActiveAttempt(d.find(x => x.id === p[0].diagnosticId) ?? d[0] ?? null);
@@ -288,6 +293,32 @@ export default function StudyPlanLab({
     }
   }, [bookId, chapterProgressList]);
 
+  const toggleChapterSelection = useCallback((chapterId: string) => {
+    setSelectedChapterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) next.delete(chapterId); else next.add(chapterId);
+      return next;
+    });
+  }, []);
+
+  const handleBuildUnitPlan = useCallback(async () => {
+    const entries = chapterProgressList.filter((c) => selectedChapterIds.has(c.chapter.id));
+    if (entries.length === 0) return;
+    setChapterPlanLoading(true);
+    try {
+      const visitedPages = getVisitedPages(bookId);
+      const notes = getNotesByBook(bookId);
+      const recallSets = getRecallSetsByBook(bookId);
+      const studyGuides = await getStudyGuidesByBook(bookId);
+      const plan = buildUnitPlan(bookId, entries, { visitedPages, notes, recallSets, studyGuides });
+      setActiveUnitPlan(plan);
+      setView("unitplan");
+      console.log("[STUDYPLAN_UNIT_PLAN_BUILT]", { chapters: entries.length, blocks: plan.blocks.length });
+    } finally {
+      setChapterPlanLoading(false);
+    }
+  }, [bookId, chapterProgressList, selectedChapterIds]);
+
   // ── Render: shared plan block list (used by both diagnostic plans and chapter plans) ──
 
   const renderBlocks = (blocks: StudyPlanBlock[]) => (
@@ -350,29 +381,65 @@ export default function StudyPlanLab({
           No chapters yet — upload a syllabus in the Syllabus tab to unlock chapter plans.
         </div>
       ) : (
-        chapterProgressList.map(({ chapter, progress }) => {
-          const isCurrent = chapter.id === courseProgress?.currentChapterId;
-          return (
-            <button
-              key={chapter.id}
-              onClick={() => handleBuildChapterPlan(chapter.id)}
-              disabled={chapterPlanLoading}
-              className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors disabled:opacity-50 ${
-                isCurrent ? "border-fuchsia-500/50 bg-fuchsia-950/20 hover:bg-fuchsia-950/40" : "border-slate-700 bg-slate-900 hover:border-slate-600"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium text-white">{progress.title}</span>
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CLASS[progress.status]}`}>
-                  {STATUS_LABEL[progress.status]}
-                </span>
+        <>
+          <div className="text-[11px] text-slate-500 mb-1">
+            Tap a chapter for its plan, or check several to build a Unit Plan across them.
+          </div>
+          {selectedChapterIds.size > 0 && (
+            <div className="sticky top-0 z-10 rounded-xl border border-fuchsia-500/40 bg-fuchsia-950/30 px-3 py-2 flex items-center justify-between">
+              <span className="text-xs text-fuchsia-200">{selectedChapterIds.size} chapter{selectedChapterIds.size !== 1 ? "s" : ""} selected</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedChapterIds(new Set())}
+                  className="text-xs px-2 py-1 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={handleBuildUnitPlan}
+                  disabled={chapterPlanLoading}
+                  className="text-xs px-3 py-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-40 text-white font-bold transition-colors"
+                >
+                  Build Unit Plan
+                </button>
               </div>
-              <div className="mt-1 text-[11px] text-slate-400">
-                Read {progress.readPct}% · Understand {progress.understandPct}% · Recall {progress.recallPct}% · Mastery {progress.masteryPct}%
+            </div>
+          )}
+          {chapterProgressList.map(({ chapter, progress }) => {
+            const isCurrent = chapter.id === courseProgress?.currentChapterId;
+            return (
+              <div
+                key={chapter.id}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
+                  isCurrent ? "border-fuchsia-500/50 bg-fuchsia-950/20" : "border-slate-700 bg-slate-900"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedChapterIds.has(chapter.id)}
+                  onChange={() => toggleChapterSelection(chapter.id)}
+                  className="shrink-0 accent-fuchsia-500"
+                  aria-label={`Select ${progress.title} for Unit Plan`}
+                />
+                <button
+                  onClick={() => handleBuildChapterPlan(chapter.id)}
+                  disabled={chapterPlanLoading}
+                  className="flex-1 text-left disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium text-white">{progress.title}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CLASS[progress.status]}`}>
+                      {STATUS_LABEL[progress.status]}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    Read {progress.readPct}% · Understand {progress.understandPct}% · Recall {progress.recallPct}% · Mastery {progress.masteryPct}%
+                  </div>
+                </button>
               </div>
-            </button>
-          );
-        })
+            );
+          })}
+        </>
       )}
     </div>
   );
@@ -394,6 +461,33 @@ export default function StudyPlanLab({
           </div>
         </div>
         {renderBlocks(activeChapterPlan.blocks)}
+        <button
+          onClick={() => setView("chapters")}
+          className="w-full py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-bold transition-colors"
+        >
+          ← Back to Chapters
+        </button>
+      </div>
+    );
+  };
+
+  // ── Render: built unit plan ─────────────────────────────────────────────
+
+  const renderUnitPlan = () => {
+    if (!activeUnitPlan) return null;
+    return (
+      <div className="p-4 flex flex-col gap-4">
+        <div className="rounded-xl border border-fuchsia-500/40 bg-fuchsia-950/20 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-fuchsia-300">Unit Plan</div>
+          <div className="text-sm text-fuchsia-100 mt-1">{activeUnitPlan.title}</div>
+          <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-fuchsia-300/80">
+            <span>Read {activeUnitPlan.unitReadPct}%</span>
+            <span>Understand {activeUnitPlan.unitUnderstandPct}%</span>
+            <span>Recall {activeUnitPlan.unitRecallPct}%</span>
+            <span>Mastery {activeUnitPlan.unitMasteryPct}%</span>
+          </div>
+        </div>
+        {renderBlocks(activeUnitPlan.blocks)}
         <button
           onClick={() => setView("chapters")}
           className="w-full py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-bold transition-colors"
@@ -695,6 +789,14 @@ export default function StudyPlanLab({
               Plan
             </button>
           )}
+          {activeUnitPlan && (
+            <button
+              onClick={() => setView("unitplan")}
+              className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "unitplan" ? "bg-fuchsia-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            >
+              Unit Plan
+            </button>
+          )}
           <button
             onClick={() => setView("history")}
             className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "history" ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
@@ -723,6 +825,7 @@ export default function StudyPlanLab({
         {view === "plan" && renderPlan()}
         {view === "chapters" && renderChapters()}
         {view === "chapterplan" && renderChapterPlan()}
+        {view === "unitplan" && renderUnitPlan()}
         {view === "history" && renderHistory()}
       </div>
     </div>

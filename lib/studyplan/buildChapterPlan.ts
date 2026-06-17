@@ -8,7 +8,7 @@ import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { RecallSet } from "@/lib/recalllab/recallStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { pageInRanges, pagesInRanges, type ChapterLike, type ChapterProgress } from "@/lib/syllabus/chapterProgress";
-import type { ChapterStudyPlan, StudyPlanAction } from "./types";
+import type { ChapterStudyPlan, StudyPlanAction, StudyPlanBlock } from "./types";
 
 export interface ChapterPlanInputs {
   visitedPages: Set<number>;
@@ -24,12 +24,14 @@ function normalizedTitleMatch(a: string, b: string): boolean {
   return an === bn || an.includes(bn) || bn.includes(an);
 }
 
-export function buildChapterPlan(
-  bookId: string,
+/** One chapter's gaps (unread pages, unreviewed/missed recall cards, matching
+ *  notes/study guide) turned into a single actionable block. Shared by both
+ *  the single-chapter plan below and the multi-chapter Unit Plan. */
+export function buildChapterBlock(
   chapter: ChapterLike,
   progress: ChapterProgress,
   inputs: ChapterPlanInputs
-): ChapterStudyPlan {
+): StudyPlanBlock {
   const pages = pagesInRanges(chapter.pageRanges);
   const unvisited = pages.filter((p) => !inputs.visitedPages.has(p));
 
@@ -81,16 +83,23 @@ export function buildChapterPlan(
     label: `Take a quick recall check on ${chapter.title}`,
   });
 
-  const estimatedMinutes = 15 + unvisited.length * 4 + weakCards.length * 2;
-
-  const block = {
+  return {
     id: `cpb-${chapter.id}`,
     title: chapter.title,
     topic: chapter.title,
     pages,
     actions,
-    estimatedMinutes,
+    estimatedMinutes: 15 + unvisited.length * 4 + weakCards.length * 2,
   };
+}
+
+export function buildChapterPlan(
+  bookId: string,
+  chapter: ChapterLike,
+  progress: ChapterProgress,
+  inputs: ChapterPlanInputs
+): ChapterStudyPlan {
+  const block = buildChapterBlock(chapter, progress, inputs);
 
   return {
     id: `cp-${bookId}-${chapter.id}-${Date.now()}`,

@@ -88,3 +88,16 @@ export interface ChapterStudyPlan {
   blocks: StudyPlanBlock[];
   createdAt: number;
 }
+
+export interface UnitStudyPlan {
+  id: string;
+  bookId: string;
+  chapterIds: string[];
+  title: string; // e.g. "Chapter 1 → Chapter 5"
+  unitReadPct: number;
+  unitUnderstandPct: number;
+  unitRecallPct: number;
+  unitMasteryPct: number;
+  blocks: StudyPlanBlock[]; // one per chapter (daily objectives) + a trailing review block
+  createdAt: number;
+}
