@@ -1324,13 +1324,39 @@ export default function ThoughtUnitReader() {
   const ambientEmbedUrl = useMemo(() => toYouTubeEmbed(ambientUrl), [ambientUrl]);
   // Resolve a snippet to its visualAnchor id — used by RightPanel card clicks and speech focus.
   // Source: currentPageStudyModel.visualAnchors (the canonical left-panel highlight contract).
+  //
+  // Most RightPanel card types (narrative blocks, steps, notes — not just concept
+  // anchors) call onEvidenceClick with no evidenceId, so this resolver is what links
+  // them back to a LeftPanel highlight. Stage 1 below used to truncate both sides to
+  // 48/32 chars, which (a) missed the true containment relationship when it started
+  // after that prefix and (b) could match the wrong anchor when several anchors
+  // shared a common opening. Stage 2 adds a key-term-overlap fallback (same idea as
+  // groundHighlightAnchors' sentence scoring) for card text that paraphrases or
+  // excerpts an anchor rather than literally containing/being contained by it.
   const resolveEvidenceId = useCallback((snippet: string) => {
     const anchors = currentPageStudyModel?.visualAnchors ?? [];
-    const needle = snippet.toLowerCase().replace(/\s+/g, " ").slice(0, 48);
-    return anchors.find((a) => {
-      const hay = a.exactText.toLowerCase().replace(/\s+/g, " ");
-      return hay.includes(needle) || needle.includes(hay.slice(0, 32));
-    })?.id;
+    if (!anchors.length) return undefined;
+    const needle = snippet.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!needle) return undefined;
+
+    const contained = anchors.find((a) => {
+      const hay = a.exactText.toLowerCase().replace(/\s+/g, " ").trim();
+      return hay.includes(needle) || needle.includes(hay);
+    });
+    if (contained) return contained.id;
+
+    const needleTerms = new Set(needle.split(/\W+/).filter((w) => w.length >= 3));
+    if (!needleTerms.size) return undefined;
+
+    let best: { id: string; score: number } | undefined;
+    for (const a of anchors) {
+      const hayTerms = a.exactText.toLowerCase().split(/\W+/).filter((w) => w.length >= 3);
+      if (!hayTerms.length) continue;
+      const matched = hayTerms.filter((t) => needleTerms.has(t)).length;
+      const score = matched / Math.min(needleTerms.size, hayTerms.length);
+      if (score > 0.5 && (!best || score > best.score)) best = { id: a.id, score };
+    }
+    return best?.id;
   }, [currentPageStudyModel]);
 
   // Shared "focus this evidence" handler — used by RightPanel cards, the left-panel
