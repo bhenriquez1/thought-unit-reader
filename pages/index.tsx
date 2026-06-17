@@ -28,7 +28,8 @@ import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
 import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
-import { computeChapterProgress, computeCourseProgress, buildChaptersFromToc } from "@/lib/syllabus/chapterProgress";
+import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc } from "@/lib/syllabus/chapterProgress";
+import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -3319,6 +3320,15 @@ export default function ThoughtUnitReader() {
     getStudyGuidesByBook(bookId).then(setSyllabusStudyGuides).catch(() => {});
   }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
 
+  // RightPanel-concept-level highlights saved from "Save to NoteLab"/"Save to
+  // Recall" — the only persisted record of individual thought units (not
+  // just pages) across the whole book. Feeds the Syllabus thought-unit tree.
+  const [syllabusSavedHighlights, setSyllabusSavedHighlights] = useState<SavedHighlight[]>([]);
+  useEffect(() => {
+    if (activeShellTab !== "syllabus" || !bookId) return;
+    getHighlightsByBook(bookId).then(setSyllabusSavedHighlights).catch(() => {});
+  }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
+
   // Chapter Progress Engine (Phase 1+2): derives chapters from the live
   // syllabusToc tree and rolls up Read/Understand/Recall/Mastery % per
   // chapter — the data the Course Dashboard renders below.
@@ -3330,14 +3340,28 @@ export default function ThoughtUnitReader() {
     const notes = getNotesByBook(bookId);
     return chapters.map((chapter) => ({
       chapter,
-      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides }),
+      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides, savedHighlights: syllabusSavedHighlights }),
     }));
-  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, currentPage, activeShellTab]);
+  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, syllabusSavedHighlights, currentPage, activeShellTab]);
 
   const courseProgress = useMemo(
     () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
     [chapterProgressList]
   );
+
+  // "What should I study next?" — grounded in the same chapter-progress data,
+  // not a separate guess. Drives the Syllabus tab's recommendation banner.
+  const nextTopicRecommendation = useMemo(() => {
+    if (chapterProgressList.length === 0) return null;
+    const visitedPages = getVisitedPages(bookId);
+    const recallSets = getRecallSetsByBook(bookId);
+    return computeNextTopicRecommendation(
+      chapterProgressList.map((c) => c.chapter),
+      chapterProgressList.map((c) => c.progress),
+      visitedPages,
+      recallSets
+    );
+  }, [chapterProgressList, bookId]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -3705,7 +3729,7 @@ export default function ThoughtUnitReader() {
                   </div>
                 )}
 
-                <SyllabusStudyLauncher toc={syllabusToc} onStudyTopic={handleStudyTopic} />
+                <SyllabusStudyLauncher toc={syllabusToc} onStudyTopic={handleStudyTopic} progressRecommendation={nextTopicRecommendation} />
                 <TocTree
                   toc={syllabusToc}
                   activePage={currentPage}
@@ -3801,6 +3825,7 @@ export default function ThoughtUnitReader() {
           uploadedFile={uploadedFile}
           chapterProgressList={chapterProgressList}
           courseProgress={courseProgress}
+          nextTopicRecommendation={nextTopicRecommendation}
           onNavigateToPage={(page) => {
             syncToPage(page);
             trySwitchShellTab("reader", "reader");

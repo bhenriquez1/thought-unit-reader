@@ -19,6 +19,7 @@ import type { TocNode } from "@/lib/readerContracts";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
+import type { SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
 
 // Minimal shape `computeChapterProgress` needs from a "chapter" — satisfied
 // both by `SyllabusTopic` (structurally) and by the chapters this module
@@ -58,6 +59,16 @@ export type ChapterStatus =
   | "needs_review"
   | "weak_area";
 
+// One RightPanel-concept-level "thought unit" rolled up into the chapter
+// tree — sourced from lib/highlights/savedHighlightsStore.ts, the only place
+// individual VisualAnchors (not just pages) are persisted across the book.
+export interface ChapterThoughtUnit {
+  id: string;
+  page: number;
+  text: string;
+  anchorType: string; // VisualAnchorRole, e.g. "coreIdea"
+}
+
 export interface ChapterProgress {
   topicId: string;
   title: string;
@@ -72,6 +83,9 @@ export interface ChapterProgress {
   recallReviewedCount: number;
   noteCount: number;
   studyGuideCount: number;
+  thoughtUnitCount: number;
+  thoughtUnits: ChapterThoughtUnit[];
+  weakTopics: string[];
 }
 
 export interface ChapterProgressInputs {
@@ -79,6 +93,7 @@ export interface ChapterProgressInputs {
   recallSets: RecallSet[];
   notes: UltraNote[];
   studyGuides: StudyGuideRecord[];
+  savedHighlights?: SavedHighlight[];
 }
 
 export function pagesInRanges(ranges: Array<{ start: number; end: number }>): number[] {
@@ -92,6 +107,10 @@ export function pagesInRanges(ranges: Array<{ start: number; end: number }>): nu
 export function pageInRanges(page: number, ranges: Array<{ start: number; end: number }>): boolean {
   return ranges.some((r) => page >= r.start && page <= r.end);
 }
+
+// Cap on how many saved-highlight thought units the Syllabus tree renders
+// per chapter — a chapter can accumulate far more than is useful to list.
+const THOUGHT_UNIT_TREE_CAP = 30;
 
 // Per-card recall confidence: an unreviewed card contributes 0 (not yet
 // attempted at all). A reviewed card scores by its most recent difficulty
@@ -143,6 +162,26 @@ export function computeChapterProgress(
 
   const studyGuideCount = inputs.studyGuides.filter((g) => normalizedTitleMatch(g.chapterTitle, topic.title)).length;
 
+  const highlightsInChapter = (inputs.savedHighlights ?? []).filter((h) => pageInRanges(h.page, topic.pageRanges));
+  const thoughtUnits: ChapterThoughtUnit[] = highlightsInChapter
+    .slice(0, THOUGHT_UNIT_TREE_CAP)
+    .map((h) => ({ id: h.id, page: h.page, text: h.text, anchorType: h.anchorType }));
+
+  // Weak topics: cards that have been reviewed at least once and scored
+  // poorly, labeled with the card's tag (concept title) when present,
+  // otherwise a trimmed front-of-card snippet. Deduped, capped at 5.
+  const weakTopics: string[] = [];
+  const seenWeak = new Set<string>();
+  for (const c of cards) {
+    if (c.reviewCount === 0) continue;
+    if (c.difficulty !== "hard" && !c.isMissed) continue;
+    const label = (c.tag || c.front).trim().slice(0, 60);
+    if (!label || seenWeak.has(label)) continue;
+    seenWeak.add(label);
+    weakTopics.push(label);
+    if (weakTopics.length >= 5) break;
+  }
+
   let status: ChapterStatus;
   if (readPct === 0) {
     status = "not_started";
@@ -172,6 +211,9 @@ export function computeChapterProgress(
     recallReviewedCount,
     noteCount: notesInChapter.length,
     studyGuideCount,
+    thoughtUnitCount: highlightsInChapter.length,
+    thoughtUnits,
+    weakTopics,
   };
 }
 
@@ -227,5 +269,65 @@ export function computeCourseProgress(
     overallUnderstandPct: avg("understandPct"),
     overallRecallPct: avg("recallPct"),
     overallMasteryPct: avg("masteryPct"),
+  };
+}
+
+export interface NextTopicRecommendation {
+  chapterId: string;
+  chapterTitle: string;
+  page: number;
+  reason: string;
+}
+
+// Answers "what should I study next?" for the Syllabus tab and Study Plan
+// Lab banner — grounded in the same chapter-progress data everything else
+// reads from, not a separate guess. Picks the course's current chapter
+// (computeCourseProgress's rule: first non-mastered, non-untouched chapter,
+// else the first untouched one), then within it: the next unread page, else
+// the page behind the weakest-scoring recall card, else just the chapter's
+// first page as a recall checkup.
+export function computeNextTopicRecommendation(
+  chapters: ChapterLike[],
+  progressList: ChapterProgress[],
+  visitedPages: Set<number>,
+  recallSets: RecallSet[]
+): NextTopicRecommendation | null {
+  const course = computeCourseProgress(chapters, progressList);
+  if (!course.currentChapterId) return null;
+
+  const chapter = chapters.find((c) => c.id === course.currentChapterId);
+  if (!chapter) return null;
+
+  const pages = pagesInRanges(chapter.pageRanges);
+  const unvisited = pages.filter((p) => !visitedPages.has(p));
+  if (unvisited.length > 0) {
+    return {
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      page: unvisited[0],
+      reason: `Continue reading — ${unvisited.length} unread page${unvisited.length === 1 ? "" : "s"} left in this chapter`,
+    };
+  }
+
+  const recallSetsInChapter = recallSets.filter((s) => pageInRanges(s.pageNumber, chapter.pageRanges));
+  for (const set of recallSetsInChapter) {
+    const weakCard = set.cards.find((c) => c.reviewCount === 0 || c.isMissed || c.difficulty === "hard");
+    if (weakCard) {
+      return {
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+        page: set.pageNumber,
+        reason: weakCard.reviewCount === 0
+          ? `Review unreviewed recall card: "${(weakCard.tag || weakCard.front).slice(0, 60)}"`
+          : `Re-review weak recall card: "${(weakCard.tag || weakCard.front).slice(0, 60)}"`,
+      };
+    }
+  }
+
+  return {
+    chapterId: chapter.id,
+    chapterTitle: chapter.title,
+    page: pages[0] ?? 1,
+    reason: `Run a quick recall check on ${chapter.title}`,
   };
 }

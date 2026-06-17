@@ -21,7 +21,7 @@ import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
 import { getRecallSetsByBook } from "@/lib/recalllab/recallStore";
 import { getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import { getVisitedPages } from "@/lib/syllabus/pageVisitStore";
-import type { ChapterLike, ChapterProgress, CourseProgress } from "@/lib/syllabus/chapterProgress";
+import type { ChapterLike, ChapterProgress, CourseProgress, NextTopicRecommendation } from "@/lib/syllabus/chapterProgress";
 import { STATUS_LABEL, STATUS_CLASS } from "@/components/syllabus/chapterStatusStyles";
 
 interface StudyPlanLabProps {
@@ -33,6 +33,8 @@ interface StudyPlanLabProps {
   /** From the Syllabus tab's chapter-progress engine — drives the Chapters view below. */
   chapterProgressList?: Array<{ chapter: ChapterLike; progress: ChapterProgress }>;
   courseProgress?: CourseProgress;
+  /** Real "what should I study next" answer from the chapter-progress engine, shared with the Syllabus tab. */
+  nextTopicRecommendation?: NextTopicRecommendation | null;
 }
 
 function genId(prefix: string): string {
@@ -79,6 +81,7 @@ export default function StudyPlanLab({
   onNavigateToPage,
   chapterProgressList = [],
   courseProgress,
+  nextTopicRecommendation,
 }: StudyPlanLabProps) {
   const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "chapters" | "chapterplan" | "unitplan" | "examplan" | "history">("intro");
 
@@ -393,6 +396,22 @@ export default function StudyPlanLab({
           <span>Recall {courseProgress.overallRecallPct}%</span>
           <span>Mastery {courseProgress.overallMasteryPct}%</span>
         </div>
+        {nextTopicRecommendation && (
+          <div className="mt-3 rounded-lg border border-blue-400/30 bg-blue-500/10 px-3 py-2 flex items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] uppercase tracking-wide text-blue-200">Study next</span>
+              <div className="text-xs text-blue-100">
+                {nextTopicRecommendation.chapterTitle} — p.{nextTopicRecommendation.page} ({nextTopicRecommendation.reason})
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigateToPage?.(nextTopicRecommendation.page)}
+              className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium hover:bg-blue-500 text-white"
+            >
+              Go
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -426,6 +445,13 @@ export default function StudyPlanLab({
                 className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold transition-colors"
               >
                 Build Final Exam Plan
+              </button>
+              <button
+                onClick={() => handleBuildExamPlan("dat")}
+                disabled={chapterPlanLoading}
+                className="text-xs px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold transition-colors"
+              >
+                Build DAT-Style Plan
               </button>
             </div>
           </div>
@@ -479,6 +505,15 @@ export default function StudyPlanLab({
                   <div className="mt-1 text-[11px] text-slate-400">
                     Read {progress.readPct}% · Understand {progress.understandPct}% · Recall {progress.recallPct}% · Mastery {progress.masteryPct}%
                   </div>
+                  {progress.weakTopics.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {progress.weakTopics.map((wt, wi) => (
+                        <span key={wi} className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-orange-950/40 text-orange-300 border border-orange-800/40">
+                          ⚠ {wt}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </button>
               </div>
             );
@@ -544,13 +579,25 @@ export default function StudyPlanLab({
 
   // ── Render: built exam plan (Midterm / Final) ───────────────────────────
 
+  const EXAM_KIND_LABEL: Record<ExamPlanKind, string> = {
+    midterm: "Midterm Plan",
+    final: "Final Exam Plan",
+    dat: "DAT-Style Plan",
+  };
+
+  const READINESS_CLASS: Record<ExamStudyPlan["examReadinessLabel"], string> = {
+    Ready: "border-green-500/40 bg-green-950/20 text-green-300",
+    "Almost Ready": "border-amber-500/40 bg-amber-950/20 text-amber-300",
+    "Not Ready": "border-red-500/40 bg-red-950/20 text-red-300",
+  };
+
   const renderExamPlan = () => {
     if (!activeExamPlan) return null;
     return (
       <div className="p-4 flex flex-col gap-4">
         <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/20 p-4">
           <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-indigo-300">
-            {activeExamPlan.kind === "midterm" ? "Midterm Plan" : "Final Exam Plan"}
+            {EXAM_KIND_LABEL[activeExamPlan.kind]}
           </div>
           <div className="text-sm text-indigo-100 mt-1">{activeExamPlan.title}</div>
           <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-indigo-300/80">
@@ -558,6 +605,10 @@ export default function StudyPlanLab({
             <span>Understand {activeExamPlan.examUnderstandPct}%</span>
             <span>Recall {activeExamPlan.examRecallPct}%</span>
             <span>Mastery {activeExamPlan.examMasteryPct}%</span>
+          </div>
+          <div className={`mt-3 rounded-lg border px-3 py-2 flex items-center justify-between ${READINESS_CLASS[activeExamPlan.examReadinessLabel]}`}>
+            <span className="text-xs font-bold">Am I ready for the exam?</span>
+            <span className="text-sm font-bold">{activeExamPlan.examReadinessLabel} ({activeExamPlan.examReadinessPct}%)</span>
           </div>
           {(activeExamPlan.weakChapterTitles.length > 0 || activeExamPlan.strongChapterTitles.length > 0) && (
             <div className="mt-3 flex flex-col gap-1 text-[11px]">
@@ -886,7 +937,7 @@ export default function StudyPlanLab({
               onClick={() => setView("examplan")}
               className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "examplan" ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
             >
-              {activeExamPlan.kind === "midterm" ? "Midterm" : "Final"}
+              {activeExamPlan.kind === "midterm" ? "Midterm" : activeExamPlan.kind === "dat" ? "DAT" : "Final"}
             </button>
           )}
           <button

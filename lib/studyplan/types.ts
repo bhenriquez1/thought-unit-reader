@@ -102,7 +102,7 @@ export interface UnitStudyPlan {
   createdAt: number;
 }
 
-export type ExamPlanKind = "midterm" | "final";
+export type ExamPlanKind = "midterm" | "final" | "dat";
 
 export interface ExamStudyPlan {
   id: string;
@@ -114,6 +114,10 @@ export interface ExamStudyPlan {
   examUnderstandPct: number;
   examRecallPct: number;
   examMasteryPct: number;
+  /** "Am I ready for the exam?" — weighted toward recall, since mastery alone
+   *  doesn't predict exam performance the way retained recall does. */
+  examReadinessPct: number;
+  examReadinessLabel: "Ready" | "Almost Ready" | "Not Ready";
   weakChapterTitles: string[];
   strongChapterTitles: string[];
   blocks: StudyPlanBlock[]; // one per chapter, ordered weakest-mastery-first

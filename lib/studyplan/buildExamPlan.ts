@@ -22,6 +22,17 @@ export interface ExamPlanInputs {
 
 const STRONG_MASTERY_THRESHOLD = 70;
 const WEAK_MASTERY_THRESHOLD = 40;
+const READY_THRESHOLD = 75;
+const ALMOST_READY_THRESHOLD = 50;
+
+// "Am I ready for the exam?" — weighted toward recall over raw mastery,
+// since a chapter can look read-and-understood but still fall apart under
+// timed recall, which is what the exam actually tests.
+function computeReadiness(examMasteryPct: number, examRecallPct: number): { pct: number; label: "Ready" | "Almost Ready" | "Not Ready" } {
+  const pct = Math.round(examMasteryPct * 0.4 + examRecallPct * 0.6);
+  const label = pct >= READY_THRESHOLD ? "Ready" : pct >= ALMOST_READY_THRESHOLD ? "Almost Ready" : "Not Ready";
+  return { pct, label };
+}
 
 export function buildExamPlan(
   bookId: string,
@@ -42,9 +53,34 @@ export function buildExamPlan(
   const weakChapterTitles = sorted.filter(({ progress }) => progress.masteryPct < WEAK_MASTERY_THRESHOLD).map(({ chapter }) => chapter.title);
   const strongChapterTitles = sorted.filter(({ progress }) => progress.masteryPct >= STRONG_MASTERY_THRESHOLD).map(({ chapter }) => chapter.title);
 
+  if (kind === "dat") {
+    // DAT-style prep is exam-format practice, not just content review: add a
+    // trailing timed-practice block that drills weak chapters under exam
+    // conditions instead of just re-reading them.
+    const practiceTargets = weakChapterTitles.length > 0 ? weakChapterTitles : chapters.map((c) => c.title);
+    blocks.push({
+      id: `ep-${bookId}-dat-timed-practice`,
+      title: "Timed DAT-Style Practice Block",
+      topic: "Timed Practice",
+      pages: [],
+      actions: [
+        ...practiceTargets.slice(0, 5).map((title) => ({
+          type: "practice" as const,
+          label: `Timed mixed-question drill: "${title}" (simulate DAT pacing)`,
+        })),
+        { type: "practice" as const, label: "Full-length timed practice section covering all chapters above" },
+      ],
+      estimatedMinutes: 45 + practiceTargets.length * 10,
+    });
+  }
+
   const title = kind === "midterm"
     ? `Midterm Review — ${chapters.length} Chapter${chapters.length === 1 ? "" : "s"}`
+    : kind === "dat"
+    ? `DAT-Style Exam Prep — ${chapters.length} Chapter${chapters.length === 1 ? "" : "s"}`
     : `Final Exam Review — ${chapters.length} Chapter${chapters.length === 1 ? "" : "s"}`;
+
+  const readiness = computeReadiness(course.overallMasteryPct, course.overallRecallPct);
 
   return {
     id: `ep-${bookId}-${kind}-${Date.now()}`,
@@ -56,6 +92,8 @@ export function buildExamPlan(
     examUnderstandPct: course.overallUnderstandPct,
     examRecallPct: course.overallRecallPct,
     examMasteryPct: course.overallMasteryPct,
+    examReadinessPct: readiness.pct,
+    examReadinessLabel: readiness.label,
     weakChapterTitles,
     strongChapterTitles,
     blocks,
