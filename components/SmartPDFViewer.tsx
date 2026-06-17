@@ -570,25 +570,35 @@ export default function SmartPDFViewer({
 
         // 2. Prefix + suffix pinning: find start, verify/pin end independently.
         //    This prevents endIdx from overshooting into adjacent sentences.
-        const maxPrefix = Math.min(8, Math.ceil(words.length * 0.6));
-        const maxSuffix = Math.min(6, Math.floor(words.length * 0.4));
+        //    Longer prefix/suffix windows (capped higher than before) make this far
+        //    less likely to lock onto the wrong occurrence of a short, generic phrase
+        //    elsewhere on the page — the main failure mode for paragraph/thought-unit
+        //    length anchors and for RightPanel-concept → LeftPanel highlight accuracy.
+        const maxPrefix = Math.min(10, Math.ceil(words.length * 0.6));
+        const maxSuffix = Math.min(8, Math.floor(words.length * 0.4));
         const suffixWords = words.slice(-maxSuffix);
 
-        for (const count of [maxPrefix, 6, 5, 4]) {
-          if (count > words.length || count < 3) continue;
+        // Sweep every prefix length from maxPrefix down to 3 (instead of a fixed
+        // [maxPrefix, 6, 5, 4] list) so no viable prefix length is skipped.
+        for (let count = maxPrefix; count >= 3; count -= 1) {
+          if (count > words.length) continue;
           const prefix = words.slice(0, count).join(" ");
           if (prefix.length < 10) continue;
           const startIdx = concatText.indexOf(prefix);
           if (startIdx === -1) continue;
 
-          // Try to pin the end with the last few words of the anchor.
-          // Search within a 2x window from the prefix end.
+          // Try to pin the end with the last few words of the anchor. Search within a
+          // generous window from the prefix end — OCR text can insert extra whitespace,
+          // hyphenation, or footnote/heading interruptions between the prefix and the
+          // anchor's true end, especially for paragraph-length spans. A wider window
+          // only ever gives the suffix-pin more chances to succeed; it can't make an
+          // already-correct match worse.
           const searchFrom = startIdx + prefix.length;
-          const searchWindow = concatText.substring(searchFrom, searchFrom + baseText.length * 2);
+          const searchWindow = concatText.substring(searchFrom, searchFrom + baseText.length * 3 + 300);
           let endIdx = startIdx + baseText.length; // estimated fallback
 
-          for (const sCount of [maxSuffix, 4, 3]) {
-            if (sCount < 2 || sCount > suffixWords.length) continue;
+          for (let sCount = maxSuffix; sCount >= 2; sCount -= 1) {
+            if (sCount > suffixWords.length) continue;
             const suffix = suffixWords.slice(-sCount).join(" ");
             if (suffix.length < 6) continue;
             const suffixOff = searchWindow.indexOf(suffix);

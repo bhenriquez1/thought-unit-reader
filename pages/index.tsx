@@ -27,6 +27,9 @@ import SurgeonView from "@/components/SurgeonView";
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
+import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
+import { computeChapterProgress, computeCourseProgress, buildChaptersFromToc } from "@/lib/syllabus/chapterProgress";
+import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
@@ -1045,6 +1048,13 @@ export default function ThoughtUnitReader() {
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
 
+  // Record this page as visited — the durable signal Syllabus's chapter-level
+  // "Read %" is computed from (see lib/syllabus/chapterProgress.ts). Without this,
+  // there is no persisted record of which pages a student has actually been on.
+  useEffect(() => {
+    recordPageVisit(bookId, currentPage);
+  }, [bookId, currentPage]);
+
   // Load saved highlights (from RightPanel "Save to NoteLab" / "Save to Recall")
   // for the active book/page so they can be merged into finalHighlightAnchors below.
   useEffect(() => {
@@ -1324,13 +1334,39 @@ export default function ThoughtUnitReader() {
   const ambientEmbedUrl = useMemo(() => toYouTubeEmbed(ambientUrl), [ambientUrl]);
   // Resolve a snippet to its visualAnchor id — used by RightPanel card clicks and speech focus.
   // Source: currentPageStudyModel.visualAnchors (the canonical left-panel highlight contract).
+  //
+  // Most RightPanel card types (narrative blocks, steps, notes — not just concept
+  // anchors) call onEvidenceClick with no evidenceId, so this resolver is what links
+  // them back to a LeftPanel highlight. Stage 1 below used to truncate both sides to
+  // 48/32 chars, which (a) missed the true containment relationship when it started
+  // after that prefix and (b) could match the wrong anchor when several anchors
+  // shared a common opening. Stage 2 adds a key-term-overlap fallback (same idea as
+  // groundHighlightAnchors' sentence scoring) for card text that paraphrases or
+  // excerpts an anchor rather than literally containing/being contained by it.
   const resolveEvidenceId = useCallback((snippet: string) => {
     const anchors = currentPageStudyModel?.visualAnchors ?? [];
-    const needle = snippet.toLowerCase().replace(/\s+/g, " ").slice(0, 48);
-    return anchors.find((a) => {
-      const hay = a.exactText.toLowerCase().replace(/\s+/g, " ");
-      return hay.includes(needle) || needle.includes(hay.slice(0, 32));
-    })?.id;
+    if (!anchors.length) return undefined;
+    const needle = snippet.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!needle) return undefined;
+
+    const contained = anchors.find((a) => {
+      const hay = a.exactText.toLowerCase().replace(/\s+/g, " ").trim();
+      return hay.includes(needle) || needle.includes(hay);
+    });
+    if (contained) return contained.id;
+
+    const needleTerms = new Set(needle.split(/\W+/).filter((w) => w.length >= 3));
+    if (!needleTerms.size) return undefined;
+
+    let best: { id: string; score: number } | undefined;
+    for (const a of anchors) {
+      const hayTerms = a.exactText.toLowerCase().split(/\W+/).filter((w) => w.length >= 3);
+      if (!hayTerms.length) continue;
+      const matched = hayTerms.filter((t) => needleTerms.has(t)).length;
+      const score = matched / Math.min(needleTerms.size, hayTerms.length);
+      if (score > 0.5 && (!best || score > best.score)) best = { id: a.id, score };
+    }
+    return best?.id;
   }, [currentPageStudyModel]);
 
   // Shared "focus this evidence" handler — used by RightPanel cards, the left-panel
@@ -3274,6 +3310,35 @@ export default function ThoughtUnitReader() {
     setActiveShellTab("reader");
   }, [syncToPage]);
 
+  // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
+  // cross-link counts need a fetched snapshot — refreshed whenever the
+  // Syllabus tab opens or a note/recall card is saved elsewhere in the app.
+  const [syllabusStudyGuides, setSyllabusStudyGuides] = useState<StudyGuideRecord[]>([]);
+  useEffect(() => {
+    if (activeShellTab !== "syllabus" || !bookId) return;
+    getStudyGuidesByBook(bookId).then(setSyllabusStudyGuides).catch(() => {});
+  }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
+
+  // Chapter Progress Engine (Phase 1+2): derives chapters from the live
+  // syllabusToc tree and rolls up Read/Understand/Recall/Mastery % per
+  // chapter — the data the Course Dashboard renders below.
+  const chapterProgressList = useMemo(() => {
+    if (!syllabusToc.length) return [];
+    const chapters = buildChaptersFromToc(syllabusToc, pdfPageCount || 1);
+    const visitedPages = getVisitedPages(bookId);
+    const recallSets = getRecallSetsByBook(bookId);
+    const notes = getNotesByBook(bookId);
+    return chapters.map((chapter) => ({
+      chapter,
+      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides }),
+    }));
+  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, currentPage, activeShellTab]);
+
+  const courseProgress = useMemo(
+    () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
+    [chapterProgressList]
+  );
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
@@ -3587,6 +3652,12 @@ export default function ThoughtUnitReader() {
                   <span className="font-medium text-white">Loaded syllabus:</span> {syllabusFileName}
                 </div>
 
+                <ChapterDashboard
+                  chapters={chapterProgressList}
+                  course={courseProgress}
+                  onJumpToChapter={(page) => handleSyllabusNodeClick({ id: `chapter-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                />
+
                 {/* ── CollegeCal-style study plan ── */}
                 {syllabusStudyPlan.length > 0 && (
                   <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
@@ -3728,6 +3799,8 @@ export default function ThoughtUnitReader() {
           bookTitle={uploadedFile?.name ?? undefined}
           pageTextByPage={pageTextByPage}
           uploadedFile={uploadedFile}
+          chapterProgressList={chapterProgressList}
+          courseProgress={courseProgress}
           onNavigateToPage={(page) => {
             syncToPage(page);
             trySwitchShellTab("reader", "reader");
@@ -4065,8 +4138,11 @@ export default function ThoughtUnitReader() {
             </div>
           </button>
 
-          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF */}
-          {showSpeechPanel && currentPageStudyModel && (
+          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF.
+              Mounted as soon as the panel is toggled open, independent of whether the
+              Page Brain (RightPanel/OpenAI synthesis) has finished — Current Page mode
+              reads activePageText directly and must start immediately. */}
+          {showSpeechPanel && (
             <div
               style={{
                 position: "fixed",
@@ -4099,26 +4175,6 @@ export default function ThoughtUnitReader() {
               />
             </div>
           )}
-          {showSpeechPanel && !currentPageStudyModel && (
-            <div
-              style={{
-                position: "fixed",
-                bottom: 88,
-                right: 16,
-                width: 300,
-                zIndex: 55,
-                borderRadius: 16,
-                padding: "14px 16px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                background: "#0d1424",
-              }}
-            >
-              <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
-                🎧 Study Speech — waiting for page synthesis to complete…
-              </p>
-            </div>
-          )}
           
           {/* Whiteboard FAB */}
           {!showWhiteboardPanel && (
@@ -4139,24 +4195,34 @@ export default function ThoughtUnitReader() {
           )}
 
           {/* Read Selection — starts study-speech playback from the active LeftPanel
-              text selection, connecting selection -> speech tracking (P4) */}
-          {sel.selectionText?.trim() && (
-            <button
-              onClick={() => {
-                const snippet = sel.selectionText?.trim() ?? "";
-                if (!snippet) return;
-                focusEvidence(snippet);
-                speechPanelRef.current?.playFromSnippet(snippet);
-              }}
-              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-              title="Read Selection — start speech playback from the selected text"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🔊</span>
-                <span className="text-sm font-medium hidden sm:block">Read Selection</span>
-              </div>
-            </button>
-          )}
+              text selection, connecting selection -> speech tracking (P4). Falls back
+              to the active LeftPanel thought-unit (focusedEvidenceId) when nothing is
+              currently selected, so Speech always has something concrete to read. */}
+          {(() => {
+            const liveSelection = sel.selectionText?.trim() ?? "";
+            const activeThoughtUnitText = !liveSelection && focusedEvidenceId
+              ? (finalHighlightAnchors as { evidenceRefId?: string; text?: string }[]).find(
+                  (a) => a.evidenceRefId === focusedEvidenceId,
+                )?.text ?? ""
+              : "";
+            const readSnippet = liveSelection || activeThoughtUnitText;
+            if (!readSnippet) return null;
+            return (
+              <button
+                onClick={() => {
+                  focusEvidence(readSnippet);
+                  speechPanelRef.current?.playFromSnippet(readSnippet);
+                }}
+                className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
+                title={liveSelection ? "Read Selection — start speech playback from the selected text" : "Read This — start speech playback from the active thought-unit"}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🔊</span>
+                  <span className="text-sm font-medium hidden sm:block">{liveSelection ? "Read Selection" : "Read This"}</span>
+                </div>
+              </button>
+            );
+          })()}
 
           {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection,
               or for the current page/thought-unit when nothing is selected */}

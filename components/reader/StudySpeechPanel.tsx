@@ -175,7 +175,9 @@ function computeSpeechText(raw: string): string {
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  studyModel: CurrentPageStudyModel;
+  /** Null while the Page Brain (RightPanel/OpenAI synthesis) hasn't finished yet —
+   *  Current Page mode must still work fully without it, reading activePageText directly. */
+  studyModel: CurrentPageStudyModel | null;
   pageNumber: number;
   bookId?: string;
   activePageText?: string;
@@ -438,8 +440,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
-    if (mode === "fullPage") {
-      setSegments([]); // fullPage reads sentences directly, no pre-built segments
+    if (mode === "fullPage" || !studyModel) {
+      // fullPage reads sentences directly, no pre-built segments needed.
+      // Other modes with no studyModel yet (RightPanel/OpenAI synthesis still
+      // running) also have nothing to build from — play() falls back to page text.
+      setSegments([]);
       return;
     }
     const next = buildSpeechScript(studyModel, mode);
@@ -486,11 +491,27 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (cached) return cached;
 
     const promise = (async (): Promise<{ blob: Blob; mimeType: string } | "browser"> => {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
-      });
+      // Hard timeout — a hung /api/tts request must never leave playback stuck
+      // on "Loading…" forever. Abort and let the caller fall back to browser speech.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      let res: Response;
+      try {
+        res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
+          signal: controller.signal,
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          console.warn("[SPEECH_ERROR]", { source: "openai-tts-fetch", reason: "timeout", timeoutMs: 12000 });
+          throw new Error("TTS request timed out");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!res.ok) throw new Error(`TTS API ${res.status}`);
       const data = await res.json();
 
@@ -521,10 +542,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     fetchTTS(text).catch(() => {}); // errors surface (again) when actually played
   }
 
-  async function fetchAndPlayAudio(text: string): Promise<"done" | "browser"> {
+  async function fetchAndPlayAudio(text: string, session: number): Promise<"done" | "browser"> {
     const cacheKey = `${voice}::${text}`;
     const result = await fetchTTS(text);
     audioCacheRef.current.delete(cacheKey); // one-shot — don't replay stale audio on reuse
+
+    // A newer play() call superseded this request while the fetch was in
+    // flight — do NOT touch audioRef/providerRef or start playback, or we'd
+    // create a second, simultaneous voice on top of the newer session's audio.
+    if (isStale(session)) return "done";
 
     if (result === "browser") return "browser";
 
@@ -536,15 +562,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     audioRef.current   = audio;
     providerRef.current = "openai";
     return new Promise((resolve, reject) => {
-      audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
-      audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+      audio.onplay  = () => { console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+      audio.onended = () => { console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
       audio.onerror = () => {
         // stopAudio() clears src which fires onerror — treat as clean stop, not failure
-        if (abortRef.current) { resolve("done"); return; }
+        if (abortRef.current || isStale(session)) { resolve("done"); return; }
         console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
         reject(new Error("Audio playback failed"));
       };
-      audio.play().catch((e) => { if (abortRef.current) resolve("done"); else reject(e); });
+      audio.play().catch((e) => { if (abortRef.current || isStale(session)) resolve("done"); else reject(e); });
     });
   }
 
@@ -585,8 +611,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }, timeoutMs);
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
-    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
-    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
+    utt.onstart = () => { console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
+    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
@@ -637,6 +663,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
       if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
       const text = computeSpeechText(raw);
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "fullPage", charCount: text.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
       console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: text.slice(0, 200) });
       setSegIdx(i);
@@ -651,7 +678,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
 
       try {
-        const result = await fetchAndPlayAudio(text);
+        const result = await fetchAndPlayAudio(text, session);
         if (isStale(session)) break;
         if (result === "browser") {
           await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
@@ -663,6 +690,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         if (isStale(session)) break;
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode: "fullPage" });
+        console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "fullPage", error: message });
         await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
       }
     }
@@ -698,6 +726,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
 
@@ -705,7 +734,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text));
 
       try {
-        const result = await fetchAndPlayAudio(hText);
+        const result = await fetchAndPlayAudio(hText, session);
         if (isStale(session)) break; // user stopped, or a newer play() superseded this loop
         if (result === "browser") {
           await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
@@ -718,6 +747,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         if (isStale(session)) break; // user stopped — not an OpenAI failure, no fallback
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
+        console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "highlights", error: message });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
         await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
       }
@@ -731,7 +761,22 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── Main play ──────────────────────────────────────────────────────────────
 
+  // Silent fallback used when the requested mode has nothing to read (e.g. the
+  // Page Brain hasn't synthesized yet, or has no anchors for this page) — instead
+  // of surfacing an error and stopping, just read the raw page text.
+  function fallbackToPageText(fromIdx: number, session: number, reason: string) {
+    const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
+    if (!sents.length) {
+      setErrorMsg("No page text available.");
+      setPlayState("idle");
+      return;
+    }
+    console.log("[SPEECH_FALLBACK_USED]", { provider: "page-text", reason, mode, sentenceCount: sents.length });
+    playFullPageSequential(sents, fromIdx < sents.length ? fromIdx : 0, session);
+  }
+
   async function play(fromIdx = 0) {
+    console.log("[SPEECH_START_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber, hasStudyModel: !!studyModel });
     console.log("[SPEECH_PLAY_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
     stopAudio();
     const session = beginSession();
@@ -747,14 +792,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
+      console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
       playFullPageSequential(sents, fromIdx, session);
       return;
     }
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : buildSpeechScript(studyModel, "highlights");
-      if (!segsToPlay.length) { setErrorMsg("No highlight anchors to read."); return; }
+      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights") : []);
+      if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", { mode: "highlights", source: "finalStudyModel.visualAnchors", itemCount: segsToPlay.length, charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0) });
       console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
         mode: "highlights",
@@ -768,9 +814,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : buildSpeechScript(studyModel, mode);
+    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode) : []);
     if (!segsToPlay.length) {
-      setErrorMsg("No text to read for this mode.");
+      fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;
     }
 
@@ -804,6 +850,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
 
@@ -811,7 +858,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text));
 
       try {
-        const result = await fetchAndPlayAudio(segText);
+        const result = await fetchAndPlayAudio(segText, session);
         if (isStale(session)) break;
         if (result === "browser") {
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
@@ -823,6 +870,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         if (isStale(session)) break;
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
+        console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode, error: message });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
         await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
       }
