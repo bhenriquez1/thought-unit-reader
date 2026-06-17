@@ -53,6 +53,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import { buildThoughtUnitDetail, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
@@ -1182,6 +1183,9 @@ export default function ThoughtUnitReader() {
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
   const lastDetectedUnitRef = useRef<string | null>(null);
 
+  // ✅ Recall Lab v2 — thought-unit box layout, opened from RightPanel/LeftPanel/NoteLab
+  const [recallLabOpenUnit, setRecallLabOpenUnit] = useState<ThoughtUnitDetail | null>(null);
+
   // 📑 TOC Panel control (like whiteboard)
   const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
   const [showFocusControls, setShowFocusControls] = useState(false);
@@ -1680,6 +1684,59 @@ export default function ThoughtUnitReader() {
     });
     sel.clearSelection();
   }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, resolveEvidenceId, focusedEvidenceId]);
+
+  // Same "Explain This Step" tutor modal, seeded directly from a thought-unit's
+  // verbatim sourceText instead of the live LeftPanel selection — used by the
+  // "Open in Explain This Step" action in the Recall Lab v2 box layout.
+  const openExplainStepForThoughtUnit = useCallback((detail: ThoughtUnitDetail) => {
+    setFocusedEvidenceId(detail.evidenceRefId);
+    const pageText = pageTextByPage.get(`${bookId}:${detail.pageNumber}`) || "";
+    const sm = currentPageStudyModel;
+    const relatedNotes = getNotesByBook(bookId)
+      .filter((n) => n.pageNumber === detail.pageNumber)
+      .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
+    const relatedRecallCards = getRecallSetsByBook(bookId)
+      .filter((r) => r.pageNumber === detail.pageNumber)
+      .flatMap((r) => r.cards.map((c) => ({ front: c.front, back: c.back })));
+    setExplainStepContext({
+      selectedText: detail.sourceText,
+      pageText,
+      surroundingParagraph: detail.sourceText,
+      pageThesis: sm?.pageThesis ?? null,
+      studyNotes: sm?.studyNotes ?? null,
+      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      relatedNotes,
+      relatedRecallCards,
+      documentTitle: uploadedFile?.name,
+      pageNumber: detail.pageNumber,
+    });
+  }, [pageTextByPage, bookId, currentPageStudyModel, uploadedFile]);
+
+  // Expand a thought-unit (VisualAnchor) into the Recall Lab v2 box layout —
+  // deterministic, no new LLM call (see buildThoughtUnitDetail).
+  const openThoughtUnitInRecallLab = useCallback((anchorId: string) => {
+    const sm = currentPageStudyModel;
+    const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
+    if (!sm || !anchor) return;
+    setRecallLabOpenUnit(buildThoughtUnitDetail(anchor, sm, bookId));
+    trySwitchShellTab("study", "study");
+  }, [currentPageStudyModel, bookId]);
+
+  // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
+  // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
+  const visualizeThoughtUnit = useCallback((detail: ThoughtUnitDetail) => {
+    setWbConcept(detail.title);
+    setWbContext(detail.sourceText);
+    setShowWhiteboardPanel(true);
+  }, []);
+
+  // "Open in Whiteboard" — full-page prebuilt diagram, pre-focused on this unit's step.
+  const openThoughtUnitInWhiteboard = useCallback((detail: ThoughtUnitDetail) => {
+    setWbConcept("");
+    setWbContext("");
+    setFocusedEvidenceId(detail.evidenceRefId);
+    setShowWhiteboardPanel(true);
+  }, []);
 
   // Convert the tutor conversation into a polished NoteLab note: source
   // page/selected text + the tutor's Direct Answer / Why / Example / Common
@@ -3406,6 +3463,7 @@ export default function ThoughtUnitReader() {
                 onEvidenceClick={(snippet, evidenceId) => {
                   playThoughtUnit(snippet, evidenceId);
                 }}
+                onOpenThoughtUnit={openThoughtUnitInRecallLab}
                 onStudyModelReady={(model, key) => {
                     console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
                       key,
@@ -3472,6 +3530,11 @@ export default function ThoughtUnitReader() {
                   trySwitchShellTab("reader", "reader");
                 }}
                 onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+                onOpenWhiteboard={(note) => {
+                  setWbConcept(note.topic);
+                  setWbContext(note.coreIdea || "");
+                  setShowWhiteboardPanel(true);
+                }}
               />
             </ErrorBoundary>
           </div>
@@ -3603,6 +3666,11 @@ export default function ThoughtUnitReader() {
                   syncToPage(page);
                   trySwitchShellTab("reader", "reader");
                 }}
+                openUnit={recallLabOpenUnit}
+                onOpenUnitConsumed={() => setRecallLabOpenUnit(null)}
+                onVisualize={visualizeThoughtUnit}
+                onOpenInWhiteboard={openThoughtUnitInWhiteboard}
+                onOpenExplainStep={openExplainStepForThoughtUnit}
               />
             </ErrorBoundary>
           </div>

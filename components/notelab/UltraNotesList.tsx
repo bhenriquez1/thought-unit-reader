@@ -18,6 +18,8 @@ interface UltraNotesListProps {
   onNavigateToPage?: (pageNumber: number) => void;
   refreshKey?: number;
   onCardsGenerated?: (setId: string) => void;
+  /** "Open in Whiteboard" — draws this note's core idea as a visual diagram */
+  onOpenWhiteboard?: (note: UltraNote) => void;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
@@ -29,7 +31,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":    "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -217,6 +219,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onDelete={() => requestDelete(note)}
                               onNavigate={onNavigateToPage}
                               onCardsGenerated={onCardsGenerated}
+                              onOpenWhiteboard={onOpenWhiteboard}
                             />
                           );
                         })}
@@ -279,7 +282,7 @@ function DeleteModal({ note, onConfirm, onCancel }: { note: UltraNote; onConfirm
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, isExpanded, copiedId, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated,
+  note, isExpanded, copiedId, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard,
 }: {
   note: UltraNote;
   isExpanded: boolean;
@@ -289,6 +292,7 @@ function NoteCard({
   onDelete: () => void;
   onNavigate?: (page: number) => void;
   onCardsGenerated?: (setId: string) => void;
+  onOpenWhiteboard?: (note: UltraNote) => void;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
@@ -356,6 +360,9 @@ function NoteCard({
               {/* Professor Notes */}
               {note.professorNotes && <ProfessorSection notes={note.professorNotes} />}
 
+              {/* Mini Table — condensed pattern/trap/rule overview across all concepts */}
+              {note.concepts.length > 1 && <ConceptMiniTable concepts={note.concepts} />}
+
               {/* Concept blocks — each collapsible */}
               {note.concepts.length > 0 && note.concepts.map((c) => (
                 <ConceptBlock key={c.ordinal} concept={c} />
@@ -421,6 +428,11 @@ function NoteCard({
             >
               {cardsSaving ? "Saving…" : cardsSaved ? "✓ Cards saved to Recall Lab" : "🎯 Generate Cards from Note"}
             </button>
+            {onOpenWhiteboard && (
+              <button type="button" onClick={() => onOpenWhiteboard(note)} style={actionBtn("#6ee7b7")}>
+                🖼️ Whiteboard
+              </button>
+            )}
             {onNavigate && (
               <button type="button" onClick={() => onNavigate(note.pageNumber)} style={actionBtn("#3b82f6")}>
                 Go to page {note.pageNumber}
@@ -473,6 +485,35 @@ const NEW_SCHEMA_LABELS = new Set(["Core Idea", "Must Know", "Mechanism", "DAT/D
 function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
   if (!sections?.length) return false;
   return sections.some((s) => NEW_SCHEMA_LABELS.has(s.label));
+}
+
+// ── ConceptMiniTable — condensed multi-concept overview (NoteLab v2) ──────
+
+function ConceptMiniTable({ concepts }: { concepts: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept[] }) {
+  return (
+    <div style={{ borderRadius: 9, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+      <div style={{ padding: "8px 13px", background: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(148,163,184,0.65)" }}>
+        📋 MINI TABLE
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <tbody>
+          {concepts.map((c) => (
+            <tr key={c.ordinal} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <td style={{ padding: "7px 10px", verticalAlign: "top", fontWeight: 700, color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap" }}>
+                {c.ordinal}. {c.title}
+              </td>
+              <td style={{ padding: "7px 10px", verticalAlign: "top", color: "rgba(255,255,255,0.7)" }}>
+                {c.pattern ?? "—"}
+              </td>
+              <td style={{ padding: "7px 10px", verticalAlign: "top", color: "#fca5a5" }}>
+                {c.trap ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // ── ConceptBlock — individually collapsible ───────────────────────────────

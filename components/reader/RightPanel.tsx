@@ -246,6 +246,8 @@ interface RightPanelProps {
   tocItems?: import("@/lib/stores/tocStore").TocItem[];
   /** Called when synthesis resolves with the full typed study model */
   onStudyModelReady?: (model: CurrentPageStudyModel, pageTruthKey: string) => void;
+  /** Called when the user wants to expand a thought-unit (visualAnchor) into the Recall Lab v2 box layout */
+  onOpenThoughtUnit?: (anchorId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +481,7 @@ export function RightPanel({
   onCrossLinkNavigate,
   tocItems,
   onStudyModelReady,
+  onOpenThoughtUnit,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1316,6 +1319,7 @@ export function RightPanel({
                 studyModel={studyModel}
                 focusedEvidenceId={focusedEvidenceId}
                 onEvidenceClick={onEvidenceClick}
+                onOpenThoughtUnit={onOpenThoughtUnit}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1690,6 +1694,7 @@ function UltraView({
   studyModel,
   focusedEvidenceId,
   onEvidenceClick,
+  onOpenThoughtUnit,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -1711,6 +1716,8 @@ function UltraView({
   focusedEvidenceId?: string | null;
   /** Called when a study card is clicked — focuses the matching left-panel highlight */
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
+  /** Called when the user wants to expand a thought-unit card into the Recall Lab v2 box layout */
+  onOpenThoughtUnit?: (anchorId: string) => void;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
   const domain = view.domain ?? view._debug?.domain;
@@ -1930,6 +1937,15 @@ function UltraView({
                   💡 Why This Matters
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.whyItMatters}</p>
+                {anchor && onOpenThoughtUnit && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onOpenThoughtUnit(anchor.id); }}
+                    className="mt-1.5 text-[10px] font-semibold text-blue-300/70 hover:text-blue-200"
+                  >
+                    🧠 Open in Recall Lab →
+                  </button>
+                )}
               </div>
               );
             })()}
@@ -1948,6 +1964,15 @@ function UltraView({
                   ⚙️ Key Mechanism
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.keyMechanism}</p>
+                {anchor && onOpenThoughtUnit && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onOpenThoughtUnit(anchor.id); }}
+                    className="mt-1.5 text-[10px] font-semibold text-emerald-300/70 hover:text-emerald-200"
+                  >
+                    🧠 Open in Recall Lab →
+                  </button>
+                )}
               </div>
               );
             })()}
@@ -1966,6 +1991,15 @@ function UltraView({
                   ⚠️ Common Confusion
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.commonConfusion}</p>
+                {anchor && onOpenThoughtUnit && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onOpenThoughtUnit(anchor.id); }}
+                    className="mt-1.5 text-[10px] font-semibold text-red-300/70 hover:text-red-200"
+                  >
+                    🧠 Open in Recall Lab →
+                  </button>
+                )}
               </div>
               );
             })()}
