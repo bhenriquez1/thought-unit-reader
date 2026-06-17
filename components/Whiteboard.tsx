@@ -9,6 +9,18 @@ import {
   type StepNote as PersistedStepNote,
 } from "@/lib/StickyNoteService";
 import { SmartDrawingEngine, type DrawingState, type SmartSuggestion } from "@/lib/smartDrawingEngine";
+import {
+  claimSpeech,
+  isSpeechStale,
+  registerActiveAudio,
+  registerActiveUtterance,
+  notifySpeechStart,
+  notifySpeechEnd,
+  notifySpeechError,
+  logBlockedDuplicate,
+} from "@/lib/speech/speechController";
+
+const SPEECH_OWNER = "whiteboard" as const;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -105,6 +117,8 @@ export default function Whiteboard({
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const globalTokenRef = useRef(0);
+  const isStartingRef = useRef(false);
   
   // Enhanced drawing functionality
   const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -619,7 +633,11 @@ export default function Whiteboard({
   useEffect(() => {
     return () => {
       clearTtsTimer();
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      // Only release the shared controller's active slot if WE currently own
+      // it — never force-stop a different component's speech on unmount.
+      if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+        notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+      }
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
@@ -714,6 +732,18 @@ export default function Whiteboard({
   };
 
   const play = () => {
+    if (isStartingRef.current) {
+      logBlockedDuplicate(SPEECH_OWNER);
+      return;
+    }
+    isStartingRef.current = true;
+    // claimSpeech() force-stops any speech currently active anywhere in the
+    // app (StudySpeechPanel, PodcastLab, Explain Step, or a prior Whiteboard
+    // narration) before this one starts.
+    const token = claimSpeech(SPEECH_OWNER);
+    globalTokenRef.current = token;
+    setTimeout(() => { isStartingRef.current = false; }, 400);
+
     if (currentStepIndex >= steps.length - 1) setCurrentStepIndex(0);
 
     // Fresh play — clear any leftover paused-elapsed state from a previous session.
@@ -723,8 +753,13 @@ export default function Whiteboard({
 
     if (useAIVoice) {
       if (audioRef.current && audioURL) {
-        audioRef.current.playbackRate = clampRate(effectiveSpeed);
-        audioRef.current.play().catch(() => {});
+        const audio = audioRef.current;
+        audio.playbackRate = clampRate(effectiveSpeed);
+        registerActiveAudio(token, audio, () => { audio.pause(); setIsPlaying(false); setHasPaused(false); });
+        audio.onplay = () => notifySpeechStart(token, SPEECH_OWNER);
+        audio.onended = () => notifySpeechEnd(token, SPEECH_OWNER);
+        audio.onerror = () => { if (!isSpeechStale(token)) notifySpeechError(token, SPEECH_OWNER, "whiteboard-audio-failed"); };
+        audio.play().catch(() => {});
       }
     } else {
       const trimmed = (narrationScript || "").trim();
@@ -734,7 +769,17 @@ export default function Whiteboard({
         u.lang = "en-US";
         u.rate = clampRate(effectiveSpeed);
         u.pitch = 1.0;
-        u.onend = () => stop();
+        registerActiveUtterance(token, u, () => { clearTtsTimer(); setIsPlaying(false); setHasPaused(false); });
+        u.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
+        u.onend = () => { notifySpeechEnd(token, SPEECH_OWNER); stop(); };
+        u.onerror = (e) => {
+          if (e.error !== "canceled" && e.error !== "interrupted" && !isSpeechStale(token)) {
+            notifySpeechError(token, SPEECH_OWNER, e.error);
+          }
+        };
+        // Belt-and-suspenders: claimSpeech() already force-cancels any
+        // previous utterance, but cancel() again here in case a stray
+        // utterance exists outside the shared controller's tracking.
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
         startTtsLoop();
@@ -788,8 +833,13 @@ export default function Whiteboard({
     pause();
     setCurrentStepIndex(0);
     if (useAIVoice && audioRef.current) audioRef.current.currentTime = 0;
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    // Only cancel speechSynthesis / release the shared controller slot if WE
+    // currently own it — another component may have claimed speech since
+    // this Whiteboard session started (e.g. the watchdog in startTtsLoop
+    // firing after a different component already took over).
+    if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
     }
     ttsElapsedRef.current = 0;
     ttsStartRef.current = null;

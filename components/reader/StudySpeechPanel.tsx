@@ -16,6 +16,18 @@ import {
 } from "@/lib/speech/studySpeechEngine";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
+import {
+  claimSpeech,
+  isSpeechStale,
+  registerActiveAudio,
+  registerActiveUtterance,
+  notifySpeechStart,
+  notifySpeechEnd,
+  notifySpeechError,
+  logBlockedDuplicate,
+} from "@/lib/speech/speechController";
+
+const SPEECH_OWNER = "study-speech" as const;
 
 // ── Header / footer / caption detector ───────────────────────────────────────
 // Returns true for text blocks that should be skipped by the eye guide:
@@ -235,6 +247,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     abortRef.current = false;
     return ++sessionRef.current;
   }
+
+  // Cross-component speech token from the shared controller (see
+  // lib/speech/speechController.ts) — distinct from sessionRef above, which
+  // only guards against *this component's own* superseded play() calls.
+  const globalTokenRef = useRef(0);
+  // Guards against a second play() firing before the first has finished its
+  // synchronous claim/dispatch (e.g. a fast double-click on ▶ Play).
+  const isStartingRef = useRef(false);
 
   // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
   // segment's audio start fetching while the current segment is still playing.
@@ -476,6 +496,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeText(null);
     setEyeRole(null);
     onPlayStateChange?.(false);
+    // Only release the shared controller's active slot if WE currently hold
+    // it — never force-stop a different component's speech from here.
+    if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+    }
   }
 
   useEffect(() => () => stopAudio(), []);
@@ -550,7 +575,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // A newer play() call superseded this request while the fetch was in
     // flight — do NOT touch audioRef/providerRef or start playback, or we'd
     // create a second, simultaneous voice on top of the newer session's audio.
-    if (isStale(session)) return "done";
+    // Checked against both the local session counter (this component's own
+    // supersession) and the shared controller's token (another component may
+    // have claimed speech while this fetch was in flight).
+    if (isStale(session) || isSpeechStale(globalTokenRef.current)) return "done";
 
     if (result === "browser") return "browser";
 
@@ -561,16 +589,19 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     audio.playbackRate = speed;
     audioRef.current   = audio;
     providerRef.current = "openai";
+    const token = globalTokenRef.current;
+    registerActiveAudio(token, audio, () => stopAudio());
     return new Promise((resolve, reject) => {
-      audio.onplay  = () => { console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
-      audio.onended = () => { console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+      audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+      audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
       audio.onerror = () => {
         // stopAudio() clears src which fires onerror — treat as clean stop, not failure
-        if (abortRef.current || isStale(session)) { resolve("done"); return; }
+        if (abortRef.current || isStale(session) || isSpeechStale(token)) { resolve("done"); return; }
+        notifySpeechError(token, SPEECH_OWNER, "openai-audio-playback-failed");
         console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
         reject(new Error("Audio playback failed"));
       };
-      audio.play().catch((e) => { if (abortRef.current || isStale(session)) resolve("done"); else reject(e); });
+      audio.play().catch((e) => { if (abortRef.current || isStale(session) || isSpeechStale(token)) resolve("done"); else reject(e); });
     });
   }
 
@@ -584,7 +615,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       return;
     }
     // A newer play() call has already superseded this request — don't speak.
-    if (session !== undefined && isStale(session)) {
+    if ((session !== undefined && isStale(session)) || isSpeechStale(globalTokenRef.current)) {
       onDone?.();
       return;
     }
@@ -598,8 +629,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       .trim();
     const utt = new SpeechSynthesisUtterance(normalized);
     utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
+    const token = globalTokenRef.current;
+    registerActiveUtterance(token, utt, () => stopAudio());
 
-    const superseded = () => session !== undefined && isStale(session);
+    const superseded = () => (session !== undefined && isStale(session)) || isSpeechStale(token);
 
     // Watchdog: if onend never fires (stalled synthesis engine), cancel and continue.
     const timeoutMs = Math.min(60000, Math.max(15000, normalized.length * 45));
@@ -611,19 +644,23 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }, timeoutMs);
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
-    utt.onstart = () => { console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
-    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
+    utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
+    utt.onend   = () => { clearWatchdog(); notifySpeechEnd(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
       if (e.error === "canceled" || e.error === "interrupted") { onDone?.(); return; }
       if (providerRef.current !== "browser") { onDone?.(); return; } // OpenAI took over
       if (superseded()) { onDone?.(); return; }
+      notifySpeechError(token, SPEECH_OWNER, e.error);
       console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
       setPlayState("error");
       setErrorMsg("Speech is temporarily unavailable. Please try again.");
       onDone?.();
     };
+    // Belt-and-suspenders: the shared controller already force-cancels any
+    // previous speech synthesis on claimSpeech(), but cancel() again here in
+    // case this call came from a path that didn't go through claimSpeech.
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utt);
   }
@@ -776,12 +813,23 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   }
 
   async function play(fromIdx = 0) {
+    if (isStartingRef.current) {
+      logBlockedDuplicate(SPEECH_OWNER);
+      return;
+    }
+    isStartingRef.current = true;
     console.log("[SPEECH_START_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber, hasStudyModel: !!studyModel });
     console.log("[SPEECH_PLAY_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
     stopAudio();
+    // claimSpeech() force-stops any speech currently active in ANY component
+    // (this one or another) before we start a new one.
+    globalTokenRef.current = claimSpeech(SPEECH_OWNER);
     const session = beginSession();
     setErrorMsg(null);
     console.log("[SPEECH_START]", { mode, fromIdx, session });
+    // Debounce window for a fast double-click on ▶ Play — released shortly
+    // after, well before this segment's own audio would naturally finish.
+    setTimeout(() => { isStartingRef.current = false; }, 400);
 
     // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
@@ -948,7 +996,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       {/* Header */}
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen(o => {
+          const next = !o;
+          if (!next) stop(); // closing the panel must stop speech
+          return next;
+        })}
         style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
       >
         <span style={{ fontSize: 13 }}>🎧</span>
