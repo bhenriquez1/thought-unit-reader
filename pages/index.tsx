@@ -629,6 +629,25 @@ export default function ThoughtUnitReader() {
   // anchor renders in the LeftPanel even if the live studyModel for this visit differs.
   const [savedHighlightAnchors, setSavedHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
 
+  // Dev-mode-only LeftPanel highlight diagnostics (NEXT_PUBLIC_DEBUG_READER=true):
+  // one snapshot per grounding pass, surfaced as a read-only overlay so the
+  // grounding/confidence data that already exists in groundHighlightAnchors
+  // doesn't only live in console logs.
+  const [highlightDiagnostics, setHighlightDiagnostics] = useState<{
+    page: number;
+    requestedCount: number;
+    groundedCount: number;
+    failedCount: number;
+    anchors: Array<{
+      evidenceRefId?: string;
+      role: string;
+      sourceField?: string;
+      confidence: number;
+      groundMethod: string;
+      matchedLength: number;
+    }>;
+  } | null>(null);
+
   // Ref mirrors currentPageRole (declared later via useActivePageIntelligence) so the
   // finalHighlightAnchors effect can read it without a TDZ TypeScript error.
   const currentPageRoleRef = useRef<string | null>(null);
@@ -691,6 +710,7 @@ export default function ThoughtUnitReader() {
     if (currentPageStudyModel.page !== currentPage) {
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchors(savedGrounded);
+      setHighlightDiagnostics(null);
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "stale-page" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
@@ -754,6 +774,7 @@ export default function ThoughtUnitReader() {
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "openai-non-instructional-type", pageType });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchors(savedGrounded);
+      setHighlightDiagnostics({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "openai-non-instructional-type" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -765,6 +786,7 @@ export default function ThoughtUnitReader() {
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchors(savedGrounded);
+      setHighlightDiagnostics({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "local-page-role-structural" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -788,6 +810,7 @@ export default function ThoughtUnitReader() {
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "visual-anchors-empty", note: "AI returned no highlight anchors for this page" });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchors(savedGrounded);
+      setHighlightDiagnostics({ page: currentPage, requestedCount: 0, groundedCount: 0, failedCount: 0, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "visual-anchors-empty" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -842,6 +865,28 @@ export default function ThoughtUnitReader() {
       spanEnd:       a.spanEnd   ?? null,
       evidenceRefId: (a as any).evidenceRefId as string | undefined,
     }));
+
+    // Dev-mode diagnostics snapshot — same grounded/confidence/groundMethod data
+    // already computed above, just retained instead of discarded after the logs.
+    const anchorById = new Map(visualAnchors.map((a) => [a.id, a]));
+    setHighlightDiagnostics({
+      page: currentPage,
+      requestedCount: visualAnchors.length,
+      groundedCount: grounded.length,
+      failedCount: visualAnchors.length - grounded.length,
+      anchors: grounded.map((a) => {
+        const refId = (a as any).evidenceRefId as string | undefined;
+        const source = refId ? anchorById.get(refId) : undefined;
+        return {
+          evidenceRefId: refId,
+          role: a.anchorType,
+          sourceField: source?.sourceField,
+          confidence: a.confidence,
+          groundMethod: a.groundMethod,
+          matchedLength: a.groundedText.trim().split(/\s+/).filter(Boolean).length,
+        };
+      }),
+    });
 
     console.log("[LEFT_PANEL_SOURCE]", {
       source:     "finalStudyModel.visualAnchors",
@@ -4267,6 +4312,39 @@ export default function ThoughtUnitReader() {
           </button>
         </div>
 
+        {/* LeftPanel highlight diagnostics — dev-only (NEXT_PUBLIC_DEBUG_READER=true).
+            Surfaces the grounding/confidence data groundHighlightAnchors already
+            computes (lib/highlights/groundHighlightAnchors.ts) but previously only
+            logged to console. */}
+        {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && highlightDiagnostics && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 16,
+              left: 192,
+              zIndex: 40,
+              maxWidth: 320,
+              fontSize: 9,
+              fontFamily: "monospace",
+              background: "rgba(0,200,255,0.04)",
+              border: "1px solid rgba(0,200,255,0.12)",
+              borderRadius: 6,
+              padding: "6px 10px",
+              color: "#7dd3fc",
+              lineHeight: 1.7,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {[
+              `── LEFTPANEL HIGHLIGHT DIAGNOSTICS (p.${highlightDiagnostics.page}) ──`,
+              `requested: ${highlightDiagnostics.requestedCount} | grounded: ${highlightDiagnostics.groundedCount} | failed: ${highlightDiagnostics.failedCount}`,
+              ...highlightDiagnostics.anchors.map((a, i) =>
+                `[${i}] ${a.role} (${a.sourceField ?? "—"}) conf=${a.confidence.toFixed(2)} via=${a.groundMethod} words=${a.matchedLength} id=${a.evidenceRefId ?? "—"}`
+              ),
+            ].join("\n")}
+          </div>
+        )}
 
       {/* Chapter Absorption Pipeline Panel (feature-flagged) */}
       {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && absorptionState.showPanel && (
