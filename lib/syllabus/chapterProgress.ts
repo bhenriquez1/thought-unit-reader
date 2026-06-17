@@ -81,7 +81,7 @@ export interface ChapterProgressInputs {
   studyGuides: StudyGuideRecord[];
 }
 
-function pagesInRanges(ranges: Array<{ start: number; end: number }>): number[] {
+export function pagesInRanges(ranges: Array<{ start: number; end: number }>): number[] {
   const pages: number[] = [];
   for (const r of ranges) {
     for (let p = r.start; p <= r.end; p += 1) pages.push(p);
@@ -89,7 +89,7 @@ function pagesInRanges(ranges: Array<{ start: number; end: number }>): number[] 
   return pages;
 }
 
-function pageInRanges(page: number, ranges: Array<{ start: number; end: number }>): boolean {
+export function pageInRanges(page: number, ranges: Array<{ start: number; end: number }>): boolean {
   return ranges.some((r) => page >= r.start && page <= r.end);
 }
 

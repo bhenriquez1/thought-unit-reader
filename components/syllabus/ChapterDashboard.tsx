@@ -1,29 +1,12 @@
 import React from "react";
-import type { ChapterLike, ChapterProgress, ChapterStatus, CourseProgress } from "@/lib/syllabus/chapterProgress";
+import type { ChapterLike, ChapterProgress, CourseProgress } from "@/lib/syllabus/chapterProgress";
+import { STATUS_LABEL, STATUS_CLASS } from "./chapterStatusStyles";
 
 interface ChapterDashboardProps {
   chapters: Array<{ chapter: ChapterLike; progress: ChapterProgress }>;
   course: CourseProgress;
   onJumpToChapter: (page: number) => void;
 }
-
-const STATUS_LABEL: Record<ChapterStatus, string> = {
-  not_started: "Not Started",
-  reading: "Reading",
-  reviewing: "Reviewing",
-  mastered: "Mastered",
-  needs_review: "Needs Review",
-  weak_area: "Weak Area",
-};
-
-const STATUS_CLASS: Record<ChapterStatus, string> = {
-  not_started: "bg-slate-600/60 text-slate-300",
-  reading: "bg-indigo-500/40 text-indigo-200",
-  reviewing: "bg-sky-500/40 text-sky-200",
-  mastered: "bg-emerald-500/40 text-emerald-200",
-  needs_review: "bg-amber-500/40 text-amber-200",
-  weak_area: "bg-rose-500/40 text-rose-200",
-};
 
 function MetricBar({ label, pct }: { label: string; pct: number }) {
   return (

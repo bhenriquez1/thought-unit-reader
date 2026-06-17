@@ -1,7 +1,12 @@
 // lib/studyplan/types.ts
-// Diagnostic-driven Study Plan Lab — separate from the syllabus planner.
-// Flow: generate a diagnostic from the active book → score it → derive weak
-// topics → build a study plan that links back to NoteLab/RecallLab/StudyGuideLab.
+// Study Plan Lab has two plan flavors:
+//   1. Diagnostic-driven (DiagnosticAttempt -> StudyPlanRecord): generate a
+//      diagnostic from the active book, score it, derive weak topics, build
+//      a study plan linking back to NoteLab/RecallLab/StudyGuideLab.
+//   2. Chapter-driven (ChapterStudyPlan): read Read/Understand/Recall/Mastery
+//      % straight from the Syllabus tab's chapter-progress engine
+//      (lib/syllabus/chapterProgress.ts) and turn the gaps for one chapter
+//      into the same actionable block/action shape, no quiz required.
 
 export interface DiagnosticQuestion {
   id: string;
@@ -69,4 +74,17 @@ export interface StudyPlanRecord {
   diagnosticId: string;
   weakTopics: WeakTopic[];
   blocks: StudyPlanBlock[];
+}
+
+export interface ChapterStudyPlan {
+  id: string;
+  bookId: string;
+  chapterId: string;
+  chapterTitle: string;
+  readPct: number;
+  understandPct: number;
+  recallPct: number;
+  masteryPct: number;
+  blocks: StudyPlanBlock[];
+  createdAt: number;
 }
