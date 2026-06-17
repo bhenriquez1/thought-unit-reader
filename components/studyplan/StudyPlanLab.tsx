@@ -15,7 +15,8 @@ import {
 import { buildStudyPlan, computeWeakTopics } from "@/lib/studyplan/buildStudyPlan";
 import { buildChapterPlan } from "@/lib/studyplan/buildChapterPlan";
 import { buildUnitPlan } from "@/lib/studyplan/buildUnitPlan";
-import type { DiagnosticAttempt, DiagnosticAnswer, StudyPlanRecord, ChapterStudyPlan, UnitStudyPlan, StudyPlanBlock } from "@/lib/studyplan/types";
+import { buildExamPlan } from "@/lib/studyplan/buildExamPlan";
+import type { DiagnosticAttempt, DiagnosticAnswer, StudyPlanRecord, ChapterStudyPlan, UnitStudyPlan, ExamStudyPlan, ExamPlanKind, StudyPlanBlock } from "@/lib/studyplan/types";
 import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
 import { getRecallSetsByBook } from "@/lib/recalllab/recallStore";
 import { getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
@@ -79,10 +80,11 @@ export default function StudyPlanLab({
   chapterProgressList = [],
   courseProgress,
 }: StudyPlanLabProps) {
-  const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "chapters" | "chapterplan" | "unitplan" | "history">("intro");
+  const [view, setView] = useState<"intro" | "quiz" | "results" | "plan" | "chapters" | "chapterplan" | "unitplan" | "examplan" | "history">("intro");
 
   const [activeChapterPlan, setActiveChapterPlan] = useState<ChapterStudyPlan | null>(null);
   const [activeUnitPlan, setActiveUnitPlan] = useState<UnitStudyPlan | null>(null);
+  const [activeExamPlan, setActiveExamPlan] = useState<ExamStudyPlan | null>(null);
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [chapterPlanLoading, setChapterPlanLoading] = useState(false);
 
@@ -134,6 +136,7 @@ export default function StudyPlanLab({
         setFullExtractError(null);
         setActiveChapterPlan(null);
         setActiveUnitPlan(null);
+        setActiveExamPlan(null);
         setSelectedChapterIds(new Set());
         if (p.length > 0) {
           setActivePlan(p[0]);
@@ -319,6 +322,28 @@ export default function StudyPlanLab({
     }
   }, [bookId, chapterProgressList, selectedChapterIds]);
 
+  // ── Build exam plan (Midterm = covered-so-far chapters, Final = whole syllabus) ──
+
+  const handleBuildExamPlan = useCallback(async (kind: ExamPlanKind) => {
+    const entries = kind === "midterm"
+      ? chapterProgressList.filter((c) => c.progress.status !== "not_started")
+      : chapterProgressList;
+    if (entries.length === 0) return;
+    setChapterPlanLoading(true);
+    try {
+      const visitedPages = getVisitedPages(bookId);
+      const notes = getNotesByBook(bookId);
+      const recallSets = getRecallSetsByBook(bookId);
+      const studyGuides = await getStudyGuidesByBook(bookId);
+      const plan = buildExamPlan(bookId, kind, entries, { visitedPages, notes, recallSets, studyGuides });
+      setActiveExamPlan(plan);
+      setView("examplan");
+      console.log("[STUDYPLAN_EXAM_PLAN_BUILT]", { kind, chapters: entries.length, blocks: plan.blocks.length });
+    } finally {
+      setChapterPlanLoading(false);
+    }
+  }, [bookId, chapterProgressList]);
+
   // ── Render: shared plan block list (used by both diagnostic plans and chapter plans) ──
 
   const renderBlocks = (blocks: StudyPlanBlock[]) => (
@@ -384,6 +409,25 @@ export default function StudyPlanLab({
         <>
           <div className="text-[11px] text-slate-500 mb-1">
             Tap a chapter for its plan, or check several to build a Unit Plan across them.
+          </div>
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/10 px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-indigo-300">Exam prep</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleBuildExamPlan("midterm")}
+                disabled={chapterPlanLoading}
+                className="text-xs px-3 py-1 rounded-lg border border-indigo-500/50 text-indigo-200 hover:bg-indigo-900/40 disabled:opacity-40 font-bold transition-colors"
+              >
+                Build Midterm Plan
+              </button>
+              <button
+                onClick={() => handleBuildExamPlan("final")}
+                disabled={chapterPlanLoading}
+                className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold transition-colors"
+              >
+                Build Final Exam Plan
+              </button>
+            </div>
           </div>
           {selectedChapterIds.size > 0 && (
             <div className="sticky top-0 z-10 rounded-xl border border-fuchsia-500/40 bg-fuchsia-950/30 px-3 py-2 flex items-center justify-between">
@@ -488,6 +532,46 @@ export default function StudyPlanLab({
           </div>
         </div>
         {renderBlocks(activeUnitPlan.blocks)}
+        <button
+          onClick={() => setView("chapters")}
+          className="w-full py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-bold transition-colors"
+        >
+          ← Back to Chapters
+        </button>
+      </div>
+    );
+  };
+
+  // ── Render: built exam plan (Midterm / Final) ───────────────────────────
+
+  const renderExamPlan = () => {
+    if (!activeExamPlan) return null;
+    return (
+      <div className="p-4 flex flex-col gap-4">
+        <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/20 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-indigo-300">
+            {activeExamPlan.kind === "midterm" ? "Midterm Plan" : "Final Exam Plan"}
+          </div>
+          <div className="text-sm text-indigo-100 mt-1">{activeExamPlan.title}</div>
+          <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-indigo-300/80">
+            <span>Read {activeExamPlan.examReadPct}%</span>
+            <span>Understand {activeExamPlan.examUnderstandPct}%</span>
+            <span>Recall {activeExamPlan.examRecallPct}%</span>
+            <span>Mastery {activeExamPlan.examMasteryPct}%</span>
+          </div>
+          {(activeExamPlan.weakChapterTitles.length > 0 || activeExamPlan.strongChapterTitles.length > 0) && (
+            <div className="mt-3 flex flex-col gap-1 text-[11px]">
+              {activeExamPlan.weakChapterTitles.length > 0 && (
+                <div className="text-orange-300">⚠ Weak: {activeExamPlan.weakChapterTitles.join(", ")}</div>
+              )}
+              {activeExamPlan.strongChapterTitles.length > 0 && (
+                <div className="text-green-300">✓ Strong: {activeExamPlan.strongChapterTitles.join(", ")}</div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="text-[11px] text-slate-500">Blocks below are ordered weakest chapter first — work top to bottom.</div>
+        {renderBlocks(activeExamPlan.blocks)}
         <button
           onClick={() => setView("chapters")}
           className="w-full py-2 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-xs font-bold transition-colors"
@@ -797,6 +881,14 @@ export default function StudyPlanLab({
               Unit Plan
             </button>
           )}
+          {activeExamPlan && (
+            <button
+              onClick={() => setView("examplan")}
+              className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "examplan" ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            >
+              {activeExamPlan.kind === "midterm" ? "Midterm" : "Final"}
+            </button>
+          )}
           <button
             onClick={() => setView("history")}
             className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "history" ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
@@ -826,6 +918,7 @@ export default function StudyPlanLab({
         {view === "chapters" && renderChapters()}
         {view === "chapterplan" && renderChapterPlan()}
         {view === "unitplan" && renderUnitPlan()}
+        {view === "examplan" && renderExamPlan()}
         {view === "history" && renderHistory()}
       </div>
     </div>

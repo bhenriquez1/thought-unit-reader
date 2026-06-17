@@ -101,3 +101,21 @@ export interface UnitStudyPlan {
   blocks: StudyPlanBlock[]; // one per chapter (daily objectives) + a trailing review block
   createdAt: number;
 }
+
+export type ExamPlanKind = "midterm" | "final";
+
+export interface ExamStudyPlan {
+  id: string;
+  bookId: string;
+  kind: ExamPlanKind;
+  chapterIds: string[];
+  title: string; // e.g. "Midterm Review — 5 Chapters"
+  examReadPct: number;
+  examUnderstandPct: number;
+  examRecallPct: number;
+  examMasteryPct: number;
+  weakChapterTitles: string[];
+  strongChapterTitles: string[];
+  blocks: StudyPlanBlock[]; // one per chapter, ordered weakest-mastery-first
+  createdAt: number;
+}
