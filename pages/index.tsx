@@ -4065,8 +4065,11 @@ export default function ThoughtUnitReader() {
             </div>
           </button>
 
-          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF */}
-          {showSpeechPanel && currentPageStudyModel && (
+          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF.
+              Mounted as soon as the panel is toggled open, independent of whether the
+              Page Brain (RightPanel/OpenAI synthesis) has finished — Current Page mode
+              reads activePageText directly and must start immediately. */}
+          {showSpeechPanel && (
             <div
               style={{
                 position: "fixed",
@@ -4099,26 +4102,6 @@ export default function ThoughtUnitReader() {
               />
             </div>
           )}
-          {showSpeechPanel && !currentPageStudyModel && (
-            <div
-              style={{
-                position: "fixed",
-                bottom: 88,
-                right: 16,
-                width: 300,
-                zIndex: 55,
-                borderRadius: 16,
-                padding: "14px 16px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                background: "#0d1424",
-              }}
-            >
-              <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
-                🎧 Study Speech — waiting for page synthesis to complete…
-              </p>
-            </div>
-          )}
           
           {/* Whiteboard FAB */}
           {!showWhiteboardPanel && (
@@ -4139,24 +4122,34 @@ export default function ThoughtUnitReader() {
           )}
 
           {/* Read Selection — starts study-speech playback from the active LeftPanel
-              text selection, connecting selection -> speech tracking (P4) */}
-          {sel.selectionText?.trim() && (
-            <button
-              onClick={() => {
-                const snippet = sel.selectionText?.trim() ?? "";
-                if (!snippet) return;
-                focusEvidence(snippet);
-                speechPanelRef.current?.playFromSnippet(snippet);
-              }}
-              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-              title="Read Selection — start speech playback from the selected text"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🔊</span>
-                <span className="text-sm font-medium hidden sm:block">Read Selection</span>
-              </div>
-            </button>
-          )}
+              text selection, connecting selection -> speech tracking (P4). Falls back
+              to the active LeftPanel thought-unit (focusedEvidenceId) when nothing is
+              currently selected, so Speech always has something concrete to read. */}
+          {(() => {
+            const liveSelection = sel.selectionText?.trim() ?? "";
+            const activeThoughtUnitText = !liveSelection && focusedEvidenceId
+              ? (finalHighlightAnchors as { evidenceRefId?: string; text?: string }[]).find(
+                  (a) => a.evidenceRefId === focusedEvidenceId,
+                )?.text ?? ""
+              : "";
+            const readSnippet = liveSelection || activeThoughtUnitText;
+            if (!readSnippet) return null;
+            return (
+              <button
+                onClick={() => {
+                  focusEvidence(readSnippet);
+                  speechPanelRef.current?.playFromSnippet(readSnippet);
+                }}
+                className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
+                title={liveSelection ? "Read Selection — start speech playback from the selected text" : "Read This — start speech playback from the active thought-unit"}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🔊</span>
+                  <span className="text-sm font-medium hidden sm:block">{liveSelection ? "Read Selection" : "Read This"}</span>
+                </div>
+              </button>
+            );
+          })()}
 
           {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection,
               or for the current page/thought-unit when nothing is selected */}
