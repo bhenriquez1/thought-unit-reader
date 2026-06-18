@@ -593,7 +593,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     registerActiveAudio(token, audio, () => stopAudio());
     return new Promise((resolve, reject) => {
       audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
-      audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+      // Do NOT notifySpeechEnd here — a multi-segment session (Study/Full/Focus/
+      // Highlights modes) claims one token for the whole sequence and reuses it
+      // across segments via registerActiveAudio. Releasing it after the first
+      // segment would make every later fetchAndPlayAudio() call see its own
+      // token as stale and silently skip playback. notifySpeechEnd is called
+      // once when the whole sequence actually finishes (or is stopped).
+      audio.onended = () => { console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
       audio.onerror = () => {
         // stopAudio() clears src which fires onerror — treat as clean stop, not failure
         if (abortRef.current || isStale(session) || isSpeechStale(token)) { resolve("done"); return; }
@@ -645,7 +651,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
     utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
-    utt.onend   = () => { clearWatchdog(); notifySpeechEnd(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
+    // See the comment on fetchAndPlayAudio's audio.onended — same reasoning:
+    // don't release the shared session token after just one segment.
+    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
@@ -733,6 +741,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
 
     if (!isStale(session)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
       onSnippetFocus?.(null);
     }
@@ -791,6 +800,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
 
     if (!isStale(session)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
       onEvidenceFocus?.(null);
     }
@@ -925,6 +935,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
 
     if (!isStale(session)) {
+      notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
       onEvidenceFocus?.(null);
     }

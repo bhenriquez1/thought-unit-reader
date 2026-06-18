@@ -276,7 +276,12 @@ export default function PodcastLab({
     registerActiveAudio(token, audio, () => stop());
     await new Promise<void>((resolve) => {
       audio.onplay  = () => notifySpeechStart(token, SPEECH_OWNER);
-      audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); URL.revokeObjectURL(url); resolve(); };
+      // Do NOT notifySpeechEnd here — playFrom claims one token for the whole
+      // script and reuses it across segments. Releasing it after the first
+      // segment would make every later fetchAndPlay() call see its own token
+      // as stale and silently skip playback. notifySpeechEnd is called once
+      // when the whole sequence actually finishes (or is stopped).
+      audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
       audio.onerror = () => {
         if (!abortRef.current && !isSpeechStale(token)) notifySpeechError(token, SPEECH_OWNER, "podcast-audio-failed");
         URL.revokeObjectURL(url);
@@ -306,7 +311,9 @@ export default function PodcastLab({
           utt.rate   = playbackSpeed;
           registerActiveUtterance(token, utt, () => resolve());
           utt.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
-          utt.onend  = () => { notifySpeechEnd(token, SPEECH_OWNER); resolve(); };
+          // See the comment on playBlob's audio.onended — same reasoning:
+          // don't release the shared session token after just one segment.
+          utt.onend  = () => resolve();
           utt.onerror = (e) => {
             if (!abortRef.current && !isSpeechStale(token) && e.error !== "canceled" && e.error !== "interrupted") {
               notifySpeechError(token, SPEECH_OWNER, e.error);
@@ -388,6 +395,7 @@ export default function PodcastLab({
     }
 
     if (!abortRef.current && !isSpeechStale(token)) {
+      notifySpeechEnd(token, SPEECH_OWNER);
       setPlayState("idle");
       setElapsed(0);
       setSegDuration(0);
