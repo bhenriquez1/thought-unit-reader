@@ -29,10 +29,46 @@ interface ActiveSpeechHandle {
 let tokenSeq = 0;
 let active: ActiveSpeechHandle | null = null;
 
+// Without this, navigating away from the tab mid-speech leaves browser TTS
+// (and any OpenAI TTS <audio> element) playing silently in the background;
+// coming back to the tab can then make it sound like two utterances
+// overlapped, when really one just kept running unseen the whole time.
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopAllSpeech("tab-hidden");
+  });
+}
+
 function log(tag: string, detail?: Record<string, unknown>): void {
   if (process.env.NODE_ENV === "production") return;
   // eslint-disable-next-line no-console
   console.log(`${tag}`, detail ?? "");
+}
+
+// Chrome has a long-standing bug where speechSynthesis.cancel() doesn't
+// reliably stop an in-flight utterance immediately — the previous voice can
+// keep speaking for a moment, overlapping the next one. pause() forces the
+// engine to actually halt output before cancel() clears the queue, and a
+// second cancel() catches the case where cancel() itself got dropped while
+// the engine was mid-utterance. This is the standard workaround for that bug.
+function hardCancelUtterance(): void {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const synth = window.speechSynthesis;
+  try {
+    if (synth.speaking || synth.pending) synth.pause();
+  } catch {
+    // ignore
+  }
+  try {
+    synth.cancel();
+  } catch {
+    // ignore
+  }
+  try {
+    if (synth.speaking || synth.pending) synth.cancel();
+  } catch {
+    // ignore
+  }
 }
 
 function forceStopActive(reason: string): void {
@@ -44,13 +80,7 @@ function forceStopActive(reason: string): void {
   } catch {
     // ignore - element may already be detached
   }
-  if (prev.utterance && typeof window !== "undefined" && window.speechSynthesis) {
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      // ignore
-    }
-  }
+  if (prev.utterance) hardCancelUtterance();
   try {
     prev.onForceStop?.();
   } catch {
@@ -138,13 +168,7 @@ export function releaseSpeech(token: number): void {
 // active regardless of token, with no new claim replacing it.
 export function stopAllSpeech(reason: string): void {
   forceStopActive(reason);
-  if (typeof window !== "undefined" && window.speechSynthesis) {
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      // ignore
-    }
-  }
+  hardCancelUtterance();
 }
 
 export function getActiveOwner(): SpeechOwner | null {

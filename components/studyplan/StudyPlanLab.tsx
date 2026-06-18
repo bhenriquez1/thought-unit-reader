@@ -109,10 +109,27 @@ export default function StudyPlanLab({
   const [fullExtractLoading, setFullExtractLoading] = useState(false);
   const [fullExtractError, setFullExtractError] = useState<string | null>(null);
 
+  // chapterProgressList arrives from the parent's syllabus auto-detection,
+  // which resolves asynchronously after thoughtUnits load — later than this
+  // component's own bookId-load effect runs. Mirrored into a ref so that
+  // effect can read its latest value without re-running on every chapter
+  // update, and a separate effect below upgrades view "intro" -> "chapters"
+  // once real chapter data lands for a book with no diagnostic/plan history.
+  const chapterProgressListRef = useRef(chapterProgressList);
+  chapterProgressListRef.current = chapterProgressList;
+  const chaptersDefaultAppliedRef = useRef(false);
+  useEffect(() => {
+    if (chaptersDefaultAppliedRef.current) return;
+    if (chapterProgressList.length === 0) return;
+    chaptersDefaultAppliedRef.current = true;
+    setView((v) => (v === "intro" ? "chapters" : v));
+  }, [chapterProgressList.length]);
+
   // Load history for this book and reset transient state when the document changes.
   const isFirstBookRef = useRef(true);
   useEffect(() => {
     let cancelled = false;
+    chaptersDefaultAppliedRef.current = false;
     Promise.all([getDiagnosticsByBook(bookId), getStudyPlansByBook(bookId)]).then(([d, p]) => {
       if (cancelled) return;
       setDiagnostics(d);
@@ -120,6 +137,9 @@ export default function StudyPlanLab({
       if (isFirstBookRef.current) {
         isFirstBookRef.current = false;
         // On first mount, pick up the most recent existing plan/attempt for this book.
+        // Otherwise, lead with the real chapter-progress dashboard (Read/Understand/
+        // Recall/Mastery, weak topics, exam-plan builders) when chapter data exists —
+        // "Generate Diagnostic Test" is a tool reachable from there, not the front door.
         if (p.length > 0) {
           setActivePlan(p[0]);
           setActiveAttempt(d.find(x => x.id === p[0].diagnosticId) ?? d[0] ?? null);
@@ -128,7 +148,7 @@ export default function StudyPlanLab({
           setActiveAttempt(d[0]);
           setView("results");
         } else {
-          setView("intro");
+          setView(chapterProgressListRef.current.length > 0 ? "chapters" : "intro");
         }
       } else {
         // Document changed — show this book's most recent plan/diagnostic, or intro.
@@ -152,7 +172,7 @@ export default function StudyPlanLab({
         } else {
           setActiveAttempt(null);
           setActivePlan(null);
-          setView("intro");
+          setView(chapterProgressListRef.current.length > 0 ? "chapters" : "intro");
         }
       }
       console.log("[STUDYPLAN_BOOKID_LOADED]", { bookId, diagnostics: d.length, plans: p.length });
@@ -897,7 +917,7 @@ export default function StudyPlanLab({
       <div className="flex-shrink-0 border-b border-slate-800 px-5 py-3.5 flex items-center justify-between bg-gradient-to-r from-slate-950 to-slate-900">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-fuchsia-400">Study Plan Lab</div>
-          <div className="text-xs text-slate-500 mt-0.5">Diagnostic-driven — find weak spots, build a plan to fix them.</div>
+          <div className="text-xs text-slate-500 mt-0.5">Weakness, readiness, and a personalized roadmap — built from what you've actually read and recalled.</div>
         </div>
         <div className="flex gap-2">
           {chapterProgressList.length > 0 && (
@@ -906,6 +926,14 @@ export default function StudyPlanLab({
               className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "chapters" || view === "chapterplan" ? "bg-fuchsia-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
             >
               Chapters
+            </button>
+          )}
+          {!activeAttempt && (
+            <button
+              onClick={() => setView("intro")}
+              className={`text-xs px-3 py-1 rounded-lg transition-colors ${view === "intro" ? "bg-fuchsia-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            >
+              🧪 Diagnostic Test
             </button>
           )}
           {activeAttempt && (

@@ -26,9 +26,8 @@ import SurgeonView from "@/components/SurgeonView";
 // NoteLabViewEnhanced, StudySessionPanel, MemoCardsStudyPanel removed — superseded by UltraNotesList + RecallLab
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
-import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
 import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
-import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc } from "@/lib/syllabus/chapterProgress";
+import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
@@ -563,6 +562,18 @@ export default function ThoughtUnitReader() {
   const [syllabusToc, setSyllabusToc] = useState<TocNode[]>(() => {
     try { return JSON.parse(localStorage.getItem("syllabus_toc") ?? "[]"); } catch { return []; }
   });
+  // Distinguishes "chapters detected from the book itself" (the default,
+  // automatic path) from "a course syllabus file was uploaded" (optional,
+  // adds real assignment/exam dates) — purely for the Syllabus tab's banner
+  // copy, since both paths populate the same syllabusToc/syllabusPages state.
+  const [syllabusSource, setSyllabusSource] = useState<"book" | "upload">(() => {
+    try { return (localStorage.getItem("syllabus_source") as "book" | "upload") || "book"; } catch { return "book"; }
+  });
+  // Set when the user explicitly clicks "Upload a course syllabus" from the
+  // auto-detected dashboard — suppresses the book-content auto-detect effect
+  // below so it doesn't immediately repopulate syllabusToc and bounce the
+  // user straight back out of the upload panel.
+  const [syllabusUploadRequested, setSyllabusUploadRequested] = useState(false);
   // Pages studied via the one-brain pipeline: noteLab saved or recallLab saved
   const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
@@ -2014,6 +2025,47 @@ export default function ThoughtUnitReader() {
     );
   }, [pdfPageCount, thoughtUnits, tableOfContents.length]);
 
+  // Syllabus tab's chapter dashboard (Read/Understand/Recall/Mastery, weak
+  // areas, next-recommended-topic) used to require a *separate* syllabus
+  // file upload before it would render anything — the book being read and
+  // the "syllabus" were two different documents. That's backwards: Syllabus
+  // should be a learning-intelligence layer over the book itself, so derive
+  // its chapter structure straight from the book's own content (same
+  // content-based detector that already powers the auto-TOC above) the
+  // moment the book is loaded. A manually-uploaded course syllabus (via
+  // SyllabusUploadPanel) still overrides this with real assignment/exam
+  // dates when the user has one.
+  useEffect(() => {
+    if (!pdfPageCount || !thoughtUnits.length) return;
+    if (syllabusToc.length > 0) return;
+    if (syllabusUploadRequested) return;
+
+    const bundles: PageTextBundle[] = Array.from({ length: pdfPageCount }, (_, idx) => {
+      const page = idx + 1;
+      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
+      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+    });
+    const autoToc = buildAutoToc(bundles);
+    if (!autoToc.length) return;
+
+    setSyllabusToc(autoToc);
+    setSyllabusPages(bundles);
+    setSyllabusFileName(uploadedFile?.name || "This book");
+    setSyllabusSource("book");
+    try {
+      localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
+      localStorage.setItem("syllabus_pages", JSON.stringify(bundles));
+      localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
+      localStorage.setItem("syllabus_source", "book");
+    } catch { /* quota exceeded — ignore */ }
+    console.log("[SYLLABUS_SOURCE]", {
+      fileName:  uploadedFile?.name,
+      tocNodes:  autoToc.length,
+      pageCount: bundles.length,
+      source:    "buildAutoToc(book-content)",
+    });
+  }, [pdfPageCount, thoughtUnits, syllabusToc.length, uploadedFile?.name, syllabusUploadRequested]);
+
   /* =========================================================================
      🔹 Highlight Paragraph — zoom to matching text in the PDF text layer
      Called when user clicks a priority item in SurgeonCockpit.
@@ -3272,10 +3324,13 @@ export default function ThoughtUnitReader() {
     setSyllabusFileName(result.fileName);
     setSyllabusPages(result.pages);
     setSyllabusToc(result.toc);
+    setSyllabusSource("upload");
+    setSyllabusUploadRequested(false);
     try {
       localStorage.setItem("syllabus_fileName", result.fileName);
       localStorage.setItem("syllabus_pages", JSON.stringify(result.pages));
       localStorage.setItem("syllabus_toc", JSON.stringify(result.toc));
+      localStorage.setItem("syllabus_source", "upload");
     } catch { /* quota exceeded — ignore */ }
     console.log("[SYLLABUS_SOURCE]", {
       fileName:  result.fileName,
@@ -3391,6 +3446,18 @@ export default function ThoughtUnitReader() {
 
   const courseProgress = useMemo(
     () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
+    [chapterProgressList]
+  );
+
+  // Course-level "what am I weak on?" and authored teaching order — feed the
+  // Syllabus tab's Weak Areas / Prerequisite Chain rows and Study Plan Lab's
+  // Weakness Report, both grounded in the same chapter-progress data.
+  const courseWeakAreas = useMemo(
+    () => computeWeakAreas(chapterProgressList.map((c) => c.progress)),
+    [chapterProgressList]
+  );
+  const coursePrerequisiteChain = useMemo(
+    () => buildPrerequisiteChain(chapterProgressList.map((c) => c.chapter)),
     [chapterProgressList]
   );
 
@@ -3714,17 +3781,44 @@ export default function ThoughtUnitReader() {
             }}
           >
             {!syllabusPages.length ? (
-              <SyllabusUploadPanel onParsed={handleParsedSyllabus} />
+              <div className="space-y-2">
+                {syllabusUploadRequested && (
+                  <button
+                    onClick={() => setSyllabusUploadRequested(false)}
+                    className="text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+                  >
+                    ← Back to detected chapters
+                  </button>
+                )}
+                <SyllabusUploadPanel onParsed={handleParsedSyllabus} />
+              </div>
             ) : (
               <div className="space-y-3">
-                <div className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
-                  <span className="font-medium text-white">Loaded syllabus:</span> {syllabusFileName}
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+                  <span>
+                    {syllabusSource === "upload" ? (
+                      <><span className="font-medium text-white">Course syllabus:</span> {syllabusFileName}</>
+                    ) : (
+                      <><span className="font-medium text-white">Chapters detected from:</span> {syllabusFileName}</>
+                    )}
+                  </span>
+                  {syllabusSource === "book" && (
+                    <button
+                      onClick={() => { setSyllabusUploadRequested(true); setSyllabusPages([]); setSyllabusToc([]); }}
+                      className="shrink-0 text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+                    >
+                      Upload a course syllabus →
+                    </button>
+                  )}
                 </div>
 
                 <ChapterDashboard
                   chapters={chapterProgressList}
                   course={courseProgress}
                   onJumpToChapter={(page) => handleSyllabusNodeClick({ id: `chapter-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                  weakAreas={courseWeakAreas}
+                  nextTopic={nextTopicRecommendation}
+                  prerequisiteChain={coursePrerequisiteChain}
                 />
 
                 {/* ── CollegeCal-style study plan ── */}
@@ -3774,7 +3868,6 @@ export default function ThoughtUnitReader() {
                   </div>
                 )}
 
-                <SyllabusStudyLauncher toc={syllabusToc} onStudyTopic={handleStudyTopic} progressRecommendation={nextTopicRecommendation} />
                 <TocTree
                   toc={syllabusToc}
                   activePage={currentPage}
