@@ -15,7 +15,9 @@ import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
 import DecisionProcessMap from './reader/DecisionProcessMap';
+import DomainModeSelector from './reader/DomainModeSelector';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
+import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -169,6 +171,8 @@ export default function PureReaderView({
   // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
   // Navigator) below it — collapsed by default to keep the sidebar compact.
   const [legendCollapsed, setLegendCollapsed] = useState(true);
+  // Level 4 — manual domain-preset override; null means "follow auto-detection".
+  const [domainPresetOverride, setDomainPresetOverride] = useState<string | null>(null);
 
   // Map AI anchor types to ParagraphKind for highlight legend colors.
   const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
@@ -364,6 +368,15 @@ export default function PureReaderView({
     [effectiveHighlightTargets]
   );
 
+  // Level 4 — auto-detect a domain preset from whatever text is already on
+  // hand (current page text + visible thought-unit text); manual override
+  // takes precedence when set.
+  const detectedPresetId = useMemo(() => {
+    const sample = [pageText ?? "", ...effectiveHighlightTargets.map((t) => t.text)].join(" ");
+    return detectDomainPreset(sample);
+  }, [pageText, effectiveHighlightTargets]);
+  const effectivePresetId = domainPresetOverride ?? detectedPresetId;
+
   const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
     { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },
     { kind: "definition",  color: "#93c5fd", bg: "rgba(147,197,253,0.15)",  label: "Definition / Term",    abbr: "DEF"  },
@@ -417,8 +430,17 @@ export default function PureReaderView({
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2) + Process/Decision Map (Level 3) ── */}
+        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2) + Process/Decision Map (Level 3) + Domain Mode (Level 4) ── */}
         <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-y-auto">
+          {/* Level 4 — domain preset indicator + manual override */}
+          <DomainModeSelector
+            detectedPresetLabel={getDomainPreset(detectedPresetId).label}
+            overridePresetId={domainPresetOverride}
+            onChange={setDomainPresetOverride}
+          />
+
+          <div className="h-px bg-white/8 mx-1" />
+
           {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
           <div className="px-1">
             <button
@@ -478,6 +500,7 @@ export default function PureReaderView({
             focusedId={focusedEvidenceId}
             onJump={(id) => onEvidenceFocus?.(id)}
             onExplain={onExplainThoughtUnit}
+            presetId={effectivePresetId}
           />
 
           {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}

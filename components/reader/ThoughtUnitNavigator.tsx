@@ -13,6 +13,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
+import { getKindLabel } from "@/lib/insights/domainPresets";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -20,33 +21,35 @@ export interface ThoughtUnitNavigatorEntry {
   kind: ParagraphKind;
 }
 
-interface KindMeta {
-  label: string;
-  color: string;
-  bg: string;
-}
-
-const KIND_META: Record<string, KindMeta> = {
-  thesis:      { label: "Core Idea",             color: "#fde047", bg: "rgba(253,224,71,0.12)" },
-  definition:  { label: "Definition / Term",      color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
-  mechanism:   { label: "Mechanism / Function",   color: "#86efac", bg: "rgba(134,239,172,0.12)" },
-  application: { label: "Example / Evidence",     color: "#c084fc", bg: "rgba(192,132,252,0.12)" },
-  trap:        { label: "Confusion / Trap",       color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
-  dat_fact:    { label: "DAT / High-Yield Fact",  color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
+// Colors stay constant across domain presets — only the label text changes
+// (via getKindLabel) — so the navigator's visual identity doesn't shift
+// every time the detected/overridden preset changes.
+const KIND_COLORS: Record<string, { color: string; bg: string }> = {
+  thesis:      { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
+  definition:  { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  mechanism:   { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  application: { color: "#c084fc", bg: "rgba(192,132,252,0.12)" },
+  trap:        { color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
+  clinical:    { color: "#fda4af", bg: "rgba(253,164,175,0.12)" },
+  formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
+  dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
 };
-const KIND_ORDER = ["thesis", "dat_fact", "mechanism", "trap", "application", "definition"];
-const FALLBACK_META: KindMeta = { label: "Other", color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
+const KIND_ORDER = ["thesis", "dat_fact", "mechanism", "trap", "application", "definition", "clinical", "formula"];
+const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
 export default function ThoughtUnitNavigator({
   entries,
   focusedId,
   onJump,
   onExplain,
+  presetId = "universal",
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
   onJump: (id: string) => void;
   onExplain?: (id: string) => void;
+  /** Level 4 domain preset id (from lib/insights/domainPresets) — relabels kind groups only. */
+  presetId?: string;
 }) {
   const [collapsedKinds, setCollapsedKinds] = useState<Set<string>>(new Set());
 
@@ -81,7 +84,8 @@ export default function ThoughtUnitNavigator({
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
       {grouped.map(({ kind, items }) => {
-        const meta = KIND_META[kind] ?? FALLBACK_META;
+        const colors = KIND_COLORS[kind] ?? FALLBACK_COLOR;
+        const meta = { ...colors, label: getKindLabel(presetId, kind as ParagraphKind) };
         const isCollapsed = collapsedKinds.has(kind);
         return (
           <div key={kind} className="flex flex-col gap-1">
