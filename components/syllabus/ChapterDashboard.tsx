@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { ChapterLike, ChapterProgress, CourseProgress } from "@/lib/syllabus/chapterProgress";
+import type { ChapterLike, ChapterProgress, CourseProgress, NextTopicRecommendation } from "@/lib/syllabus/chapterProgress";
 import { STATUS_LABEL, STATUS_CLASS } from "./chapterStatusStyles";
 
 const ANCHOR_TYPE_LABEL: Record<string, string> = {
@@ -16,6 +16,9 @@ interface ChapterDashboardProps {
   chapters: Array<{ chapter: ChapterLike; progress: ChapterProgress }>;
   course: CourseProgress;
   onJumpToChapter: (page: number) => void;
+  weakAreas?: string[];
+  nextTopic?: NextTopicRecommendation | null;
+  prerequisiteChain?: string[];
 }
 
 function MetricBar({ label, pct }: { label: string; pct: number }) {
@@ -30,14 +33,14 @@ function MetricBar({ label, pct }: { label: string; pct: number }) {
   );
 }
 
-export default function ChapterDashboard({ chapters, course, onJumpToChapter }: ChapterDashboardProps) {
+export default function ChapterDashboard({ chapters, course, onJumpToChapter, weakAreas = [], nextTopic, prerequisiteChain = [] }: ChapterDashboardProps) {
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   if (!chapters.length) return null;
 
   return (
     <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3" data-testid="chapter-dashboard">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Course Dashboard</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Book Progress</div>
         <div className="text-[11px] text-slate-400">
           {course.completedChapters}/{course.totalChapters} chapters mastered · ~{course.estimatedRemainingMinutes}min remaining
         </div>
@@ -49,6 +52,38 @@ export default function ChapterDashboard({ chapters, course, onJumpToChapter }: 
         <MetricBar label="Recall" pct={course.overallRecallPct} />
         <MetricBar label="Mastery" pct={course.overallMasteryPct} />
       </div>
+
+      {nextTopic && (
+        <button
+          onClick={() => onJumpToChapter(nextTopic.page)}
+          className="mb-2 w-full rounded-lg border border-blue-400/30 bg-blue-500/10 px-3 py-2 text-left hover:bg-blue-500/15"
+          data-testid="next-recommended-topic"
+        >
+          <div className="text-[9px] font-bold uppercase tracking-widest text-blue-300">Next Recommended Topic</div>
+          <div className="text-sm font-medium text-white">{nextTopic.chapterTitle}</div>
+          <div className="text-[10px] text-blue-200">Page {nextTopic.page} — {nextTopic.reason}</div>
+        </button>
+      )}
+
+      {weakAreas.length > 0 && (
+        <div className="mb-2 rounded-lg border border-orange-800/40 bg-orange-950/30 px-3 py-2" data-testid="weak-areas">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-orange-300">Weak Areas</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {weakAreas.map((wa, i) => (
+              <span key={i} className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-900/40 text-orange-200 border border-orange-700/40">
+                {wa}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {prerequisiteChain.length > 1 && (
+        <div className="mb-3 rounded-lg border border-white/5 bg-slate-800/40 px-3 py-2" data-testid="prerequisite-chain">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Prerequisite Chain</div>
+          <div className="mt-1 truncate text-[11px] text-slate-300">{prerequisiteChain.join(" → ")}</div>
+        </div>
+      )}
 
       <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
         {chapters.map(({ chapter, progress }) => {

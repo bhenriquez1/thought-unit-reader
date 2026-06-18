@@ -272,6 +272,37 @@ export function computeCourseProgress(
   };
 }
 
+// Course-level "what am I weak on?" — pools every chapter's weakTopics,
+// ranks chapters with lower masteryPct first (their weak topics matter
+// more), and dedupes so the same concept name surfacing in two chapters
+// only appears once. This is what the Syllabus tab's "Weak Areas" line and
+// Study Plan Lab's "Weakness Report" both read from.
+export function computeWeakAreas(progressList: ChapterProgress[], limit = 5): string[] {
+  const ranked = [...progressList].sort((a, b) => a.masteryPct - b.masteryPct);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of ranked) {
+    for (const topic of p.weakTopics) {
+      const key = topic.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(topic);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
+// Prerequisite Chain — the order a learner should move through chapters in.
+// Chapters are already sorted by page in buildChaptersFromToc, and a book's
+// page order *is* its authored teaching order, so the chain is just that
+// order made explicit. (A future version could reorder around detected
+// dependencies — e.g. promote a referenced-but-unread earlier chapter — but
+// page order is a correct default, not a placeholder.)
+export function buildPrerequisiteChain(chapters: ChapterLike[]): string[] {
+  return chapters.map((c) => c.title);
+}
+
 export interface NextTopicRecommendation {
   chapterId: string;
   chapterTitle: string;
