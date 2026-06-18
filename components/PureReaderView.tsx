@@ -13,6 +13,7 @@ import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
+import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -120,6 +121,8 @@ interface PureReaderViewProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label for badge role pills */
   roleLabelByConceptId?: Map<string, string>;
+  /** Opens Explain This Step seeded from a clicked thought-unit's evidenceRefId */
+  onExplainThoughtUnit?: (evidenceRefId: string) => void;
 }
 
 export default function PureReaderView({
@@ -147,6 +150,7 @@ export default function PureReaderView({
   pageTruthKey,
   onReadingPath,
   roleLabelByConceptId,
+  onExplainThoughtUnit,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -160,6 +164,9 @@ export default function PureReaderView({
   // Global zoom store
   const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
+  // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
+  // Navigator) below it — collapsed by default to keep the sidebar compact.
+  const [legendCollapsed, setLegendCollapsed] = useState(true);
 
   // Map AI anchor types to ParagraphKind for highlight legend colors.
   const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
@@ -401,38 +408,68 @@ export default function PureReaderView({
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Highlight Key sidebar ───────────────────────────────────────── */}
-        <div className="flex flex-col w-[136px] shrink-0 bg-[#0d1117] border-r border-white/8 py-4 px-2.5 gap-2 overflow-hidden">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-0.5 px-0.5">
-            Highlight Key
-          </span>
-          {HIGHLIGHT_KEY_ENTRIES.map(entry => {
-            const active = !hasHighlights || usedKinds.has(entry.kind);
-            return (
-              <div
-                key={entry.kind}
-                className="flex items-start gap-2 transition-opacity"
-                style={{ opacity: active ? 1 : 0.22 }}
-              >
-                {/* Color swatch with abbreviation badge */}
-                <span
-                  className="shrink-0 flex items-center justify-center rounded-sm text-[7px] font-bold mt-0.5"
-                  style={{
-                    width: 28,
-                    height: 16,
-                    background: entry.bg,
-                    border: `1px solid ${entry.color}55`,
-                    color: entry.color,
-                    letterSpacing: "0.05em",
-                    fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                  }}
-                >
-                  {entry.abbr}
-                </span>
-                <span className="text-[10.5px] text-white/65 leading-tight">{entry.label}</span>
+        {/* ── LeftPanel: compact Highlight Key (Level 1) + Thought Unit Navigator (Level 2) ── */}
+        <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-hidden">
+          {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
+          <div className="px-1">
+            <button
+              type="button"
+              onClick={() => setLegendCollapsed((c) => !c)}
+              className="flex items-center gap-1 w-full text-left hover:opacity-80 transition-opacity"
+            >
+              <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">
+                Highlight Key
+              </span>
+              <span className="text-[9px] text-white/30 ml-auto">{legendCollapsed ? "▸" : "▾"}</span>
+            </button>
+            {!legendCollapsed && (
+              <div className="flex flex-col gap-1.5 mt-2">
+                {HIGHLIGHT_KEY_ENTRIES.map(entry => {
+                  const active = !hasHighlights || usedKinds.has(entry.kind);
+                  return (
+                    <div
+                      key={entry.kind}
+                      className="flex items-start gap-2 transition-opacity"
+                      style={{ opacity: active ? 1 : 0.22 }}
+                    >
+                      <span
+                        className="shrink-0 flex items-center justify-center rounded-sm text-[7px] font-bold mt-0.5"
+                        style={{
+                          width: 28,
+                          height: 16,
+                          background: entry.bg,
+                          border: `1px solid ${entry.color}55`,
+                          color: entry.color,
+                          letterSpacing: "0.05em",
+                          fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                        }}
+                      >
+                        {entry.abbr}
+                      </span>
+                      <span className="text-[10.5px] text-white/65 leading-tight">{entry.label}</span>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            )}
+          </div>
+
+          <div className="h-px bg-white/8 mx-1" />
+
+          {/* Level 2 — Thought Unit Navigator: click a unit to jump + focus + speak */}
+          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-1">
+            Thought Units
+          </span>
+          <ThoughtUnitNavigator
+            entries={effectiveHighlightTargets.map((t) => ({
+              id: t.evidenceRefId,
+              text: t.text,
+              kind: t.kind,
+            }))}
+            focusedId={focusedEvidenceId}
+            onJump={(id) => onEvidenceFocus?.(id)}
+            onExplain={onExplainThoughtUnit}
+          />
         </div>
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}
