@@ -79,7 +79,7 @@ export default function ThoughtUnitNavigator({
   }
 
   return (
-    <div className="flex flex-col gap-2 overflow-y-auto flex-1 px-1.5 pb-3" data-testid="thought-unit-navigator">
+    <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
       {grouped.map(({ kind, items }) => {
         const meta = KIND_META[kind] ?? FALLBACK_META;
         const isCollapsed = collapsedKinds.has(kind);

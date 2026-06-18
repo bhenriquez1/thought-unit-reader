@@ -8,12 +8,14 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
+import DecisionProcessMap from './reader/DecisionProcessMap';
+import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -355,6 +357,13 @@ export default function PureReaderView({
   const hasHighlights = effectiveHighlightTargets.length > 0;
   const usedKinds = new Set(effectiveHighlightTargets.map(t => t.kind as string));
 
+  // Level 3 — process-flow + decision-rule structure derived from the same
+  // thought units Level 2 already shows; no extra pipeline or API calls.
+  const decisionProcessMap = useMemo(
+    () => extractDecisionProcessMap(effectiveHighlightTargets),
+    [effectiveHighlightTargets]
+  );
+
   const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
     { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },
     { kind: "definition",  color: "#93c5fd", bg: "rgba(147,197,253,0.15)",  label: "Definition / Term",    abbr: "DEF"  },
@@ -408,8 +417,8 @@ export default function PureReaderView({
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── LeftPanel: compact Highlight Key (Level 1) + Thought Unit Navigator (Level 2) ── */}
-        <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-hidden">
+        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2) + Process/Decision Map (Level 3) ── */}
+        <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-y-auto">
           {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
           <div className="px-1">
             <button
@@ -470,6 +479,19 @@ export default function PureReaderView({
             onJump={(id) => onEvidenceFocus?.(id)}
             onExplain={onExplainThoughtUnit}
           />
+
+          {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}
+          {(decisionProcessMap.processSteps.length >= 2 || decisionProcessMap.decisionRules.length > 0) && (
+            <>
+              <div className="h-px bg-white/8 mx-1" />
+              <DecisionProcessMap
+                processSteps={decisionProcessMap.processSteps}
+                decisionRules={decisionProcessMap.decisionRules}
+                focusedId={focusedEvidenceId}
+                onJump={(id) => onEvidenceFocus?.(id)}
+              />
+            </>
+          )}
         </div>
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}
