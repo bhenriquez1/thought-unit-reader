@@ -8,11 +8,16 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
+import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
+import DecisionProcessMap from './reader/DecisionProcessMap';
+import DomainModeSelector from './reader/DomainModeSelector';
+import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
+import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -120,6 +125,8 @@ interface PureReaderViewProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label for badge role pills */
   roleLabelByConceptId?: Map<string, string>;
+  /** Opens Explain This Step seeded from a clicked thought-unit's evidenceRefId */
+  onExplainThoughtUnit?: (evidenceRefId: string) => void;
 }
 
 export default function PureReaderView({
@@ -147,6 +154,7 @@ export default function PureReaderView({
   pageTruthKey,
   onReadingPath,
   roleLabelByConceptId,
+  onExplainThoughtUnit,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -160,6 +168,11 @@ export default function PureReaderView({
   // Global zoom store
   const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
+  // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
+  // Navigator) below it — collapsed by default to keep the sidebar compact.
+  const [legendCollapsed, setLegendCollapsed] = useState(true);
+  // Level 4 — manual domain-preset override; null means "follow auto-detection".
+  const [domainPresetOverride, setDomainPresetOverride] = useState<string | null>(null);
 
   // Map AI anchor types to ParagraphKind for highlight legend colors.
   const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
@@ -348,6 +361,22 @@ export default function PureReaderView({
   const hasHighlights = effectiveHighlightTargets.length > 0;
   const usedKinds = new Set(effectiveHighlightTargets.map(t => t.kind as string));
 
+  // Level 3 — process-flow + decision-rule structure derived from the same
+  // thought units Level 2 already shows; no extra pipeline or API calls.
+  const decisionProcessMap = useMemo(
+    () => extractDecisionProcessMap(effectiveHighlightTargets),
+    [effectiveHighlightTargets]
+  );
+
+  // Level 4 — auto-detect a domain preset from whatever text is already on
+  // hand (current page text + visible thought-unit text); manual override
+  // takes precedence when set.
+  const detectedPresetId = useMemo(() => {
+    const sample = [pageText ?? "", ...effectiveHighlightTargets.map((t) => t.text)].join(" ");
+    return detectDomainPreset(sample);
+  }, [pageText, effectiveHighlightTargets]);
+  const effectivePresetId = domainPresetOverride ?? detectedPresetId;
+
   const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
     { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },
     { kind: "definition",  color: "#93c5fd", bg: "rgba(147,197,253,0.15)",  label: "Definition / Term",    abbr: "DEF"  },
@@ -401,38 +430,91 @@ export default function PureReaderView({
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Highlight Key sidebar ───────────────────────────────────────── */}
-        <div className="flex flex-col w-[136px] shrink-0 bg-[#0d1117] border-r border-white/8 py-4 px-2.5 gap-2 overflow-hidden">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-0.5 px-0.5">
-            Highlight Key
-          </span>
-          {HIGHLIGHT_KEY_ENTRIES.map(entry => {
-            const active = !hasHighlights || usedKinds.has(entry.kind);
-            return (
-              <div
-                key={entry.kind}
-                className="flex items-start gap-2 transition-opacity"
-                style={{ opacity: active ? 1 : 0.22 }}
-              >
-                {/* Color swatch with abbreviation badge */}
-                <span
-                  className="shrink-0 flex items-center justify-center rounded-sm text-[7px] font-bold mt-0.5"
-                  style={{
-                    width: 28,
-                    height: 16,
-                    background: entry.bg,
-                    border: `1px solid ${entry.color}55`,
-                    color: entry.color,
-                    letterSpacing: "0.05em",
-                    fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                  }}
-                >
-                  {entry.abbr}
-                </span>
-                <span className="text-[10.5px] text-white/65 leading-tight">{entry.label}</span>
+        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2) + Process/Decision Map (Level 3) + Domain Mode (Level 4) ── */}
+        <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-y-auto">
+          {/* Level 4 — domain preset indicator + manual override */}
+          <DomainModeSelector
+            detectedPresetLabel={getDomainPreset(detectedPresetId).label}
+            overridePresetId={domainPresetOverride}
+            onChange={setDomainPresetOverride}
+          />
+
+          <div className="h-px bg-white/8 mx-1" />
+
+          {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
+          <div className="px-1">
+            <button
+              type="button"
+              onClick={() => setLegendCollapsed((c) => !c)}
+              className="flex items-center gap-1 w-full text-left hover:opacity-80 transition-opacity"
+            >
+              <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">
+                Highlight Key
+              </span>
+              <span className="text-[9px] text-white/30 ml-auto">{legendCollapsed ? "▸" : "▾"}</span>
+            </button>
+            {!legendCollapsed && (
+              <div className="flex flex-col gap-1.5 mt-2">
+                {HIGHLIGHT_KEY_ENTRIES.map(entry => {
+                  const active = !hasHighlights || usedKinds.has(entry.kind);
+                  return (
+                    <div
+                      key={entry.kind}
+                      className="flex items-start gap-2 transition-opacity"
+                      style={{ opacity: active ? 1 : 0.22 }}
+                    >
+                      <span
+                        className="shrink-0 flex items-center justify-center rounded-sm text-[7px] font-bold mt-0.5"
+                        style={{
+                          width: 28,
+                          height: 16,
+                          background: entry.bg,
+                          border: `1px solid ${entry.color}55`,
+                          color: entry.color,
+                          letterSpacing: "0.05em",
+                          fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                        }}
+                      >
+                        {entry.abbr}
+                      </span>
+                      <span className="text-[10.5px] text-white/65 leading-tight">{entry.label}</span>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            )}
+          </div>
+
+          <div className="h-px bg-white/8 mx-1" />
+
+          {/* Level 2 — Thought Unit Navigator: click a unit to jump + focus + speak */}
+          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-1">
+            Thought Units
+          </span>
+          <ThoughtUnitNavigator
+            entries={effectiveHighlightTargets.map((t) => ({
+              id: t.evidenceRefId,
+              text: t.text,
+              kind: t.kind,
+            }))}
+            focusedId={focusedEvidenceId}
+            onJump={(id) => onEvidenceFocus?.(id)}
+            onExplain={onExplainThoughtUnit}
+            presetId={effectivePresetId}
+          />
+
+          {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}
+          {(decisionProcessMap.processSteps.length >= 2 || decisionProcessMap.decisionRules.length > 0) && (
+            <>
+              <div className="h-px bg-white/8 mx-1" />
+              <DecisionProcessMap
+                processSteps={decisionProcessMap.processSteps}
+                decisionRules={decisionProcessMap.decisionRules}
+                focusedId={focusedEvidenceId}
+                onJump={(id) => onEvidenceFocus?.(id)}
+              />
+            </>
+          )}
         </div>
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}

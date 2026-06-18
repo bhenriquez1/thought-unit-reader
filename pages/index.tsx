@@ -1815,6 +1815,16 @@ export default function ThoughtUnitReader() {
     trySwitchShellTab("study", "study");
   }, [currentPageStudyModel, bookId]);
 
+  // LeftPanel Thought Unit Navigator "Explain" button — resolves the clicked
+  // evidenceRefId back to its VisualAnchor and opens Explain This Step seeded
+  // from that exact thought unit, same path as openThoughtUnitInRecallLab.
+  const explainThoughtUnitById = useCallback((anchorId: string) => {
+    const sm = currentPageStudyModel;
+    const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
+    if (!sm || !anchor) return;
+    openExplainStepForThoughtUnit(buildThoughtUnitDetail(anchor, sm, bookId));
+  }, [currentPageStudyModel, bookId, openExplainStepForThoughtUnit]);
+
   // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
   // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
   const visualizeThoughtUnit = useCallback((detail: ThoughtUnitDetail) => {
@@ -3614,6 +3624,7 @@ export default function ThoughtUnitReader() {
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={onPdfHighlightFocus}
+                  onExplainThoughtUnit={explainThoughtUnitById}
                   onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}

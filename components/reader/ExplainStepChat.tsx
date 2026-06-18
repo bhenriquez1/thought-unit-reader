@@ -20,6 +20,7 @@ import {
   notifySpeechEnd,
   notifySpeechError,
   logBlockedDuplicate,
+  stopAllSpeech,
 } from "@/lib/speech/speechController";
 
 const SPEECH_OWNER = "explain-step" as const;
@@ -237,9 +238,10 @@ export default function ExplainStepChat({
   // Clicking again while speaking stops playback.
   const handleSpeakAnswer = async () => {
     if (speaking) {
-      audioRef.current?.pause();
+      // stopAllSpeech (not notifySpeechEnd) so a browser-TTS fallback
+      // utterance gets hard-cancelled too, not just the OpenAI <audio>.
+      stopAllSpeech("explain-step-stop-button");
       audioRef.current = null;
-      if (globalTokenRef.current) notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setSpeaking(false);
       return;
     }
