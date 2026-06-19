@@ -19,6 +19,10 @@ export interface ThoughtUnitNavigatorEntry {
   id: string;
   text: string;
   kind: ParagraphKind;
+  /** Source page — not rendered yet, carried through so future UI (e.g. cross-page search) doesn't need a data-shape change. */
+  page?: number;
+  /** Anchor score/confidence, when the pipeline provides one. */
+  confidence?: number;
 }
 
 // Colors stay constant across domain presets — only the label text changes

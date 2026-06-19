@@ -496,6 +496,8 @@ export default function PureReaderView({
               id: t.evidenceRefId,
               text: t.text,
               kind: t.kind,
+              page: t.page,
+              confidence: t.score,
             }))}
             focusedId={focusedEvidenceId}
             onJump={(id) => onEvidenceFocus?.(id)}

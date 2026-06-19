@@ -10,18 +10,18 @@
 import type { ParagraphKind } from "@/lib/readerContracts";
 
 export const UNIVERSAL_KIND_LABELS: Record<ParagraphKind, string> = {
-  thesis: "Core Claim",
-  mechanism: "Mechanism / Process",
-  application: "Example / Evidence",
-  trap: "Exception / Common Mistake",
+  thesis: "Core Idea",
+  mechanism: "Mechanism",
+  application: "Example",
+  trap: "Trap",
   memoryAnchor: "Memory Anchor",
   definition: "Definition",
   clinical: "Applied Note",
   comparison: "Comparison",
-  formula: "Formula / Quantitative Rule",
+  formula: "Formula",
   reference: "Reference",
   filler: "Filler",
-  dat_fact: "High-Yield Fact",
+  dat_fact: "High Yield",
   unknown: "Other",
 };
 
@@ -48,6 +48,12 @@ export const UNIVERSAL_PRESET: DomainPreset = {
 
 // Seed presets. Not an exhaustive or hard-coded list — this is meant to grow.
 // Any book/domain that doesn't match one of these falls back to UNIVERSAL_PRESET.
+//
+// Each preset maps AT MOST ONE label onto each existing ParagraphKind — modes
+// relabel, they never split or merge the underlying thought units. Some
+// domains (e.g. pilot checklists' Normal/Abnormal/Emergency/Memory Item) name
+// more categories than we have kinds for; those are collapsed onto the
+// closest-fit kind rather than invented as new data.
 export const DOMAIN_PRESETS: DomainPreset[] = [
   {
     id: "dat",
@@ -59,27 +65,28 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       "biology section", "organic chemistry", "gen chem",
     ],
     kindLabels: {
-      dat_fact: "DAT High-Yield Fact",
-      trap: "DAT Trap / Common Mistake",
+      thesis: "Concept",
+      dat_fact: "High-Yield Fact",
     },
   },
   {
-    id: "surgical",
-    label: "Surgical / Clinical",
-    description: "Surgical or clinical training material — procedures, complications, patient management.",
+    id: "medical_surgical",
+    label: "Medical / Surgical",
+    description: "Surgical or clinical training material — anatomy, procedures, complications.",
     titleKeywords: ["surgery", "surgical", "operative", "clinical"],
     contentKeywords: [
       "incision", "anesthesia", "postoperative", "complication", "procedure",
-      "patient", "diagnosis", "suture", "indication", "contraindication",
+      "patient", "diagnosis", "suture", "indication", "contraindication", "anatomy",
     ],
     kindLabels: {
-      clinical: "Operative Note",
-      trap: "Complication Risk",
-      dat_fact: "Key Clinical Fact",
+      definition: "Anatomy",
+      mechanism: "Procedure Step",
+      trap: "Danger Zone",
+      dat_fact: "Complication",
     },
   },
   {
-    id: "aviation",
+    id: "pilot",
     label: "Aviation / Pilot",
     description: "Flight training material — checklists, performance calculations, regulations.",
     titleKeywords: ["pilot", "aviation", "faa", "flight"],
@@ -88,23 +95,27 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       "crosswind", "fuel", "airspace", "atc",
     ],
     kindLabels: {
+      thesis: "Normal",
+      trap: "Abnormal / Emergency",
+      dat_fact: "Memory Item",
       formula: "Performance Calculation",
-      trap: "Checklist Pitfall",
-      dat_fact: "Key Regulation",
     },
   },
   {
     id: "dental_school",
     label: "Dental School",
-    description: "Dental school coursework — anatomy, pathology, restorative procedures.",
+    description: "Dental school coursework — diagnosis, treatment steps, materials, complications.",
     titleKeywords: ["dental", "dentistry", "endodontics", "periodontics"],
     contentKeywords: [
       "tooth", "enamel", "dentin", "pulp", "caries", "periodontal",
       "occlusion", "restoration", "endodontic",
     ],
     kindLabels: {
-      clinical: "Clinical Procedure Note",
-      dat_fact: "Board-Relevant Fact",
+      thesis: "Diagnosis",
+      mechanism: "Treatment Step",
+      definition: "Material",
+      trap: "Complication",
+      dat_fact: "Clinical Pearl",
     },
   },
 ];
