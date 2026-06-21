@@ -3781,6 +3781,7 @@ export default function ThoughtUnitReader() {
                   focusHighlightPersist={speechReadingActive}
                   onTextClick={(snippet) => speechPanelRef.current?.playFromSnippet(snippet)}
                   aiHighlightAnchors={safeHighlightAnchors}
+                  allHighlightAnchors={finalHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
