@@ -14,6 +14,8 @@ export interface PodcastBuildContext {
   studyModel: CurrentPageStudyModel;
   noteLab: UltraNote[];
   recallLab: RecallSet[];
+  /** Transcript of an "Explain It" conversation the student just had, when this episode was seeded via "Turn into Podcast". */
+  explainItTranscript?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +231,15 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
     recallCards.forEach((c) => {
       lines.push(`[${c.id}] Q: ${c.front}\nA: ${c.back}`);
     });
+  }
+
+  if (ctx.explainItTranscript) {
+    lines.push(
+      "",
+      "=== EXPLAIN IT CONVERSATION (student just discussed this with the AI tutor) ===",
+      ctx.explainItTranscript.slice(0, 1500),
+      "Anchor the intro/discussion segments around what the student was just working through above.",
+    );
   }
 
   lines.push(

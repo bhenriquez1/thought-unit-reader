@@ -30,6 +30,10 @@ interface Props {
   activePageText?: string;
   onEvidenceFocus?: (id: string | null) => void;
   initialScript?: PodcastScript | null;
+  /** Transcript of an "Explain It" conversation to seed the next generated episode with. */
+  explainItSeed?: string | null;
+  /** Open a segment in "Explain It" for deeper discussion. */
+  onDiscussSegment?: (segment: PodcastSegment) => void;
 }
 
 type PlayState = "idle" | "loading" | "playing" | "paused";
@@ -113,6 +117,8 @@ export default function PodcastLab({
   activePageText = "",
   onEvidenceFocus,
   initialScript,
+  explainItSeed,
+  onDiscussSegment,
 }: Props) {
   const [mode, setMode]               = useState<PodcastMode>("page_review");
   const [script, setScript]           = useState<PodcastScript | null>(null);
@@ -201,6 +207,7 @@ export default function PodcastLab({
               visualAnchors: studyModel.visualAnchors.slice(0, 6),
             },
             noteLab, recallLab,
+            explainItTranscript: explainItSeed || undefined,
           },
           mode,
         }),
@@ -208,14 +215,14 @@ export default function PodcastLab({
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data: PodcastScript = await res.json();
       setScript(data);
-      console.log("[PODCAST_SCRIPT_CREATED]", { page: pageNumber, mode, segments: data.totalSegments });
+      console.log("[PODCAST_SCRIPT_CREATED]", { page: pageNumber, mode, segments: data.totalSegments, seededFromExplainIt: !!explainItSeed });
       prebufferSegments(data.segments);
     } catch (err: any) {
       setGenError(err?.message ?? "Failed to generate script");
     } finally {
       setGenerating(false);
     }
-  }, [studyModel, pageNumber, bookId, mode, activePageText, cfg, subject]);
+  }, [studyModel, pageNumber, bookId, mode, activePageText, cfg, subject, explainItSeed]);
 
   // ── Pre-buffer ────────────────────────────────────────────────────────
   const fetchBlob = useCallback(async (text: string, voice: string): Promise<Blob | null> => {
@@ -503,6 +510,11 @@ export default function PodcastLab({
       {/* Generate */}
       {!script && (
         <div className="px-3 pb-3 shrink-0">
+          {explainItSeed && (
+            <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-violet-900/30 border border-violet-600/30 text-[10.5px] text-violet-200/80">
+              🎓 Continuing from your Explain It conversation
+            </div>
+          )}
           <button
             onClick={generateScript}
             disabled={!studyModel || generating}
@@ -622,8 +634,9 @@ export default function PodcastLab({
               const isActive = playState === "playing" && idx === segIdx;
               const isHY     = cfg.showHighYield && (seg.type === "right_panel_note" || seg.type === "highlight_evidence");
               return (
-                <button key={seg.id} onClick={() => handleSegmentClick(idx)}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                <div key={seg.id} role="button" tabIndex={0} onClick={() => handleSegmentClick(idx)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleSegmentClick(idx); }}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
                     isActive ? "bg-blue-900/40 border-blue-500/40" : "bg-white/3 border-white/6 hover:bg-white/7"
                   } ${SEGMENT_COLORS[seg.type]}`}>
                   <div className="flex items-center gap-2 mb-0.5">
@@ -635,7 +648,16 @@ export default function PodcastLab({
                     {seg.anchorId && <span className="ml-auto text-[9px] text-amber-400/50">⚓ {seg.anchorId}</span>}
                   </div>
                   <p className={`text-[12px] leading-relaxed line-clamp-3 ${isActive ? "text-white/95" : "text-white/55"}`}>{seg.text}</p>
-                </button>
+                  {onDiscussSegment && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDiscussSegment(seg); }}
+                      className="mt-1 text-[10px] text-indigo-300/70 hover:text-indigo-200 transition-colors"
+                      title="Discuss this moment in Explain It"
+                    >
+                      🎓 Discuss
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
