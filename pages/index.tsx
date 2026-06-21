@@ -607,6 +607,45 @@ export default function ThoughtUnitReader() {
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
   const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
 
+  // RightPanel's "studyModel ready" effect (RightPanel.tsx ~line 1014-1031) depends on
+  // this callback's identity. An inline arrow here would be recreated every parent
+  // render, re-firing that effect and calling setCurrentPageStudyModel again on every
+  // render — an infinite loop once a real model exists. Stable identity breaks the cycle.
+  // Only refs and the setState function are used inside, so deps can stay empty.
+  const handleStudyModelReady = useCallback((
+    model: import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel,
+    key: string
+  ) => {
+    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
+      key,
+      page: model.page,
+      visualAnchorCount: model.visualAnchors.length,
+      roles: model.visualAnchors.map((a) => a.role),
+    });
+    const current = pageTruthKeyRef.current;
+    if (key !== current) {
+      console.warn("[WIRE] rejected stale studyModel", { from: key, current });
+      return;
+    }
+    console.log("[WIRE] studyModel accepted", {
+      key,
+      page: model.page,
+      visualAnchors: model.visualAnchors.length,
+      ids: model.visualAnchors.map((a) => a.id),
+      roles: model.visualAnchors.map((a) => a.role),
+    });
+    console.log("[VISUAL_ANCHORS_RECEIVED]", {
+      page: model.page,
+      count: model.visualAnchors.length,
+      ids: model.visualAnchors.map((a) => a.id),
+      firstTexts: model.visualAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
+      source: "finalStudyModel.visualAnchors",
+    });
+    // Embed pageTruthKey so the render-time guard can verify this model is current.
+    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
+    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
+  }, []);
+
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
   useEffect(() => {
@@ -3802,36 +3841,7 @@ export default function ThoughtUnitReader() {
                 }}
                 onEvidenceClick={playThoughtUnit}
                 onOpenThoughtUnit={openThoughtUnitInRecallLab}
-                onStudyModelReady={(model, key) => {
-                    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
-                      key,
-                      page: model.page,
-                      visualAnchorCount: model.visualAnchors.length,
-                      roles: model.visualAnchors.map(a => a.role),
-                    });
-                    const current = pageTruthKeyRef.current;
-                    if (key !== current) {
-                      console.warn("[WIRE] rejected stale studyModel", { from: key, current });
-                      return;
-                    }
-                    console.log("[WIRE] studyModel accepted", {
-                      key,
-                      page:          model.page,
-                      visualAnchors: model.visualAnchors.length,
-                      ids:           model.visualAnchors.map(a => a.id),
-                      roles:         model.visualAnchors.map(a => a.role),
-                    });
-                    console.log("[VISUAL_ANCHORS_RECEIVED]", {
-                      page:       model.page,
-                      count:      model.visualAnchors.length,
-                      ids:        model.visualAnchors.map(a => a.id),
-                      firstTexts: model.visualAnchors.slice(0, 3).map(a => a.exactText.slice(0, 60)),
-                      source:     "finalStudyModel.visualAnchors",
-                    });
-                    // Embed pageTruthKey so the render-time guard can verify this model is current.
-                    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
-                    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map(a => a.exactText.slice(0, 40)) });
-                  }}
+                onStudyModelReady={handleStudyModelReady}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
               />
