@@ -65,6 +65,8 @@ import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
 import type { ExplainStepMessage } from "@/lib/explainStep/types";
 import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
 import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/ExplainStepChat";
+import ExplainItChat from "@/components/reader/ExplainItChat";
+import type { ExplainItContext, ExplainItMessage } from "@/lib/explainIt/types";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -587,6 +589,9 @@ export default function ThoughtUnitReader() {
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
   const [explainStepContext, setExplainStepContext] = useState<ExplainStepContext | null>(null);
   const explainStepTurnsRef = useRef<Map<string, import("@/lib/explainStep/types").ExplainStepMessage[]>>(new Map());
+  const [explainItContext, setExplainItContext] = useState<ExplainItContext | null>(null);
+  const explainItTurnsRef = useRef<Map<string, ExplainItMessage[]>>(new Map());
+  const [explainItPodcastSeed, setExplainItPodcastSeed] = useState<string | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
@@ -1804,6 +1809,65 @@ export default function ThoughtUnitReader() {
       pageNumber: detail.pageNumber,
     });
   }, [pageTextByPage, bookId, currentPageStudyModel, uploadedFile]);
+
+  // "Explain It" — opens the office-hours-style page/topic conversation tutor,
+  // sharing context with RightPanel, NoteLab, RecallLab, Study Guide Lab, and
+  // (when one exists for this page) the Podcast Lab script already generated.
+  const handleOpenExplainIt = useCallback(async (seedSegmentText?: string) => {
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    const activeThoughtUnitText = focusedEvidenceId
+      ? (finalHighlightAnchors as { evidenceRefId?: string; text?: string }[]).find(
+          (a) => a.evidenceRefId === focusedEvidenceId,
+        )?.text
+      : undefined;
+    const relatedNotes = getNotesByBook(bookId)
+      .filter((n) => n.pageNumber === currentPage)
+      .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
+    const relatedRecallCards = getRecallSetsByBook(bookId)
+      .filter((r) => r.pageNumber === currentPage)
+      .flatMap((r) => r.cards.map((c) => ({ front: c.front, back: c.back })));
+    const studyGuides = await getStudyGuidesByBook(bookId).catch(() => [] as StudyGuideRecord[]);
+    const studyGuideSections = studyGuides.slice(0, 2).map((g) => ({
+      chapterTitle: g.chapterTitle,
+      mustKnow: g.mustKnow,
+    }));
+    const podcastOutline = studyGuideScript && studyGuideScript.pageNumber === currentPage
+      ? studyGuideScript.segments.map((s) => s.text)
+      : undefined;
+
+    setExplainItContext({
+      activeThoughtUnitText,
+      pageText,
+      pageThesis: sm?.pageThesis ?? null,
+      studyNotes: sm?.studyNotes ?? null,
+      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      relatedNotes,
+      relatedRecallCards,
+      studyGuideSections,
+      podcastOutline,
+      seedSegmentText,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+    });
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript]);
+
+  // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
+  // as a seed for the next generated episode, the way Study Guide Lab already
+  // hands a script to Podcast Lab via initialScript.
+  const handleExplainItTurnIntoPodcast = useCallback((transcript: ExplainItMessage[]) => {
+    const seed = transcript.map((t) => `${t.role === "user" ? "Student" : "Tutor"}: ${t.content}`).join("\n");
+    console.log("[EXPLAIN_IT_TURN_INTO_PODCAST]", { page: explainItContext?.pageNumber, turns: transcript.length });
+    setExplainItPodcastSeed(seed);
+    setExplainItContext(null);
+    trySwitchShellTab("podcast", "podcast");
+  }, [explainItContext, trySwitchShellTab]);
+
+  // "Discuss" — opens Explain It seeded from a specific Podcast Lab segment,
+  // the inverse handoff of "Turn into Podcast".
+  const handleDiscussPodcastSegment = useCallback((segment: { text: string }) => {
+    handleOpenExplainIt(segment.text);
+  }, [handleOpenExplainIt]);
 
   // Expand a thought-unit (VisualAnchor) into the Recall Lab v2 box layout —
   // deterministic, no new LLM call (see buildThoughtUnitDetail).
@@ -3942,6 +4006,8 @@ export default function ThoughtUnitReader() {
           activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
           onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
           initialScript={studyGuideScript}
+          explainItSeed={explainItPodcastSeed}
+          onDiscussSegment={handleDiscussPodcastSegment}
         />
       );
     }
@@ -4414,6 +4480,24 @@ export default function ThoughtUnitReader() {
               <span className="text-sm font-medium hidden sm:block">Explain This Step</span>
             </div>
           </button>
+
+          {/* Explain It — opens an office-hours-style conversation about the current
+              page/topic (not a single selection), sharing context with RightPanel,
+              NoteLab, RecallLab, Study Guide Lab, and Podcast Lab. */}
+          <button
+            onClick={() => handleOpenExplainIt()}
+            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
+              explainItContext
+                ? "bg-[rgba(124,58,237,0.45)] border-violet-400/60"
+                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
+            }`}
+            title="Explain It — talk through the current page/topic with the AI tutor"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🎓</span>
+              <span className="text-sm font-medium hidden sm:block">Explain It</span>
+            </div>
+          </button>
         </div>
 
         {/* LeftPanel highlight diagnostics — dev-only (NEXT_PUBLIC_DEBUG_READER=true).
@@ -4766,6 +4850,19 @@ export default function ThoughtUnitReader() {
             setExplainStepContext(null);
             setShowWhiteboardPanel(true);
           }}
+        />
+      )}
+
+      {/* Explain It — office-hours-style conversation about the current page/topic */}
+      {explainItContext && (
+        <ExplainItChat
+          context={explainItContext}
+          onClose={() => setExplainItContext(null)}
+          initialTurns={explainItTurnsRef.current.get(`${bookId}:${explainItContext.pageNumber}`)}
+          onTurnsChange={(turns) =>
+            explainItTurnsRef.current.set(`${bookId}:${explainItContext.pageNumber}`, turns)
+          }
+          onTurnIntoPodcast={handleExplainItTurnIntoPodcast}
         />
       )}
 
