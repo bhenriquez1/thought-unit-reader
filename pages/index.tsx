@@ -2055,8 +2055,8 @@ export default function ThoughtUnitReader() {
     const tag = ctx.conceptTitles?.[0] || (ctx.pageThesis ? truncate(ctx.pageThesis, 40) : undefined);
     const card: RecallCard = {
       id: `card-explain-${Date.now()}`,
-      type: parsed.commonMistake ? "trap" : "core",
-      front,
+      type: parsed.commonMistake ? "concept" : "mechanism",
+      front: parsed.commonMistake ? `⚠️ ${front}` : front,
       back,
       hint: hintParts.length ? hintParts.join("\n\n") : undefined,
       tag,

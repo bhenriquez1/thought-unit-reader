@@ -66,8 +66,8 @@ describe("buildChapterPlan", () => {
         topic: "Cell Membrane",
         createdAt: Date.now(),
         cards: [
-          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" },
-          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 0, isMissed: false },
+          { id: "c1", type: "concept", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" },
+          { id: "c2", type: "concept", front: "Q2", back: "A2", reviewCount: 0, isMissed: false },
         ],
       },
     ];

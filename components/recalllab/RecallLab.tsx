@@ -9,6 +9,7 @@ import {
   deleteRecallSet,
   updateCardDifficulty,
   buildRecallSetFromThoughtUnit,
+  buildWeakTopicReviewSet,
   type RecallSet,
   type RecallCard,
   type CardDifficulty,
@@ -47,20 +48,20 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
 };
 
 const CARD_TYPE_ICON: Record<string, string> = {
-  core: "🧠",
-  definition: "📖",
-  reason: "⚡",
-  rule: "🔥",
-  trap: "⚠️",
-  contrast: "↔️",
-  formula: "📐",
-  memory: "💡",
+  fact: "📌",
+  concept: "🧠",
+  mechanism: "⚙️",
+  application: "🎯",
+  "dat-question": "📝",
+  "weak-review": "🔁",
 };
 
 const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
   "right-panel": { label: "Right Panel", color: "#fbbf24" },
   notelab: { label: "NoteLab", color: "#93c5fd" },
   "explain-step": { label: "Explain This Step", color: "#34d399" },
+  "study-guide": { label: "Study Guide", color: "#c4b5fd" },
+  "weak-review": { label: "Weak Topics", color: "#f87171" },
 };
 
 type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet } | { kind: "detail"; detail: ThoughtUnitDetail };
@@ -259,8 +260,8 @@ export default function RecallLab({
             <button
               type="button"
               onClick={() => {
-                const first = sets.find((s) => s.cards.some((c) => c.isMissed));
-                if (first) setView({ kind: "session", set: first });
+                const weakSet = buildWeakTopicReviewSet(sets);
+                if (weakSet) setView({ kind: "session", set: weakSet });
               }}
               style={{ fontSize: 10, fontWeight: 700, color: "#f87171", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
             >
@@ -600,7 +601,9 @@ function RecallSession({
   const missedInSession = localSet.cards.filter((c) => c.isMissed).length;
 
   function rate(difficulty: CardDifficulty) {
-    void updateCardDifficulty(localSet.id, card.id, difficulty);
+    // Weak Topics Review cards are copies — write the rating back to the
+    // real set/card they came from, so future "missed" status stays accurate.
+    void updateCardDifficulty(card.originSetId ?? localSet.id, card.originCardId ?? card.id, difficulty);
     setLocalSet((prev) => ({
       ...prev,
       cards: prev.cards.map((c) =>
@@ -742,14 +745,12 @@ function RecallSession({
 
 function cardTypeColor(type: CardType | string): string {
   const colors: Record<string, string> = {
-    core: "#fbbf24",
-    definition: "#8fd3ff",
-    reason: "#ffd580",
-    rule: "#ffb86b",
-    trap: "#ff9da1",
-    contrast: "#c4b5fd",
-    formula: "#a78bfa",
-    memory: "#6ee7b7",
+    fact: "#fbbf24",
+    concept: "#8fd3ff",
+    mechanism: "#6ee7b7",
+    application: "#c4b5fd",
+    "dat-question": "#fca5a5",
+    "weak-review": "#f87171",
   };
   return colors[type] ?? "rgba(148,163,184,0.6)";
 }

@@ -2851,7 +2851,7 @@ function MiniTestPanel({
         if (!missed) return [];
         const c: RecallCard = {
           id: `missed-mt-p${pageNumber}-${i}-${Date.now()}`,
-          type: "definition" as CardType,
+          type: "dat-question" as CardType,
           front: item.question,
           back: item.correctAnswer,
           hint: item.explanation || undefined,

@@ -36,8 +36,8 @@ describe("buildUnitPlan", () => {
       {
         id: "rs-1", bookId: "book-1", pageNumber: 1, subject: "General Notes", topic: "X", createdAt: Date.now(),
         cards: [
-          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: true, difficulty: "hard" },
-          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 1, isMissed: true, difficulty: "hard" },
+          { id: "c1", type: "concept", front: "Q1", back: "A1", reviewCount: 1, isMissed: true, difficulty: "hard" },
+          { id: "c2", type: "concept", front: "Q2", back: "A2", reviewCount: 1, isMissed: true, difficulty: "hard" },
         ],
       },
     ];
