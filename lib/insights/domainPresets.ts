@@ -25,6 +25,12 @@ export const UNIVERSAL_KIND_LABELS: Record<ParagraphKind, string> = {
   unknown: "Other",
 };
 
+export interface KindGroup {
+  id: string;
+  label: string;
+  kinds: ParagraphKind[];
+}
+
 export interface DomainPreset {
   id: string;
   label: string;
@@ -37,6 +43,14 @@ export interface DomainPreset {
   kindLabels?: Partial<Record<ParagraphKind, string>>;
   /** Optional reordering of which kinds surface first in the navigator. Falls back to default order. */
   kindPriority?: ParagraphKind[];
+  /**
+   * Level 3 "expert navigation" grouping: merges several raw kinds into one
+   * navigator section (e.g. DAT's "Concepts" section covers both thesis and
+   * definition paragraphs). Every kind must still end up in some group, or
+   * its thought units would silently disappear from the navigator. When a
+   * preset omits this, the navigator falls back to one section per kind.
+   */
+  kindGroups?: KindGroup[];
 }
 
 export const UNIVERSAL_PRESET: DomainPreset = {
@@ -68,6 +82,13 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       thesis: "Concept",
       dat_fact: "High-Yield Fact",
     },
+    kindGroups: [
+      { id: "concepts", label: "Concepts", kinds: ["thesis", "definition"] },
+      { id: "mechanisms", label: "Mechanisms", kinds: ["mechanism"] },
+      { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
+      { id: "traps", label: "Traps", kinds: ["trap"] },
+      { id: "high_yield_facts", label: "High-Yield Facts", kinds: ["dat_fact", "formula"] },
+    ],
   },
   {
     id: "medical_surgical",
@@ -163,6 +184,12 @@ export function getDomainPreset(presetId: string): DomainPreset {
 export function getKindLabel(presetId: string, kind: ParagraphKind): string {
   const preset = getDomainPreset(presetId);
   return preset.kindLabels?.[kind] ?? UNIVERSAL_KIND_LABELS[kind] ?? kind;
+}
+
+/** Level 3 grouping for a preset, or null when the preset has no kindGroups (falls back to one section per kind). */
+export function getKindGroups(presetId: string): KindGroup[] | null {
+  const preset = getDomainPreset(presetId);
+  return preset.kindGroups ?? null;
 }
 
 /** Options for a manual override dropdown — "Universal" first, then seed presets. */

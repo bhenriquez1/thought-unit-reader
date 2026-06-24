@@ -131,6 +131,10 @@ interface PureReaderViewProps {
   roleLabelByConceptId?: Map<string, string>;
   /** Opens Explain This Step seeded from a clicked thought-unit's evidenceRefId */
   onExplainThoughtUnit?: (evidenceRefId: string) => void;
+  /** Opens Recall Lab seeded from a clicked thought-unit's evidenceRefId */
+  onOpenThoughtUnitRecall?: (evidenceRefId: string) => void;
+  /** Seeds a NoteLab note from a clicked thought-unit's evidenceRefId */
+  onNoteThoughtUnit?: (evidenceRefId: string) => void;
 }
 
 export default function PureReaderView({
@@ -160,6 +164,8 @@ export default function PureReaderView({
   onReadingPath,
   roleLabelByConceptId,
   onExplainThoughtUnit,
+  onOpenThoughtUnitRecall,
+  onNoteThoughtUnit,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -527,6 +533,8 @@ export default function PureReaderView({
             focusedId={focusedEvidenceId}
             onJump={(id) => onEvidenceFocus?.(id)}
             onExplain={onExplainThoughtUnit}
+            onOpenRecall={onOpenThoughtUnitRecall}
+            onOpenNote={onNoteThoughtUnit}
             presetId={effectivePresetId}
           />
 

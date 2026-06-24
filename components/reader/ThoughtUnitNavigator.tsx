@@ -13,7 +13,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
-import { getKindLabel } from "@/lib/insights/domainPresets";
+import { getKindLabel, getKindGroups } from "@/lib/insights/domainPresets";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -46,18 +46,47 @@ export default function ThoughtUnitNavigator({
   focusedId,
   onJump,
   onExplain,
+  onOpenRecall,
+  onOpenNote,
   presetId = "universal",
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
   onJump: (id: string) => void;
   onExplain?: (id: string) => void;
+  /** Seeds a Recall Lab review session from this thought unit. */
+  onOpenRecall?: (id: string) => void;
+  /** Seeds a NoteLab note from this thought unit. */
+  onOpenNote?: (id: string) => void;
   /** Level 4 domain preset id (from lib/insights/domainPresets) — relabels kind groups only. */
   presetId?: string;
 }) {
-  const [collapsedKinds, setCollapsedKinds] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
+  // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
+  // Presets without kindGroups keep today's exact one-section-per-kind behavior.
+  const kindGroups = useMemo(() => getKindGroups(presetId), [presetId]);
 
   const grouped = useMemo(() => {
+    if (kindGroups) {
+      const byGroup = new Map<string, ThoughtUnitNavigatorEntry[]>();
+      for (const e of entries) {
+        const group = kindGroups.find((g) => g.kinds.includes(e.kind));
+        const groupId = group?.id ?? e.kind;
+        const list = byGroup.get(groupId) ?? [];
+        list.push(e);
+        byGroup.set(groupId, list);
+      }
+      return kindGroups
+        .map((g) => ({
+          id: g.id,
+          label: g.label,
+          representativeKind: g.kinds[0] as string,
+          items: byGroup.get(g.id) ?? [],
+        }))
+        .filter((g) => g.items.length > 0);
+    }
     const byKind = new Map<string, ThoughtUnitNavigatorEntry[]>();
     for (const e of entries) {
       const list = byKind.get(e.kind) ?? [];
@@ -65,14 +94,14 @@ export default function ThoughtUnitNavigator({
       byKind.set(e.kind, list);
     }
     return KIND_ORDER
-      .map((kind) => ({ kind, items: byKind.get(kind) ?? [] }))
+      .map((kind) => ({ id: kind, label: undefined as string | undefined, representativeKind: kind, items: byKind.get(kind) ?? [] }))
       .filter((g) => g.items.length > 0);
-  }, [entries]);
+  }, [entries, kindGroups]);
 
-  const toggleKind = (kind: string) => {
-    setCollapsedKinds((prev) => {
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind); else next.add(kind);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
       return next;
     });
   };
@@ -87,15 +116,15 @@ export default function ThoughtUnitNavigator({
 
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
-      {grouped.map(({ kind, items }) => {
-        const colors = KIND_COLORS[kind] ?? FALLBACK_COLOR;
-        const meta = { ...colors, label: getKindLabel(presetId, kind as ParagraphKind) };
-        const isCollapsed = collapsedKinds.has(kind);
+      {grouped.map(({ id, label, representativeKind, items }) => {
+        const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
+        const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
+        const isCollapsed = collapsedGroups.has(id);
         return (
-          <div key={kind} className="flex flex-col gap-1">
+          <div key={id} className="flex flex-col gap-1">
             <button
               type="button"
-              onClick={() => toggleKind(kind)}
+              onClick={() => toggleGroup(id)}
               className="flex items-center gap-1.5 px-1 py-0.5 text-left hover:opacity-80 transition-opacity"
             >
               <span
@@ -135,15 +164,39 @@ export default function ThoughtUnitNavigator({
                   >
                     {entry.text}
                   </span>
-                  {onExplain && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                      className="self-end text-[9px] text-white/40 hover:text-white/80 transition-colors opacity-0 group-hover:opacity-100"
-                      title="Explain this thought unit"
-                    >
-                      💬 Explain
-                    </button>
+                  {(onExplain || onOpenRecall || onOpenNote) && (
+                    <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                      {onOpenNote && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                          title="Save a note on this thought unit"
+                        >
+                          📝 Note
+                        </button>
+                      )}
+                      {onOpenRecall && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
+                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                          title="Open this thought unit in Recall Lab"
+                        >
+                          🧠 Recall
+                        </button>
+                      )}
+                      {onExplain && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                          title="Explain this thought unit"
+                        >
+                          💬 Explain
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );

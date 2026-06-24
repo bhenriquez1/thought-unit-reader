@@ -1986,6 +1986,34 @@ export default function ThoughtUnitReader() {
     openExplainStepForThoughtUnit(buildThoughtUnitDetail(anchor, sm, bookId));
   }, [currentPageStudyModel, bookId, openExplainStepForThoughtUnit]);
 
+  // LeftPanel Thought Unit Navigator "Note" button — seeds a NoteLab note from
+  // just this thought unit (same buildThoughtUnitDetail input as Explain/Recall),
+  // saves it immediately, then switches to NoteLab — same save-then-navigate
+  // pattern as GenerateNoteButton's onNoteSaved.
+  const noteThoughtUnitById = useCallback(async (anchorId: string) => {
+    const sm = currentPageStudyModel;
+    const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
+    if (!sm || !anchor) return;
+    const detail = buildThoughtUnitDetail(anchor, sm, bookId);
+    const note = buildUltraNote(
+      bookId,
+      detail.pageNumber,
+      detail.title,
+      detail.coreIdea,
+      [],
+      uploadedFile?.name,
+    );
+    const sections: NoteSection[] = [
+      { label: "Source", content: `Page ${detail.pageNumber}\n"${truncate(detail.sourceText, 240)}"` },
+    ];
+    if (detail.mechanism) sections.push({ label: "Mechanism", content: detail.mechanism });
+    if (detail.examTrap) sections.push({ label: "Trap", content: detail.examTrap });
+    note.sections = sections;
+    await saveUltraNote(note);
+    setNoteLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("notelab", "notelab");
+  }, [currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab]);
+
   // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
   // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
   const visualizeThoughtUnit = useCallback((detail: ThoughtUnitDetail) => {
@@ -3787,6 +3815,8 @@ export default function ThoughtUnitReader() {
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={onPdfHighlightFocus}
                   onExplainThoughtUnit={explainThoughtUnitById}
+                  onOpenThoughtUnitRecall={openThoughtUnitInRecallLab}
+                  onNoteThoughtUnit={noteThoughtUnitById}
                   onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => {
                     const key = `${bookId}:${pageNumber}`;
