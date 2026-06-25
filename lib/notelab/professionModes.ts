@@ -74,6 +74,37 @@ const SECTION_LENS: Record<string, Record<ProfessionMode, LensEntry>> = {
     pilot:   { label: "Source", icon: "📖" },
     dental:  { label: "Source", icon: "📖" },
   },
+  // Level 2 — deeper reasoning sections
+  "Clinical Reasoning": {
+    default: { label: "Clinical Reasoning",   icon: "🧩" },
+    surgeon: { label: "Intraoperative Reasoning", icon: "🧩" },
+    pilot:   { label: "In-Flight Decision Logic", icon: "🧩" },
+    dental:  { label: "Clinical Reasoning",   icon: "🧩" },
+  },
+  "Common Mistake": {
+    default: { label: "Common Mistake",     icon: "❌" },
+    surgeon: { label: "Common Procedural Error", icon: "❌" },
+    pilot:   { label: "Common Pilot Mistake", icon: "❌" },
+    dental:  { label: "Common Mistake",     icon: "❌" },
+  },
+  "Exam Strategy": {
+    default: { label: "Exam Strategy",   icon: "🎯" },
+    surgeon: { label: "Board Exam Strategy", icon: "🎯" },
+    pilot:   { label: "Checkride Strategy", icon: "🎯" },
+    dental:  { label: "Board Exam Strategy", icon: "🎯" },
+  },
+  "Connection Map": {
+    default: { label: "Connection Map",   icon: "🔗" },
+    surgeon: { label: "Cross-System Link", icon: "🔗" },
+    pilot:   { label: "Cross-System Link", icon: "🔗" },
+    dental:  { label: "Connection Map",   icon: "🔗" },
+  },
+  "Clinical Pearl": {
+    default: { label: "Clinical Pearl",   icon: "💎" },
+    surgeon: { label: "Surgical Pearl",   icon: "💎" },
+    pilot:   { label: "Pilot's Pearl",    icon: "💎" },
+    dental:  { label: "Clinical Pearl",   icon: "💎" },
+  },
 };
 
 export function getSectionLens(mode: ProfessionMode, genericLabel: string): LensEntry | null {

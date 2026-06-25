@@ -90,6 +90,12 @@ export const TeachingSynthesisSchema = z.object({
   reasoningFlow: z.string(),
   misconceptionAlert: z.string().nullable(),
   memoryAnchor: z.string().nullable(),
+  // Level 2 — deeper reasoning fields, layered on top of the Level 1 fields above.
+  clinicalReasoning: z.string().nullable(),
+  commonMistake: z.string().nullable(),
+  examStrategy: z.string().nullable(),
+  connectionMap: z.string().nullable(),
+  clinicalPearl: z.string().nullable(),
   externalStudyLinks: z.array(ExternalStudyLinkSchema).nullable(),
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).nullable(),             // legacy — kept for backward compat
@@ -209,6 +215,22 @@ Specific field requirements:
   GOOD: "Na⁺ out, K⁺ in — think sodium as the guard who leaves when potassium enters."
   BAD: "This is important to remember for exams."
 • reasoningFlow: Use the ${domain} chain above in A → B → C format.
+
+Level 2 fields — deeper reasoning layered on top of the fields above. Null any field
+that would otherwise be a restatement of coreIdea/mechanism/application; these must add
+NEW information, not rephrase what's already covered:
+• clinicalReasoning: How an expert actually reasons through this in the moment — the
+  internal "if X, then check Y, because Z" chain a professional runs, not a textbook fact.
+• commonMistake: A SPECIFIC, frequently-made error distinct from misconceptionAlert —
+  a procedural/practical slip (wrong order of steps, wrong assumption applied) rather
+  than a conceptual confusion between two terms.
+• examStrategy: A concrete test-taking or recognition strategy — how to spot this concept
+  being tested, what wording/phrasing in a question signals it, how to eliminate distractors.
+• connectionMap: One explicit link from this concept to a DIFFERENT concept elsewhere in
+  the subject — "This connects to X because..." Null if no genuine cross-topic link exists.
+• clinicalPearl: One high-yield, memorable insight an expert would tell a student in
+  passing — distinct from memoryAnchor (which is a mnemonic/analogy); this is a practical
+  "in real practice, ..." observation. Null if nothing genuinely high-yield applies.
 
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
@@ -504,7 +526,7 @@ Produce a structured educational interpretation for this page. Works for ANY sub
 
 FIRST: Set pageType — classify what kind of page this is (definition/mechanism/math_example/clinical/comparison/figure_table/case_study/review_checkpoint/mixed). This drives concept block priorities and anchor selection.
 
-For page level: pageType, coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors, miniTestItems, relatedVideoQueries.
+For page level: pageType, coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, clinicalReasoning, commonMistake, examStrategy, connectionMap, clinicalPearl, externalStudyLinks, highlightAnchors, miniTestItems, relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
@@ -757,6 +779,13 @@ export function makeStubFromStage1(stage1: Stage1Synthesis, pageText?: string): 
     reasoningFlow:      "",
     misconceptionAlert: filled.commonConfusion ?? null,
     memoryAnchor:       filled.quickMemory     ?? null,
+    // Level 2 fields are deliberately not derivable from Stage 1 data — left null
+    // until Stage 2 (or local fallback) resolves them.
+    clinicalReasoning:  null,
+    commonMistake:      null,
+    examStrategy:       null,
+    connectionMap:      null,
+    clinicalPearl:      null,
     externalStudyLinks: null,
     concepts:           buildStage1ConceptBlocks(filled),
     miniTests:           null,
@@ -818,6 +847,11 @@ export function makeLocalFallbackSynthesis(
     reasoningFlow:      "",
     misconceptionAlert: null,
     memoryAnchor:       null,
+    clinicalReasoning:  null,
+    commonMistake:      null,
+    examStrategy:       null,
+    connectionMap:      null,
+    clinicalPearl:      null,
     externalStudyLinks: null,
     concepts:           [],
     miniTests:           null,

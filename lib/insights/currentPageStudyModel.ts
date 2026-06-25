@@ -103,6 +103,12 @@ export type CurrentPageStudyModel = {
     quickMemory: string | null;
     reasoningFlow: string | null;
     examSignal: string | null;
+    /** Level 2 — deeper reasoning fields, present only when Stage 2 synthesis resolves them */
+    clinicalReasoning: string | null;
+    commonMistake: string | null;
+    examStrategy: string | null;
+    connectionMap: string | null;
+    clinicalPearl: string | null;
   };
   conceptBlocks: Array<{
     title: string;
@@ -389,6 +395,11 @@ export function buildStudyModel(
       quickMemory:     (synth.memoryAnchor   as string | null) ?? null,
       reasoningFlow:   (synth.reasoningFlow  as string | null) ?? null,
       examSignal:      (synth.examSignal     as string | null) ?? null,
+      clinicalReasoning: (synth.clinicalReasoning as string | null) ?? null,
+      commonMistake:     (synth.commonMistake     as string | null) ?? null,
+      examStrategy:       (synth.examStrategy      as string | null) ?? null,
+      connectionMap:      (synth.connectionMap     as string | null) ?? null,
+      clinicalPearl:      (synth.clinicalPearl     as string | null) ?? null,
     },
     conceptBlocks,
     miniTest: (view.miniTest ?? []).filter(Boolean),
