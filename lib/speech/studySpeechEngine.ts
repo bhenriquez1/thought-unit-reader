@@ -3,6 +3,7 @@
 // Used exclusively by StudySpeechPanel — no direct PDF/paragraph dependency.
 
 import type { CurrentPageStudyModel, VisualAnchorRole, VisualAnchorSourceField } from "@/lib/insights/currentPageStudyModel";
+import { getImportanceTier, type ImportanceTier } from "@/lib/insights/importanceTiers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -13,6 +14,7 @@ export type StudySpeechMode =
   | "highlights" // Visual anchors only, Right Panel field order
   | "full"       // Thesis + notes + concept blocks + anchors
   | "focus"      // Thesis only (single sentence overview)
+  | "guided"     // Visual anchors in importance order, paced/framed by star tier
   | "fullPage";  // Whole page text sentence-by-sentence
 
 export type SpeechSegmentRole =
@@ -38,6 +40,10 @@ export interface SpeechSegment {
   rateModifier: number;
   /** Links to VisualAnchor.id — used to focus matching PDF highlight while speaking */
   evidenceRefId?: string;
+  /** Guided mode only: star tier, same scale the left-panel navigator uses */
+  tier?: ImportanceTier;
+  /** Guided mode only: pause after this segment finishes, before the next one starts */
+  pauseAfterMs?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +206,8 @@ export function buildSpeechScript(
     rawText: string,
     rateModifier: number,
     evidenceRefId?: string,
+    tier?: ImportanceTier,
+    pauseAfterMs?: number,
   ): void {
     const trimmed = rawText?.trim();
     if (!trimmed || trimmed.length < 8) return;
@@ -211,6 +219,8 @@ export function buildSpeechScript(
       text: formulaToSpeech(trimmed),
       rateModifier,
       ...(evidenceRefId ? { evidenceRefId } : {}),
+      ...(tier ? { tier } : {}),
+      ...(pauseAfterMs !== undefined ? { pauseAfterMs } : {}),
     });
   }
 
@@ -218,6 +228,41 @@ export function buildSpeechScript(
   push("thesis", "thesis", "Core Idea", model.pageThesis, 0.93);
 
   if (mode === "focus") return segments;
+
+  // ── Guided: visual anchors in their existing importance order (visualAnchors
+  // is already sorted by ROLE_PRIORITY — see currentPageStudyModel.ts), tagged
+  // with the same star tier the left-panel navigator/roadmap use, so the
+  // most-important point gets a framing line, a slower rate, and a longer
+  // pause — "Surgeon Thinking" applied to pacing instead of just layout.
+  if (mode === "guided") {
+    if (segments[0]) {
+      segments[0].tier = getImportanceTier(0);
+      segments[0].pauseAfterMs = 600;
+    }
+    model.visualAnchors.forEach((anchor, i) => {
+      const tier = getImportanceTier(i);
+      const isTopAnchor = i === 0;
+      const rawText = isTopAnchor ? `Most important on this page: ${anchor.exactText}` : anchor.exactText;
+      push(
+        anchor.id,
+        "visualAnchor",
+        ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
+        rawText,
+        tier.stars >= 4 ? Math.min(ANCHOR_ROLE_RATE[anchor.role] ?? 0.95, 0.88) : (ANCHOR_ROLE_RATE[anchor.role] ?? 0.95),
+        anchor.id,
+        tier,
+        tier.stars >= 4 ? 700 : 250,
+      );
+    });
+    const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
+    console.log("[SPEECH_SOURCE]", {
+      mode,
+      source: "finalStudyModel.visualAnchors (importance-tiered)",
+      itemCount: model.visualAnchors.length,
+      charCount: totalChars,
+    });
+    return segments;
+  }
 
   // ── Highlight mode: only visual anchors, Right Panel field order ─────────
   // Order matches what the student sees in the Right Panel: thesis → whyThisMatters
@@ -329,5 +374,6 @@ export const STUDY_SPEECH_MODES: ModeInfo[] = [
   { id: "study",      label: "Study",        description: "Thesis + all study notes" },
   { id: "highlights", label: "Highlight Only", description: "Read just the highlighted anchors, Right Panel order" },
   { id: "full",       label: "Full",         description: "All content + concept blocks" },
+  { id: "guided",     label: "Guided",       description: "Most important points first, paced and framed by star tier" },
   { id: "fullPage",   label: "Current Page", description: "Whole page text sentence-by-sentence, click any sentence to start there" },
 ];
