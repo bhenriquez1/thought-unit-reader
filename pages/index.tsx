@@ -32,7 +32,7 @@ import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
-import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
+import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -1044,8 +1044,8 @@ export default function ThoughtUnitReader() {
   }, [currentPageStudyModel, currentPage, pageTextByPage, savedHighlightAnchors]);
 
   const whiteboardSteps = useMemo(
-    () => currentPageStudyModel ? buildWhiteboardStepsFromStudyModel(currentPageStudyModel) : [],
-    [currentPageStudyModel],
+    () => currentPageStudyModel ? generateWhiteboardStepsFromModel(currentPageStudyModel, currentPage) : [],
+    [currentPageStudyModel, currentPage],
   );
 
   /* =========================================================================

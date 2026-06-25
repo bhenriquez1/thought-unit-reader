@@ -11,6 +11,10 @@ export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-q
 export type CardDifficulty = "easy" | "medium" | "hard";
 export type SourceLabel = "right-panel" | "notelab" | "explain-step" | "study-guide" | "weak-review";
 
+/** Lightweight mastery-state progression — NOT an interval/due-date spaced-repetition
+ *  scheduler. Derived from rating streaks; see deriveSrsState / nextSrsState below. */
+export type SrsState = "new" | "learning" | "review" | "mastered";
+
 export interface RecallCard {
   id: string;
   type: CardType;
@@ -26,6 +30,11 @@ export interface RecallCard {
    *  ratings made here should write back to the real set/card they came from. */
   originSetId?: string;
   originCardId?: string;
+  /** Explicit lifecycle state — undefined on legacy cards; use deriveSrsState() to read. */
+  srsState?: SrsState;
+  lastReviewedAt?: number;
+  /** Consecutive non-"hard" ratings — resets to 0 on "hard"; drives srsState progression. */
+  correctStreak?: number;
 }
 
 export interface RecallSet {
@@ -70,6 +79,9 @@ function compact(set: RecallSet): RecallSet {
       back: c.back.slice(0, 250),
       ...(c.hint       ? { hint: c.hint.slice(0, 100) }   : {}),
       ...(c.difficulty ? { difficulty: c.difficulty }       : {}),
+      ...(c.srsState        ? { srsState: c.srsState }             : {}),
+      ...(c.lastReviewedAt  ? { lastReviewedAt: c.lastReviewedAt } : {}),
+      ...(c.correctStreak   ? { correctStreak: c.correctStreak }   : {}),
     })),
   };
 }
@@ -201,11 +213,16 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   console.log("[RECALL_SAVE_START]", { id: c.id, bookId: c.bookId, page: c.pageNumber, cards: c.cards.length });
   console.log("[RECALL_SET_ID]", c.id);
 
-  // Remove legacy entries for same book+page with a DIFFERENT id (old non-stable IDs)
+  // Remove legacy entries for same book+page with a DIFFERENT id (old non-stable,
+  // pre-"rs-" IDs). Every current producer (stableRecallId, MiniTestPanel's missed-
+  // set IDs, etc.) emits an "rs-"-prefixed ID, and several features intentionally
+  // keep multiple "rs-"-prefixed sets per book+page (e.g. a sticky-note set, a
+  // thought-unit set, and a missed-questions set can all coexist on one page).
+  // Only ids that don't even match that modern scheme are true legacy debris.
   try {
     const existing = await idbGetAll();
     const stale = existing.filter(
-      (s) => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id
+      (s) => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id && !s.id.startsWith("rs-")
     );
     for (const s of stale) {
       await idbDelete(s.id);
@@ -298,9 +315,12 @@ export async function updateCardDifficulty(setId: string, cardId: string, diffic
     return;
   }
 
-  card.difficulty  = difficulty;
-  card.reviewCount = (card.reviewCount ?? 0) + 1;
-  card.isMissed    = difficulty === "hard";
+  card.difficulty     = difficulty;
+  card.reviewCount    = (card.reviewCount ?? 0) + 1;
+  card.isMissed       = difficulty === "hard";
+  card.lastReviewedAt = Date.now();
+  card.correctStreak  = difficulty === "hard" ? 0 : (card.correctStreak ?? 0) + 1;
+  card.srsState       = nextSrsState(card.correctStreak);
 
   // Best-effort IDB write — failure here must not lose the rating.
   try {
@@ -316,6 +336,43 @@ export async function updateCardDifficulty(setId: string, cardId: string, diffic
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("recall-lab-updated"));
   }
+}
+
+// ── Lifecycle state (New / Learning / Review / Mastered) ──────────────────
+// Streak-based mastery progression, not an interval/due-date scheduler —
+// a card advances Learning → Review → Mastered after 2 / 4 consecutive
+// non-"hard" ratings, and drops straight back to Learning on any "hard".
+
+function nextSrsState(correctStreak: number): SrsState {
+  if (correctStreak >= 4) return "mastered";
+  if (correctStreak >= 2) return "review";
+  return "learning";
+}
+
+/** Reads the explicit srsState when present; otherwise infers one from legacy
+ *  review history so cards persisted before this field existed still display sensibly. */
+export function deriveSrsState(c: RecallCard): SrsState {
+  if (c.srsState) return c.srsState;
+  if ((c.reviewCount ?? 0) === 0) return "new";
+  if (c.difficulty === "hard" || c.isMissed) return "learning";
+  return nextSrsState(c.reviewCount ?? 0);
+}
+
+export interface DeckStats {
+  total: number;
+  new: number;
+  learning: number;
+  review: number;
+  mastered: number;
+  masteryPct: number;
+}
+
+export function computeDeckStats(cards: RecallCard[]): DeckStats {
+  const counts = { new: 0, learning: 0, review: 0, mastered: 0 };
+  for (const c of cards) counts[deriveSrsState(c)]++;
+  const total = cards.length;
+  const masteryPct = total > 0 ? Math.round((counts.mastered / total) * 100) : 0;
+  return { total, ...counts, masteryPct };
 }
 
 // ── isRecallSetPersisted ───────────────────────────────────────────────────
@@ -443,7 +500,7 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
   });
 
   return {
-    id:           stableRecallId(note.bookId, note.pageNumber, "note"),
+    id:           stableRecallId(note.bookId, note.pageNumber, `note-${note.id}`),
     bookId:       note.bookId,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",

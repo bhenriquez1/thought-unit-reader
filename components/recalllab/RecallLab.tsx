@@ -10,10 +10,13 @@ import {
   updateCardDifficulty,
   buildRecallSetFromThoughtUnit,
   buildWeakTopicReviewSet,
+  deriveSrsState,
+  computeDeckStats,
   type RecallSet,
   type RecallCard,
   type CardDifficulty,
   type CardType,
+  type SrsState,
 } from "@/lib/recalllab/recallStore";
 import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
@@ -64,7 +67,25 @@ const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
   "weak-review": { label: "Weak Topics", color: "#f87171" },
 };
 
-type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet } | { kind: "detail"; detail: ThoughtUnitDetail };
+type View =
+  | { kind: "dashboard" }
+  | { kind: "deck"; set: RecallSet }
+  | { kind: "session"; set: RecallSet }
+  | { kind: "detail"; detail: ThoughtUnitDetail };
+
+const SRS_LABEL: Record<SrsState, string> = {
+  new: "New",
+  learning: "Learning",
+  review: "Review",
+  mastered: "Mastered",
+};
+
+const SRS_COLOR: Record<SrsState, string> = {
+  new: "#94a3b8",
+  learning: "#f59e0b",
+  review: "#60a5fa",
+  mastered: "#10b981",
+};
 
 async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
@@ -106,7 +127,7 @@ export default function RecallLab({
       if (lastSetId) {
         const found = all.find((s) => s.id === lastSetId);
         console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
-        if (found) setView({ kind: "session", set: found });
+        if (found) setView({ kind: "deck", set: found });
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +173,7 @@ export default function RecallLab({
       setSets(all);
       const found = all.find((s) => s.id === lastSetId);
       console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: all.length });
-      if (found) setView({ kind: "session", set: found });
+      if (found) setView({ kind: "deck", set: found });
     });
   }, [lastSetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,7 +188,7 @@ export default function RecallLab({
     await deleteRecallSet(id);
     const updated = await loadSetsAsync(bookId);
     setSets(updated);
-    if (view.kind === "session" && view.set.id === id) {
+    if ((view.kind === "session" || view.kind === "deck") && view.set.id === id) {
       setView({ kind: "dashboard" });
     }
   }
@@ -182,6 +203,18 @@ export default function RecallLab({
         onVisualize={onVisualize}
         onOpenInWhiteboard={onOpenInWhiteboard}
         onOpenExplainStep={onOpenExplainStep}
+      />
+    );
+  }
+
+  // --- Deck overview mode ---
+  if (view.kind === "deck") {
+    return (
+      <DeckView
+        set={view.set}
+        onBack={() => setView({ kind: "dashboard" })}
+        onStartSession={(cards) => setView({ kind: "session", set: { ...view.set, cards } })}
+        onNavigate={onNavigateToPage}
       />
     );
   }
@@ -281,6 +314,7 @@ export default function RecallLab({
               subject={subject}
               byBook={byBook}
               onStart={(s) => setView({ kind: "session", set: s })}
+              onOpenDeck={(s) => setView({ kind: "deck", set: s })}
               onDelete={handleDelete}
               onNavigate={onNavigateToPage}
             />
@@ -299,12 +333,14 @@ function SubjectGroup({
   subject,
   byBook,
   onStart,
+  onOpenDeck,
   onDelete,
   onNavigate,
 }: {
   subject: NoteSubject;
   byBook: Map<string, RecallSet[]>;
   onStart: (s: RecallSet) => void;
+  onOpenDeck: (s: RecallSet) => void;
   onDelete: (id: string) => void;
   onNavigate?: (page: number) => void;
 }) {
@@ -336,6 +372,7 @@ function SubjectGroup({
               bookTitle={bookSets[0]?.bookTitle}
               sets={bookSets}
               onStart={onStart}
+              onOpenDeck={onOpenDeck}
               onDelete={onDelete}
               onNavigate={onNavigate}
             />
@@ -355,6 +392,7 @@ function BookGroup({
   bookTitle,
   sets,
   onStart,
+  onOpenDeck,
   onDelete,
   onNavigate,
 }: {
@@ -362,6 +400,7 @@ function BookGroup({
   bookTitle?: string;
   sets: RecallSet[];
   onStart: (s: RecallSet) => void;
+  onOpenDeck: (s: RecallSet) => void;
   onDelete: (id: string) => void;
   onNavigate?: (page: number) => void;
 }) {
@@ -386,6 +425,7 @@ function BookGroup({
               key={s.id}
               set={s}
               onStart={() => onStart(s)}
+              onOpenDeck={() => onOpenDeck(s)}
               onDelete={() => onDelete(s.id)}
               onNavigate={onNavigate}
             />
@@ -403,11 +443,13 @@ function BookGroup({
 function RecallSetRow({
   set,
   onStart,
+  onOpenDeck,
   onDelete,
   onNavigate,
 }: {
   set: RecallSet;
   onStart: () => void;
+  onOpenDeck: () => void;
   onDelete: () => void;
   onNavigate?: (page: number) => void;
 }) {
@@ -460,6 +502,13 @@ function RecallSetRow({
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
+        <button
+          type="button"
+          onClick={onOpenDeck}
+          style={{ flex: 2, padding: "7px 0", borderRadius: 7, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+        >
+          📊 Open Deck
+        </button>
         <button
           type="button"
           onClick={onStart}
@@ -573,6 +622,202 @@ function ThoughtUnitDetailView({
         {onOpenExplainStep && (
           <button type="button" onClick={() => onOpenExplainStep(detail)} style={rateBtn("#fcd34d", "rgba(245,158,11,0.1)")}>💬 Explain This Step</button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deck overview — Memo.cards-style: status tabs, preview, table, study stats
+// ---------------------------------------------------------------------------
+
+function MasteryRing({ pct }: { pct: number }) {
+  const color = pct >= 80 ? "#10b981" : pct >= 40 ? "#f59e0b" : "#60a5fa";
+  return (
+    <div
+      style={{
+        width: 56,
+        height: 56,
+        borderRadius: "50%",
+        background: `conic-gradient(${color} ${pct * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "#0b1428",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "rgba(255,255,255,0.9)",
+        }}
+      >
+        {pct}%
+      </div>
+    </div>
+  );
+}
+
+function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 9, color: "rgba(148,163,184,0.5)" }}>{label}</div>
+    </div>
+  );
+}
+
+function DeckView({
+  set,
+  onBack,
+  onStartSession,
+  onNavigate,
+}: {
+  set: RecallSet;
+  onBack: () => void;
+  onStartSession: (cards: RecallCard[]) => void;
+  onNavigate?: (page: number) => void;
+}) {
+  const [filter, setFilter] = useState<SrsState | "all">("all");
+  const stats = computeDeckStats(set.cards);
+  const filtered = filter === "all" ? set.cards : set.cards.filter((c) => deriveSrsState(c) === filter);
+  const preview = filtered[0];
+
+  const tabs: { key: SrsState | "all"; label: string; count: number }[] = [
+    { key: "all", label: "All", count: stats.total },
+    { key: "new", label: "New", count: stats.new },
+    { key: "learning", label: "Learning", count: stats.learning },
+    { key: "review", label: "Review", count: stats.review },
+    { key: "mastered", label: "Mastered", count: stats.mastered },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+        <button type="button" onClick={onBack} style={{ background: "none", border: "none", color: "rgba(148,163,184,0.7)", fontSize: 12, cursor: "pointer", padding: 0 }}>← Back</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.95)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            🎯 {set.topic}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.55)", marginTop: 1 }}>
+            {set.bookTitle || set.bookId} · Page {set.pageNumber}
+          </div>
+        </div>
+        {onNavigate && (
+          <button
+            type="button"
+            onClick={() => onNavigate(set.pageNumber)}
+            style={{ fontSize: 10, color: "rgba(148,163,184,0.6)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
+          >
+            p.{set.pageNumber}
+          </button>
+        )}
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Status tabs */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {tabs.map((t) => {
+            const active = filter === t.key;
+            const color = t.key === "all" ? "rgba(255,255,255,0.85)" : SRS_COLOR[t.key];
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setFilter(t.key)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: active ? "#0b1428" : color,
+                  background: active ? color : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${color}40`,
+                  borderRadius: 7,
+                  padding: "5px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                {t.label} <span style={{ opacity: 0.75 }}>{t.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Card preview */}
+        {preview ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(11,20,40,0.7)", padding: "10px 12px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.6)", textTransform: "uppercase", marginBottom: 6 }}>Question</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.88)", lineHeight: 1.5 }}>{preview.front}</div>
+            </div>
+            <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(11,20,40,0.7)", padding: "10px 12px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(148,163,184,0.6)", textTransform: "uppercase", marginBottom: 6 }}>Answer</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{preview.back}</div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", textAlign: "center", padding: "12px 0" }}>
+            No cards in this status.
+          </div>
+        )}
+
+        {/* Start session CTA */}
+        <button
+          type="button"
+          disabled={filtered.length === 0}
+          onClick={() => onStartSession(filtered)}
+          style={{
+            padding: "10px 0",
+            borderRadius: 9,
+            border: "1px solid rgba(96,165,250,0.35)",
+            background: "rgba(59,130,246,0.12)",
+            color: "#93c5fd",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: filtered.length === 0 ? "default" : "pointer",
+            opacity: filtered.length === 0 ? 0.4 : 1,
+          }}
+        >
+          ▶ Start Recall Session{filter !== "all" ? ` · ${SRS_LABEL[filter]}` : ""}
+        </button>
+
+        {/* Card table */}
+        <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 76px 88px", padding: "6px 10px", background: "rgba(255,255,255,0.04)", fontSize: 9, fontWeight: 700, color: "rgba(148,163,184,0.6)", textTransform: "uppercase" }}>
+            <div>Card</div><div>Type</div><div>Status</div><div>Last Reviewed</div>
+          </div>
+          {filtered.map((c) => {
+            const state = deriveSrsState(c);
+            return (
+              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 76px 88px", padding: "7px 10px", borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11 }}>
+                <div style={{ color: "rgba(255,255,255,0.82)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 6 }}>{c.front}</div>
+                <div style={{ color: "rgba(148,163,184,0.6)" }}>{CARD_TYPE_ICON[c.type] ?? "•"}</div>
+                <div style={{ color: SRS_COLOR[state], fontWeight: 600 }}>{SRS_LABEL[state]}</div>
+                <div style={{ color: "rgba(148,163,184,0.45)" }}>{c.lastReviewedAt ? new Date(c.lastReviewedAt).toLocaleDateString() : "—"}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Study stats footer */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+        <MasteryRing pct={stats.masteryPct} />
+        <div style={{ display: "flex", flex: 1, justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+          <StatChip label="Total" value={stats.total} color="rgba(255,255,255,0.75)" />
+          <StatChip label="New" value={stats.new} color={SRS_COLOR.new} />
+          <StatChip label="Learning" value={stats.learning} color={SRS_COLOR.learning} />
+          <StatChip label="Review" value={stats.review} color={SRS_COLOR.review} />
+          <StatChip label="Mastered" value={stats.mastered} color={SRS_COLOR.mastered} />
+        </div>
       </div>
     </div>
   );

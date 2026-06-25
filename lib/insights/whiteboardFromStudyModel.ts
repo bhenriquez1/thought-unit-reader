@@ -11,11 +11,14 @@ function anchorFor(anchors: VisualAnchor[], field: string): VisualAnchor | undef
   return anchors.find((a) => a.sourceField === field);
 }
 
-function trunc(s: string, max: number): string {
+export function trunc(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
 
-function splitMechanism(text: string): { nodes: DiagramNode[]; arrows: DiagramArrow[] } {
+/** Parses causal/listy text into a small flow diagram — exported so other
+ * generators (e.g. the whiteboard-explain API fallback) can build a real
+ * diagram from a short string when there's no full study model to draw from. */
+export function splitMechanism(text: string): { nodes: DiagramNode[]; arrows: DiagramArrow[] } {
   const causalRe = /(.+?)\s+(?:causes?|leads?\s+to|results?\s+in|produces?|triggers?|→)\s+(.+)/i;
   const m = causalRe.exec(text);
   if (m) {
@@ -169,63 +172,3 @@ export function buildNarrationScript(steps: WhiteboardStep[]): string {
   return steps.map((s, i) => `Step ${i + 1} — ${s.title}: ${s.spokenLine ?? s.description ?? ""}`).join("\n\n");
 }
 
-// ── Text mode: original simple text steps ─────────────────────────────────
-
-export function buildWhiteboardStepsFromStudyModel(
-  model: CurrentPageStudyModel,
-): WhiteboardStep[] {
-  const steps: WhiteboardStep[] = [];
-  const sn = model.studyNotes;
-
-  if (model.pageThesis) {
-    steps.push({
-      type: "text",
-      title: "Page Thesis",
-      description: model.pageThesis,
-      visualPrompt: "Large bold header with underline",
-      payload: { kind: "title" },
-    });
-  }
-
-  if (sn?.whyThisMatters) {
-    steps.push({
-      type: "text",
-      title: "Why This Matters",
-      description: sn.whyThisMatters,
-      visualPrompt: "Callout box with arrow",
-      payload: { kind: "highlight", color: "#fef08a" },
-    });
-  }
-
-  if (sn?.keyMechanism) {
-    steps.push({
-      type: "draw",
-      title: "Key Mechanism",
-      description: sn.keyMechanism,
-      visualPrompt: "Flow diagram with labeled arrows",
-      payload: { kind: "mechanism" },
-    });
-  }
-
-  if (sn?.commonConfusion) {
-    steps.push({
-      type: "text",
-      title: "Watch Out",
-      description: sn.commonConfusion,
-      visualPrompt: "Red warning box",
-      payload: { kind: "trap", color: "#fca5a5" },
-    });
-  }
-
-  for (const cb of (model.conceptBlocks ?? []).slice(0, 3)) {
-    steps.push({
-      type: "draw",
-      title: cb.title,
-      description: cb.pattern + (cb.mechanism ? `\n\n${cb.mechanism}` : ""),
-      visualPrompt: "Concept map with pattern and mechanism",
-      payload: { kind: "concept" },
-    });
-  }
-
-  return steps;
-}
