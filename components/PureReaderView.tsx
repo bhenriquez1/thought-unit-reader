@@ -16,7 +16,6 @@ import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuide
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
 import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
-import DomainModeSelector from './reader/DomainModeSelector';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
 import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
 
@@ -462,17 +461,8 @@ export default function PureReaderView({
       {/* Body: Highlight Key sidebar + PDF Viewer column */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2) + Process/Decision Map (Level 3) + Domain Mode (Level 4) ── */}
+        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2, MODE embedded) + Process/Decision Map (Level 3) + Page Roadmap (Level 4) ── */}
         <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-y-auto">
-          {/* Level 4 — domain preset indicator + manual override */}
-          <DomainModeSelector
-            detectedPresetLabel={getDomainPreset(detectedPresetId).label}
-            overridePresetId={domainPresetOverride}
-            onChange={setDomainPresetOverride}
-          />
-
-          <div className="h-px bg-white/8 mx-1" />
-
           {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
           <div className="px-1">
             <button
@@ -519,26 +509,7 @@ export default function PureReaderView({
 
           <div className="h-px bg-white/8 mx-1" />
 
-          {/* Level 4 — Page Roadmap: one node per Level 3 group, in expert order */}
-          <ThoughtRoadmap
-            entries={allHighlightTargets.map((t) => ({
-              id: t.evidenceRefId,
-              text: t.text,
-              kind: t.kind,
-              page: t.page,
-              confidence: t.score,
-            }))}
-            focusedId={focusedEvidenceId}
-            onJump={(id) => onEvidenceFocus?.(id)}
-            presetId={effectivePresetId}
-          />
-
-          <div className="h-px bg-white/8 mx-1" />
-
-          {/* Level 2 — Thought Unit Navigator: click a unit to jump + focus + speak */}
-          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-1">
-            Thought Units
-          </span>
+          {/* Level 2/4 — Thought Unit Navigator: click a unit to jump + focus + speak. MODE picker lives in its header. */}
           <ThoughtUnitNavigator
             entries={allHighlightTargets.map((t) => ({
               id: t.evidenceRefId,
@@ -553,6 +524,9 @@ export default function PureReaderView({
             onOpenRecall={onOpenThoughtUnitRecall}
             onOpenNote={onNoteThoughtUnit}
             presetId={effectivePresetId}
+            detectedPresetLabel={getDomainPreset(detectedPresetId).label}
+            overridePresetId={domainPresetOverride}
+            onPresetChange={setDomainPresetOverride}
           />
 
           {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}
@@ -567,6 +541,22 @@ export default function PureReaderView({
               />
             </>
           )}
+
+          <div className="h-px bg-white/8 mx-1" />
+
+          {/* Level 4 — Page Roadmap: one node per Level 3 group, in expert order. Anchored at the bottom of the panel. */}
+          <ThoughtRoadmap
+            entries={allHighlightTargets.map((t) => ({
+              id: t.evidenceRefId,
+              text: t.text,
+              kind: t.kind,
+              page: t.page,
+              confidence: t.score,
+            }))}
+            focusedId={focusedEvidenceId}
+            onJump={(id) => onEvidenceFocus?.(id)}
+            presetId={effectivePresetId}
+          />
         </div>
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}

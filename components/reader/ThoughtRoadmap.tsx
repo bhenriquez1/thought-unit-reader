@@ -2,10 +2,10 @@
 
 // components/reader/ThoughtRoadmap.tsx
 //
-// Level 4 of the LeftPanel evolution: a horizontal "expert mental model" of
+// Level 4 of the LeftPanel evolution: a vertical "expert mental model" of
 // the current page — one representative node per Level 3 group, in the
-// preset's own group order (e.g. DAT: Concept → Mechanism → Application →
-// Trap → High-Yield Fact). Uses the exact same groupThoughtUnits() output as
+// preset's own group order (e.g. DAT: Concept ↓ Mechanism ↓ Application ↓
+// Trap ↓ High-Yield Fact). Uses the exact same groupThoughtUnits() output as
 // ThoughtUnitNavigator, so the roadmap and the full list never disagree
 // about sectioning — this is a summary view of the same data, not a new
 // extraction pass.
@@ -48,7 +48,7 @@ export default function ThoughtRoadmap({
       <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-1">
         Page Roadmap
       </span>
-      <div className="flex items-stretch gap-1 overflow-x-auto pb-1 px-1">
+      <div className="flex flex-col gap-1 px-1">
         {nodes.map((node, i) => {
           const colors = KIND_COLORS[node.representativeKind] ?? FALLBACK_COLOR;
           const focused = node.top.id === focusedId;
@@ -59,9 +59,8 @@ export default function ThoughtRoadmap({
                 tabIndex={0}
                 onClick={() => onJump(node.top.id)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(node.top.id); }}
-                className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 cursor-pointer transition-colors shrink-0"
+                className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 cursor-pointer transition-colors w-full"
                 style={{
-                  width: 108,
                   background: focused ? colors.bg.replace("0.12", "0.28") : colors.bg,
                   border: `1px solid ${colors.color}${focused ? "88" : "33"}`,
                 }}
@@ -87,7 +86,7 @@ export default function ThoughtRoadmap({
                 </span>
               </div>
               {i < nodes.length - 1 && (
-                <span className="self-center text-white/25 text-[12px] shrink-0">→</span>
+                <span className="self-center text-white/25 text-[12px] shrink-0">↓</span>
               )}
             </React.Fragment>
           );
