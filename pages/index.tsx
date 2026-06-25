@@ -607,6 +607,45 @@ export default function ThoughtUnitReader() {
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
   const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
 
+  // RightPanel's "studyModel ready" effect (RightPanel.tsx ~line 1014-1031) depends on
+  // this callback's identity. An inline arrow here would be recreated every parent
+  // render, re-firing that effect and calling setCurrentPageStudyModel again on every
+  // render — an infinite loop once a real model exists. Stable identity breaks the cycle.
+  // Only refs and the setState function are used inside, so deps can stay empty.
+  const handleStudyModelReady = useCallback((
+    model: import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel,
+    key: string
+  ) => {
+    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
+      key,
+      page: model.page,
+      visualAnchorCount: model.visualAnchors.length,
+      roles: model.visualAnchors.map((a) => a.role),
+    });
+    const current = pageTruthKeyRef.current;
+    if (key !== current) {
+      console.warn("[WIRE] rejected stale studyModel", { from: key, current });
+      return;
+    }
+    console.log("[WIRE] studyModel accepted", {
+      key,
+      page: model.page,
+      visualAnchors: model.visualAnchors.length,
+      ids: model.visualAnchors.map((a) => a.id),
+      roles: model.visualAnchors.map((a) => a.role),
+    });
+    console.log("[VISUAL_ANCHORS_RECEIVED]", {
+      page: model.page,
+      count: model.visualAnchors.length,
+      ids: model.visualAnchors.map((a) => a.id),
+      firstTexts: model.visualAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
+      source: "finalStudyModel.visualAnchors",
+    });
+    // Embed pageTruthKey so the render-time guard can verify this model is current.
+    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
+    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
+  }, []);
+
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
   useEffect(() => {
@@ -668,6 +707,57 @@ export default function ThoughtUnitReader() {
   // finalHighlightAnchors effect can read it without a TDZ TypeScript error.
   const currentPageRoleRef = useRef<string | null>(null);
 
+  // Content-equality guards so re-running the highlight effect with unchanged inputs
+  // (e.g. a pageTextByPage Map that was replaced but holds identical text) doesn't
+  // hand React a new array/object reference and trigger a fresh render every time —
+  // that identity churn is what was driving a tight re-render loop once a studyModel
+  // was present (anything reading finalHighlightAnchors/highlightDiagnostics re-rendered
+  // on every effect run, including effect runs that produced an identical result).
+  const anchorsEqual = (a: SynthHighlightAnchor[], b: SynthHighlightAnchor[]) => {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    return a.every((x, i) => {
+      const y = b[i] as SynthHighlightAnchor & { evidenceRefId?: string };
+      return x.text === y.text
+        && x.anchorType === y.anchorType
+        && x.reason === y.reason
+        && x.spanStart === y.spanStart
+        && x.spanEnd === y.spanEnd
+        && (x as { evidenceRefId?: string }).evidenceRefId === y.evidenceRefId;
+    });
+  };
+  const setFinalHighlightAnchorsIfChanged = (next: SynthHighlightAnchor[]) => {
+    setFinalHighlightAnchors((prev) => (anchorsEqual(prev, next) ? prev : next));
+  };
+  type HighlightDiagnostics = {
+    page: number;
+    requestedCount: number;
+    groundedCount: number;
+    failedCount: number;
+    anchors: Array<{
+      evidenceRefId?: string;
+      role: string;
+      sourceField?: string;
+      confidence: number;
+      groundMethod: string;
+      matchedLength: number;
+    }>;
+  };
+  const diagnosticsEqual = (a: HighlightDiagnostics | null, b: HighlightDiagnostics | null) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.page !== b.page || a.requestedCount !== b.requestedCount || a.groundedCount !== b.groundedCount || a.failedCount !== b.failedCount) return false;
+    if (a.anchors.length !== b.anchors.length) return false;
+    return a.anchors.every((x, i) => {
+      const y = b.anchors[i];
+      return x.evidenceRefId === y.evidenceRefId && x.role === y.role && x.sourceField === y.sourceField
+        && x.confidence === y.confidence && x.groundMethod === y.groundMethod && x.matchedLength === y.matchedLength;
+    });
+  };
+  const setHighlightDiagnosticsIfChanged = (next: HighlightDiagnostics | null) => {
+    setHighlightDiagnostics((prev) => (diagnosticsEqual(prev, next) ? prev : next));
+  };
+
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
 
@@ -725,8 +815,8 @@ export default function ThoughtUnitReader() {
     // ── Stale model for wrong page — clear live anchors, keep saved highlights ──
     if (currentPageStudyModel.page !== currentPage) {
       const savedGrounded = groundSavedAnchors(pageText);
-      setFinalHighlightAnchors(savedGrounded);
-      setHighlightDiagnostics(null);
+      setFinalHighlightAnchorsIfChanged(savedGrounded);
+      setHighlightDiagnosticsIfChanged(null);
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "stale-page" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
@@ -789,8 +879,8 @@ export default function ThoughtUnitReader() {
       console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "OpenAI pageType confirmed non-instructional", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "openai-non-instructional-type", pageType });
       const savedGrounded = groundSavedAnchors(pageText);
-      setFinalHighlightAnchors(savedGrounded);
-      setHighlightDiagnostics({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
+      setFinalHighlightAnchorsIfChanged(savedGrounded);
+      setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "openai-non-instructional-type" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -801,8 +891,8 @@ export default function ThoughtUnitReader() {
       console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "local pageRole + AI found zero anchors", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
       const savedGrounded = groundSavedAnchors(pageText);
-      setFinalHighlightAnchors(savedGrounded);
-      setHighlightDiagnostics({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
+      setFinalHighlightAnchorsIfChanged(savedGrounded);
+      setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "local-page-role-structural" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -825,8 +915,8 @@ export default function ThoughtUnitReader() {
     if (!visualAnchors.length) {
       console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "visual-anchors-empty", note: "AI returned no highlight anchors for this page" });
       const savedGrounded = groundSavedAnchors(pageText);
-      setFinalHighlightAnchors(savedGrounded);
-      setHighlightDiagnostics({ page: currentPage, requestedCount: 0, groundedCount: 0, failedCount: 0, anchors: [] });
+      setFinalHighlightAnchorsIfChanged(savedGrounded);
+      setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: 0, groundedCount: 0, failedCount: 0, anchors: [] });
       console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "visual-anchors-empty" });
       console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
@@ -885,7 +975,7 @@ export default function ThoughtUnitReader() {
     // Dev-mode diagnostics snapshot — same grounded/confidence/groundMethod data
     // already computed above, just retained instead of discarded after the logs.
     const anchorById = new Map(visualAnchors.map((a) => [a.id, a]));
-    setHighlightDiagnostics({
+    setHighlightDiagnosticsIfChanged({
       page: currentPage,
       requestedCount: visualAnchors.length,
       groundedCount: grounded.length,
@@ -932,7 +1022,7 @@ export default function ThoughtUnitReader() {
       merged.push(a);
     }
 
-    setFinalHighlightAnchors(merged);
+    setFinalHighlightAnchorsIfChanged(merged);
     console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: groundedAnchors.length, savedCount: savedGrounded.length, mergedCount: merged.length });
     console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: merged.length });
     console.log("[HIGHLIGHT_SOURCE_AUDIT]", {
@@ -1450,7 +1540,11 @@ export default function ThoughtUnitReader() {
   const playThoughtUnit = useCallback((snippet: string, evidenceId?: string) => {
     focusEvidence(snippet, evidenceId);
     speechPanelRef.current?.playFromSnippet(snippet);
-  }, [focusEvidence]);
+    // playFromSnippet() calls stop() internally, which resets focus to null —
+    // re-affirm it so the active style stays visible once playback starts.
+    const id = evidenceId || resolveEvidenceId(snippet) || null;
+    if (id) setFocusedEvidenceId(id);
+  }, [focusEvidence, resolveEvidenceId]);
 
   // Clicking a highlighted PDF overlay rect — "Read From Click": focuses the rect
   // (existing glow behavior) AND starts speech from that thought unit's text.
@@ -1458,6 +1552,9 @@ export default function ThoughtUnitReader() {
     setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
     if (anchor?.text) speechPanelRef.current?.playFromSnippet(anchor.text);
+    // playFromSnippet() calls stop() internally, which resets focus to null —
+    // re-affirm it so the active style stays visible once playback starts.
+    setFocusedEvidenceId(id);
   }, [finalHighlightAnchors]);
 
   useEffect(() => {
@@ -1889,6 +1986,34 @@ export default function ThoughtUnitReader() {
     openExplainStepForThoughtUnit(buildThoughtUnitDetail(anchor, sm, bookId));
   }, [currentPageStudyModel, bookId, openExplainStepForThoughtUnit]);
 
+  // LeftPanel Thought Unit Navigator "Note" button — seeds a NoteLab note from
+  // just this thought unit (same buildThoughtUnitDetail input as Explain/Recall),
+  // saves it immediately, then switches to NoteLab — same save-then-navigate
+  // pattern as GenerateNoteButton's onNoteSaved.
+  const noteThoughtUnitById = useCallback(async (anchorId: string) => {
+    const sm = currentPageStudyModel;
+    const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
+    if (!sm || !anchor) return;
+    const detail = buildThoughtUnitDetail(anchor, sm, bookId);
+    const note = buildUltraNote(
+      bookId,
+      detail.pageNumber,
+      detail.title,
+      detail.coreIdea,
+      [],
+      uploadedFile?.name,
+    );
+    const sections: NoteSection[] = [
+      { label: "Source", content: `Page ${detail.pageNumber}\n"${truncate(detail.sourceText, 240)}"` },
+    ];
+    if (detail.mechanism) sections.push({ label: "Mechanism", content: detail.mechanism });
+    if (detail.examTrap) sections.push({ label: "Trap", content: detail.examTrap });
+    note.sections = sections;
+    await saveUltraNote(note);
+    setNoteLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("notelab", "notelab");
+  }, [currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab]);
+
   // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
   // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
   const visualizeThoughtUnit = useCallback((detail: ThoughtUnitDetail) => {
@@ -1958,8 +2083,8 @@ export default function ThoughtUnitReader() {
     const tag = ctx.conceptTitles?.[0] || (ctx.pageThesis ? truncate(ctx.pageThesis, 40) : undefined);
     const card: RecallCard = {
       id: `card-explain-${Date.now()}`,
-      type: parsed.commonMistake ? "trap" : "core",
-      front,
+      type: parsed.commonMistake ? "concept" : "mechanism",
+      front: parsed.commonMistake ? `⚠️ ${front}` : front,
       back,
       hint: hintParts.length ? hintParts.join("\n\n") : undefined,
       tag,
@@ -3684,13 +3809,22 @@ export default function ThoughtUnitReader() {
                   focusHighlightPersist={speechReadingActive}
                   onTextClick={(snippet) => speechPanelRef.current?.playFromSnippet(snippet)}
                   aiHighlightAnchors={safeHighlightAnchors}
+                  allHighlightAnchors={finalHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={onPdfHighlightFocus}
                   onExplainThoughtUnit={explainThoughtUnitById}
+                  onOpenThoughtUnitRecall={openThoughtUnitInRecallLab}
+                  onNoteThoughtUnit={noteThoughtUnitById}
                   onOpenFocusCycle={undefined}
-                  onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
+                  onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => {
+                    const key = `${bookId}:${pageNumber}`;
+                    if (prev.get(key) === text) return prev;
+                    const next = new Map(prev);
+                    next.set(key, text);
+                    return next;
+                  })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                 />
               </div>
@@ -3736,40 +3870,9 @@ export default function ThoughtUnitReader() {
                   setRecallLabRefreshKey((k) => k + 1);
                   trySwitchShellTab("study", "study");
                 }}
-                onEvidenceClick={(snippet, evidenceId) => {
-                  playThoughtUnit(snippet, evidenceId);
-                }}
+                onEvidenceClick={playThoughtUnit}
                 onOpenThoughtUnit={openThoughtUnitInRecallLab}
-                onStudyModelReady={(model, key) => {
-                    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
-                      key,
-                      page: model.page,
-                      visualAnchorCount: model.visualAnchors.length,
-                      roles: model.visualAnchors.map(a => a.role),
-                    });
-                    const current = pageTruthKeyRef.current;
-                    if (key !== current) {
-                      console.warn("[WIRE] rejected stale studyModel", { from: key, current });
-                      return;
-                    }
-                    console.log("[WIRE] studyModel accepted", {
-                      key,
-                      page:          model.page,
-                      visualAnchors: model.visualAnchors.length,
-                      ids:           model.visualAnchors.map(a => a.id),
-                      roles:         model.visualAnchors.map(a => a.role),
-                    });
-                    console.log("[VISUAL_ANCHORS_RECEIVED]", {
-                      page:       model.page,
-                      count:      model.visualAnchors.length,
-                      ids:        model.visualAnchors.map(a => a.id),
-                      firstTexts: model.visualAnchors.slice(0, 3).map(a => a.exactText.slice(0, 60)),
-                      source:     "finalStudyModel.visualAnchors",
-                    });
-                    // Embed pageTruthKey so the render-time guard can verify this model is current.
-                    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
-                    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map(a => a.exactText.slice(0, 40)) });
-                  }}
+                onStudyModelReady={handleStudyModelReady}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
               />

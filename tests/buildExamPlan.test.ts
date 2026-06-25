@@ -19,7 +19,7 @@ describe("buildExamPlan", () => {
     const recallSets: RecallSet[] = [
       {
         id: "rs-1", bookId: "book-1", pageNumber: 1, subject: "General Notes", topic: "X", createdAt: Date.now(),
-        cards: [{ id: "c1", type: "core", front: "Q", back: "A", reviewCount: 3, isMissed: false, difficulty: "easy" }],
+        cards: [{ id: "c1", type: "concept", front: "Q", back: "A", reviewCount: 3, isMissed: false, difficulty: "easy" }],
       },
     ];
 

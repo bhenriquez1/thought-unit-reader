@@ -487,6 +487,18 @@ export function RightPanel({
   const pageModel = intelligence.pageModel;
   const pageTruth = intelligence.pageTruth;
   const isCurrentPageModel = Boolean(intelligence.isCurrentPage && pageModel && intelligence.status === "ready");
+  const panelScrollRef = useRef<HTMLElement>(null);
+
+  // One-click integration: when the left panel/PDF focuses a thought unit,
+  // scroll its matching card into view here too — same focusedEvidenceId
+  // the PDF overlay glow and ThoughtUnitNavigator active state already key off.
+  useEffect(() => {
+    if (!focusedEvidenceId || !panelScrollRef.current) return;
+    const el = panelScrollRef.current.querySelector(
+      `[data-evidence-id="${CSS.escape(focusedEvidenceId)}"]`,
+    );
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [focusedEvidenceId]);
 
   // [TRACE renderIdentity] — logs what document/page/text is being rendered.
   // If documentId or pageNumber in pageModel differs from pageTruthKey, you
@@ -1192,7 +1204,7 @@ export function RightPanel({
         } : null}
       />
     </>
-    <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
+    <aside ref={panelScrollRef} className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
         <div>
@@ -1928,6 +1940,7 @@ function UltraView({
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
+                data-evidence-id={anchor?.id}
                 className={`rounded-lg border ${isFocused ? "border-blue-400/50" : "border-blue-400/15"} bg-[#0a1828] ${d.cardPadding} transition-colors`}
                 style={{ cursor: anchor ? "pointer" : undefined }}
                 onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
@@ -1955,6 +1968,7 @@ function UltraView({
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
+                data-evidence-id={anchor?.id}
                 className={`rounded-lg border ${isFocused ? "border-emerald-400/50" : "border-emerald-400/15"} bg-[#0a1820] ${d.cardPadding} transition-colors`}
                 style={{ cursor: anchor ? "pointer" : undefined }}
                 onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
@@ -1982,6 +1996,7 @@ function UltraView({
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
+                data-evidence-id={anchor?.id}
                 className={`rounded-lg border ${isFocused ? "border-red-400/50" : "border-red-400/15"} bg-[#1a0a0a] ${d.cardPadding} transition-colors`}
                 style={{ cursor: anchor ? "pointer" : undefined }}
                 onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
@@ -2009,6 +2024,7 @@ function UltraView({
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
+                data-evidence-id={anchor?.id}
                 className={`rounded-lg border ${isFocused ? "border-purple-400/50" : "border-purple-400/15"} bg-[#150b25] ${d.cardPadding} transition-colors`}
                 style={{ cursor: anchor ? "pointer" : undefined }}
                 onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
@@ -2851,7 +2867,7 @@ function MiniTestPanel({
         if (!missed) return [];
         const c: RecallCard = {
           id: `missed-mt-p${pageNumber}-${i}-${Date.now()}`,
-          type: "definition" as CardType,
+          type: "dat-question" as CardType,
           front: item.question,
           back: item.correctAnswer,
           hint: item.explanation || undefined,
@@ -3289,6 +3305,7 @@ function GuidedViewFallback({
               return (
                 <button
                   key={step.id}
+                  data-evidence-id={evidenceId}
                   onClick={() => selectStep(step, true)}
                   className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
                     selected || activeEvidence

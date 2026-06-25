@@ -1126,13 +1126,20 @@ export default function SmartPDFViewer({
                       // authorizedHighlightIds comes from effectiveHighlightTargets so it always
                       // reflects the live studyModel anchors — stale rects are invisible even if
                       // they survived in overlayRects state past a highlightKey change.
-                      if (!authorizedHighlightIds || authorizedHighlightIds.length === 0) {
+                      // The focused anchor (e.g. clicked from the Thought Unit Navigator) is always
+                      // allowed even if it fell outside the paint budget's authorized set — otherwise
+                      // clicking a budget-excluded thought unit would have no rect to jump to.
+                      const idsToAllow = [
+                        ...(authorizedHighlightIds ?? []),
+                        ...(focusedEvidenceId ? [focusedEvidenceId] : []),
+                      ];
+                      if (idsToAllow.length === 0) {
                         if (overlayRects.length > 0) {
                           console.log("[OVERLAY_DOM_CLEANUP] no authorized IDs — suppressing", overlayRects.length, "rects");
                         }
                         return [];
                       }
-                      const allowed = new Set(authorizedHighlightIds.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
+                      const allowed = new Set(idsToAllow.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
                       const guarded = overlayRects.filter(r => allowed.has(r.id));
                       if (guarded.length !== overlayRects.length) {
                         console.log("[OVERLAY_DOM_CLEANUP] guard filtered", overlayRects.length, "→", guarded.length, "rects");

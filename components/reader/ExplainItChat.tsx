@@ -14,6 +14,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { ExplainItMessage } from "@/lib/explainIt/types";
 import type { ExplainItContext } from "@/lib/explainIt/types";
+import { SpeechRecognitionAPI } from "@/lib/voiceTools";
 import {
   claimSpeech,
   isSpeechStale,
@@ -60,6 +61,7 @@ export default function ExplainItChat({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -77,6 +79,7 @@ export default function ExplainItChat({
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      SpeechRecognitionAPI.stop();
       if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
         notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       }
@@ -154,6 +157,25 @@ export default function ExplainItChat({
     const next = [...turns, userTurn];
     setTurns(next);
     await sendTurn(next);
+  };
+
+  const handleMicToggle = () => {
+    if (listening) {
+      SpeechRecognitionAPI.stop();
+      setListening(false);
+      return;
+    }
+    setListening(true);
+    SpeechRecognitionAPI.start({
+      interimResults: true,
+      onInterim: (text) => setInput(text),
+      onResult: (text) => {
+        setListening(false);
+        setInput("");
+        if (text.trim()) handleSend(text);
+      },
+      onError: () => setListening(false),
+    });
   };
 
   const handleSpeakAnswer = async () => {
@@ -318,6 +340,20 @@ export default function ExplainItChat({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleMicToggle}
+              disabled={loading}
+              title={listening ? "Stop listening" : "Speak your question"}
+              aria-label={listening ? "Stop voice input" : "Start voice input"}
+              className={
+                listening
+                  ? "px-3 py-1.5 rounded-lg border border-red-500/50 bg-red-600/30 text-red-200 text-sm transition-colors animate-pulse"
+                  : "px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-sm transition-colors disabled:opacity-50"
+              }
+            >
+              {listening ? "🎙️" : "🎤"}
+            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -327,7 +363,7 @@ export default function ExplainItChat({
                   handleSend();
                 }
               }}
-              placeholder="Talk it through…"
+              placeholder={listening ? "Listening…" : "Talk it through…"}
               disabled={loading}
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
             />

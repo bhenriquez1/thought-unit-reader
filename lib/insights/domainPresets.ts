@@ -25,6 +25,12 @@ export const UNIVERSAL_KIND_LABELS: Record<ParagraphKind, string> = {
   unknown: "Other",
 };
 
+export interface KindGroup {
+  id: string;
+  label: string;
+  kinds: ParagraphKind[];
+}
+
 export interface DomainPreset {
   id: string;
   label: string;
@@ -37,6 +43,14 @@ export interface DomainPreset {
   kindLabels?: Partial<Record<ParagraphKind, string>>;
   /** Optional reordering of which kinds surface first in the navigator. Falls back to default order. */
   kindPriority?: ParagraphKind[];
+  /**
+   * Level 3 "expert navigation" grouping: merges several raw kinds into one
+   * navigator section (e.g. DAT's "Concepts" section covers both thesis and
+   * definition paragraphs). Every kind must still end up in some group, or
+   * its thought units would silently disappear from the navigator. When a
+   * preset omits this, the navigator falls back to one section per kind.
+   */
+  kindGroups?: KindGroup[];
 }
 
 export const UNIVERSAL_PRESET: DomainPreset = {
@@ -68,6 +82,13 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       thesis: "Concept",
       dat_fact: "High-Yield Fact",
     },
+    kindGroups: [
+      { id: "concepts", label: "Concepts", kinds: ["thesis", "definition"] },
+      { id: "mechanisms", label: "Mechanisms", kinds: ["mechanism"] },
+      { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
+      { id: "traps", label: "Traps", kinds: ["trap"] },
+      { id: "high_yield_facts", label: "High-Yield Facts", kinds: ["dat_fact", "formula"] },
+    ],
   },
   {
     id: "medical_surgical",
@@ -84,6 +105,13 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       trap: "Danger Zone",
       dat_fact: "Complication",
     },
+    kindGroups: [
+      { id: "anatomy", label: "Anatomy", kinds: ["definition"] },
+      { id: "procedure_steps", label: "Procedure Steps", kinds: ["mechanism"] },
+      { id: "danger_zones", label: "Danger Zones", kinds: ["trap"] },
+      { id: "complications", label: "Complications", kinds: ["dat_fact", "formula"] },
+      { id: "pearls", label: "Pearls", kinds: ["thesis", "application", "clinical"] },
+    ],
   },
   {
     id: "pilot",
@@ -100,6 +128,13 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       dat_fact: "Memory Item",
       formula: "Performance Calculation",
     },
+    kindGroups: [
+      { id: "normal", label: "Normal", kinds: ["thesis", "definition"] },
+      { id: "procedures", label: "Procedures", kinds: ["mechanism", "application", "clinical"] },
+      { id: "abnormal_emergency", label: "Abnormal / Emergency", kinds: ["trap"] },
+      { id: "memory_items", label: "Memory Items", kinds: ["dat_fact"] },
+      { id: "performance_calculations", label: "Performance Calculations", kinds: ["formula"] },
+    ],
   },
   {
     id: "dental_school",
@@ -117,6 +152,13 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       trap: "Complication",
       dat_fact: "Clinical Pearl",
     },
+    kindGroups: [
+      { id: "diagnosis", label: "Diagnosis", kinds: ["thesis"] },
+      { id: "treatment_steps", label: "Treatment Steps", kinds: ["mechanism"] },
+      { id: "materials", label: "Materials", kinds: ["definition"] },
+      { id: "complications", label: "Complications", kinds: ["trap"] },
+      { id: "clinical_pearls", label: "Clinical Pearls", kinds: ["dat_fact", "formula", "application", "clinical"] },
+    ],
   },
 ];
 
@@ -165,7 +207,79 @@ export function getKindLabel(presetId: string, kind: ParagraphKind): string {
   return preset.kindLabels?.[kind] ?? UNIVERSAL_KIND_LABELS[kind] ?? kind;
 }
 
+/** Level 3 grouping for a preset, or null when the preset has no kindGroups (falls back to one section per kind). */
+export function getKindGroups(presetId: string): KindGroup[] | null {
+  const preset = getDomainPreset(presetId);
+  return preset.kindGroups ?? null;
+}
+
 /** Options for a manual override dropdown — "Universal" first, then seed presets. */
 export function listDomainPresetOptions(): Array<{ id: string; label: string }> {
   return [UNIVERSAL_PRESET, ...DOMAIN_PRESETS].map((p) => ({ id: p.id, label: p.label }));
+}
+
+/** Default per-kind order when a preset has no kindGroups (and as the order strays append in within groupThoughtUnits). */
+export const DEFAULT_KIND_ORDER: ParagraphKind[] = [
+  "thesis", "dat_fact", "mechanism", "trap", "application", "definition", "clinical", "formula",
+];
+
+export interface ThoughtUnitGroup<T> {
+  id: string;
+  /** Group label, or undefined when this is a per-kind fallback section (caller resolves via getKindLabel). */
+  label: string | undefined;
+  /** First kind in the group — used to pick a representative color. */
+  representativeKind: ParagraphKind;
+  items: T[];
+}
+
+/**
+ * Shared Level 3 grouping logic used by both ThoughtUnitNavigator and the
+ * Level 4 page roadmap, so the two views never disagree about which section
+ * a thought unit belongs to. When the preset has kindGroups, any kind not
+ * covered by one of them still gets its own section (keyed by the raw kind)
+ * rather than silently disappearing — this is the completeness guarantee
+ * the kindGroups field's doc comment promises.
+ */
+export function groupThoughtUnits<T extends { kind: ParagraphKind }>(
+  entries: T[],
+  presetId: string,
+): ThoughtUnitGroup<T>[] {
+  const kindGroups = getKindGroups(presetId);
+
+  if (kindGroups) {
+    const groupIdForKind = new Map<ParagraphKind, string>();
+    for (const g of kindGroups) for (const k of g.kinds) groupIdForKind.set(k, g.id);
+
+    const byGroup = new Map<string, T[]>();
+    for (const e of entries) {
+      const groupId = groupIdForKind.get(e.kind) ?? e.kind;
+      const list = byGroup.get(groupId) ?? [];
+      list.push(e);
+      byGroup.set(groupId, list);
+    }
+
+    const defined: ThoughtUnitGroup<T>[] = kindGroups.map((g) => ({
+      id: g.id,
+      label: g.label,
+      representativeKind: g.kinds[0],
+      items: byGroup.get(g.id) ?? [],
+    }));
+
+    const definedIds = new Set(kindGroups.map((g) => g.id));
+    const strays: ThoughtUnitGroup<T>[] = Array.from(byGroup.entries())
+      .filter(([id]) => !definedIds.has(id))
+      .map(([id, items]) => ({ id, label: undefined, representativeKind: id as ParagraphKind, items }));
+
+    return [...defined, ...strays].filter((g) => g.items.length > 0);
+  }
+
+  const byKind = new Map<ParagraphKind, T[]>();
+  for (const e of entries) {
+    const list = byKind.get(e.kind) ?? [];
+    list.push(e);
+    byKind.set(e.kind, list);
+  }
+  return DEFAULT_KIND_ORDER
+    .map((kind) => ({ id: kind, label: undefined, representativeKind: kind, items: byKind.get(kind) ?? [] }))
+    .filter((g) => g.items.length > 0);
 }

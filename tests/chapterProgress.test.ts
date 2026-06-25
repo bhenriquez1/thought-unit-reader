@@ -54,8 +54,8 @@ describe("computeChapterProgress", () => {
         topic: "Cell Membrane",
         createdAt: Date.now(),
         cards: [
-          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" },
-          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 0, isMissed: false },
+          { id: "c1", type: "concept", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" },
+          { id: "c2", type: "concept", front: "Q2", back: "A2", reviewCount: 0, isMissed: false },
         ],
       },
     ];
@@ -82,7 +82,7 @@ describe("computeChapterProgress", () => {
         subject: "General Notes",
         topic: "Unrelated",
         createdAt: Date.now(),
-        cards: [{ id: "c1", type: "core", front: "Q", back: "A", reviewCount: 5, isMissed: false, difficulty: "easy" }],
+        cards: [{ id: "c1", type: "concept", front: "Q", back: "A", reviewCount: 5, isMissed: false, difficulty: "easy" }],
       },
     ];
     const notes: UltraNote[] = [
@@ -143,8 +143,8 @@ describe("computeChapterProgress", () => {
         topic: "X",
         createdAt: Date.now(),
         cards: [
-          { id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: true, difficulty: "hard" },
-          { id: "c2", type: "core", front: "Q2", back: "A2", reviewCount: 1, isMissed: true, difficulty: "hard" },
+          { id: "c1", type: "concept", front: "Q1", back: "A1", reviewCount: 1, isMissed: true, difficulty: "hard" },
+          { id: "c2", type: "concept", front: "Q2", back: "A2", reviewCount: 1, isMissed: true, difficulty: "hard" },
         ],
       },
     ];
@@ -170,7 +170,7 @@ describe("computeChapterProgress", () => {
         subject: "General Notes",
         topic: "X",
         createdAt: Date.now(),
-        cards: [{ id: "c1", type: "core", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" }],
+        cards: [{ id: "c1", type: "concept", front: "Q1", back: "A1", reviewCount: 1, isMissed: false, difficulty: "easy" }],
       },
     ];
     const notes: UltraNote[] = [
@@ -202,7 +202,7 @@ describe("computeCourseProgress", () => {
         recallSets: [
           {
             id: "rs-1", bookId: "b", pageNumber: 1, subject: "General Notes", topic: "X", createdAt: Date.now(),
-            cards: [{ id: "c1", type: "core", front: "Q", back: "A", reviewCount: 1, isMissed: false, difficulty: "easy" }],
+            cards: [{ id: "c1", type: "concept", front: "Q", back: "A", reviewCount: 1, isMissed: false, difficulty: "easy" }],
           },
         ],
         notes: [

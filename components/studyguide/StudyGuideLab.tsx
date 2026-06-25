@@ -659,7 +659,7 @@ export default function StudyGuideLab({
         const cards: RecallCard[] = [
           ...record.recallQuestions.map((q, i): RecallCard => ({
             id: `sgrc-q${i}`,
-            type: "core",
+            type: "dat-question",
             front: q,
             back: record.mustKnow[i] ?? record.datFacts[i] ?? "See study guide",
             reviewCount: 0,
@@ -668,7 +668,7 @@ export default function StudyGuideLab({
           })),
           ...record.datFacts.map((f, i): RecallCard => ({
             id: `sgrc-f${i}`,
-            type: "cause-effect",
+            type: "fact",
             front: `DAT Fact: ${f.split("→")[0]?.trim() ?? f}`,
             back: f,
             reviewCount: 0,
@@ -677,8 +677,8 @@ export default function StudyGuideLab({
           })),
           ...record.traps.map((t, i): RecallCard => ({
             id: `sgrc-t${i}`,
-            type: "trap",
-            front: `Common trap: ${t}`,
+            type: "concept",
+            front: `⚠️ Common trap: ${t}`,
             back: `Avoid confusing: ${t}`,
             reviewCount: 0,
             isMissed: false,
@@ -689,7 +689,7 @@ export default function StudyGuideLab({
           id: stableRecallId(bookId, currentPage ?? 0, "sg"),
           bookId,
           bookTitle:   bookTitle ?? undefined,
-          sourceLabel: "right-panel",
+          sourceLabel: "study-guide",
           pageNumber:  currentPage ?? 0,
           subject:     "Biology",
           topic:       record.topic || record.chapterTitle,
@@ -757,7 +757,7 @@ export default function StudyGuideLab({
       const cards: RecallCard[] = [
         ...currentGuide.recallQuestions.map((q, i): RecallCard => ({
           id: `sgrc-q${i}`,
-          type: "core",
+          type: "dat-question",
           front: q,
           back: currentGuide.mustKnow[i] ?? currentGuide.datFacts[i] ?? "See study guide",
           reviewCount: 0,
@@ -766,7 +766,7 @@ export default function StudyGuideLab({
         })),
         ...currentGuide.datFacts.map((f, i): RecallCard => ({
           id: `sgrc-f${i}`,
-          type: "cause-effect",
+          type: "fact",
           front: `DAT Fact: ${f.split("→")[0]?.trim() ?? f}`,
           back: f,
           reviewCount: 0,
@@ -775,8 +775,8 @@ export default function StudyGuideLab({
         })),
         ...currentGuide.traps.map((t, i): RecallCard => ({
           id: `sgrc-t${i}`,
-          type: "trap",
-          front: `Common trap: ${t}`,
+          type: "concept",
+          front: `⚠️ Common trap: ${t}`,
           back: `Avoid confusing: ${t}`,
           reviewCount: 0,
           isMissed: false,
@@ -788,7 +788,7 @@ export default function StudyGuideLab({
         id: stableRecallId(bookId, currentPage ?? 0, "sg"),
         bookId,
         bookTitle:   bookTitle ?? undefined,
-        sourceLabel: "right-panel",
+        sourceLabel: "study-guide",
         pageNumber:  currentPage ?? 0,
         subject:     "Biology",
         topic:       currentGuide.topic || currentGuide.chapterTitle,

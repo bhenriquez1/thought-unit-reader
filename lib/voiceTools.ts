@@ -52,11 +52,14 @@ export const SpeechRecognitionAPI = {
 
   start({
     onResult,
+    onInterim,
     onError,
     lang = "en-US",
     interimResults = false,
   }: {
     onResult: (result: string) => void;
+    /** Fired with the in-progress (not-yet-final) transcript, when interimResults is true. */
+    onInterim?: (result: string) => void;
     onError?: (err?: any) => void;
     lang?: string;
     interimResults?: boolean;
@@ -77,11 +80,13 @@ export const SpeechRecognitionAPI = {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      // Grab the latest final result
+      // Grab the latest result — final or interim
       const res = event.results[event.results.length - 1];
+      const transcript = res?.[0]?.transcript ?? "";
       if (res?.isFinal) {
-        const transcript = res[0]?.transcript ?? "";
         onResult(transcript);
+      } else {
+        onInterim?.(transcript);
       }
     };
 

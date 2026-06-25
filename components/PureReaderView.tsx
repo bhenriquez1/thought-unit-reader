@@ -14,6 +14,7 @@ import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
+import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import DomainModeSelector from './reader/DomainModeSelector';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
@@ -110,6 +111,10 @@ interface PureReaderViewProps {
   onTextClick?: (snippet: string) => void;
   /** Highlight anchors from currentPageStudyModel — single source of truth */
   aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
+  /** Same anchors as aiHighlightAnchors but BEFORE pages/index.tsx's paint budget is
+   *  applied — drives the Thought Unit Navigator so a dense-page budget that limits
+   *  the PDF overlay doesn't also hide grounded anchors from the sidebar list. */
+  allHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
@@ -127,6 +132,10 @@ interface PureReaderViewProps {
   roleLabelByConceptId?: Map<string, string>;
   /** Opens Explain This Step seeded from a clicked thought-unit's evidenceRefId */
   onExplainThoughtUnit?: (evidenceRefId: string) => void;
+  /** Opens Recall Lab seeded from a clicked thought-unit's evidenceRefId */
+  onOpenThoughtUnitRecall?: (evidenceRefId: string) => void;
+  /** Seeds a NoteLab note from a clicked thought-unit's evidenceRefId */
+  onNoteThoughtUnit?: (evidenceRefId: string) => void;
 }
 
 export default function PureReaderView({
@@ -145,6 +154,7 @@ export default function PureReaderView({
   focusHighlightPersist,
   onTextClick,
   aiHighlightAnchors,
+  allHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
@@ -155,6 +165,8 @@ export default function PureReaderView({
   onReadingPath,
   roleLabelByConceptId,
   onExplainThoughtUnit,
+  onOpenThoughtUnitRecall,
+  onNoteThoughtUnit,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -201,18 +213,30 @@ export default function PureReaderView({
     }
   };
 
-  // Convert aiHighlightAnchors (grounded + semantically arbitrated in pages/index.tsx)
-  // into HighlightTarget[] for SmartPDFViewer.
+  // Convert a SynthHighlightAnchor[] (grounded + semantically arbitrated in pages/index.tsx)
+  // into HighlightTarget[] for SmartPDFViewer / ThoughtUnitNavigator.
   // Anchors arrive pre-grounded — text fields contain exact PDF spans.
   // Specificity scoring is a secondary sort (tiebreaker within semantic scores).
-  const effectiveHighlightTargets: HighlightTarget[] = (() => {
+  //
+  // Pulled out as a function (not inlined as a single useMemo) because the PDF
+  // overlay and the Thought Unit Navigator intentionally read two DIFFERENT anchor
+  // sets: the overlay must stay under pages/index.tsx's paint budget (≤6 anchors,
+  // ≤25% page coverage — otherwise dense pages turn fully pink), but the Navigator
+  // is a text list with no such visual constraint, so it should show every anchor
+  // that grounded successfully. Budgeting the Navigator the same way as the overlay
+  // was why trap/application anchors disappeared from the list even though they
+  // grounded fine — see allHighlightAnchors below.
+  const buildHighlightTargets = (
+    anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[] | undefined,
+    label: string,
+  ): HighlightTarget[] => {
     console.log("[AI_ANCHORS_ONLY_MODE]", {
-      source: "aiHighlightAnchors (finalHighlightAnchors from index.tsx)",
-      count: aiHighlightAnchors?.length ?? 0,
+      source: label,
+      count: anchors?.length ?? 0,
       page: currentPage,
       pageTruthKey,
     });
-    if (!aiHighlightAnchors?.length) return [];
+    if (!anchors?.length) return [];
 
     // Anchors arrive pre-prioritized by visualAnchors.priority from buildStudyModel.
     // universalSpecificityScore is BLOCKED — left panel uses finalStudyModel order only.
@@ -224,13 +248,13 @@ export default function PureReaderView({
     });
     console.log("[LEFT_PANEL_USING_FINAL_MODEL_ONLY]", {
       page:   currentPage,
-      count:  aiHighlightAnchors.length,
-      source: "finalStudyModel.visualAnchors via aiHighlightAnchors prop",
+      count:  anchors.length,
+      source: label,
     });
-    const scored = aiHighlightAnchors.map((a, i) => ({
+    const scored = anchors.map((a, i) => ({
       anchor:        a,
       originalIndex: i,
-      specScore:     aiHighlightAnchors.length - i, // preserve arrival order — highest first
+      specScore:     anchors.length - i, // preserve arrival order — highest first
     }));
 
     // Span-guard normalizer — keeps punctuation so spanStart/spanEnd substrings line up
@@ -318,12 +342,20 @@ export default function PureReaderView({
       kinds: validated.map((t) => t.kind),
     });
     return validated;
-  })();
+  };
 
-  // Bake pageTruthKey + anchor texts into highlightKey so SmartPDFViewer clears stale
-  // overlays whenever synthesis changes (even if anchorTexts happen to be identical).
-  const highlightKey = `${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`;
-  const authorizedHighlightIds = effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? [];
+  // PDF overlay — must respect pages/index.tsx's paint budget (aiHighlightAnchors).
+  const effectiveHighlightTargets: HighlightTarget[] = buildHighlightTargets(
+    aiHighlightAnchors,
+    "aiHighlightAnchors (paint-budgeted, from index.tsx)",
+  );
+
+  // Thought Unit Navigator — every anchor that grounded successfully, regardless of
+  // the overlay's paint budget. Falls back to the budgeted set if the caller hasn't
+  // wired allHighlightAnchors yet, so the Navigator never regresses to empty.
+  const allHighlightTargets: HighlightTarget[] = allHighlightAnchors
+    ? buildHighlightTargets(allHighlightAnchors, "allHighlightAnchors (unbudgeted, from index.tsx)")
+    : effectiveHighlightTargets;
 
   const navigateToPage = useCallback((page: number) => {
     if (isPageChanging || page === currentPage) return;
@@ -487,12 +519,28 @@ export default function PureReaderView({
 
           <div className="h-px bg-white/8 mx-1" />
 
+          {/* Level 4 — Page Roadmap: one node per Level 3 group, in expert order */}
+          <ThoughtRoadmap
+            entries={allHighlightTargets.map((t) => ({
+              id: t.evidenceRefId,
+              text: t.text,
+              kind: t.kind,
+              page: t.page,
+              confidence: t.score,
+            }))}
+            focusedId={focusedEvidenceId}
+            onJump={(id) => onEvidenceFocus?.(id)}
+            presetId={effectivePresetId}
+          />
+
+          <div className="h-px bg-white/8 mx-1" />
+
           {/* Level 2 — Thought Unit Navigator: click a unit to jump + focus + speak */}
           <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 px-1">
             Thought Units
           </span>
           <ThoughtUnitNavigator
-            entries={effectiveHighlightTargets.map((t) => ({
+            entries={allHighlightTargets.map((t) => ({
               id: t.evidenceRefId,
               text: t.text,
               kind: t.kind,
@@ -502,6 +550,8 @@ export default function PureReaderView({
             focusedId={focusedEvidenceId}
             onJump={(id) => onEvidenceFocus?.(id)}
             onExplain={onExplainThoughtUnit}
+            onOpenRecall={onOpenThoughtUnitRecall}
+            onOpenNote={onNoteThoughtUnit}
             presetId={effectivePresetId}
           />
 
@@ -562,13 +612,18 @@ export default function PureReaderView({
               focusHighlightPersist={focusHighlightPersist}
               onTextClick={onTextClick}
               highlightTargets={(() => {
-                if (effectiveHighlightTargets.length === 0) {
-                  console.log("[LEFT_PANEL_CLEAR] effectiveHighlightTargets empty — zero overlays", { page: currentPage });
+                // Rects are computed for the FULL grounded set (allHighlightTargets), not just
+                // the paint-budgeted one — otherwise a Thought Unit Navigator card for a
+                // budget-excluded anchor (e.g. trap/application on a dense page) would have no
+                // rect to scroll to when clicked. authorizedHighlightIds below still limits
+                // which of these rects are visible by default.
+                if (allHighlightTargets.length === 0) {
+                  console.log("[LEFT_PANEL_CLEAR] allHighlightTargets empty — zero overlays", { page: currentPage });
                 }
-                return effectiveHighlightTargets;
+                return allHighlightTargets;
               })()}
               highlightNeighborhoods={undefined}
-              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
+              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${allHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
               authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
               focusedEvidenceId={focusedEvidenceId}
               onEvidenceFocus={onEvidenceFocus}

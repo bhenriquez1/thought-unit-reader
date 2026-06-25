@@ -7,9 +7,9 @@ import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 
-export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank" | "cause-effect" | "application";
+export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
-export type SourceLabel = "right-panel" | "notelab" | "explain-step";
+export type SourceLabel = "right-panel" | "notelab" | "explain-step" | "study-guide" | "weak-review";
 
 export interface RecallCard {
   id: string;
@@ -22,6 +22,10 @@ export interface RecallCard {
   difficulty?: CardDifficulty;
   reviewCount: number;
   isMissed: boolean;
+  /** Set when this card is a copy surfaced in a synthetic set (e.g. Weak Topics Review) —
+   *  ratings made here should write back to the real set/card they came from. */
+  originSetId?: string;
+  originCardId?: string;
 }
 
 export interface RecallSet {
@@ -355,48 +359,48 @@ export function buildRecallSetFromView(
     title: b.title, pattern: b.pattern, surgicalReason: b.mechanism, trap: b.trap, rule: b.rule,
   }));
 
-  cards.push(card("core-0", "core", `What is the core idea of "${topic}"?`, thesis));
+  cards.push(card("core-0", "concept", `What is the core idea of "${topic}"?`, thesis));
 
   if (studyModel?.studyNotes) {
     const sn = studyModel.studyNotes;
-    if (sn.whyThisMatters)  cards.push(card("sn-why",  "reason",     `Why does "${topic}" matter clinically or conceptually?`, sn.whyThisMatters));
-    if (sn.keyMechanism)    cards.push(card("sn-mech", "definition", `What is the key mechanism of "${topic}"?`,               sn.keyMechanism));
-    if (sn.commonConfusion) cards.push(card("sn-conf", "trap",       `⚠️ What is the common confusion about "${topic}"?`,       sn.commonConfusion));
-    if (sn.examSignal)      cards.push(card("sn-exam", "rule",       `What is the exam signal for "${topic}"?`,                sn.examSignal));
+    if (sn.whyThisMatters)  cards.push(card("sn-why",  "application", `Why does "${topic}" matter clinically or conceptually?`, sn.whyThisMatters));
+    if (sn.keyMechanism)    cards.push(card("sn-mech", "mechanism",   `What is the key mechanism of "${topic}"?`,               sn.keyMechanism));
+    if (sn.commonConfusion) cards.push(card("sn-conf", "concept",     `⚠️ What is the common confusion about "${topic}"?`,       sn.commonConfusion));
+    if (sn.examSignal)      cards.push(card("sn-exam", "fact",        `What is the exam signal for "${topic}"?`,                sn.examSignal));
   }
 
   miniTests.forEach((q, i) => {
     if (!q?.trim()) return;
-    cards.push(card(`synth-q${i}`, "definition", q.trim(), thesis));
+    cards.push(card(`synth-q${i}`, "concept", q.trim(), thesis));
   });
 
   conceptSource.forEach((block, bi) => {
     const p = `b${bi + 1}`;
     if (block.pattern) {
       const q = /^(what|define|state)/i.test(block.title) ? `${block.title}?` : `Define or state the pattern for: ${block.title}`;
-      cards.push(card(`${p}-def`, "definition", q, block.pattern));
+      cards.push(card(`${p}-def`, "concept", q, block.pattern));
     }
     if (block.rule && block.rule !== block.pattern)
-      cards.push(card(`${p}-rule`, "rule", `State the rule for: ${block.title}`, block.rule, block.pattern || undefined));
+      cards.push(card(`${p}-rule`, "fact", `State the rule for: ${block.title}`, block.rule, block.pattern || undefined));
     if (block.surgicalReason && block.surgicalReason !== block.pattern && block.surgicalReason !== block.rule)
-      cards.push(card(`${p}-why`, "reason", `Why does "${block.title}" work this way?`, block.surgicalReason, block.pattern || undefined));
+      cards.push(card(`${p}-why`, "mechanism", `Why does "${block.title}" work this way?`, block.surgicalReason, block.pattern || undefined));
     if (block.trap)
-      cards.push(card(`${p}-trap`, "trap", `⚠️ What is the common trap for: ${block.title}?`, block.trap));
+      cards.push(card(`${p}-trap`, "concept", `⚠️ What is the common trap for: ${block.title}?`, block.trap));
   });
 
   const reasoningFlow = studyModel?.studyNotes?.reasoningFlow;
   if (reasoningFlow?.includes("→")) {
     const nodes = reasoningFlow.split(/\s*→\s*/).map((n) => n.trim()).filter(Boolean);
     if (nodes.length >= 2)
-      cards.push(card("sn-flow", "cause-effect", `Trace the cause-effect chain for "${topic}":`, nodes.join(" → ")));
+      cards.push(card("sn-flow", "mechanism", `Trace the cause-effect chain for "${topic}":`, nodes.join(" → ")));
   }
 
   if (studyModel?.miniTestItems?.length) {
     for (const item of studyModel.miniTestItems) {
       let cardType: CardType;
-      if (item.type === "fill-in-the-blank")           cardType = "fill-blank";
-      else if (item.type === "trap")                   cardType = "trap";
-      else if (item.type === "multiple-choice" || item.type === "short-answer") cardType = "application";
+      if (item.type === "fill-in-the-blank")           cardType = "fact";
+      else if (item.type === "trap")                   cardType = "concept";
+      else if (item.type === "multiple-choice" || item.type === "short-answer") cardType = "dat-question";
       else continue;
       cards.push(card(`synth-${item.type}-p${pageNumber}-${cards.length}`, cardType, item.question, item.correctAnswer, item.explanation || undefined));
     }
@@ -420,22 +424,22 @@ export function buildRecallSetFromView(
 export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpts): RecallSet {
   const cards: RecallCard[] = [];
 
-  cards.push(card("core-0", "core", `What is the core idea of "${note.topic}"?`, note.coreIdea || "See note for core idea."));
+  cards.push(card("core-0", "concept", `What is the core idea of "${note.topic}"?`, note.coreIdea || "See note for core idea."));
 
   note.concepts.forEach((c, ci) => {
     const p = `n${ci + 1}`;
     if (c.pattern)
-      cards.push(card(`${p}-def`, "definition", `Define or state the pattern for: ${c.title}`, c.pattern));
+      cards.push(card(`${p}-def`, "concept", `Define or state the pattern for: ${c.title}`, c.pattern));
     if (c.rule && c.rule !== c.pattern)
-      cards.push(card(`${p}-rule`, "rule", `State the rule for: ${c.title}`, c.rule, c.surgicalReason || undefined));
+      cards.push(card(`${p}-rule`, "fact", `State the rule for: ${c.title}`, c.rule, c.surgicalReason || undefined));
     if (c.surgicalReason && c.surgicalReason !== c.pattern && c.surgicalReason !== c.rule)
-      cards.push(card(`${p}-why`, "reason", `Why does "${c.title}" work this way?`, c.surgicalReason));
+      cards.push(card(`${p}-why`, "mechanism", `Why does "${c.title}" work this way?`, c.surgicalReason));
     if (c.trap)
-      cards.push(card(`${p}-trap`, "trap", `⚠️ What is the trap for: ${c.title}?`, c.trap));
+      cards.push(card(`${p}-trap`, "concept", `⚠️ What is the trap for: ${c.title}?`, c.trap));
   });
 
   note.memoryShortcuts.forEach((s, i) => {
-    cards.push(card(`mem-${i}`, "memory", "Complete the memory shortcut:", s));
+    cards.push(card(`mem-${i}`, "fact", "Complete the memory shortcut:", s));
   });
 
   return {
@@ -460,16 +464,16 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
 export function buildRecallSetFromThoughtUnit(detail: ThoughtUnitDetail, opts?: BuildRecallSetOpts): RecallSet {
   const cards: RecallCard[] = [];
 
-  cards.push(card("tu-recall", "core", detail.recallCard.front, detail.recallCard.back));
+  cards.push(card("tu-recall", "concept", detail.recallCard.front, detail.recallCard.back));
 
   if (detail.mechanism && detail.mechanism !== detail.recallCard.back)
-    cards.push(card("tu-mech", "definition", `What is the mechanism behind: ${detail.title}?`, detail.mechanism));
+    cards.push(card("tu-mech", "mechanism", `What is the mechanism behind: ${detail.title}?`, detail.mechanism));
   if (detail.commonConfusion && detail.commonConfusion !== detail.recallCard.back)
-    cards.push(card("tu-conf", "trap", `⚠️ What is the common confusion about: ${detail.title}?`, detail.commonConfusion));
+    cards.push(card("tu-conf", "concept", `⚠️ What is the common confusion about: ${detail.title}?`, detail.commonConfusion));
   if (detail.examTrap && detail.examTrap !== detail.recallCard.back)
-    cards.push(card("tu-trap", "trap", `⚠️ What is the exam trap for: ${detail.title}?`, detail.examTrap));
+    cards.push(card("tu-trap", "concept", `⚠️ What is the exam trap for: ${detail.title}?`, detail.examTrap));
   if (detail.datFact && detail.datFact !== detail.recallCard.back)
-    cards.push(card("tu-dat", "rule", `What is the DAT high-yield fact for: ${detail.title}?`, detail.datFact));
+    cards.push(card("tu-dat", "fact", `What is the DAT high-yield fact for: ${detail.title}?`, detail.datFact));
 
   return {
     id:          stableRecallId(detail.bookId, detail.pageNumber, `tu-${detail.evidenceRefId}`),
@@ -479,6 +483,47 @@ export function buildRecallSetFromThoughtUnit(detail: ThoughtUnitDetail, opts?: 
     pageNumber:  detail.pageNumber,
     subject:     inferSubject(detail.bookId),
     topic:       detail.title,
+    cards,
+    createdAt:   Date.now(),
+  };
+}
+
+// ── Build a Weak Topics review set (real missed-card aggregation) ─────────
+// Pulls every card across the given sets that's actually been missed
+// (isMissed, or rated "hard") — not a fallback generator, just a fresh
+// session over real review history. Built in-memory like
+// buildRecallSetFromThoughtUnit, so re-running it always reflects the
+// current miss state instead of going stale in storage. `sets` is expected
+// to already be scoped to the relevant book(s) by the caller.
+
+export function buildWeakTopicReviewSet(
+  sets: RecallSet[],
+  opts?: BuildRecallSetOpts
+): RecallSet | null {
+  const missed = sets.flatMap((s) =>
+    s.cards.filter((c) => c.isMissed || c.difficulty === "hard").map((c) => ({ setId: s.id, setTopic: s.topic, c }))
+  );
+
+  if (missed.length === 0) return null;
+
+  const bookId = sets[0]?.bookId ?? "all";
+  const cards: RecallCard[] = missed.slice(0, 30).map(({ setId, setTopic, c }, i) => ({
+    ...c,
+    id: `weak-${i}-${c.id}`,
+    type: "weak-review",
+    tag: c.tag ?? setTopic,
+    originSetId: setId,
+    originCardId: c.id,
+  }));
+
+  return {
+    id:          `rs-${bookId}-weak-review`,
+    bookId,
+    bookTitle:   opts?.bookTitle,
+    sourceLabel: "weak-review",
+    pageNumber:  0,
+    subject:     inferSubject(bookId),
+    topic:       "Weak Topics Review",
     cards,
     createdAt:   Date.now(),
   };
