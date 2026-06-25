@@ -54,6 +54,7 @@ function validSynthField(text: string | undefined | null, domain: string | null,
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
 import StudySpeechPanel, { type StudySpeechPanelHandle } from "./StudySpeechPanel";
 
@@ -962,6 +963,17 @@ export function RightPanel({
     return result;
   }, [ultraPageView, teachingSynthesis, ctx?.pageNumber, ctx?.sectionTitle, ctx?.chapterTitle]);
 
+  // Auto-detected domain preset — same keyword-matching detectDomainPreset() the
+  // left panel uses, run independently here on whatever page text RightPanel
+  // already has, so visualAnchors rank anchors the same way the navigator/roadmap
+  // order thought units for this domain. Known limitation: this doesn't see the
+  // left panel's manual preset override (that state lives in PureReaderView, not
+  // shared with RightPanel today) — auto-detection only.
+  const detectedPresetId = useMemo(
+    () => detectDomainPreset(ctx?.pageText ?? "", ctx?.chapterTitle ?? ctx?.sectionTitle ?? undefined),
+    [ctx?.pageText, ctx?.chapterTitle, ctx?.sectionTitle],
+  );
+
   // Typed study model built when synthesis resolves — shared with all downstream features.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
     const synth = (ultraPageViewWithSynthesis as any)?._synth as Record<string, unknown> | undefined;
@@ -971,8 +983,9 @@ export function RightPanel({
       synth,
       ctx?.documentId ?? "",
       ctx?.pageNumber ?? 0,
+      detectedPresetId,
     );
-  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber]);
+  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber, detectedPresetId]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {

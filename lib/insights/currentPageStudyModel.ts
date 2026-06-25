@@ -9,6 +9,8 @@
 
 import type { MiniTestItem, PageType } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanThesisLine, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
+import type { ParagraphKind } from "@/lib/readerContracts";
+import { getKindPriorityIndex } from "@/lib/insights/domainPresets";
 
 // ---------------------------------------------------------------------------
 // VisualAnchor — the final left-panel highlight contract.
@@ -48,6 +50,9 @@ export type VisualAnchor = {
 };
 
 // Role priority — determines render order and budget arbitration.
+// Used only as the universal/no-preset fallback; by construction this matches
+// DEFAULT_KIND_ORDER's relative order exactly, so passing no presetId (or
+// "universal") to buildStudyModel reproduces the same anchor order as before.
 const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   coreIdea:        1,
   datFact:         2,
@@ -57,6 +62,26 @@ const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   definition:      6,
   keyDetail:       7,
 };
+
+// Maps each VisualAnchorRole onto the closest-fit ParagraphKind, so the same
+// domain-priority sequence the left-panel navigator/roadmap use (kindGroups
+// ordinal position) can also rank anchors for the left-panel PDF overlay and
+// the speech engine — "One Brain, Three Views" for anchor importance, not
+// just labels.
+const VISUAL_ROLE_TO_KIND: Record<VisualAnchorRole, ParagraphKind> = {
+  coreIdea:        "thesis",
+  datFact:         "dat_fact",
+  mechanism:       "mechanism",
+  confusionTrap:   "trap",
+  exampleEvidence: "application",
+  definition:      "definition",
+  keyDetail:       "formula",
+};
+
+function rolePriority(role: VisualAnchorRole, presetId: string): number {
+  if (!presetId || presetId === "universal") return ROLE_PRIORITY[role] ?? 6;
+  return getKindPriorityIndex(presetId, VISUAL_ROLE_TO_KIND[role]);
+}
 
 function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
   switch (anchorType) {
@@ -300,7 +325,8 @@ export function buildStudyModel(
   },
   synth: Record<string, unknown>,
   bookId: string,
-  page: number
+  page: number,
+  presetId: string = "universal",
 ): CurrentPageStudyModel {
   const thesis = (view.coreIdea || view.title || "") as string;
   const rawExtLinks = (synth.externalStudyLinks as Array<{ label: string; searchQuery: string; type: string }> | null) ?? [];
@@ -345,7 +371,7 @@ export function buildStudyModel(
       exactText:   s.text,
       role:        s.role,
       reason:      s.reason,
-      priority:    ROLE_PRIORITY[s.role] ?? 6,
+      priority:    rolePriority(s.role, presetId),
       spanStart:   s.spanStart ?? undefined,
       spanEnd:     s.spanEnd   ?? undefined,
     }))

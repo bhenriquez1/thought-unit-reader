@@ -16,6 +16,7 @@ import {
 } from "@/lib/speech/studySpeechEngine";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
+import { renderStars } from "@/lib/insights/importanceTiers";
 import {
   claimSpeech,
   isSpeechStale,
@@ -231,6 +232,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Eye Guide: tracks the snippet currently being spoken
   const [eyeText, setEyeText]   = useState<string | null>(null);
   const [eyeRole, setEyeRole]   = useState<string | null>(null);
+  // Guided mode only: star tier of the segment currently being spoken
+  const [eyeTier, setEyeTier]   = useState<{ stars: number; label: string } | null>(null);
 
   // Active audio element ref — so we can stop/pause
   const audioRef   = useRef<HTMLAudioElement | null>(null);
@@ -268,6 +271,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
+    setEyeTier(null);
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -278,6 +282,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
+    setEyeTier(null);
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -288,6 +293,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
+    setEyeTier(null);
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -498,6 +504,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setPlayState("idle");
     setEyeText(null);
     setEyeRole(null);
+    setEyeTier(null);
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -717,6 +724,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setSegIdx(i);
       setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
+      setEyeTier(null);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
@@ -764,6 +772,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
       setEyeText(seg.text.slice(0, 160));
       setEyeRole(seg.role ?? "highlights");
+      setEyeTier(null);
       if (seg.evidenceRefId) {
         console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
         console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
@@ -897,6 +906,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       setEyeText(seg.text.slice(0, 160));
       setEyeRole(seg.role ?? mode);
+      setEyeTier(seg.tier ?? null);
       if (seg.evidenceRefId) {
         onEvidenceFocus?.(seg.evidenceRefId);
         console.log("[SPEECH_EYE_FOCUS]", {
@@ -925,7 +935,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
-          await new Promise((r) => setTimeout(r, 250));
+          await new Promise((r) => setTimeout(r, seg.pauseAfterMs ?? 250));
         }
       } catch (err: unknown) {
         if (isStale(session)) break;
@@ -974,6 +984,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
+    setEyeTier(null);
     onEvidenceFocus?.(null);
   }
 
@@ -1118,6 +1129,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                   <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: ec.text, textTransform: "uppercase" }}>
                     {eyeRole === "fullPage" ? "Full Page" : eyeRole ?? "Reading"}
                   </span>
+                  {eyeTier && (
+                    <span style={{ fontSize: 9, color: ec.text, letterSpacing: "-0.02em" }} title={`${eyeTier.label} priority`} data-testid="speech-eye-tier-stars">
+                      {renderStars(eyeTier.stars)}
+                    </span>
+                  )}
                 </div>
                 <p style={{ margin: 0, fontSize: 11, color: "#cbd5e1", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const }}>
                   {eyeText}
@@ -1140,6 +1156,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                     <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", color: s.text, textTransform: "uppercase", paddingTop: 1, flexShrink: 0, minWidth: 52 }}>
                       {isActive && isPlaying ? "▶ " : ""}{seg.label}
                     </span>
+                    {seg.tier && (
+                      <span
+                        style={{ fontSize: 8, color: s.text, letterSpacing: "-0.02em", flexShrink: 0, paddingTop: 1 }}
+                        title={`${seg.tier.label} priority`}
+                        data-testid="speech-importance-stars"
+                      >
+                        {renderStars(seg.tier.stars)}
+                      </span>
+                    )}
                     <span style={{ fontSize: 11, color: isActive ? "#e2e8f0" : "#64748b", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}>
                       {seg.rawText}
                     </span>
