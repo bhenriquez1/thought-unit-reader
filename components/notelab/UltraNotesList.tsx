@@ -523,6 +523,11 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
   "Memory Hook":       { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
   "Recall Questions":  { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "📝" },
   "Source":            { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
+  "Clinical Reasoning": { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧩" },
+  "Common Mistake":     { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "❌" },
+  "Exam Strategy":      { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🎯" },
+  "Connection Map":     { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🔗" },
+  "Clinical Pearl":     { accent: "#facc15", bg: "rgba(250,204,21,0.06)",  icon: "💎" },
 };
 
 function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {

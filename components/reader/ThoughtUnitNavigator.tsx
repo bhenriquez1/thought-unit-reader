@@ -14,6 +14,7 @@
 import React, { useMemo, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
+import DomainModeSelector from "./DomainModeSelector";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -49,6 +50,9 @@ export default function ThoughtUnitNavigator({
   onOpenRecall,
   onOpenNote,
   presetId = "universal",
+  detectedPresetLabel,
+  overridePresetId,
+  onPresetChange,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -60,6 +64,11 @@ export default function ThoughtUnitNavigator({
   onOpenNote?: (id: string) => void;
   /** Level 4 domain preset id (from lib/insights/domainPresets) — relabels kind groups only. */
   presetId?: string;
+  /** When provided alongside overridePresetId/onPresetChange, renders the "MODE: X" picker
+   *  inline in this navigator's own header instead of as a separate sibling component. */
+  detectedPresetLabel?: string;
+  overridePresetId?: string | null;
+  onPresetChange?: (presetId: string | null) => void;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -77,16 +86,35 @@ export default function ThoughtUnitNavigator({
     });
   };
 
+  const header = (
+    <div className="flex items-center justify-between gap-2 px-1">
+      <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
+        Thought Units
+      </span>
+      {detectedPresetLabel !== undefined && onPresetChange && (
+        <DomainModeSelector
+          detectedPresetLabel={detectedPresetLabel}
+          overridePresetId={overridePresetId ?? null}
+          onChange={onPresetChange}
+        />
+      )}
+    </div>
+  );
+
   if (entries.length === 0) {
     return (
-      <div className="px-2.5 py-3 text-[10.5px] text-white/35 leading-relaxed">
-        No thought units detected on this page yet.
+      <div className="flex flex-col gap-2">
+        {header}
+        <div className="px-2.5 py-3 text-[10.5px] text-white/35 leading-relaxed">
+          No thought units detected on this page yet.
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
+      {header}
       {grouped.map(({ id, label, representativeKind, items }) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };

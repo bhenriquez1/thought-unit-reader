@@ -200,6 +200,9 @@ interface Props {
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
    *  reading highlight in the PDF (focusHighlightPersist). */
   onPlayStateChange?: (isReading: boolean) => void;
+  /** Render as the promoted primary Study Tools action ("▶ Listen to this page"),
+   *  open by default, instead of the compact collapsed header. */
+  primary?: boolean;
 }
 
 export interface StudySpeechPanelHandle {
@@ -211,10 +214,10 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus, onPlayStateChange },
+  { studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus, onPlayStateChange, primary = false },
   ref,
 ) {
-  const [open, setOpen]       = useState(false);
+  const [open, setOpen]       = useState(primary);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
   const [speed, setSpeed]     = useState(1.0);
@@ -1002,7 +1005,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+    <div style={primary
+      ? { borderRadius: 14, border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", overflow: "hidden" }
+      : { borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
       <style>{`@keyframes eyePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.7)} }`}</style>
       {/* Header */}
       <button
@@ -1012,10 +1017,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           if (!next) stop(); // closing the panel must stop speech
           return next;
         })}
-        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+        style={primary
+          ? { display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "12px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }
+          : { display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
       >
-        <span style={{ fontSize: 13 }}>🎧</span>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#94a3b8", textTransform: "uppercase" }}>Study Speech</span>
+        <span style={{ fontSize: primary ? 17 : 13 }}>{primary ? "▶" : "🎧"}</span>
+        <span style={primary
+          ? { fontSize: 13, fontWeight: 700, color: "#c7d2fe" }
+          : { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#94a3b8", textTransform: "uppercase" }}>
+          {primary ? "Listen to this page" : "Study Speech"}
+        </span>
         {isPlaying && (
           <span style={{ marginLeft: "auto", fontSize: 10, color: "#a5b4fc", fontWeight: 600 }}>▶ Playing…</span>
         )}

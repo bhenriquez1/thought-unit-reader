@@ -399,6 +399,23 @@ export function buildNoteFromStudyModel(
     sections.push({ label: "Recall Questions", content: recallQs.map((q, i) => `${i + 1}. ${q}`).join("\n") });
   }
 
+  // Level 2 — deeper reasoning fields, each its own section when resolved
+  if (sn.clinicalReasoning) {
+    sections.push({ label: "Clinical Reasoning", content: sn.clinicalReasoning });
+  }
+  if (sn.commonMistake) {
+    sections.push({ label: "Common Mistake", content: sn.commonMistake });
+  }
+  if (sn.examStrategy) {
+    sections.push({ label: "Exam Strategy", content: sn.examStrategy });
+  }
+  if (sn.connectionMap) {
+    sections.push({ label: "Connection Map", content: sn.connectionMap });
+  }
+  if (sn.clinicalPearl) {
+    sections.push({ label: "Clinical Pearl", content: sn.clinicalPearl });
+  }
+
   // 7. Source — book title, page, topic
   const sourceParts = [
     bookTitle ? `Book: ${bookTitle}` : null,
