@@ -396,8 +396,12 @@ export default function WhiteboardPanel({
     await runGenerate();
   };
 
-  /** "AI Drawing" mode — Phase 1 (GPT teaching script) + Phase 2 (image model). */
-  const generateAIDrawing = useCallback(async () => {
+  /** "AI Drawing" mode — Phase 1 (GPT teaching script) + Phase 2 (image model).
+   *  `auto` marks the mount-triggered call (vs. a manual "Generate Drawing"
+   *  click) — only auto calls silently fall back to the real diagram-steps
+   *  view on failure, so a user who deliberately picked AI Drawing isn't
+   *  yanked away from the tab they chose. */
+  const generateAIDrawing = useCallback(async (auto = false) => {
     if (!effectiveConcept) return;
     setAiImageLoading(true);
     setAiImageError(null);
@@ -423,6 +427,10 @@ export default function WhiteboardPanel({
           setAiImageDebugInfo({ ...data.debugInfo, error: data.error });
         } else {
           setAiImageError(data.error);
+          if (auto) {
+            console.warn("[WHITEBOARD_AI_DRAWING_AUTO_FALLBACK]", { reason: data.error });
+            setWbMode("steps");
+          }
         }
         return;
       }
@@ -435,6 +443,7 @@ export default function WhiteboardPanel({
       setAiImageUrl(null);
       setAiTeachingScript("");
       setAiImageError(err?.message ?? "Something went wrong generating the drawing.");
+      if (auto) setWbMode("steps");
     } finally {
       setAiImageLoading(false);
     }
@@ -445,7 +454,7 @@ export default function WhiteboardPanel({
   useEffect(() => {
     if (wbMode !== "aiDrawing") return;
     if (!effectiveConcept) return;
-    generateAIDrawing();
+    generateAIDrawing(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only — new concept means a new key/remount of this panel
 
@@ -761,7 +770,7 @@ export default function WhiteboardPanel({
                   <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
                   <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
                 </select>
-                <Button onClick={generateAIDrawing} disabled={aiImageLoading || !effectiveConcept}>
+                <Button onClick={() => generateAIDrawing()} disabled={aiImageLoading || !effectiveConcept}>
                   {aiImageLoading ? "Drawing..." : "🖌️ Generate Drawing"}
                 </Button>
               </div>

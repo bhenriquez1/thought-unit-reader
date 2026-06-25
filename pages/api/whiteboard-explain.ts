@@ -2,6 +2,8 @@
 // Universal visual teaching engine — subject-agnostic.
 // Visualizes ONLY what is already in the study model (no independent concept invention).
 import type { NextApiRequest, NextApiResponse } from "next";
+import { generateWhiteboardStepsFromModel, splitMechanism, trunc } from "@/lib/insights/whiteboardFromStudyModel";
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -126,59 +128,46 @@ function buildModelContext(studyModel: any): string {
 
 /* ─── Fallback (no API key / API error) ─────────────────────────────────── */
 
+/**
+ * No-API-key / API-failure fallback. Reuses the zero-API-call diagram
+ * generator (lib/insights/whiteboardFromStudyModel) so the fallback path
+ * still draws real nodes/arrows instead of degrading to text/bullets.
+ */
 function buildFallbackSteps(concept: string, context: string, studyModel: any): Step[] {
-  const anchors: any[] = Array.isArray(studyModel?.visualAnchors) ? studyModel.visualAnchors : [];
-  const firstAnchor    = anchors[0];
+  const hasRichModel =
+    studyModel && typeof studyModel === "object" &&
+    (studyModel.pageThesis || studyModel.studyNotes || (studyModel.conceptBlocks?.length ?? 0) > 0);
 
-  const base = (s: string) => (s || "").trim().slice(0, 180) + ((s || "").length > 180 ? "…" : "");
+  if (hasRichModel) {
+    const wbSteps = generateWhiteboardStepsFromModel(studyModel as CurrentPageStudyModel, 0).slice(0, 5);
+    if (wbSteps.length > 0) {
+      return wbSteps.map((ws) => ({
+        title: ws.title || "Diagram",
+        content: ws.description || ws.spokenLine || "",
+        type: "draw",
+        drawType: ws.drawType as Step["drawType"],
+        nodes: ws.nodes,
+        arrows: ws.arrows,
+        payload: { text: ws.description, anchorId: ws.evidenceRefId ?? null, sourceField: null },
+        objects: ["sketch", "arrow", "label"],
+      }));
+    }
+  }
+
+  // No usable study model — still draw something real from concept/context text
+  // rather than falling back to a text-only slide.
+  const topic = concept || context || studyModel?.pageThesis || "This concept";
+  const { nodes, arrows } = splitMechanism(topic);
   return [
     {
-      title: "Big Picture",
-      content: `${context || "This section"}: what this is and why it matters.`,
-      type: "text",
-      payload: { text: `${context || "This section"}: what this is and why it matters.` },
-    },
-    {
-      title: "Core Idea",
-      content: base(concept || studyModel?.pageThesis || "Core concept"),
-      type: "text",
-      payload: {
-        text: base(concept || studyModel?.pageThesis || ""),
-        anchorId: firstAnchor?.id ?? null,
-        sourceField: firstAnchor?.sourceField ?? null,
-      },
-    },
-    {
       title: "Visual Diagram",
-      content: "Sketch a simple diagram with 2–4 labeled parts.",
+      content: trunc(topic, 180),
       type: "draw",
-      payload: {
-        prompt: studyModel?.studyNotes?.keyMechanism
-          ? `Diagram: ${studyModel.studyNotes.keyMechanism}`
-          : "Simple labeled diagram with 2–4 parts.",
-        anchorId: anchors[1]?.id ?? null,
-        sourceField: anchors[1]?.sourceField ?? null,
-      },
-    },
-    {
-      title: "Key Mechanism",
-      content: studyModel?.studyNotes?.keyMechanism || "How the core process works step by step.",
-      type: "text",
-      payload: {
-        text: studyModel?.studyNotes?.keyMechanism || "How the core process works.",
-        anchorId: anchors[2]?.id ?? null,
-        sourceField: "keyMechanism",
-      },
-    },
-    {
-      title: "Common Confusion",
-      content: studyModel?.studyNotes?.commonConfusion || "A frequent misconception and how to avoid it.",
-      type: "text",
-      payload: {
-        text: studyModel?.studyNotes?.commonConfusion || "A frequent misconception and how to avoid it.",
-        anchorId: anchors[3]?.id ?? null,
-        sourceField: "commonConfusion",
-      },
+      drawType: arrows.length > 0 ? "flow" : "anatomy",
+      nodes,
+      arrows,
+      payload: { text: trunc(topic, 180) },
+      objects: ["sketch", "arrow", "label"],
     },
   ];
 }
