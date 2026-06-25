@@ -1194,6 +1194,8 @@ export function RightPanel({
         open={recallOpen}
         onClose={() => setRecallOpen(false)}
         recall={shadowRecall}
+        bookId={ctx?.documentId}
+        pageNumber={ctx?.pageNumber}
         preReadRecallItems={studyModel?.preReadRecallItems}
         synthForDerive={teachingSynthesis ? {
           coreIdea:       teachingSynthesis.coreIdea,
@@ -2832,11 +2834,18 @@ function MiniTestPanel({
   bookId,
   pageNumber,
   title = "Page Checkpoint",
+  recallSetIdPrefix = "missed",
+  topicLabel = "Mini Test Missed",
 }: {
   items: MiniTestItemData[];
   bookId: string;
   pageNumber: number;
   title?: string;
+  /** Distinguishes this panel's saved-missed RecallSet from another
+   *  MiniTestPanel on the same page (e.g. Shadow Recall vs. Page Checkpoint)
+   *  so their saves don't collide on the same stable RecallSet id. */
+  recallSetIdPrefix?: string;
+  topicLabel?: string;
 }) {
   const [answers, setAnswers] = useState<string[]>(() => Array(items.length).fill(""));
   const [submitted, setSubmitted] = useState(false);
@@ -2879,14 +2888,16 @@ function MiniTestPanel({
 
     if (!missedCards.length) return;
 
-    // Use stable ID so repeated saves upsert rather than duplicate
-    const missedId = `rs-missed-${bookId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)}-p${pageNumber}`;
+    // Use stable ID so repeated saves upsert rather than duplicate.
+    // recallSetIdPrefix keeps Shadow Recall and Page Checkpoint saves on the
+    // same page from colliding on (and overwriting) each other's RecallSet.
+    const missedId = `rs-${recallSetIdPrefix}-${bookId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)}-p${pageNumber}`;
     saveRecallSet({
       id: missedId,
       bookId,
       pageNumber,
       subject: inferSubject(bookId),
-      topic: `Mini Test Missed — Page ${pageNumber}`,
+      topic: `${topicLabel} — Page ${pageNumber}`,
       cards: missedCards,
       createdAt: Date.now(),
     }).catch((e) => console.error("[RECALL_MISSED_SAVE_FAIL]", String(e)));
@@ -3558,12 +3569,16 @@ function PreReadRecallDrawer({
   open,
   onClose,
   recall,
+  bookId,
+  pageNumber,
   preReadRecallItems,
   synthForDerive,
 }: {
   open: boolean;
   onClose: () => void;
   recall: ShadowRecallModel | null;
+  bookId?: string;
+  pageNumber?: number;
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
   synthForDerive?: SynthesisForRecall | null;
 }) {
@@ -3594,9 +3609,11 @@ function PreReadRecallDrawer({
           {items?.length ? (
             <MiniTestPanel
               items={items}
-              bookId=""
-              pageNumber={0}
+              bookId={bookId ?? ""}
+              pageNumber={pageNumber ?? 0}
               title="Pre-Read Recall"
+              recallSetIdPrefix="shadow-missed"
+              topicLabel="Shadow Recall Missed"
             />
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">

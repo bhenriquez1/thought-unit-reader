@@ -213,11 +213,16 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   console.log("[RECALL_SAVE_START]", { id: c.id, bookId: c.bookId, page: c.pageNumber, cards: c.cards.length });
   console.log("[RECALL_SET_ID]", c.id);
 
-  // Remove legacy entries for same book+page with a DIFFERENT id (old non-stable IDs)
+  // Remove legacy entries for same book+page with a DIFFERENT id (old non-stable,
+  // pre-"rs-" IDs). Every current producer (stableRecallId, MiniTestPanel's missed-
+  // set IDs, etc.) emits an "rs-"-prefixed ID, and several features intentionally
+  // keep multiple "rs-"-prefixed sets per book+page (e.g. a sticky-note set, a
+  // thought-unit set, and a missed-questions set can all coexist on one page).
+  // Only ids that don't even match that modern scheme are true legacy debris.
   try {
     const existing = await idbGetAll();
     const stale = existing.filter(
-      (s) => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id
+      (s) => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id && !s.id.startsWith("rs-")
     );
     for (const s of stale) {
       await idbDelete(s.id);
