@@ -12,6 +12,16 @@ import {
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { downloadNoteMarkdown, downloadNotePdf, downloadNotesMarkdown, downloadNotesPdf } from "@/lib/notelab/exportNote";
+import {
+  PROFESSION_MODES,
+  getStoredProfessionMode,
+  setStoredProfessionMode,
+  getSectionLens,
+  getProfessorFieldLabel,
+  getConceptFieldLabel,
+  type ProfessionMode,
+} from "@/lib/notelab/professionModes";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -42,7 +52,13 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<NoteSubject>>(new Set());
   const [collapsedBooks, setCollapsedBooks]       = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<UltraNote | null>(null);
+  const [mode, setMode] = useState<ProfessionMode>(() => getStoredProfessionMode());
   const mountedRef = useRef(true);
+
+  function handleModeChange(next: ProfessionMode) {
+    setMode(next);
+    setStoredProfessionMode(next);
+  }
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
@@ -138,6 +154,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
         {confirmDelete && (
           <DeleteModal note={confirmDelete} onConfirm={executeDelete} onCancel={() => setConfirmDelete(null)} />
         )}
+        <ModeSelector mode={mode} onChange={handleModeChange} />
         <div style={{ padding: "40px 24px", textAlign: "center", color: "rgba(148,163,184,0.7)" }}>
           <div style={{ fontSize: 40, marginBottom: 14 }}>📝</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginBottom: 8 }}>No notes yet</div>
@@ -166,6 +183,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       {confirmDelete && (
         <DeleteModal note={confirmDelete} onConfirm={executeDelete} onCancel={() => setConfirmDelete(null)} />
       )}
+      <ModeSelector mode={mode} onChange={handleModeChange} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px" }}>
         {usedSubjects.map((subject) => {
           const byBook = bySubject.get(subject)!;
@@ -192,15 +210,18 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                 return (
                   <div key={bid} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     {!bookId && (
-                      <div
-                        onClick={() => toggleBook(bookKey)}
-                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 18px", cursor: "pointer", userSelect: "none" }}
-                      >
-                        <span style={{ fontSize: 13 }}>📖</span>
-                        <span style={{ flex: 1, fontSize: 12, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {bookNotes[0]?.bookTitle || bid}
-                        </span>
-                        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.35)" }}>{isBookCollapsed ? "▶" : "▼"}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 18px" }}>
+                        <div
+                          onClick={() => toggleBook(bookKey)}
+                          style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, cursor: "pointer", userSelect: "none" }}
+                        >
+                          <span style={{ fontSize: 13 }}>📖</span>
+                          <span style={{ flex: 1, fontSize: 12, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {bookNotes[0]?.bookTitle || bid}
+                          </span>
+                        </div>
+                        <ExportAllMenu notes={bookNotes} title={bookNotes[0]?.bookTitle || bid} mode={mode} />
+                        <span onClick={() => toggleBook(bookKey)} style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", cursor: "pointer", userSelect: "none" }}>{isBookCollapsed ? "▶" : "▼"}</span>
                       </div>
                     )}
 
@@ -212,6 +233,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                             <NoteCard
                               key={note.id}
                               note={note}
+                              mode={mode}
                               isExpanded={isExpanded}
                               copiedId={copiedId}
                               onToggle={() => setExpandedId(isExpanded ? null : note.id)}
@@ -279,12 +301,42 @@ function DeleteModal({ note, onConfirm, onCancel }: { note: UltraNote; onConfirm
   );
 }
 
+// ── ModeSelector — profession lens switcher (Surgeon/Pilot/Dental/Default) ─
+
+function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: ProfessionMode) => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px 0" }}>
+      <span style={{ fontSize: 12, color: "rgba(148,163,184,0.7)", fontWeight: 600 }}>🎭 Lens:</span>
+      <select
+        value={mode}
+        onChange={(e) => onChange(e.target.value as ProfessionMode)}
+        style={{
+          flex: "0 0 auto",
+          padding: "5px 9px",
+          borderRadius: 7,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "#0d1628",
+          color: "rgba(255,255,255,0.88)",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        {PROFESSION_MODES.map((m) => (
+          <option key={m.id} value={m.id}>{m.icon} {m.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, isExpanded, copiedId, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard,
+  note, mode, isExpanded, copiedId, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard,
 }: {
   note: UltraNote;
+  mode: ProfessionMode;
   isExpanded: boolean;
   copiedId: string | null;
   onToggle: () => void;
@@ -347,49 +399,58 @@ function NoteCard({
 
           {/* New-schema sections (Core Idea, Must Know, Mechanism, etc.) */}
           {hasNewSchema(note.sections) ? (
-            <SectionsView sections={note.sections!} />
+            <SectionsView sections={note.sections!} mode={mode} />
           ) : (
             <>
               {/* Core Idea */}
-              {note.coreIdea && (
-                <NoteBlock accent="#fbbf24" bg="rgba(251,191,36,0.06)" icon="🧠" label="CORE IDEA">
-                  <div style={{ fontSize: 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.7 }}>{note.coreIdea}</div>
-                </NoteBlock>
-              )}
+              {note.coreIdea && (() => {
+                const lens = getSectionLens(mode, "Core Idea");
+                return (
+                  <NoteBlock accent="#fbbf24" bg="rgba(251,191,36,0.06)" icon={lens?.icon ?? "🧠"} label={(lens?.label ?? "Core Idea").toUpperCase()}>
+                    <div style={{ fontSize: 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.7 }}>{note.coreIdea}</div>
+                  </NoteBlock>
+                );
+              })()}
 
               {/* Professor Notes */}
-              {note.professorNotes && <ProfessorSection notes={note.professorNotes} />}
+              {note.professorNotes && <ProfessorSection notes={note.professorNotes} mode={mode} />}
 
               {/* Mini Table — condensed pattern/trap/rule overview across all concepts */}
-              {note.concepts.length > 1 && <ConceptMiniTable concepts={note.concepts} />}
+              {note.concepts.length > 1 && <ConceptMiniTable concepts={note.concepts} mode={mode} />}
 
               {/* Concept blocks — each collapsible */}
               {note.concepts.length > 0 && note.concepts.map((c) => (
-                <ConceptBlock key={c.ordinal} concept={c} />
+                <ConceptBlock key={c.ordinal} concept={c} mode={mode} />
               ))}
             </>
           )}
 
           {/* Memory shortcuts + Mini Test — only for legacy notes (new schema embeds these in sections) */}
-          {!hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (
-            <NoteBlock accent="#a78bfa" bg="rgba(167,139,250,0.05)" icon="🧠" label="MEMORY HOOKS">
-              {note.memoryShortcuts.map((s, i) => (
-                <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: i < note.memoryShortcuts.length - 1 ? 6 : 0 }}>
-                  👉 {s}
-                </div>
-              ))}
-            </NoteBlock>
-          )}
+          {!hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (() => {
+            const lens = getSectionLens(mode, "Memory Hook");
+            return (
+              <NoteBlock accent="#a78bfa" bg="rgba(167,139,250,0.05)" icon={lens?.icon ?? "🧠"} label={(lens?.label ?? "Memory Hooks").toUpperCase()}>
+                {note.memoryShortcuts.map((s, i) => (
+                  <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: i < note.memoryShortcuts.length - 1 ? 6 : 0 }}>
+                    👉 {s}
+                  </div>
+                ))}
+              </NoteBlock>
+            );
+          })()}
 
-          {!hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (
-            <NoteBlock accent="#6ee7b7" bg="rgba(52,211,153,0.05)" icon="📝" label="RECALL QUESTIONS">
-              {note.miniTest.map((q, i) => (
-                <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 4 }}>
-                  {i + 1}. {q}
-                </div>
-              ))}
-            </NoteBlock>
-          )}
+          {!hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (() => {
+            const lens = getSectionLens(mode, "Recall Questions");
+            return (
+              <NoteBlock accent="#6ee7b7" bg="rgba(52,211,153,0.05)" icon={lens?.icon ?? "📝"} label={(lens?.label ?? "Recall Questions").toUpperCase()}>
+                {note.miniTest.map((q, i) => (
+                  <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 4 }}>
+                    {i + 1}. {q}
+                  </div>
+                ))}
+              </NoteBlock>
+            );
+          })()}
 
           {/* External Study Links */}
           {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
@@ -441,6 +502,10 @@ function NoteCard({
             <button type="button" onClick={onCopy} style={actionBtn(copiedId === note.id ? "#10b981" : "#6b7280")}>
               {copiedId === note.id ? "✓ Copied" : "Copy"}
             </button>
+            <ExportMenu
+              onMarkdown={() => downloadNoteMarkdown(note, mode)}
+              onPdf={() => downloadNotePdf(note, mode)}
+            />
           </div>
         </div>
       )}
@@ -460,15 +525,18 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
   "Source":            { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
 };
 
-function SectionsView({ sections }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[] }) {
+function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {sections.map((sec) => {
         const style = SECTION_STYLE[sec.label] ?? { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "•" };
+        const lens = getSectionLens(mode, sec.label);
+        const label = lens?.label ?? sec.label;
+        const icon = lens?.icon ?? style.icon;
         return (
           <div key={sec.label} style={{ borderRadius: 9, border: `1px solid ${style.accent}28`, background: style.bg, padding: "10px 13px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: style.accent, marginBottom: 7 }}>
-              {style.icon} {sec.label.toUpperCase()}
+              {icon} {label.toUpperCase()}
             </div>
             <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {sec.content}
@@ -489,13 +557,20 @@ function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSect
 
 // ── ConceptMiniTable — condensed multi-concept overview (NoteLab v2) ──────
 
-function ConceptMiniTable({ concepts }: { concepts: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept[] }) {
+function ConceptMiniTable({ concepts, mode }: { concepts: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept[]; mode: ProfessionMode }) {
   return (
     <div style={{ borderRadius: 9, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
       <div style={{ padding: "8px 13px", background: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(148,163,184,0.65)" }}>
         📋 MINI TABLE
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr>
+            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}></th>
+            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}>{getConceptFieldLabel(mode, "pattern").toUpperCase()}</th>
+            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}>{getConceptFieldLabel(mode, "trap").toUpperCase()}</th>
+          </tr>
+        </thead>
         <tbody>
           {concepts.map((c) => (
             <tr key={c.ordinal} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
@@ -518,7 +593,7 @@ function ConceptMiniTable({ concepts }: { concepts: import("@/lib/notelab/ultraN
 
 // ── ConceptBlock — individually collapsible ───────────────────────────────
 
-function ConceptBlock({ concept }: { concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept }) {
+function ConceptBlock({ concept, mode }: { concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept; mode: ProfessionMode }) {
   const [collapsed, setCollapsed] = useState(true);
   return (
     <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
@@ -533,10 +608,10 @@ function ConceptBlock({ concept }: { concept: import("@/lib/notelab/ultraNoteSto
       </div>
       {!collapsed && (
         <div style={{ padding: "0 13px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
-          {concept.pattern      && <NoteRow label="Pattern"          text={concept.pattern}        color="#7dd3fc" />}
-          {concept.surgicalReason && <NoteRow label="Why it works"    text={concept.surgicalReason} color="#fde68a" />}
-          {concept.trap         && <NoteRow label="Common trap"       text={concept.trap}           color="#fca5a5" />}
-          {concept.rule         && <NoteRow label="Rule / Memory"     text={concept.rule}           color="#fcd34d" />}
+          {concept.pattern        && <NoteRow label={getConceptFieldLabel(mode, "pattern")}        text={concept.pattern}        color="#7dd3fc" />}
+          {concept.surgicalReason && <NoteRow label={getConceptFieldLabel(mode, "surgicalReason")} text={concept.surgicalReason} color="#fde68a" />}
+          {concept.trap           && <NoteRow label={getConceptFieldLabel(mode, "trap")}           text={concept.trap}           color="#fca5a5" />}
+          {concept.rule           && <NoteRow label={getConceptFieldLabel(mode, "rule")}            text={concept.rule}           color="#fcd34d" />}
         </div>
       )}
     </div>
@@ -545,14 +620,14 @@ function ConceptBlock({ concept }: { concept: import("@/lib/notelab/ultraNoteSto
 
 // ── ProfessorSection ──────────────────────────────────────────────────────
 
-function ProfessorSection({ notes }: { notes: NonNullable<UltraNote["professorNotes"]> }) {
+function ProfessorSection({ notes, mode }: { notes: NonNullable<UltraNote["professorNotes"]>; mode: ProfessionMode }) {
   const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
-    { icon: "💡", label: "Why This Matters",  text: notes.whyItMatters    ?? "", color: "#fbbf24" },
-    { icon: "⚙️", label: "Key Mechanism",     text: notes.keyMechanism    ?? "", color: "#38bdf8" },
-    { icon: "⚠️", label: "Common Confusion",  text: notes.commonConfusion ?? "", color: "#f87171" },
-    { icon: "🧠", label: "Memory Hook",       text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
-    { icon: "🔗", label: "Reasoning Flow",    text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
-    { icon: "🎓", label: "Exam Signal",       text: notes.examSignal      ?? "", color: "#fca5a5" },
+    { icon: "💡", label: getProfessorFieldLabel(mode, "whyItMatters"),    text: notes.whyItMatters    ?? "", color: "#fbbf24" },
+    { icon: "⚙️", label: getProfessorFieldLabel(mode, "keyMechanism"),    text: notes.keyMechanism    ?? "", color: "#38bdf8" },
+    { icon: "⚠️", label: getProfessorFieldLabel(mode, "commonConfusion"), text: notes.commonConfusion ?? "", color: "#f87171" },
+    { icon: "🧠", label: getProfessorFieldLabel(mode, "memoryAnchor"),    text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
+    { icon: "🔗", label: getProfessorFieldLabel(mode, "reasoningFlow"),   text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
+    { icon: "🎓", label: getProfessorFieldLabel(mode, "examSignal"),      text: notes.examSignal      ?? "", color: "#fca5a5" },
   ].filter((r) => r.text.length > 0);
 
   if (!rows.length) return null;
@@ -591,6 +666,78 @@ function NoteRow({ label, text, color }: { label: string; text: string; color: s
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, wordBreak: "break-word" }}>{text}</div>
     </div>
+  );
+}
+
+// ── ExportMenu — small popover offering Markdown / PDF download ──────────
+
+function ExportMenu({ onMarkdown, onPdf }: { onMarkdown: () => void; onPdf: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  async function handlePdf() {
+    setExporting(true);
+    try {
+      await onPdf();
+    } catch (e) {
+      console.error("[NOTELAB_EXPORT_PDF_FAILED]", String(e));
+    } finally {
+      setExporting(false);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div ref={rootRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }} style={{ ...actionBtn("#c4b5fd"), flex: "none", padding: "9px 12px" }}>
+        ⬇ Export
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, background: "#0d1628", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", overflow: "hidden", minWidth: 140 }}
+        >
+          <button type="button" onClick={() => { onMarkdown(); setOpen(false); }} style={exportMenuItem}>
+            📄 Markdown (.md)
+          </button>
+          <button type="button" onClick={handlePdf} disabled={exporting} style={{ ...exportMenuItem, opacity: exporting ? 0.6 : 1, cursor: exporting ? "wait" : "pointer" }}>
+            {exporting ? "Generating…" : "🗎 PDF (.pdf)"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const exportMenuItem: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  padding: "9px 13px",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "rgba(255,255,255,0.85)",
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+};
+
+function ExportAllMenu({ notes, title, mode }: { notes: UltraNote[]; title: string; mode: ProfessionMode }) {
+  return (
+    <ExportMenu
+      onMarkdown={() => downloadNotesMarkdown(notes, title, mode)}
+      onPdf={() => downloadNotesPdf(notes, title, mode)}
+    />
   );
 }
 
