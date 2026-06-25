@@ -14,6 +14,7 @@
 import React, { useMemo, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
+import { getImportanceTier, renderStars, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
 import DomainModeSelector from "./DomainModeSelector";
 
 export interface ThoughtUnitNavigatorEntry {
@@ -115,10 +116,16 @@ export default function ThoughtUnitNavigator({
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
       {header}
-      {grouped.map(({ id, label, representativeKind, items }) => {
+      {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
-        const isCollapsed = collapsedGroups.has(id);
+        // Adaptive Thought Unit Engine: groups arrive in the preset's own expert-priority
+        // order, so ordinal position doubles as an importance tier — low tiers (Supporting/
+        // Minor) start collapsed, same as an expert skimming past the supporting detail.
+        const tier = getImportanceTier(groupIndex);
+        const userToggled = collapsedGroups.has(id);
+        const defaultCollapsed = tier.stars <= DEFAULT_COLLAPSE_AT_OR_BELOW_STARS;
+        const isCollapsed = defaultCollapsed !== userToggled;
         return (
           <div key={id} className="flex flex-col gap-1">
             <button
@@ -132,6 +139,14 @@ export default function ThoughtUnitNavigator({
               />
               <span className="text-[9.5px] font-bold uppercase tracking-wide text-white/55 truncate">
                 {meta.label}
+              </span>
+              <span
+                className="text-[8px] tracking-tighter shrink-0"
+                style={{ color: meta.color }}
+                title={`${tier.label} priority`}
+                data-testid="importance-stars"
+              >
+                {renderStars(tier.stars)}
               </span>
               <span className="text-[9px] text-white/30">{items.length}</span>
               <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>

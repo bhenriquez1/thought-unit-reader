@@ -14,6 +14,7 @@ import React, { useMemo } from "react";
 import type { ThoughtUnitNavigatorEntry } from "./ThoughtUnitNavigator";
 import { KIND_COLORS, FALLBACK_COLOR } from "./ThoughtUnitNavigator";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
+import { getImportanceTier, renderStars } from "@/lib/insights/importanceTiers";
 import type { ParagraphKind } from "@/lib/readerContracts";
 
 export default function ThoughtRoadmap({
@@ -29,14 +30,22 @@ export default function ThoughtRoadmap({
 }) {
   const nodes = useMemo(() => {
     const groups = groupThoughtUnits(entries, presetId);
+    const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);
     return groups
-      .map((g) => ({
+      .map((g, groupIndex) => ({
         id: g.id,
         label: g.label ?? getKindLabel(presetId, g.representativeKind as ParagraphKind),
         representativeKind: g.representativeKind,
         // Highest-confidence item stands in for the whole group; first item when no scores are present.
         top: [...g.items].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0],
         count: g.items.length,
+        // Groups arrive in the preset's own expert-priority order, so ordinal
+        // position doubles as a "decision point" importance tier.
+        tier: getImportanceTier(groupIndex),
+        // Share of this page's thought units this category represents — a heuristic
+        // stand-in for "how much of today's understanding rides on this", not a
+        // measured statistic.
+        impactPct: totalItems > 0 ? Math.round((g.items.length / totalItems) * 100) : 0,
       }))
       .filter((n) => n.top);
   }, [entries, presetId]);
@@ -67,6 +76,19 @@ export default function ThoughtRoadmap({
                 data-testid="thought-roadmap-node"
                 title={node.top.text}
               >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[8px] font-bold uppercase tracking-wide text-white/40">
+                    Decision Point {i + 1}
+                  </span>
+                  <span
+                    className="text-[8px] tracking-tighter shrink-0"
+                    style={{ color: colors.color }}
+                    title={`${node.tier.label} priority`}
+                    data-testid="importance-stars"
+                  >
+                    {renderStars(node.tier.stars)}
+                  </span>
+                </div>
                 <span
                   className="text-[8.5px] font-bold uppercase tracking-wide truncate"
                   style={{ color: colors.color }}
@@ -84,6 +106,18 @@ export default function ThoughtRoadmap({
                 >
                   {node.top.text}
                 </span>
+                {i === 0 && (
+                  <div
+                    className="mt-0.5 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[8px] font-bold"
+                    style={{ background: `${colors.color}22`, color: colors.color }}
+                    data-testid="thought-roadmap-master-badge"
+                  >
+                    <span>🎯 MASTER THIS</span>
+                    <span className="text-white/50 font-normal normal-case">
+                      · est. impact {node.impactPct}%
+                    </span>
+                  </div>
+                )}
               </div>
               {i < nodes.length - 1 && (
                 <span className="self-center text-white/25 text-[12px] shrink-0">↓</span>
