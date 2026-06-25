@@ -500,7 +500,7 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
   });
 
   return {
-    id:           stableRecallId(note.bookId, note.pageNumber, "note"),
+    id:           stableRecallId(note.bookId, note.pageNumber, `note-${note.id}`),
     bookId:       note.bookId,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
