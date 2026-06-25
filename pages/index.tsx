@@ -40,7 +40,7 @@ import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
-import StudySpeechPanel, { type StudySpeechPanelHandle } from "@/components/reader/StudySpeechPanel";
+import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
@@ -1339,7 +1339,6 @@ export default function ThoughtUnitReader() {
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
-  const [showSpeechPanel, setShowSpeechPanel] = useState<boolean>(false);
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
@@ -3875,6 +3874,17 @@ export default function ThoughtUnitReader() {
                 onStudyModelReady={handleStudyModelReady}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
+                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                speechPanelRef={speechPanelRef}
+                onSpeechEvidenceFocus={(id) => {
+                  if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
+                  setFocusedEvidenceId(id);
+                }}
+                onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
+                onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
+                onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
+                onOpenExplainStep={handleOpenExplainStep}
+                onOpenExplainIt={() => handleOpenExplainIt()}
               />
             </div>
 
@@ -4466,77 +4476,6 @@ export default function ThoughtUnitReader() {
           )}
 
 
-          <button
-            onClick={() => setShowSpeechPanel(p => !p)}
-            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
-              showSpeechPanel
-                ? "bg-[rgba(99,102,241,0.45)] border-indigo-400/60"
-                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
-            }`}
-            title="Study Speech — read the PageBrain aloud"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎧</span>
-              <span className="text-sm font-medium hidden sm:block">Speech</span>
-            </div>
-          </button>
-
-          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF.
-              Mounted as soon as the panel is toggled open, independent of whether the
-              Page Brain (RightPanel/OpenAI synthesis) has finished — Current Page mode
-              reads activePageText directly and must start immediately. */}
-          {showSpeechPanel && (
-            <div
-              style={{
-                position: "fixed",
-                bottom: 88,
-                right: 16,
-                width: 340,
-                maxHeight: "calc(100vh - 120px)",
-                overflowY: "auto",
-                zIndex: 55,
-                borderRadius: 16,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
-                border: "1px solid rgba(99,102,241,0.3)",
-                background: "#0d1424",
-              }}
-            >
-              <StudySpeechPanel
-                ref={speechPanelRef}
-                studyModel={currentPageStudyModel}
-                pageNumber={currentPage}
-                bookId={bookId ?? undefined}
-                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-                onEvidenceFocus={(id) => {
-                  if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
-                  setFocusedEvidenceId(id);
-                }}
-                onSnippetFocus={(snippet) => {
-                  setFocusSnippet(snippet);
-                }}
-                onPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
-              />
-            </div>
-          )}
-          
-          {/* Whiteboard FAB */}
-          {!showWhiteboardPanel && (
-            <button
-              onClick={() => {
-                console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "FAB conceptForPage seeding removed — study model is source", page: currentPage });
-                console.log("[WHITEBOARD_CLEAR_STALE]", { page: currentPage, hasStudyModel: !!currentPageStudyModel });
-                setShowWhiteboardPanel(true);
-              }}
-              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-              title="Open Whiteboard Explanation"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🎨</span>
-                <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
-              </div>
-            </button>
-          )}
-
           {/* Read Selection — starts study-speech playback from the active LeftPanel
               text selection, connecting selection -> speech tracking (P4). Falls back
               to the active LeftPanel thought-unit (focusedEvidenceId) when nothing is
@@ -4567,40 +4506,6 @@ export default function ThoughtUnitReader() {
             );
           })()}
 
-          {/* Explain This Step — opens a contextual chatbox for the active LeftPanel selection,
-              or for the current page/thought-unit when nothing is selected */}
-          <button
-            onClick={handleOpenExplainStep}
-            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
-              explainStepContext
-                ? "bg-[rgba(99,102,241,0.45)] border-indigo-400/60"
-                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
-            }`}
-            title={sel.selectionText?.trim() ? "Explain This Step — open chatbox for the selected text" : "Explain This Step — ask about the current page"}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">💬</span>
-              <span className="text-sm font-medium hidden sm:block">Explain This Step</span>
-            </div>
-          </button>
-
-          {/* Explain It — opens an office-hours-style conversation about the current
-              page/topic (not a single selection), sharing context with RightPanel,
-              NoteLab, RecallLab, Study Guide Lab, and Podcast Lab. */}
-          <button
-            onClick={() => handleOpenExplainIt()}
-            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
-              explainItContext
-                ? "bg-[rgba(124,58,237,0.45)] border-violet-400/60"
-                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
-            }`}
-            title="Explain It — talk through the current page/topic with the AI tutor"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎓</span>
-              <span className="text-sm font-medium hidden sm:block">Explain It</span>
-            </div>
-          </button>
         </div>
 
         {/* LeftPanel highlight diagnostics — dev-only (NEXT_PUBLIC_DEBUG_READER=true).

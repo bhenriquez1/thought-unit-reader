@@ -55,6 +55,7 @@ function validSynthField(text: string | undefined | null, domain: string | null,
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
+import StudySpeechPanel, { type StudySpeechPanelHandle } from "./StudySpeechPanel";
 
 // ---------------------------------------------------------------------------
 // Chapter / Unit / Section overview panel — shown when the page is a chapter
@@ -248,6 +249,18 @@ interface RightPanelProps {
   onStudyModelReady?: (model: CurrentPageStudyModel, pageTruthKey: string) => void;
   /** Called when the user wants to expand a thought-unit (visualAnchor) into the Recall Lab v2 box layout */
   onOpenThoughtUnit?: (anchorId: string) => void;
+  /** Extracted page text — feeds the inline Study Speech "Listen to this page" action */
+  activePageText?: string;
+  /** Forwarded to the inline StudySpeechPanel so callers (e.g. PDF text-click) can trigger playback */
+  speechPanelRef?: React.Ref<StudySpeechPanelHandle>;
+  onSpeechEvidenceFocus?: (id: string | null) => void;
+  onSpeechSnippetFocus?: (snippet: string | null) => void;
+  onSpeechPlayStateChange?: (isReading: boolean) => void;
+  /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
+   *  rendered by the caller (pages/index.tsx); RightPanel only surfaces the entry points. */
+  onOpenWhiteboard?: () => void;
+  onOpenExplainStep?: () => void;
+  onOpenExplainIt?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +495,14 @@ export function RightPanel({
   tocItems,
   onStudyModelReady,
   onOpenThoughtUnit,
+  activePageText,
+  speechPanelRef,
+  onSpeechEvidenceFocus,
+  onSpeechSnippetFocus,
+  onSpeechPlayStateChange,
+  onOpenWhiteboard,
+  onOpenExplainStep,
+  onOpenExplainIt,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1162,34 +1183,29 @@ export function RightPanel({
     visibleBlockCount: displayView ? displayView.blocks.filter((b) => !isWeakBlock(b, displayView._debug?.domain)).length : 0,
   });
 
+  const openShadowRecall = () => {
+    console.log("[SHADOW_RECALL_OPEN]", { hasData: !!shadowRecall, page: ctx?.pageNumber ?? null });
+    // DIAGNOSTIC: [SHADOW_RECALL_SOURCE] — which objects are populated when drawer opens?
+    console.log("[SHADOW_RECALL_SOURCE]", {
+      hasStudyModel:       !!studyModel,
+      studyModelPage:      studyModel?.page ?? null,
+      hasShadowRecall:     !!shadowRecall,
+      shadowRecallNullReason: !shadowRecall
+        ? (!isCurrentPageModel ? "isCurrentPageModel=false" : !pageModel ? "pageModel=null" : "unknown")
+        : null,
+      isCurrentPageModel,
+      pageModelPresent:    !!pageModel,
+      intelligenceStatus:  intelligence.status,
+      pageNumber:          ctx?.pageNumber ?? null,
+    });
+    setRecallOpen(true);
+  };
+
   return (
     <>
-    {/* Shadow Recall — floating trigger at bottom-left of viewport; drawer opens from left.
-        Lives at root level (outside aside) so position:fixed is never clipped by scroll container. */}
+    {/* Shadow Recall drawer — lives at root level (outside aside) so position:fixed
+        is never clipped by scroll container. Trigger lives in the Study Tools column below. */}
     <>
-      <button
-        onClick={() => {
-          console.log("[SHADOW_RECALL_OPEN]", { hasData: !!shadowRecall, page: ctx?.pageNumber ?? null });
-          // DIAGNOSTIC: [SHADOW_RECALL_SOURCE] — which objects are populated when drawer opens?
-          console.log("[SHADOW_RECALL_SOURCE]", {
-            hasStudyModel:       !!studyModel,
-            studyModelPage:      studyModel?.page ?? null,
-            hasShadowRecall:     !!shadowRecall,
-            shadowRecallNullReason: !shadowRecall
-              ? (!isCurrentPageModel ? "isCurrentPageModel=false" : !pageModel ? "pageModel=null" : "unknown")
-              : null,
-            isCurrentPageModel,
-            pageModelPresent:    !!pageModel,
-            intelligenceStatus:  intelligence.status,
-            pageNumber:          ctx?.pageNumber ?? null,
-          });
-          setRecallOpen(true);
-        }}
-        className="fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm transition-all hover:bg-violet-900/40 hover:border-violet-400/50 cursor-pointer"
-        title="Pre-Read Recall"
-      >
-        🕶 <span className="hidden sm:inline">Shadow Recall</span>
-      </button>
       <PreReadRecallDrawer
         open={recallOpen}
         onClose={() => setRecallOpen(false)}
@@ -1224,6 +1240,52 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
+        {/* ── STUDY TOOLS — consolidated column: Speech (primary), Whiteboard,
+            Explain This Step, Explain It, Shadow Recall ── */}
+        <div className="rounded-2xl border border-white/8 bg-[#0a1322] p-3 space-y-2.5">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-300/70 px-0.5">Study Tools</div>
+          <StudySpeechPanel
+            ref={speechPanelRef}
+            studyModel={studyModel}
+            pageNumber={ctx?.pageNumber ?? 0}
+            bookId={ctx?.documentId}
+            activePageText={activePageText ?? ctx?.pageText ?? ""}
+            onEvidenceFocus={onSpeechEvidenceFocus}
+            onSnippetFocus={onSpeechSnippetFocus}
+            onPlayStateChange={onSpeechPlayStateChange}
+            primary
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onOpenWhiteboard}
+              disabled={!onOpenWhiteboard}
+              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span>🎨</span> Whiteboard
+            </button>
+            <button
+              onClick={onOpenExplainStep}
+              disabled={!onOpenExplainStep}
+              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span>💬</span> Explain This Step
+            </button>
+            <button
+              onClick={onOpenExplainIt}
+              disabled={!onOpenExplainIt}
+              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span>🎓</span> Explain It
+            </button>
+            <button
+              onClick={openShadowRecall}
+              className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2 text-[11px] font-medium text-violet-300 hover:bg-violet-500/15 transition-colors"
+            >
+              <span>🕶</span> Shadow Recall
+            </button>
+          </div>
+        </div>
+
         {/* ── WIRING CARD — dev only, never shown in production studying ── */}
         {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
           <div style={{
