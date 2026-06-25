@@ -223,6 +223,25 @@ export const DEFAULT_KIND_ORDER: ParagraphKind[] = [
   "thesis", "dat_fact", "mechanism", "trap", "application", "definition", "clinical", "formula",
 ];
 
+/**
+ * Ordinal position of `kind` within a preset's domain-priority sequence —
+ * the same kindGroups array order ThoughtUnitNavigator/ThoughtRoadmap use,
+ * or DEFAULT_KIND_ORDER for presets without kindGroups (mirrors the universal
+ * fallback exactly, so callers that don't pass a preset see unchanged ordering).
+ * Lower index = higher priority. Kinds absent from the preset sort last.
+ * Shared by the left-panel grouping and the speech engine's anchor ordering,
+ * so both "views" agree on what's most important for a given domain.
+ */
+export function getKindPriorityIndex(presetId: string, kind: ParagraphKind): number {
+  const kindGroups = getKindGroups(presetId);
+  if (kindGroups) {
+    const idx = kindGroups.findIndex((g) => g.kinds.includes(kind));
+    return idx >= 0 ? idx : kindGroups.length;
+  }
+  const idx = DEFAULT_KIND_ORDER.indexOf(kind);
+  return idx >= 0 ? idx : DEFAULT_KIND_ORDER.length;
+}
+
 export interface ThoughtUnitGroup<T> {
   id: string;
   /** Group label, or undefined when this is a per-kind fallback section (caller resolves via getKindLabel). */
