@@ -22,7 +22,7 @@ import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, isUltraNotePersisted, inferSubject } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
@@ -1164,6 +1164,18 @@ export function RightPanel({
       )
     : "Current page · ready";
 
+  // Mastery badge — same computeDeckStats() math as RecallLab's MasteryRing,
+  // aggregated across every recall set saved for this book (not just this page).
+  const masteryPct = useMemo(() => {
+    const bookId = ctx?.documentId;
+    if (!bookId) return null;
+    const cards = getAllRecallSets()
+      .filter((s) => s.bookId === bookId)
+      .flatMap((s) => s.cards);
+    if (cards.length === 0) return null;
+    return computeDeckStats(cards).masteryPct;
+  }, [ctx?.documentId, ctx?.pageNumber]);
+
   // [WIRE] RightPanel active — always-on, no NODE_ENV gate.
   // If you see this in production DevTools, the latest build is deployed.
   // viewSource tells you which render path is active. Bad output from a non-ULTRA path
@@ -1229,14 +1241,30 @@ export function RightPanel({
           <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
           <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
         </div>
-        <button
-          onClick={cycleZoom}
-          title={`Cognitive density: ${zoomLabel} — click to cycle`}
-          className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
-        >
-          <span>🔤</span>
-          <span className="font-medium">{zoomLabel}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {masteryPct !== null && (
+            <div
+              title="Mastery across all Recall Lab cards saved for this book"
+              className="flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold"
+              style={{
+                borderColor: `${masteryPct >= 80 ? "#10b981" : masteryPct >= 40 ? "#f59e0b" : "#60a5fa"}55`,
+                color: masteryPct >= 80 ? "#10b981" : masteryPct >= 40 ? "#f59e0b" : "#60a5fa",
+                background: `${masteryPct >= 80 ? "#10b981" : masteryPct >= 40 ? "#f59e0b" : "#60a5fa"}14`,
+              }}
+            >
+              <span>🎯</span>
+              <span>{masteryPct}% Mastered</span>
+            </div>
+          )}
+          <button
+            onClick={cycleZoom}
+            title={`Cognitive density: ${zoomLabel} — click to cycle`}
+            className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
+          >
+            <span>🔤</span>
+            <span className="font-medium">{zoomLabel}</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
