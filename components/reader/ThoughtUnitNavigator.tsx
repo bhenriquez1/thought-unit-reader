@@ -13,7 +13,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
-import { getKindLabel, getKindGroups } from "@/lib/insights/domainPresets";
+import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -27,8 +27,9 @@ export interface ThoughtUnitNavigatorEntry {
 
 // Colors stay constant across domain presets — only the label text changes
 // (via getKindLabel) — so the navigator's visual identity doesn't shift
-// every time the detected/overridden preset changes.
-const KIND_COLORS: Record<string, { color: string; bg: string }> = {
+// every time the detected/overridden preset changes. Exported so the Level 4
+// page roadmap (ThoughtRoadmap) renders the same groups in matching colors.
+export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   thesis:      { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
   definition:  { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
   mechanism:   { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
@@ -38,8 +39,7 @@ const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
   dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
 };
-const KIND_ORDER = ["thesis", "dat_fact", "mechanism", "trap", "application", "definition", "clinical", "formula"];
-const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
+export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
 export default function ThoughtUnitNavigator({
   entries,
@@ -66,37 +66,8 @@ export default function ThoughtUnitNavigator({
   // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
   // Presets without kindGroups keep today's exact one-section-per-kind behavior.
-  const kindGroups = useMemo(() => getKindGroups(presetId), [presetId]);
-
-  const grouped = useMemo(() => {
-    if (kindGroups) {
-      const byGroup = new Map<string, ThoughtUnitNavigatorEntry[]>();
-      for (const e of entries) {
-        const group = kindGroups.find((g) => g.kinds.includes(e.kind));
-        const groupId = group?.id ?? e.kind;
-        const list = byGroup.get(groupId) ?? [];
-        list.push(e);
-        byGroup.set(groupId, list);
-      }
-      return kindGroups
-        .map((g) => ({
-          id: g.id,
-          label: g.label,
-          representativeKind: g.kinds[0] as string,
-          items: byGroup.get(g.id) ?? [],
-        }))
-        .filter((g) => g.items.length > 0);
-    }
-    const byKind = new Map<string, ThoughtUnitNavigatorEntry[]>();
-    for (const e of entries) {
-      const list = byKind.get(e.kind) ?? [];
-      list.push(e);
-      byKind.set(e.kind, list);
-    }
-    return KIND_ORDER
-      .map((kind) => ({ id: kind, label: undefined as string | undefined, representativeKind: kind, items: byKind.get(kind) ?? [] }))
-      .filter((g) => g.items.length > 0);
-  }, [entries, kindGroups]);
+  // Shared with ThoughtRoadmap (Level 4) so both views agree on sectioning.
+  const grouped = useMemo(() => groupThoughtUnits(entries, presetId), [entries, presetId]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((prev) => {

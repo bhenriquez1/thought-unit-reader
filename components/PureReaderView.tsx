@@ -14,6 +14,7 @@ import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
+import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import DomainModeSelector from './reader/DomainModeSelector';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
@@ -515,6 +516,22 @@ export default function PureReaderView({
               </div>
             )}
           </div>
+
+          <div className="h-px bg-white/8 mx-1" />
+
+          {/* Level 4 — Page Roadmap: one node per Level 3 group, in expert order */}
+          <ThoughtRoadmap
+            entries={allHighlightTargets.map((t) => ({
+              id: t.evidenceRefId,
+              text: t.text,
+              kind: t.kind,
+              page: t.page,
+              confidence: t.score,
+            }))}
+            focusedId={focusedEvidenceId}
+            onJump={(id) => onEvidenceFocus?.(id)}
+            presetId={effectivePresetId}
+          />
 
           <div className="h-px bg-white/8 mx-1" />
 
