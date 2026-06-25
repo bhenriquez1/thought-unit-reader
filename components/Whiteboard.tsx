@@ -76,6 +76,7 @@ const DESC_LINE_H = 26;
 const TITLE_FADE_MS = 450; // fade in title at the start of each step
 const UNDERLINE_MS  = 600; // scribble underline draw time
 const MIN_STEP_MS   = 1200; // minimum step length for animation
+const BOUNDARY_FRESHNESS_MS = 1500; // how long a speechSynthesis onboundary event stays trusted before falling back to the wall-clock estimate
 
 /* ------------------------------------------------------------------ */
 /* Component                                                          */
@@ -133,6 +134,11 @@ export default function Whiteboard({
   const ttsStartRef = useRef<number | null>(null);
   const ttsElapsedRef = useRef<number>(0);
   const ttsTimerRef = useRef<number | null>(null);
+  // Real per-character progress from the browser TTS engine's own boundary
+  // events — far more accurate than the flat-wpm wall-clock estimate below.
+  // Null/stale (no boundary in the last BOUNDARY_FRESHNESS_MS) means the
+  // browser never fired one (e.g. Safari), so we fall back to wall-clock.
+  const lastBoundaryRef = useRef<{ frac: number; atMs: number } | null>(null);
 
   // Canvas animation loop
   const rafRef = useRef<number | null>(null);
@@ -658,6 +664,13 @@ export default function Whiteboard({
     if (useAIVoice && audioRef.current) {
       return (audioRef.current.currentTime || 0) * 1000;
     }
+    if (
+      lastBoundaryRef.current &&
+      totalMs > 0 &&
+      performance.now() - lastBoundaryRef.current.atMs < BOUNDARY_FRESHNESS_MS
+    ) {
+      return clamp(lastBoundaryRef.current.frac * totalMs, 0, totalMs);
+    }
     if (ttsStartRef.current != null) {
       const now = performance.now();
       const delta = (now - ttsStartRef.current) * clampRate(effectiveSpeed);
@@ -718,8 +731,7 @@ export default function Whiteboard({
     ttsStartRef.current = performance.now();
     ttsTimerRef.current = window.setInterval(() => {
       if (ttsStartRef.current == null) return;
-      const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
-      const elapsed = ttsElapsedRef.current + elapsedNow;
+      const elapsed = currentClockMs();
 
       let idx = 0;
       while (idx + 1 < cues.length && elapsed >= cues[idx + 1]) idx++;
@@ -750,6 +762,7 @@ export default function Whiteboard({
     setHasPaused(false);
     ttsElapsedRef.current = 0;
     ttsStartRef.current = null;
+    lastBoundaryRef.current = null;
 
     if (useAIVoice) {
       if (audioRef.current && audioURL) {
@@ -771,6 +784,11 @@ export default function Whiteboard({
         u.pitch = 1.0;
         registerActiveUtterance(token, u, () => { clearTtsTimer(); setIsPlaying(false); setHasPaused(false); });
         u.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
+        u.onboundary = (e) => {
+          if (trimmed.length > 0) {
+            lastBoundaryRef.current = { frac: clamp(e.charIndex / trimmed.length, 0, 1), atMs: performance.now() };
+          }
+        };
         u.onend = () => { notifySpeechEnd(token, SPEECH_OWNER); stop(); };
         u.onerror = (e) => {
           if (e.error !== "canceled" && e.error !== "interrupted" && !isSpeechStale(token)) {
@@ -796,20 +814,14 @@ export default function Whiteboard({
 
   const pause = () => {
     if (useAIVoice && audioRef.current) audioRef.current.pause();
-    if (!useAIVoice && "speechSynthesis" in window) {
+    if (!useAIVoice) {
+      // Snapshot via currentClockMs() so a fresh onboundary reading (more
+      // accurate than the wall-clock delta) is preferred here too.
       if (ttsStartRef.current != null) {
-        const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
-        ttsElapsedRef.current += elapsedNow;
+        ttsElapsedRef.current = currentClockMs();
         ttsStartRef.current = null;
       }
-      (window.speechSynthesis as any).pause?.();
-      clearTtsTimer();
-    } else {
-      if (ttsStartRef.current != null) {
-        const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
-        ttsElapsedRef.current += elapsedNow;
-        ttsStartRef.current = null;
-      }
+      if ("speechSynthesis" in window) (window.speechSynthesis as any).pause?.();
       clearTtsTimer();
     }
     setIsPlaying(false);
