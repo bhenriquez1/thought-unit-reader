@@ -12,6 +12,7 @@ import {
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { downloadNoteMarkdown, downloadNotePdf, downloadNotesMarkdown, downloadNotesPdf } from "@/lib/notelab/exportNote";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -192,15 +193,18 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                 return (
                   <div key={bid} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     {!bookId && (
-                      <div
-                        onClick={() => toggleBook(bookKey)}
-                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 18px", cursor: "pointer", userSelect: "none" }}
-                      >
-                        <span style={{ fontSize: 13 }}>📖</span>
-                        <span style={{ flex: 1, fontSize: 12, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {bookNotes[0]?.bookTitle || bid}
-                        </span>
-                        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.35)" }}>{isBookCollapsed ? "▶" : "▼"}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 18px" }}>
+                        <div
+                          onClick={() => toggleBook(bookKey)}
+                          style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, cursor: "pointer", userSelect: "none" }}
+                        >
+                          <span style={{ fontSize: 13 }}>📖</span>
+                          <span style={{ flex: 1, fontSize: 12, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {bookNotes[0]?.bookTitle || bid}
+                          </span>
+                        </div>
+                        <ExportAllMenu notes={bookNotes} title={bookNotes[0]?.bookTitle || bid} />
+                        <span onClick={() => toggleBook(bookKey)} style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", cursor: "pointer", userSelect: "none" }}>{isBookCollapsed ? "▶" : "▼"}</span>
                       </div>
                     )}
 
@@ -441,6 +445,10 @@ function NoteCard({
             <button type="button" onClick={onCopy} style={actionBtn(copiedId === note.id ? "#10b981" : "#6b7280")}>
               {copiedId === note.id ? "✓ Copied" : "Copy"}
             </button>
+            <ExportMenu
+              onMarkdown={() => downloadNoteMarkdown(note)}
+              onPdf={() => downloadNotePdf(note)}
+            />
           </div>
         </div>
       )}
@@ -591,6 +599,78 @@ function NoteRow({ label, text, color }: { label: string; text: string; color: s
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, wordBreak: "break-word" }}>{text}</div>
     </div>
+  );
+}
+
+// ── ExportMenu — small popover offering Markdown / PDF download ──────────
+
+function ExportMenu({ onMarkdown, onPdf }: { onMarkdown: () => void; onPdf: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  async function handlePdf() {
+    setExporting(true);
+    try {
+      await onPdf();
+    } catch (e) {
+      console.error("[NOTELAB_EXPORT_PDF_FAILED]", String(e));
+    } finally {
+      setExporting(false);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div ref={rootRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }} style={{ ...actionBtn("#c4b5fd"), flex: "none", padding: "9px 12px" }}>
+        ⬇ Export
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, background: "#0d1628", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", overflow: "hidden", minWidth: 140 }}
+        >
+          <button type="button" onClick={() => { onMarkdown(); setOpen(false); }} style={exportMenuItem}>
+            📄 Markdown (.md)
+          </button>
+          <button type="button" onClick={handlePdf} disabled={exporting} style={{ ...exportMenuItem, opacity: exporting ? 0.6 : 1, cursor: exporting ? "wait" : "pointer" }}>
+            {exporting ? "Generating…" : "🗎 PDF (.pdf)"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const exportMenuItem: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  padding: "9px 13px",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "rgba(255,255,255,0.85)",
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+};
+
+function ExportAllMenu({ notes, title }: { notes: UltraNote[]; title: string }) {
+  return (
+    <ExportMenu
+      onMarkdown={() => downloadNotesMarkdown(notes, title)}
+      onPdf={() => downloadNotesPdf(notes, title)}
+    />
   );
 }
 
