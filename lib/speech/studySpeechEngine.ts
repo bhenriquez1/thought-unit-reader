@@ -45,6 +45,9 @@ export interface SpeechSegment {
   tier?: ImportanceTier;
   /** Guided mode only: pause after this segment finishes, before the next one starts */
   pauseAfterMs?: number;
+  /** Guided mode only: stop and wait for the reader to click Continue (or Explain)
+   *  instead of auto-advancing after pauseAfterMs — the teach-loop checkpoints. */
+  requiresConfirm?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,6 +213,7 @@ export function buildSpeechScript(
     evidenceRefId?: string,
     tier?: ImportanceTier,
     pauseAfterMs?: number,
+    requiresConfirm?: boolean,
   ): void {
     const trimmed = rawText?.trim();
     if (!trimmed || trimmed.length < 8) return;
@@ -223,6 +227,7 @@ export function buildSpeechScript(
       ...(evidenceRefId ? { evidenceRefId } : {}),
       ...(tier ? { tier } : {}),
       ...(pauseAfterMs !== undefined ? { pauseAfterMs } : {}),
+      ...(requiresConfirm ? { requiresConfirm } : {}),
     });
   }
 
@@ -241,6 +246,7 @@ export function buildSpeechScript(
     if (segments[0]) {
       segments[0].tier = getImportanceTier(0);
       segments[0].pauseAfterMs = 600;
+      segments[0].requiresConfirm = true;
     }
     const groups = groupThoughtUnits<VisualAnchor>(model.visualAnchors, presetId);
     let flatIndex = 0;
@@ -258,6 +264,7 @@ export function buildSpeechScript(
           anchor.id,
           tier,
           tier.stars >= 4 ? 700 : 250,
+          tier.stars >= 4,
         );
         flatIndex++;
       });

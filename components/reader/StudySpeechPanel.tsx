@@ -207,6 +207,9 @@ interface Props {
   presetId?: string;
   /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
   onEvidenceFocus?: (id: string | null) => void;
+  /** Called when the reader clicks "💬 Explain" during a Guided teach-loop pause —
+   *  opens Explain This Step seeded with that segment's evidence. */
+  onExplainSegment?: (evidenceRefId: string) => void;
   /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
   onSnippetFocus?: (snippet: string | null) => void;
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
@@ -226,7 +229,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onSnippetFocus, onPlayStateChange, primary = false },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -279,6 +282,41 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   useEffect(() => {
     activeWordRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeWordIdx]);
+
+  // Guided teach-loop: at a requiresConfirm segment, playback stops and waits for
+  // the reader to click Continue (or Explain, then Continue) instead of advancing
+  // on a fixed timer — a passive listener still gets a generous auto-continue
+  // fallback so they never get stuck.
+  const [awaitingContinue, setAwaitingContinue] = useState(false);
+  const continueResolverRef  = useRef<(() => void) | null>(null);
+  const autoContinueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const explainEngagedRef    = useRef(false);
+
+  function resolveContinue() {
+    if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
+    const resolve = continueResolverRef.current;
+    continueResolverRef.current = null;
+    setAwaitingContinue(false);
+    explainEngagedRef.current = false;
+    resolve?.();
+  }
+
+  function waitForContinue(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      continueResolverRef.current = resolve;
+      explainEngagedRef.current = false;
+      setAwaitingContinue(true);
+      autoContinueTimerRef.current = setTimeout(() => {
+        if (!explainEngagedRef.current) resolveContinue();
+      }, 4000);
+    });
+  }
+
+  function explainCurrentSegment(evidenceRefId: string) {
+    if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
+    explainEngagedRef.current = true;
+    onExplainSegment?.(evidenceRefId);
+  }
 
   // Active audio element ref — so we can stop/pause
   const audioRef   = useRef<HTMLAudioElement | null>(null);
@@ -1008,7 +1046,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
-          await new Promise((r) => setTimeout(r, seg.pauseAfterMs ?? 250));
+          if (mode === "guided" && seg.requiresConfirm) {
+            await waitForContinue();
+          } else {
+            await new Promise((r) => setTimeout(r, seg.pauseAfterMs ?? 250));
+          }
         }
       } catch (err: unknown) {
         if (isStale(session)) break;
@@ -1054,6 +1096,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function stop() {
     console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     stopAudio();
+    resolveContinue();
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
@@ -1237,6 +1280,29 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
               </div>
             );
           })()}
+
+          {/* Guided teach-loop checkpoint — playback is stopped, waiting for the
+              reader to continue (or explain first, then continue). */}
+          {awaitingContinue && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                onClick={resolveContinue}
+                style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.15)", color: "#a5b4fc", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+              >
+                ▶ Continue
+              </button>
+              {segments[segIdx]?.evidenceRefId && (
+                <button
+                  type="button"
+                  onClick={() => explainCurrentSegment(segments[segIdx].evidenceRefId as string)}
+                  style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#cbd5e1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                >
+                  💬 Explain
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Segment list */}
           {segments.length > 0 && (
