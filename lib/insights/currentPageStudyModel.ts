@@ -43,6 +43,9 @@ export type VisualAnchor = {
   sourceField: VisualAnchorSourceField;
   exactText:   string;          // verbatim span as it appears on the page
   role:        VisualAnchorRole;
+  /** Same ParagraphKind the left panel computes via anchorTypeToKind — lets
+   *  speech group anchors with groupThoughtUnits() exactly as the left panel does. */
+  kind:        ParagraphKind;
   reason:      string;          // one-line rationale from AI
   priority:    number;          // 1 = highest; ascending — determines render order
   spanStart?:  string;          // optional PDF span boundary
@@ -75,7 +78,9 @@ const VISUAL_ROLE_TO_KIND: Record<VisualAnchorRole, ParagraphKind> = {
   confusionTrap:   "trap",
   exampleEvidence: "application",
   definition:      "definition",
-  keyDetail:       "formula",
+  // Matches PureReaderView's canonical anchorTypeToKind() mapping, so a
+  // keyDetail anchor lands in the same left-panel kindGroup either way.
+  keyDetail:       "definition",
 };
 
 function rolePriority(role: VisualAnchorRole, presetId: string): number {
@@ -370,6 +375,7 @@ export function buildStudyModel(
       sourceField: s.sourceField,
       exactText:   s.text,
       role:        s.role,
+      kind:        VISUAL_ROLE_TO_KIND[s.role],
       reason:      s.reason,
       priority:    rolePriority(s.role, presetId),
       spanStart:   s.spanStart ?? undefined,

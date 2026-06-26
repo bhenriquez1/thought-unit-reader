@@ -2,8 +2,9 @@
 // Converts CurrentPageStudyModel → ordered speech segments.
 // Used exclusively by StudySpeechPanel — no direct PDF/paragraph dependency.
 
-import type { CurrentPageStudyModel, VisualAnchorRole, VisualAnchorSourceField } from "@/lib/insights/currentPageStudyModel";
+import type { CurrentPageStudyModel, VisualAnchor, VisualAnchorRole, VisualAnchorSourceField } from "@/lib/insights/currentPageStudyModel";
 import { getImportanceTier, type ImportanceTier } from "@/lib/insights/importanceTiers";
+import { groupThoughtUnits } from "@/lib/insights/domainPresets";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -196,6 +197,7 @@ function anchorForField(
 export function buildSpeechScript(
   model: CurrentPageStudyModel,
   mode: StudySpeechMode,
+  presetId: string = "universal",
 ): SpeechSegment[] {
   const segments: SpeechSegment[] = [];
 
@@ -229,35 +231,43 @@ export function buildSpeechScript(
 
   if (mode === "focus") return segments;
 
-  // ── Guided: visual anchors in their existing importance order (visualAnchors
-  // is already sorted by ROLE_PRIORITY — see currentPageStudyModel.ts), tagged
-  // with the same star tier the left-panel navigator/roadmap use, so the
-  // most-important point gets a framing line, a slower rate, and a longer
-  // pause — "Surgeon Thinking" applied to pacing instead of just layout.
+  // ── Guided: drive directly off the LeftPanel's own grouping — same
+  // groupThoughtUnits(entries, presetId) call ThoughtUnitNavigator/ThoughtRoadmap
+  // use, so Guided speech reads in LeftPanel order, not an independently
+  // computed RightPanel order. Tier is assigned per GROUP (every anchor in
+  // "Core Ideas" shares one star tier), matching the left panel's semantics
+  // exactly instead of a per-item index that drifted from it.
   if (mode === "guided") {
     if (segments[0]) {
       segments[0].tier = getImportanceTier(0);
       segments[0].pauseAfterMs = 600;
     }
-    model.visualAnchors.forEach((anchor, i) => {
-      const tier = getImportanceTier(i);
-      const isTopAnchor = i === 0;
-      const rawText = isTopAnchor ? `Most important on this page: ${anchor.exactText}` : anchor.exactText;
-      push(
-        anchor.id,
-        "visualAnchor",
-        ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
-        rawText,
-        tier.stars >= 4 ? Math.min(ANCHOR_ROLE_RATE[anchor.role] ?? 0.95, 0.88) : (ANCHOR_ROLE_RATE[anchor.role] ?? 0.95),
-        anchor.id,
-        tier,
-        tier.stars >= 4 ? 700 : 250,
-      );
+    const groups = groupThoughtUnits<VisualAnchor>(model.visualAnchors, presetId);
+    let flatIndex = 0;
+    groups.forEach((group, groupIndex) => {
+      const tier = getImportanceTier(groupIndex);
+      group.items.forEach((anchor) => {
+        const isTopAnchor = flatIndex === 0;
+        const rawText = isTopAnchor ? `Most important on this page: ${anchor.exactText}` : anchor.exactText;
+        push(
+          anchor.id,
+          "visualAnchor",
+          ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
+          rawText,
+          tier.stars >= 4 ? Math.min(ANCHOR_ROLE_RATE[anchor.role] ?? 0.95, 0.88) : (ANCHOR_ROLE_RATE[anchor.role] ?? 0.95),
+          anchor.id,
+          tier,
+          tier.stars >= 4 ? 700 : 250,
+        );
+        flatIndex++;
+      });
     });
     const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
     console.log("[SPEECH_SOURCE]", {
       mode,
-      source: "finalStudyModel.visualAnchors (importance-tiered)",
+      source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order)",
+      presetId,
+      groupCount: groups.length,
       itemCount: model.visualAnchors.length,
       charCount: totalChars,
     });
