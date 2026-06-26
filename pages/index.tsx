@@ -678,6 +678,11 @@ export default function ThoughtUnitReader() {
   // Rule: if visualAnchors is empty, render zero highlights — no fallback.
   const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
 
+  // Effective domain preset reported by the left panel (PureReaderView) — including
+  // any manual override — shared with RightPanel/Guided speech so they rank and
+  // read thought units in the same order the left panel is grouping/displaying them.
+  const [sharedPresetId, setSharedPresetId] = useState<string>("universal");
+
   // savedHighlightAnchors: highlights persisted via RightPanel "Save to NoteLab" /
   // "Save to Recall" actions (lib/highlights/savedHighlightsStore.ts), loaded for the
   // active book/page. Merged into finalHighlightAnchors below so a saved item's source
@@ -3825,6 +3830,7 @@ export default function ThoughtUnitReader() {
                     return next;
                   })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
+                  onEffectivePresetChange={setSharedPresetId}
                 />
               </div>
             )}
@@ -3875,6 +3881,7 @@ export default function ThoughtUnitReader() {
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                presetId={sharedPresetId}
                 speechPanelRef={speechPanelRef}
                 onSpeechEvidenceFocus={(id) => {
                   if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });

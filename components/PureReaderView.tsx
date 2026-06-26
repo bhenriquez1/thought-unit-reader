@@ -8,7 +8,7 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
@@ -135,6 +135,10 @@ interface PureReaderViewProps {
   onOpenThoughtUnitRecall?: (evidenceRefId: string) => void;
   /** Seeds a NoteLab note from a clicked thought-unit's evidenceRefId */
   onNoteThoughtUnit?: (evidenceRefId: string) => void;
+  /** Reports this panel's effective domain preset (auto-detected, or the user's manual
+   *  override) upward so RightPanel/Guided speech can rank and read in the same order
+   *  the left panel is actually grouping its thought units by. */
+  onEffectivePresetChange?: (presetId: string) => void;
 }
 
 export default function PureReaderView({
@@ -166,6 +170,7 @@ export default function PureReaderView({
   onExplainThoughtUnit,
   onOpenThoughtUnitRecall,
   onNoteThoughtUnit,
+  onEffectivePresetChange,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -407,6 +412,12 @@ export default function PureReaderView({
     return detectDomainPreset(sample);
   }, [pageText, effectiveHighlightTargets]);
   const effectivePresetId = domainPresetOverride ?? detectedPresetId;
+
+  // Report the resolved preset upward — RightPanel/Guided speech reads this
+  // so it groups/orders the same way this panel does, including manual overrides.
+  useEffect(() => {
+    onEffectivePresetChange?.(effectivePresetId);
+  }, [effectivePresetId, onEffectivePresetChange]);
 
   const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
     { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },

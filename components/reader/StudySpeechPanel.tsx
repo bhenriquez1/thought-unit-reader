@@ -194,6 +194,9 @@ interface Props {
   pageNumber: number;
   bookId?: string;
   activePageText?: string;
+  /** Effective domain preset id — same value LeftPanel (PureReaderView) is grouping/ordering
+   *  its thought units by, so Guided mode's groupThoughtUnits() call agrees with it exactly. */
+  presetId?: string;
   /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
   onEvidenceFocus?: (id: string | null) => void;
   /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
@@ -215,7 +218,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus, onPlayStateChange, primary = false },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onSnippetFocus, onPlayStateChange, primary = false },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -476,9 +479,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setSegments([]);
       return;
     }
-    const next = buildSpeechScript(studyModel, mode);
+    const next = buildSpeechScript(studyModel, mode, presetId);
     setSegments(next);
-  }, [studyModel, mode, pageNumber]);
+  }, [studyModel, mode, pageNumber, presetId]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -869,7 +872,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights") : []);
+      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId) : []);
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", { mode: "highlights", source: "finalStudyModel.visualAnchors", itemCount: segsToPlay.length, charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0) });
       console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
@@ -884,7 +887,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode) : []);
+    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId) : []);
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;

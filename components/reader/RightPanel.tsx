@@ -252,6 +252,11 @@ interface RightPanelProps {
   onOpenThoughtUnit?: (anchorId: string) => void;
   /** Extracted page text — feeds the inline Study Speech "Listen to this page" action */
   activePageText?: string;
+  /** Effective domain preset id resolved by the LeftPanel (PureReaderView) — including
+   *  any manual override — so RightPanel's visualAnchors ranking and Guided speech
+   *  order agree with what the left panel is actually showing. Falls back to
+   *  RightPanel's own auto-detection when the left panel hasn't reported one yet. */
+  presetId?: string;
   /** Forwarded to the inline StudySpeechPanel so callers (e.g. PDF text-click) can trigger playback */
   speechPanelRef?: React.Ref<StudySpeechPanelHandle>;
   onSpeechEvidenceFocus?: (id: string | null) => void;
@@ -497,6 +502,7 @@ export function RightPanel({
   onStudyModelReady,
   onOpenThoughtUnit,
   activePageText,
+  presetId,
   speechPanelRef,
   onSpeechEvidenceFocus,
   onSpeechSnippetFocus,
@@ -965,14 +971,15 @@ export function RightPanel({
 
   // Auto-detected domain preset — same keyword-matching detectDomainPreset() the
   // left panel uses, run independently here on whatever page text RightPanel
-  // already has, so visualAnchors rank anchors the same way the navigator/roadmap
-  // order thought units for this domain. Known limitation: this doesn't see the
-  // left panel's manual preset override (that state lives in PureReaderView, not
-  // shared with RightPanel today) — auto-detection only.
+  // already has. Only a fallback: the `presetId` prop (the left panel's actual
+  // effective preset, including any manual override) wins whenever the caller
+  // has reported one, so RightPanel/Guided-speech never disagrees with what's
+  // actually displayed in the left panel.
   const detectedPresetId = useMemo(
     () => detectDomainPreset(ctx?.pageText ?? "", ctx?.chapterTitle ?? ctx?.sectionTitle ?? undefined),
     [ctx?.pageText, ctx?.chapterTitle, ctx?.sectionTitle],
   );
+  const effectivePresetId = presetId ?? detectedPresetId;
 
   // Typed study model built when synthesis resolves — shared with all downstream features.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
@@ -983,9 +990,9 @@ export function RightPanel({
       synth,
       ctx?.documentId ?? "",
       ctx?.pageNumber ?? 0,
-      detectedPresetId,
+      effectivePresetId,
     );
-  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber, detectedPresetId]);
+  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber, effectivePresetId]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
@@ -1291,6 +1298,7 @@ export function RightPanel({
             pageNumber={ctx?.pageNumber ?? 0}
             bookId={ctx?.documentId}
             activePageText={activePageText ?? ctx?.pageText ?? ""}
+            presetId={effectivePresetId}
             onEvidenceFocus={onSpeechEvidenceFocus}
             onSnippetFocus={onSpeechSnippetFocus}
             onPlayStateChange={onSpeechPlayStateChange}
