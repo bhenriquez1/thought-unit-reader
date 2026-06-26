@@ -14,7 +14,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
-import { getImportanceTier, renderStars, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
+import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import DomainModeSelector from "./DomainModeSelector";
 
@@ -46,6 +46,15 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
+
+// Dynamic relabel, not a new kind/group: a Mechanism group with 2+ chained
+// steps reads as a "Process Flow" to the student (same chain-length signal
+// PdfEvidenceOverlay's mechanismChain uses for its arrow connectors); a lone
+// mechanism anchor still reads as "Mechanism".
+export function groupDisplayLabel(representativeKind: string, itemCount: number, fallbackLabel: string): string {
+  if (representativeKind === "mechanism" && itemCount >= 2) return "Process Flow";
+  return fallbackLabel;
+}
 
 // Marks the word at activeSpokenWord.wordIndex within this card's own snippet text.
 // Pure string-splitting — entry.text is tokenized independently of whatever text
@@ -166,7 +175,8 @@ export default function ThoughtUnitNavigator({
       <div className="flex items-center gap-1.5 flex-wrap px-1" data-testid="thought-unit-summary-strip">
         {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
           const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
-          const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
+          const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
+          const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
           const tier = getImportanceTier(groupIndex);
           return (
             <span
@@ -175,7 +185,7 @@ export default function ThoughtUnitNavigator({
               style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
               title={`${tier.label} priority`}
             >
-              <span>{renderStars(tier.stars)}</span>
+              <span>{tierGlyph(tier.stars, representativeKind)}</span>
               <span className="uppercase">{meta.label}</span>
               {items.length > 1 && <span className="opacity-70">×{items.length}</span>}
             </span>
@@ -184,7 +194,8 @@ export default function ThoughtUnitNavigator({
       </div>
       {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
-        const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
+        const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
+        const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
         // Adaptive Thought Unit Engine: groups arrive in the preset's own expert-priority
         // order, so ordinal position doubles as an importance tier — low tiers (Supporting/
         // Minor) start collapsed, same as an expert skimming past the supporting detail.
@@ -212,7 +223,7 @@ export default function ThoughtUnitNavigator({
                 title={`${tier.label} priority`}
                 data-testid="importance-stars"
               >
-                {renderStars(tier.stars)}
+                {tierGlyph(tier.stars, representativeKind)}
               </span>
               <span className="text-[9px] text-white/30">{items.length}</span>
               <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
@@ -240,7 +251,7 @@ export default function ThoughtUnitNavigator({
                       title={`Priority ${entry.priorityTier}/5`}
                       data-testid="anchor-priority-stars"
                     >
-                      {renderStars(entry.priorityTier)}
+                      {tierGlyph(entry.priorityTier, entry.kind)}
                     </span>
                   )}
                   <span

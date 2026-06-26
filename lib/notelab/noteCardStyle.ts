@@ -80,6 +80,14 @@ export const NOTE_CARD_STYLE: Record<NoteCardType, NoteCardStyleEntry> = {
     icon: "📝", label: "Recall Questions",
     accent: "#d9f99d", glowColor: "217,249,157",
   },
+  exam_strategy: {
+    icon: "🎓", label: "Exam Strategy",
+    accent: "#fcd34d", glowColor: "252,211,77",
+  },
+  surgeon_lens: {
+    icon: "🩺", label: "Surgeon Lens",
+    accent: "#fb7185", glowColor: "251,113,133",
+  },
   other: {
     icon: "•", label: "Note",
     accent: "#d4d4d8", glowColor: "212,212,216",

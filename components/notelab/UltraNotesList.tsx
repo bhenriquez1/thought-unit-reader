@@ -37,6 +37,12 @@ interface UltraNotesListProps {
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
   /** Adaptive Notebook card's "💬 Explain" action — seeds the Explain This Step panel */
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
+  /** Fires whenever a note expands/collapses — lets the NoteLab 3-column shell
+   *  bind its left ThoughtUnitNavigator rail to whichever note is open. */
+  onActiveNoteChange?: (note: UltraNote | null) => void;
+  /** Verbatim text of a left-rail thought unit the user just clicked — passed
+   *  through to NoteCardGrid so the matching card scrolls into view + highlights. */
+  focusedAnchorText?: string | null;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = [
@@ -63,7 +69,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onActiveNoteChange, focusedAnchorText }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -127,7 +133,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
     // Optimistic UI — remove immediately
     setNotes((prev) => prev.filter((n) => n.id !== note.id));
     setConfirmDelete(null);
-    if (expandedId === note.id) setExpandedId(null);
+    if (expandedId === note.id) { setExpandedId(null); onActiveNoteChange?.(null); }
 
     try {
       await deleteUltraNote(note.id); // logs NOTELAB_IDB_DELETE + NOTELAB_LOCAL_DELETE internally
@@ -181,6 +187,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       return next;
     });
     setExpandedId(target.id);
+    onActiveNoteChange?.(target);
     setHighlightedNoteId(target.id);
     setTimeout(() => {
       noteRefs.current.get(target.id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -302,7 +309,11 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                                 if (el) noteRefs.current.set(note.id, el);
                                 else noteRefs.current.delete(note.id);
                               }}
-                              onToggle={() => setExpandedId(isExpanded ? null : note.id)}
+                              onToggle={() => {
+                                const next = isExpanded ? null : note.id;
+                                setExpandedId(next);
+                                onActiveNoteChange?.(next ? note : null);
+                              }}
                               onCopy={() => handleCopy(note)}
                               onDelete={() => requestDelete(note)}
                               onNavigate={onNavigateToPage}
@@ -311,6 +322,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onExplainCard={onExplainCard}
                               onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
                               onJumpToNote={handleJumpToNote}
+                              focusedAnchorText={isExpanded ? focusedAnchorText : null}
                             />
                           );
                         })}
@@ -402,7 +414,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, focusedAnchorText,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -420,6 +432,7 @@ function NoteCard({
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
   onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
+  focusedAnchorText?: string | null;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
@@ -492,6 +505,19 @@ function NoteCard({
       {isExpanded && (
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
 
+          {note.tags && note.tags.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {note.tags.map((tag, i) => (
+                <span
+                  key={i}
+                  style={{ padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(148,163,184,0.3)", background: "rgba(148,163,184,0.08)", color: "rgba(226,232,240,0.85)", fontSize: 10.5, fontWeight: 600 }}
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Adaptive Notebook cards (AI-curated or derived) — takes priority over both
               older tiers below, which remain as fallbacks for notes synthesized before
               noteCards existed. */}
@@ -503,6 +529,7 @@ function NoteCard({
               onGenerateCard={(n, c) => handleGenerateCardFromNoteCard(c)}
               onOpenWhiteboard={onOpenWhiteboard ? (n, c) => onOpenWhiteboard(n, c) : undefined}
               onExplainCard={onExplainCard}
+              focusedAnchorText={focusedAnchorText}
             />
           ) : hasNewSchema(note.sections) ? (
             <SectionsView sections={note.sections!} mode={mode} />

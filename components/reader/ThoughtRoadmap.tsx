@@ -12,9 +12,9 @@
 
 import React, { useMemo } from "react";
 import type { ThoughtUnitNavigatorEntry } from "./ThoughtUnitNavigator";
-import { KIND_COLORS, FALLBACK_COLOR } from "./ThoughtUnitNavigator";
+import { KIND_COLORS, FALLBACK_COLOR, groupDisplayLabel } from "./ThoughtUnitNavigator";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
-import { getImportanceTier, renderStars } from "@/lib/insights/importanceTiers";
+import { getImportanceTier, tierGlyph } from "@/lib/insights/importanceTiers";
 import type { ParagraphKind } from "@/lib/readerContracts";
 
 export default function ThoughtRoadmap({
@@ -34,7 +34,7 @@ export default function ThoughtRoadmap({
     return groups
       .map((g, groupIndex) => ({
         id: g.id,
-        label: g.label ?? getKindLabel(presetId, g.representativeKind as ParagraphKind),
+        label: groupDisplayLabel(g.representativeKind, g.items.length, g.label ?? getKindLabel(presetId, g.representativeKind as ParagraphKind)),
         representativeKind: g.representativeKind,
         // Highest-confidence item stands in for the whole group; first item when no scores are present.
         top: [...g.items].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0],
@@ -86,7 +86,7 @@ export default function ThoughtRoadmap({
                     title={`${node.tier.label} priority`}
                     data-testid="importance-stars"
                   >
-                    {renderStars(node.tier.stars)}
+                    {tierGlyph(node.tier.stars, node.representativeKind)}
                   </span>
                 </div>
                 <span

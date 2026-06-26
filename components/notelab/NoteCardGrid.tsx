@@ -3,7 +3,7 @@
 // multi-column card grid (replaces the old fixed vertical section stack for any
 // note that has noteCards populated; see UltraNotesList.tsx's three-way branch).
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { NOTE_CARD_STYLE } from "@/lib/notelab/noteCardStyle";
@@ -18,6 +18,19 @@ export interface NoteCardGridProps {
   onGenerateCard?: (note: UltraNote, card: NoteCard) => void;
   onOpenWhiteboard?: (note: UltraNote, card: NoteCard) => void;
   onExplainCard?: (note: UltraNote, card: NoteCard) => void;
+  /** Verbatim text of a LeftPanel/NoteLab-rail thought unit the user just clicked
+   *  — the card whose sourceAnchorHints overlaps it gets a focus ring + scrolls into view. */
+  focusedAnchorText?: string | null;
+}
+
+// Cards are linked back to LeftPanel anchors only loosely (sourceAnchorHints are
+// short verbatim phrases the AI copied from the anchor's exactText), so this is a
+// best-effort match, not an exact id-based lookup.
+function cardMatchesAnchorText(card: NoteCard, anchorText: string): boolean {
+  const hints = card.sourceAnchorHints ?? [];
+  if (!hints.length) return false;
+  const haystack = anchorText.toLowerCase();
+  return hints.some((h) => !!h && haystack.includes(h.toLowerCase()));
 }
 
 export default function NoteCardGrid({
@@ -27,8 +40,14 @@ export default function NoteCardGrid({
   onGenerateCard,
   onOpenWhiteboard,
   onExplainCard,
+  focusedAnchorText,
 }: NoteCardGridProps) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const focusedCardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (focusedAnchorText) focusedCardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusedAnchorText]);
 
   return (
     <div
@@ -40,10 +59,12 @@ export default function NoteCardGrid({
         const tier = tierGlowStyle(card.priorityTier, style.glowColor);
         const hovered = hoveredKey === key;
         const stars = Math.min(5, Math.max(1, card.priorityTier ?? 3));
+        const anchorFocused = !!focusedAnchorText && cardMatchesAnchorText(card, focusedAnchorText);
 
         return (
           <div
             key={key}
+            ref={anchorFocused ? focusedCardRef : undefined}
             onMouseEnter={() => setHoveredKey(key)}
             onMouseLeave={() => setHoveredKey((k) => (k === key ? null : k))}
             style={{
@@ -52,8 +73,9 @@ export default function NoteCardGrid({
               borderRadius: "10px",
               padding: "10px 12px",
               background: "rgba(17,24,39,0.6)",
-              boxShadow: tier.boxShadow,
-              border: tier.border,
+              boxShadow: anchorFocused ? "0 0 0 3px rgba(252,211,77,0.25)" : tier.boxShadow,
+              border: anchorFocused ? "1px solid rgba(252,211,77,0.7)" : tier.border,
+              transition: "border-color 0.3s, box-shadow 0.3s",
             }}
           >
             <div className="flex items-start justify-between gap-2">

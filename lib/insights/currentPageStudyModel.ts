@@ -165,6 +165,8 @@ export type CurrentPageStudyModel = {
   /** Adaptive Expert Notebook cards — AI-generated when present, else derived
    *  client-side from studyNotes/conceptBlocks via deriveNoteCardsFromStudyModel. */
   noteCards: NoteCard[];
+  /** Free-form topic tags for this page, when the AI synthesis resolved them. */
+  tags?: string[];
 };
 
 type AnchorCandidate = {
@@ -461,6 +463,7 @@ export function buildStudyModel(
     externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
     noteCards: [],
+    tags: (synth.tags as string[] | null) ?? undefined,
   };
 
   const aiNoteCards = (synth.noteCards as NoteCard[] | null) ?? null;

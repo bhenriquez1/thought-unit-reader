@@ -33,3 +33,15 @@ export const DEFAULT_COLLAPSE_AT_OR_BELOW_STARS = 2;
 export function renderStars(stars: number): string {
   return "★".repeat(stars) + "☆".repeat(5 - stars);
 }
+
+/**
+ * Expert-map glyph: Trap/Danger and Pearl kinds carry their own fixed glyph
+ * (⚠/💎) instead of a star count, so a student scanning the LeftPanel sees
+ * "this is dangerous" or "this is a pearl" at a glance rather than decoding
+ * a star tier. Every other kind still falls back to renderStars(stars).
+ */
+export function tierGlyph(stars: number, kind?: string): string {
+  if (kind === "trap") return "⚠";
+  if (kind === "clinical") return "💎";
+  return renderStars(stars);
+}

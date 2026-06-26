@@ -57,8 +57,11 @@ import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors"
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
-import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, buildRecallSetFromNote, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
+import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx } from "@/lib/notelab/exportNote";
+import { getStoredProfessionMode } from "@/lib/notelab/professionModes";
+import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/components/reader/ThoughtUnitNavigator";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -585,6 +588,11 @@ export default function ThoughtUnitReader() {
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
+  // NoteLab 3-column dashboard: which note's thought units/export tools the
+  // left/right rails are currently bound to (the note currently expanded in
+  // the center column's list) and which of its anchors was just clicked.
+  const [notelabActiveNote, setNotelabActiveNote] = useState<UltraNote | null>(null);
+  const [notelabFocusedAnchorId, setNotelabFocusedAnchorId] = useState<string | null>(null);
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
   const [explainStepContext, setExplainStepContext] = useState<ExplainStepContext | null>(null);
   const explainStepTurnsRef = useRef<Map<string, import("@/lib/explainStep/types").ExplainStepMessage[]>>(new Map());
@@ -687,6 +695,24 @@ export default function ThoughtUnitReader() {
   // any manual override — shared with RightPanel/Guided speech so they rank and
   // read thought units in the same order the left panel is grouping/displaying them.
   const [sharedPresetId, setSharedPresetId] = useState<string>("universal");
+
+  // NoteLab left rail: the active note's raw thought units, mapped to the same
+  // entry shape PureReaderView feeds the reader's own ThoughtUnitNavigator.
+  const notelabNavEntries: ThoughtUnitNavigatorEntry[] = useMemo(() => {
+    return (notelabActiveNote?.visualAnchors ?? []).map((a) => ({
+      id: a.id,
+      text: a.exactText,
+      kind: a.kind,
+      priorityTier: a.priorityTier,
+    }));
+  }, [notelabActiveNote]);
+
+  // Verbatim text of the clicked anchor — matched against each card's
+  // sourceAnchorHints by NoteCardGrid to scroll/highlight the right card.
+  const notelabFocusedAnchorText = useMemo(() => {
+    if (!notelabFocusedAnchorId) return null;
+    return notelabNavEntries.find((e) => e.id === notelabFocusedAnchorId)?.text ?? null;
+  }, [notelabFocusedAnchorId, notelabNavEntries]);
 
   // savedHighlightAnchors: highlights persisted via RightPanel "Save to NoteLab" /
   // "Save to Recall" actions (lib/highlights/savedHighlightsStore.ts), loaded for the
@@ -3924,26 +3950,114 @@ export default function ThoughtUnitReader() {
             <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
             <div className="mt-0.5 text-[11px] text-slate-500">Generated study notes · saved locally</div>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            <ErrorBoundary onError={(error) => console.error('📝 NoteLab Error:', error.message, error.stack)}>
-              <UltraNotesList
-                bookId={bookId}
-                refreshKey={noteLabRefreshKey}
-                onNavigateToPage={(page) => {
-                  syncToPage(page);
-                  trySwitchShellTab("reader", "reader");
-                }}
-                onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
-                onOpenWhiteboard={(note, card) => {
-                  setWbConcept(card?.title || note.topic);
-                  setWbContext(card?.body || note.coreIdea || "");
-                  setShowWhiteboardPanel(true);
-                }}
-                onExplainCard={(note, card) => {
-                  openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
-                }}
-              />
-            </ErrorBoundary>
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left: Thought Unit navigation for the currently open note */}
+            <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
+              {notelabNavEntries.length > 0 ? (
+                <ThoughtUnitNavigator
+                  entries={notelabNavEntries}
+                  focusedId={notelabFocusedAnchorId}
+                  onJump={(id) => setNotelabFocusedAnchorId(id)}
+                  presetId={sharedPresetId}
+                />
+              ) : (
+                <div className="px-3 py-4 text-[11px] leading-relaxed text-slate-500">
+                  Open a note to see its thought units here.
+                </div>
+              )}
+            </div>
+
+            {/* Center: expert notebook card grid (existing note list/grid, reused as-is) */}
+            <div className="flex-1 overflow-y-auto">
+              <ErrorBoundary onError={(error) => console.error('📝 NoteLab Error:', error.message, error.stack)}>
+                <UltraNotesList
+                  bookId={bookId}
+                  refreshKey={noteLabRefreshKey}
+                  onNavigateToPage={(page) => {
+                    syncToPage(page);
+                    trySwitchShellTab("reader", "reader");
+                  }}
+                  onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+                  onOpenWhiteboard={(note, card) => {
+                    setWbConcept(card?.title || note.topic);
+                    setWbContext(card?.body || note.coreIdea || "");
+                    setShowWhiteboardPanel(true);
+                  }}
+                  onExplainCard={(note, card) => {
+                    openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
+                  }}
+                  onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); }}
+                  focusedAnchorText={notelabFocusedAnchorText}
+                />
+              </ErrorBoundary>
+            </div>
+
+            {/* Right: Study Tools + Export for the active note */}
+            <div className="w-[200px] flex-shrink-0 overflow-y-auto border-l border-white/10 px-3 py-3 flex flex-col gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">Study Tools</span>
+              {notelabActiveNote ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const set = buildRecallSetFromNote(notelabActiveNote, { sourceLabel: "notelab" });
+                      await saveRecallSet(set);
+                      setLastRecallSetId(set.id);
+                      setRecallLabRefreshKey((k) => k + 1);
+                      trySwitchShellTab("study", "study");
+                    }}
+                    className="rounded-md border border-indigo-400/20 bg-indigo-400/10 px-2 py-1.5 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-400/15"
+                  >
+                    🎯 Generate Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWbConcept(notelabActiveNote.topic);
+                      setWbContext(notelabActiveNote.coreIdea || "");
+                      setShowWhiteboardPanel(true);
+                    }}
+                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-400/15"
+                  >
+                    🖼️ Whiteboard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { syncToPage(notelabActiveNote.pageNumber); trySwitchShellTab("reader", "reader"); }}
+                    className="rounded-md border border-blue-400/20 bg-blue-400/10 px-2 py-1.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-400/15"
+                  >
+                    📍 Go to page {notelabActiveNote.pageNumber}
+                  </button>
+                  <div className="mt-2 h-px bg-white/8" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">Export</span>
+                  <button
+                    type="button"
+                    onClick={() => downloadNoteMarkdown(notelabActiveNote, getStoredProfessionMode())}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                  >
+                    📄 Markdown
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadNotePdf(notelabActiveNote, getStoredProfessionMode())}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                  >
+                    📑 PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadNoteDocx(notelabActiveNote, getStoredProfessionMode())}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                  >
+                    📝 DOCX
+                  </button>
+                </>
+              ) : (
+                <div className="text-[11px] leading-relaxed text-slate-500">
+                  Open a note to generate cards, open it in the whiteboard, or export it.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       );

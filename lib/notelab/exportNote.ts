@@ -85,6 +85,9 @@ export function noteToMarkdown(note: UltraNote, mode: ProfessionMode = "default"
   if (note.externalStudyLinks?.length) {
     lines.push("### Study Links", ...note.externalStudyLinks.map((l) => `- [${l.label}](https://www.google.com/search?q=${encodeURIComponent(l.searchQuery)})`), "");
   }
+  if (note.tags?.length) {
+    lines.push(`_Tags: ${note.tags.map((t) => `#${t}`).join(" ")}_`, "");
+  }
 
   return lines.join("\n");
 }
@@ -186,6 +189,13 @@ function renderNoteToPdf(doc: any, note: UltraNote, y: number, mode: ProfessionM
 
   if (note.memoryShortcuts?.length) section(getSectionLens(mode, "Memory Hook")?.label ?? "Memory Shortcuts", note.memoryShortcuts.map((s) => `• ${s}`).join("\n"));
   if (note.miniTest?.length) section(getSectionLens(mode, "Recall Questions")?.label ?? "Recall Questions", note.miniTest.map((q, i) => `${i + 1}. ${q}`).join("\n"));
+  if (note.tags?.length) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor("#666");
+    y = addWrapped(doc, `Tags: ${note.tags.map((t) => `#${t}`).join(" ")}`, left, y, width, 12);
+    doc.setTextColor("#000");
+  }
 
   return y + 14;
 }
@@ -277,6 +287,12 @@ function noteToDocxSections(note: UltraNote, docxLib: typeof import("docx"), mod
 
   if (note.memoryShortcuts?.length) section(getSectionLens(mode, "Memory Hook")?.label ?? "Memory Shortcuts", note.memoryShortcuts.map((s) => `• ${s}`).join("\n"));
   if (note.miniTest?.length) section(getSectionLens(mode, "Recall Questions")?.label ?? "Recall Questions", note.miniTest.map((q, i) => `${i + 1}. ${q}`).join("\n"));
+  if (note.tags?.length) {
+    paras.push(new Paragraph({
+      children: [new TextRun({ text: `Tags: ${note.tags.map((t) => `#${t}`).join(" ")}`, italics: true, color: "666666" })],
+      spacing: { before: 200 },
+    }));
+  }
 
   return paras;
 }
