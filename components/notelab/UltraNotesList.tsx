@@ -12,9 +12,11 @@ import {
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
-import { downloadNoteMarkdown, downloadNotePdf, downloadNotesMarkdown, downloadNotesPdf } from "@/lib/notelab/exportNote";
+import { buildRecallSetFromNote, buildRecallSetFromNoteCard, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
 import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
+import type { NoteCard as NoteCardData } from "@/lib/insights/synthesizeTeachingOutput";
+import NoteCardGrid from "@/components/notelab/NoteCardGrid";
 import {
   PROFESSION_MODES,
   getStoredProfessionMode,
@@ -30,8 +32,11 @@ interface UltraNotesListProps {
   onNavigateToPage?: (pageNumber: number) => void;
   refreshKey?: number;
   onCardsGenerated?: (setId: string) => void;
-  /** "Open in Whiteboard" — draws this note's core idea as a visual diagram */
-  onOpenWhiteboard?: (note: UltraNote) => void;
+  /** "Open in Whiteboard" — draws this note's core idea as a visual diagram.
+   *  `card` is set when triggered from an Adaptive Notebook card rather than the note as a whole. */
+  onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
+  /** Adaptive Notebook card's "💬 Explain" action — seeds the Explain This Step panel */
+  onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = [
@@ -58,7 +63,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -303,6 +308,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onNavigate={onNavigateToPage}
                               onCardsGenerated={onCardsGenerated}
                               onOpenWhiteboard={onOpenWhiteboard}
+                              onExplainCard={onExplainCard}
                               onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
                               onJumpToNote={handleJumpToNote}
                             />
@@ -396,7 +402,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onToggleConceptStar, onJumpToNote,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -410,7 +416,8 @@ function NoteCard({
   onDelete: () => void;
   onNavigate?: (page: number) => void;
   onCardsGenerated?: (setId: string) => void;
-  onOpenWhiteboard?: (note: UltraNote) => void;
+  onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
+  onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
   onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
 }) {
@@ -430,6 +437,16 @@ function NoteCard({
       console.error("[NOTELAB_CARDS_SAVE_FAILED]", String(e));
     } finally {
       setCardsSaving(false);
+    }
+  }
+
+  async function handleGenerateCardFromNoteCard(noteCard: NoteCardData) {
+    try {
+      const set = buildRecallSetFromNoteCard(note, noteCard, { sourceLabel: "notelab" });
+      await saveRecallSet(set);
+      onCardsGenerated?.(set.id);
+    } catch (e) {
+      console.error("[NOTELAB_NOTECARD_CARDS_SAVE_FAILED]", String(e));
     }
   }
 
@@ -475,8 +492,19 @@ function NoteCard({
       {isExpanded && (
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {/* New-schema sections (Core Idea, Must Know, Mechanism, etc.) */}
-          {hasNewSchema(note.sections) ? (
+          {/* Adaptive Notebook cards (AI-curated or derived) — takes priority over both
+              older tiers below, which remain as fallbacks for notes synthesized before
+              noteCards existed. */}
+          {note.noteCards?.length ? (
+            <NoteCardGrid
+              noteCards={note.noteCards}
+              note={note}
+              onNavigateToPage={onNavigate}
+              onGenerateCard={(n, c) => handleGenerateCardFromNoteCard(c)}
+              onOpenWhiteboard={onOpenWhiteboard ? (n, c) => onOpenWhiteboard(n, c) : undefined}
+              onExplainCard={onExplainCard}
+            />
+          ) : hasNewSchema(note.sections) ? (
             <SectionsView sections={note.sections!} mode={mode} />
           ) : (
             <>
@@ -511,8 +539,8 @@ function NoteCard({
             </>
           )}
 
-          {/* Memory shortcuts + Mini Test — only for legacy notes (new schema embeds these in sections) */}
-          {!hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (() => {
+          {/* Memory shortcuts + Mini Test — only for legacy notes (noteCards/new-schema sections embed these) */}
+          {!note.noteCards?.length && !hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (() => {
             const lens = getSectionLens(mode, "Memory Hook");
             return (
               <NoteBlock accent="#a78bfa" bg="rgba(167,139,250,0.05)" icon={lens?.icon ?? "🧠"} label={(lens?.label ?? "Memory Hooks").toUpperCase()}>
@@ -525,7 +553,7 @@ function NoteCard({
             );
           })()}
 
-          {!hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (() => {
+          {!note.noteCards?.length && !hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (() => {
             const lens = getSectionLens(mode, "Recall Questions");
             return (
               <NoteBlock accent="#6ee7b7" bg="rgba(52,211,153,0.05)" icon={lens?.icon ?? "📝"} label={(lens?.label ?? "Recall Questions").toUpperCase()}>
@@ -622,6 +650,7 @@ function NoteCard({
             <ExportMenu
               onMarkdown={() => downloadNoteMarkdown(note, mode)}
               onPdf={() => downloadNotePdf(note, mode)}
+              onDocx={() => downloadNoteDocx(note, mode)}
             />
           </div>
         </div>
@@ -859,9 +888,9 @@ function NoteRow({ label, text, color }: { label: string; text: string; color: s
 
 // ── ExportMenu — small popover offering Markdown / PDF download ──────────
 
-function ExportMenu({ onMarkdown, onPdf }: { onMarkdown: () => void; onPdf: () => Promise<void> }) {
+function ExportMenu({ onMarkdown, onPdf, onDocx }: { onMarkdown: () => void; onPdf: () => Promise<void>; onDocx?: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -874,13 +903,26 @@ function ExportMenu({ onMarkdown, onPdf }: { onMarkdown: () => void; onPdf: () =
   }, [open]);
 
   async function handlePdf() {
-    setExporting(true);
+    setExporting("pdf");
     try {
       await onPdf();
     } catch (e) {
       console.error("[NOTELAB_EXPORT_PDF_FAILED]", String(e));
     } finally {
-      setExporting(false);
+      setExporting(null);
+      setOpen(false);
+    }
+  }
+
+  async function handleDocx() {
+    if (!onDocx) return;
+    setExporting("docx");
+    try {
+      await onDocx();
+    } catch (e) {
+      console.error("[NOTELAB_EXPORT_DOCX_FAILED]", String(e));
+    } finally {
+      setExporting(null);
       setOpen(false);
     }
   }
@@ -898,9 +940,14 @@ function ExportMenu({ onMarkdown, onPdf }: { onMarkdown: () => void; onPdf: () =
           <button type="button" onClick={() => { onMarkdown(); setOpen(false); }} style={exportMenuItem}>
             📄 Markdown (.md)
           </button>
-          <button type="button" onClick={handlePdf} disabled={exporting} style={{ ...exportMenuItem, opacity: exporting ? 0.6 : 1, cursor: exporting ? "wait" : "pointer" }}>
-            {exporting ? "Generating…" : "🗎 PDF (.pdf)"}
+          <button type="button" onClick={handlePdf} disabled={exporting !== null} style={{ ...exportMenuItem, opacity: exporting !== null ? 0.6 : 1, cursor: exporting !== null ? "wait" : "pointer" }}>
+            {exporting === "pdf" ? "Generating…" : "🗎 PDF (.pdf)"}
           </button>
+          {onDocx && (
+            <button type="button" onClick={handleDocx} disabled={exporting !== null} style={{ ...exportMenuItem, opacity: exporting !== null ? 0.6 : 1, cursor: exporting !== null ? "wait" : "pointer" }}>
+              {exporting === "docx" ? "Generating…" : "📘 Word (.docx)"}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -925,6 +972,7 @@ function ExportAllMenu({ notes, title, mode }: { notes: UltraNote[]; title: stri
     <ExportMenu
       onMarkdown={() => downloadNotesMarkdown(notes, title, mode)}
       onPdf={() => downloadNotesPdf(notes, title, mode)}
+      onDocx={() => downloadNotesDocx(notes, title, mode)}
     />
   );
 }

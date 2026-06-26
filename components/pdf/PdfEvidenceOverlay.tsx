@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
+import { tierGlowStyle } from "@/lib/insights/tierStyle";
 
 export interface OverlayRect {
   id: string;
@@ -118,21 +119,6 @@ const FALLBACK_CONFIG: KindConfig = {
 };
 
 // B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha and
-// border weight on top of the kind's base fill color — layered on, not replacing,
-// the guided-tier fill opacity above. Tier 1 ("Optional") gets a thin outline only;
-// tier 5 gets the strongest glow. Undefined defaults to tier 3 (medium).
-function tierGlowStyle(tier: number | undefined, cfg: KindConfig): { boxShadow: string; border: string } {
-  const t = Math.min(5, Math.max(1, tier ?? 3));
-  const blur = 2 + t;             // 3px .. 7px
-  const alpha = 0.08 + t * 0.05;  // 0.13 .. 0.33
-  const borderWidth = t <= 1 ? 1 : t >= 5 ? 2 : 1.5;
-  const borderAlpha = t <= 1 ? 0.22 : 0.45;
-  return {
-    boxShadow: `0 0 ${blur}px rgba(${cfg.glowColor},${alpha})`,
-    border: `${borderWidth}px solid rgba(${cfg.glowColor},${borderAlpha})`,
-  };
-}
-
 function getConfig(rect: OverlayRect): KindConfig {
   const kind = rect.semanticKind as string | undefined;
   if (kind && kind in KIND_CONFIG) return KIND_CONFIG[kind as SemanticKind];
@@ -228,7 +214,7 @@ export default function PdfEvidenceOverlay({
         // label in the margin to the left of the highlight. Falls back to above-highlight
         // when there's no left margin (e.g. narrow pages or flush-left text).
         const hasLeftMargin = rect.left >= 50;
-        const tierStyle = tierGlowStyle(rect.priorityTier, cfg);
+        const tierStyle = tierGlowStyle(rect.priorityTier, cfg.glowColor);
         return (
           <button
             key={rect.id}

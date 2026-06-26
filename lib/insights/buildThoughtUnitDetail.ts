@@ -7,6 +7,8 @@
 // buildNoteFromStudyModel, just scoped to one anchor instead of the whole page.
 
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
+import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 
 export interface ThoughtUnitDetail {
   evidenceRefId: string;
@@ -94,5 +96,27 @@ export function buildThoughtUnitDetail(
     datFact: model.studyNotes.examSignal ?? null,
     examTrap,
     recallCard: recallCardFor(anchor.role, title, anchor.exactText, { mechanism, commonConfusion, coreIdea }),
+  };
+}
+
+/**
+ * Sibling to buildThoughtUnitDetail — expands an Adaptive Notebook NoteCard
+ * into the same flat ThoughtUnitDetail DTO, so a card's "Explain" action can
+ * reuse openExplainStepForThoughtUnit directly with no new entry point.
+ */
+export function buildThoughtUnitDetailFromNoteCard(card: NoteCard, note: UltraNote): ThoughtUnitDetail {
+  return {
+    evidenceRefId: `notecard-${note.id}-${card.type}`,
+    bookId: note.bookId,
+    pageNumber: note.pageNumber,
+    title: card.title,
+    sourceText: card.body,
+    coreIdea: card.body,
+    mechanism: card.type === "mechanism" ? card.body : null,
+    whyItMatters: card.type === "must_know" || card.type === "why_this_matters" ? card.body : null,
+    commonConfusion: card.type === "dat_trap" || card.type === "common_mistake" ? card.body : null,
+    datFact: null,
+    examTrap: card.type === "dat_trap" ? card.body : null,
+    recallCard: { front: `Explain: ${card.title}`, back: card.body },
   };
 }
