@@ -34,13 +34,28 @@ interface UltraNotesListProps {
   onOpenWhiteboard?: (note: UltraNote) => void;
 }
 
-const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
+const SUBJECT_ORDER: NoteSubject[] = [
+  "Biology",
+  "Calculus",
+  "Chemistry",
+  "Physics",
+  "Computer Science",
+  "Law",
+  "Nursing / Pharmacology",
+  "Dental / Clinical",
+  "General Notes",
+];
 
 const SUBJECT_ICON: Record<NoteSubject, string> = {
-  "Biology":          "🧬",
-  "Calculus":         "📐",
-  "Dental / Clinical":"🦷",
-  "General Notes":    "📝",
+  "Biology":               "🧬",
+  "Calculus":              "📐",
+  "Chemistry":             "🧪",
+  "Physics":               "⚛️",
+  "Computer Science":      "💻",
+  "Law":                   "⚖️",
+  "Nursing / Pharmacology":"💊",
+  "Dental / Clinical":     "🦷",
+  "General Notes":         "📝",
 };
 
 export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard }: UltraNotesListProps) {

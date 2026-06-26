@@ -41,11 +41,26 @@ interface RecallLabProps {
   onOpenExplainStep?: (detail: ThoughtUnitDetail) => void;
 }
 
-const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
+const SUBJECT_ORDER: NoteSubject[] = [
+  "Biology",
+  "Calculus",
+  "Chemistry",
+  "Physics",
+  "Computer Science",
+  "Law",
+  "Nursing / Pharmacology",
+  "Dental / Clinical",
+  "General Notes",
+];
 
 const SUBJECT_ICON: Record<NoteSubject, string> = {
   Biology: "🧬",
   Calculus: "📐",
+  Chemistry: "🧪",
+  Physics: "⚛️",
+  "Computer Science": "💻",
+  Law: "⚖️",
+  "Nursing / Pharmacology": "💊",
   "Dental / Clinical": "🦷",
   "General Notes": "📝",
 };
