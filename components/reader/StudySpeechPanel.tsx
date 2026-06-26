@@ -125,15 +125,12 @@ function findBestSentenceIndex(sentences: string[], snippet: string): number {
 
 // ── Role colour map ──────────────────────────────────────────────────────────
 
+// Matches SpeechSegmentRole exactly — Speech only ever produces these three
+// LeftPanel/source-text roles, never RightPanel field names.
 const ROLE_COLOR: Record<string, { border: string; text: string; bg: string }> = {
   thesis:          { border: "rgba(251,191,36,0.35)",  text: "#fbbf24", bg: "rgba(251,191,36,0.07)" },
-  whyThisMatters:  { border: "rgba(52,211,153,0.30)",  text: "#34d399", bg: "rgba(52,211,153,0.05)" },
-  keyMechanism:    { border: "rgba(99,102,241,0.35)",  text: "#818cf8", bg: "rgba(99,102,241,0.07)" },
-  commonConfusion: { border: "rgba(239,68,68,0.35)",   text: "#fca5a5", bg: "rgba(239,68,68,0.07)"  },
-  examSignal:      { border: "rgba(251,146,60,0.35)",  text: "#fb923c", bg: "rgba(251,146,60,0.07)" },
   conceptBlock:    { border: "rgba(147,197,253,0.30)", text: "#93c5fd", bg: "rgba(147,197,253,0.05)"},
   visualAnchor:    { border: "rgba(167,243,208,0.30)", text: "#6ee7b7", bg: "rgba(167,243,208,0.05)"},
-  reasoningFlow:   { border: "rgba(216,180,254,0.30)", text: "#d8b4fe", bg: "rgba(216,180,254,0.05)"},
 };
 function roleStyle(role: string) {
   return ROLE_COLOR[role] ?? { border: "rgba(255,255,255,0.12)", text: "#94a3b8", bg: "rgba(255,255,255,0.04)" };
@@ -215,6 +212,11 @@ interface Props {
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
    *  reading highlight in the PDF (focusHighlightPersist). */
   onPlayStateChange?: (isReading: boolean) => void;
+  /** Fires on every karaoke word-index change, for every mode — drives the live
+   *  Speechify-style word box in the PDF and the active word mark in the LeftPanel
+   *  card snippet. anchorId is null for segments with no evidenceRefId (e.g. Full
+   *  Page mode's raw sentences) — consumers should just skip word-marking then. */
+  onActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
   /** Render as the promoted primary Study Tools action ("▶ Listen to this page"),
    *  open by default, instead of the compact collapsed header. */
   primary?: boolean;
@@ -229,7 +231,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -256,24 +258,34 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [activeWordIdx, setActiveWordIdx] = useState(0);
   const spokenWordsRef        = useRef<SyncWord[]>([]);      // tokenized from the SPOKEN text (post formula-normalization)
   const cumulativeWeightsRef  = useRef<number[]>([]);        // estimated start-fraction per spoken word (OpenAI/audio.currentTime path)
+  const displayWordsRef       = useRef<SyncWord[]>([]);      // ref mirror of karaokeWords — avoids stale-closure reads from ontimeupdate/onboundary handlers
   const displayWordCountRef   = useRef(0);
+  // Which LeftPanel/PDF anchor the currently-playing segment maps to — null for
+  // segments with no evidenceRefId (e.g. Full Page mode's raw sentences).
+  const activeAnchorIdRef     = useRef<string | null>(null);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
   // alongside every setEyeText(...) so word-sync always matches what's playing.
-  function beginKaraoke(displayText: string, spokenText: string) {
+  // anchorId threads through to onActiveWordChange so every mode (not just the
+  // local Eye Guide box) can track the live spoken word against its source anchor.
+  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null) {
     const displayWords = tokenizeWords(displayText);
     const spokenWords  = tokenizeWords(spokenText);
     setKaraokeWords(displayWords);
     setActiveWordIdx(0);
     spokenWordsRef.current       = spokenWords;
     cumulativeWeightsRef.current = estimateWordWeights(spokenWords);
+    displayWordsRef.current      = displayWords;
     displayWordCountRef.current  = displayWords.length;
+    activeAnchorIdRef.current    = anchorId;
+    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "");
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
     setActiveWordIdx(scaled);
+    onActiveWordChange?.(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "");
   }
 
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
@@ -357,6 +369,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
+    activeAnchorIdRef.current = null;
+    onActiveWordChange?.(null, 0, "");
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -370,6 +384,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
+    activeAnchorIdRef.current = null;
+    onActiveWordChange?.(null, 0, "");
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -383,6 +399,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
+    activeAnchorIdRef.current = null;
+    onActiveWordChange?.(null, 0, "");
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -596,6 +614,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
+    activeAnchorIdRef.current = null;
+    onActiveWordChange?.(null, 0, "");
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -833,7 +853,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
       setEyeTier(null);
-      beginKaraoke(text.slice(0, 160), text);
+      beginKaraoke(text.slice(0, 160), text, null);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
@@ -893,7 +913,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), hText);
+      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1002,7 +1022,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     console.log("[SPEECH_SOURCE]", {
       mode,
-      source: "finalStudyModel.studyNotes",
+      source: "finalStudyModel.visualAnchors via buildSpeechScript (LeftPanel order)",
       itemCount: segsToPlay.length,
       charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
     });
@@ -1031,7 +1051,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), segText);
+      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });

@@ -52,6 +52,8 @@ interface UseTeachingSynthesisArgs {
   pageSummary?: string;
   pageText?: string;
   domain: PageDomain | null;
+  /** lib/insights/domainPresets.ts preset id — selects the B3 domain-category prompt block. */
+  presetId?: string;
   blocks: UltraConceptBlock[];
   enabled: boolean;
   pageNumber?: number;
@@ -72,6 +74,7 @@ export function useTeachingSynthesis({
   pageSummary,
   pageText,
   domain,
+  presetId,
   blocks,
   enabled,
   pageNumber,
@@ -98,6 +101,7 @@ export function useTeachingSynthesis({
   // a value arriving slightly after Stage 1 starts is still picked up, without
   // those values being effect dependencies (which would cause aborts/restarts).
   const domainRef        = useRef(domain);
+  const presetIdRef      = useRef(presetId);
   const blocksRef        = useRef(blocks);
   const pageObjectiveRef = useRef(pageObjective);
   const pageThesisRef    = useRef(pageThesis);
@@ -105,6 +109,7 @@ export function useTeachingSynthesis({
   const pageTextRef      = useRef(pageText);
   const pageNumberRef    = useRef(pageNumber);
   domainRef.current        = domain;
+  presetIdRef.current      = presetId;
   blocksRef.current        = blocks;
   pageObjectiveRef.current = pageObjective;
   pageThesisRef.current    = pageThesis;
@@ -209,6 +214,7 @@ export function useTeachingSynthesis({
     // An empty rankedConcepts array is accepted by the server when pageText is present.
     const stage1Input = {
       domain:         safeDomain,
+      presetId:       presetIdRef.current,
       pageObjective:  _pageObjective,
       pageThesis:     _pageThesis,
       pageSummary:    pageSummaryRef.current,
@@ -240,6 +246,7 @@ export function useTeachingSynthesis({
         usableBlocks, safeDomain,
         _pageObjective, _pageThesis,
         pageSummaryRef.current, pageNumberRef.current, _pageText || undefined,
+        presetIdRef.current,
       );
     } else {
       // Text-fallback: derive synthetic concept chunks for Stage 2 context.
@@ -259,6 +266,7 @@ export function useTeachingSynthesis({
 
       stage2Input = {
         domain:         safeDomain,
+        presetId:       presetIdRef.current,
         pageObjective:  _pageObjective,
         pageThesis:     _pageThesis,
         pageSummary:    pageSummaryRef.current,

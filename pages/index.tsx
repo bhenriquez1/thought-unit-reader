@@ -596,6 +596,12 @@ export default function ThoughtUnitReader() {
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
+  // Live word-by-word speech position — parallel to focusedEvidenceId (which anchor
+  // is active) but tracks the specific word within it. anchorId is null when the
+  // current segment has no evidenceRefId (e.g. Full Page mode's raw sentences).
+  // Drives the Speechify-style live word box in the PDF and the marked word in the
+  // active LeftPanel card snippet — RightPanel never reads this, only focusedEvidenceId.
+  const [activeSpokenWord, setActiveSpokenWord] = useState<{ anchorId: string | null; wordIndex: number; word: string } | null>(null);
   // True while Study Speech is actively reading a sentence aloud — keeps the
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
@@ -781,6 +787,8 @@ export default function ThoughtUnitReader() {
         reason:     a.reason,
         spanStart:  a.spanStart ?? null,
         spanEnd:    a.spanEnd ?? null,
+        priorityTier: a.priorityTier ?? null,
+        domainCategory: a.domainCategory ?? null,
       }));
       const fallback = sanitizedSaved
         .filter(a => !groundedKeys.has(a.text.toLowerCase().trim()))
@@ -790,6 +798,8 @@ export default function ThoughtUnitReader() {
           reason:     a.reason,
           spanStart:  a.spanStart ?? null,
           spanEnd:    a.spanEnd ?? null,
+          priorityTier: a.priorityTier ?? null,
+          domainCategory: a.domainCategory ?? null,
         }));
       return [...fromGrounded, ...fallback];
     };
@@ -938,6 +948,8 @@ export default function ThoughtUnitReader() {
       reason:        a.reason,
       spanStart:     a.spanStart ?? null,
       spanEnd:       a.spanEnd   ?? null,
+      priorityTier:  a.priorityTier ?? null,
+      domainCategory: a.domainCategory ?? null,
       evidenceRefId: a.id,
     })) as (SynthHighlightAnchor & { evidenceRefId: string })[];
 
@@ -974,6 +986,8 @@ export default function ThoughtUnitReader() {
       reason:        a.reason,
       spanStart:     a.spanStart ?? null,
       spanEnd:       a.spanEnd   ?? null,
+      priorityTier:  a.priorityTier ?? null,
+      domainCategory: a.domainCategory ?? null,
       evidenceRefId: (a as any).evidenceRefId as string | undefined,
     }));
 
@@ -1225,6 +1239,8 @@ export default function ThoughtUnitReader() {
         reason: h.reason,
         spanStart: null,
         spanEnd: null,
+        priorityTier: null,
+        domainCategory: null,
       })));
     }).catch((e) => {
       console.warn("[SAVED_HIGHLIGHTS_LOAD_ERROR]", { bookId, page: currentPage, error: String(e) });
@@ -3817,6 +3833,7 @@ export default function ThoughtUnitReader() {
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
+                  activeSpokenWord={activeSpokenWord}
                   onEvidenceFocus={onPdfHighlightFocus}
                   onExplainThoughtUnit={explainThoughtUnitById}
                   onOpenThoughtUnitRecall={openThoughtUnitInRecallLab}
@@ -3889,6 +3906,7 @@ export default function ThoughtUnitReader() {
                 }}
                 onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
                 onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
+                onSpeechActiveWordChange={(anchorId, wordIndex, word) => setActiveSpokenWord(anchorId || word ? { anchorId, wordIndex, word } : null)}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}

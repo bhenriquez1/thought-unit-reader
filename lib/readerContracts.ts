@@ -114,6 +114,11 @@ export interface HighlightTarget {
    *  When both are present, SmartPDFViewer highlights all text between them. */
   spanStart?: string;
   spanEnd?: string;
+  /** AI-assigned 1-5 importance (5 = "Master This") — drives glow/border strength,
+   *  layered on top of (not replacing) the ordinal group-level tier in importanceTiers.ts. */
+  priorityTier?: number;
+  /** Domain-specific extraction category (e.g. "mechanism", "clinical pearl"). */
+  domainCategory?: string;
 }
 
 export interface ParagraphSignal {

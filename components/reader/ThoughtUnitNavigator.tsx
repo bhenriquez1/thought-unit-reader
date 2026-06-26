@@ -15,6 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, renderStars, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
+import { tokenizeWords } from "@/lib/speech/wordSync";
 import DomainModeSelector from "./DomainModeSelector";
 
 export interface ThoughtUnitNavigatorEntry {
@@ -25,6 +26,9 @@ export interface ThoughtUnitNavigatorEntry {
   page?: number;
   /** Anchor score/confidence, when the pipeline provides one. */
   confidence?: number;
+  /** AI-assigned 1-5 importance (5 = "Master This") — drives this card's star badge,
+   *  layered on top of (not replacing) the group-level ordinal tier above it. */
+  priorityTier?: number;
 }
 
 // Colors stay constant across domain presets — only the label text changes
@@ -43,6 +47,37 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
+// Marks the word at activeSpokenWord.wordIndex within this card's own snippet text.
+// Pure string-splitting — entry.text is tokenized independently of whatever text
+// Speech is actually reading (which may be formula-converted/sliced), so this is
+// an approximation, not an exact echo of the spoken word.
+function renderSnippetWithActiveWord(
+  text: string,
+  activeSpokenWord: { anchorId: string | null; wordIndex: number; word: string } | null | undefined,
+  entryId: string,
+): React.ReactNode {
+  if (!activeSpokenWord || activeSpokenWord.anchorId !== entryId) return text;
+  const words = tokenizeWords(text);
+  const target = words[activeSpokenWord.wordIndex];
+  if (!target) return text;
+  return (
+    <>
+      {text.slice(0, target.start)}
+      <mark
+        style={{
+          background: "rgba(253,224,71,0.55)",
+          color: "inherit",
+          borderRadius: "2px",
+          padding: "0 1px",
+        }}
+      >
+        {text.slice(target.start, target.end)}
+      </mark>
+      {text.slice(target.end)}
+    </>
+  );
+}
+
 export default function ThoughtUnitNavigator({
   entries,
   focusedId,
@@ -54,6 +89,7 @@ export default function ThoughtUnitNavigator({
   detectedPresetLabel,
   overridePresetId,
   onPresetChange,
+  activeSpokenWord,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -70,6 +106,9 @@ export default function ThoughtUnitNavigator({
   detectedPresetLabel?: string;
   overridePresetId?: string | null;
   onPresetChange?: (presetId: string | null) => void;
+  /** Live Speech word position — when its anchorId matches a card's id, that
+   *  card's snippet marks the matching word, Speechify-style. */
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -176,6 +215,15 @@ export default function ThoughtUnitNavigator({
                   }}
                   data-testid="thought-unit-entry"
                 >
+                  {entry.priorityTier !== undefined && (
+                    <span
+                      className="absolute top-1 right-1.5 text-[7px] tracking-tighter text-white/45"
+                      title={`Priority ${entry.priorityTier}/5`}
+                      data-testid="anchor-priority-stars"
+                    >
+                      {renderStars(entry.priorityTier)}
+                    </span>
+                  )}
                   <span
                     className="text-[10.5px] leading-snug text-white/80"
                     style={{
@@ -185,7 +233,7 @@ export default function ThoughtUnitNavigator({
                       overflow: "hidden",
                     }}
                   >
-                    {entry.text}
+                    {renderSnippetWithActiveWord(entry.text, focused ? activeSpokenWord : null, entry.id)}
                   </span>
                   {(onExplain || onOpenRecall || onOpenNote) && (
                     <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
