@@ -8,7 +8,7 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact";
+  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact" | "clinical";
   /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
    *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
   priorityTier?: number;
@@ -28,7 +28,7 @@ function shouldRender(rect: OverlayRect): boolean {
 //   🟪 application (purple)  — example / evidence / worked step / application
 //   🟥 trap        (red)     — exam trap / confusion / misconception
 
-type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact";
+type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical";
 
 interface KindConfig {
   label:       string;
@@ -104,6 +104,16 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeBg:    "rgba(124,45,18,0.92)",
     badgeColor: "#fed7aa",
     glowColor:  "251,146,60",
+  },
+  clinical: {
+    label:      "CLINICAL PEARL",
+    bgNormal:   "rgba(103,232,249,0.22)",
+    bgFocused:  "rgba(103,232,249,0.50)",
+    restGlow:   "0 0 3px rgba(103,232,249,0.32)",
+    ringClass:  "ring-1 ring-cyan-300/70 shadow-[0_0_8px_rgba(103,232,249,0.55)]",
+    badgeBg:    "rgba(22,78,99,0.92)",
+    badgeColor: "#67e8f9",
+    glowColor:  "103,232,249",
   },
 };
 

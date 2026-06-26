@@ -6,7 +6,7 @@
 "use client";
 
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import {
   buildSpeechScript,
   STUDY_SPEECH_MODES,
@@ -121,6 +121,24 @@ function findBestSentenceIndex(sentences: string[], snippet: string): number {
     if (score > bestScore) { bestScore = score; bestIdx = i; }
   });
   return bestIdx;
+}
+
+// ── Current Page mode — link each spoken sentence to its nearest Thought Unit ──
+// so Left Panel / Right Panel / PDF stay in sync while the full page is read
+// top-to-bottom (literal page coverage, not just the AI-tagged anchors).
+const MIN_ANCHOR_OVERLAP = 2;
+function matchSentenceToAnchor(sentence: string, anchors: VisualAnchor[]): VisualAnchor | null {
+  const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2);
+  const sentenceWords = new Set(words(sentence));
+  if (sentenceWords.size === 0 || anchors.length === 0) return null;
+  let best: VisualAnchor | null = null;
+  let bestScore = 0;
+  for (const anchor of anchors) {
+    let score = 0;
+    for (const w of words(anchor.exactText)) if (sentenceWords.has(w)) score++;
+    if (score > bestScore) { bestScore = score; best = anchor; }
+  }
+  return bestScore >= MIN_ANCHOR_OVERLAP ? best : null;
 }
 
 // ── Role colour map ──────────────────────────────────────────────────────────
@@ -859,6 +877,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
+      const matchedAnchor = matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
+      if (matchedAnchor) {
+        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: matchedAnchor.id, source: "current-page-anchor-match" });
+        onEvidenceFocus?.(matchedAnchor.id);
+      }
+      // No match: leave the previous focus as-is, consistent with other modes' behavior between anchors.
+
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
 
@@ -884,6 +909,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
       onSnippetFocus?.(null);
+      onEvidenceFocus?.(null);
     }
     onPlayStateChange?.(false);
   }
