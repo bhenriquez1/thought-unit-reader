@@ -79,7 +79,6 @@ import {
 
 // Surgeon View 2.0 - Relationship-first Cockpit
 import {
-  WhiteboardOverlay,
   useRelationshipStore,
 } from "@/components/surgeonView2";
 import type { SourceRef } from "@/lib/page-intelligence";
@@ -3913,16 +3912,6 @@ export default function ThoughtUnitReader() {
                 onOpenExplainIt={() => handleOpenExplainIt()}
               />
             </div>
-
-            {/* Whiteboard Overlay (for explanations) */}
-            <WhiteboardOverlay
-              onSaveToNoteLab={() => {
-                console.log('Whiteboard: Save to NoteLab');
-              }}
-              onAddToStudy={() => {
-                trySwitchShellTab("study", "study");
-              }}
-            />
           </ErrorBoundary>
         </div>
       );
