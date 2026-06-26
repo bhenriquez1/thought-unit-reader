@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
+import { tierGlowStyle } from "@/lib/insights/tierStyle";
 
 export interface OverlayRect {
   id: string;
@@ -7,7 +8,7 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact";
+  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact" | "clinical";
   /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
    *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
   priorityTier?: number;
@@ -27,7 +28,7 @@ function shouldRender(rect: OverlayRect): boolean {
 //   🟪 application (purple)  — example / evidence / worked step / application
 //   🟥 trap        (red)     — exam trap / confusion / misconception
 
-type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact";
+type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical";
 
 interface KindConfig {
   label:       string;
@@ -104,6 +105,16 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeColor: "#fed7aa",
     glowColor:  "251,146,60",
   },
+  clinical: {
+    label:      "CLINICAL PEARL",
+    bgNormal:   "rgba(103,232,249,0.22)",
+    bgFocused:  "rgba(103,232,249,0.50)",
+    restGlow:   "0 0 3px rgba(103,232,249,0.32)",
+    ringClass:  "ring-1 ring-cyan-300/70 shadow-[0_0_8px_rgba(103,232,249,0.55)]",
+    badgeBg:    "rgba(22,78,99,0.92)",
+    badgeColor: "#67e8f9",
+    glowColor:  "103,232,249",
+  },
 };
 
 const FALLBACK_CONFIG: KindConfig = {
@@ -118,21 +129,6 @@ const FALLBACK_CONFIG: KindConfig = {
 };
 
 // B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha and
-// border weight on top of the kind's base fill color — layered on, not replacing,
-// the guided-tier fill opacity above. Tier 1 ("Optional") gets a thin outline only;
-// tier 5 gets the strongest glow. Undefined defaults to tier 3 (medium).
-function tierGlowStyle(tier: number | undefined, cfg: KindConfig): { boxShadow: string; border: string } {
-  const t = Math.min(5, Math.max(1, tier ?? 3));
-  const blur = 2 + t;             // 3px .. 7px
-  const alpha = 0.08 + t * 0.05;  // 0.13 .. 0.33
-  const borderWidth = t <= 1 ? 1 : t >= 5 ? 2 : 1.5;
-  const borderAlpha = t <= 1 ? 0.22 : 0.45;
-  return {
-    boxShadow: `0 0 ${blur}px rgba(${cfg.glowColor},${alpha})`,
-    border: `${borderWidth}px solid rgba(${cfg.glowColor},${borderAlpha})`,
-  };
-}
-
 function getConfig(rect: OverlayRect): KindConfig {
   const kind = rect.semanticKind as string | undefined;
   if (kind && kind in KIND_CONFIG) return KIND_CONFIG[kind as SemanticKind];
@@ -228,7 +224,7 @@ export default function PdfEvidenceOverlay({
         // label in the margin to the left of the highlight. Falls back to above-highlight
         // when there's no left margin (e.g. narrow pages or flush-left text).
         const hasLeftMargin = rect.left >= 50;
-        const tierStyle = tierGlowStyle(rect.priorityTier, cfg);
+        const tierStyle = tierGlowStyle(rect.priorityTier, cfg.glowColor);
         return (
           <button
             key={rect.id}

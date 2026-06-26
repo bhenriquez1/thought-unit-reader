@@ -105,6 +105,62 @@ const SECTION_LENS: Record<string, Record<ProfessionMode, LensEntry>> = {
     pilot:   { label: "Pilot's Pearl",    icon: "💎" },
     dental:  { label: "Clinical Pearl",   icon: "💎" },
   },
+  // Adaptive Notebook card-type labels (lib/notelab/noteCardStyle.ts) not already
+  // covered above by an equivalently-named legacy section.
+  "Trap": {
+    default: { label: "Trap",              icon: "⚠️" },
+    surgeon: { label: "Complication Risk", icon: "⚠️" },
+    pilot:   { label: "Hazard / Caution",  icon: "🚨" },
+    dental:  { label: "Dental Trap",       icon: "⚠️" },
+  },
+  "Procedure Flow": {
+    default: { label: "Procedure Flow",  icon: "🪜" },
+    surgeon: { label: "Operative Steps", icon: "🪜" },
+    pilot:   { label: "Flight Sequence", icon: "✈️" },
+    dental:  { label: "Procedure Flow",  icon: "🪜" },
+  },
+  "Expert Thinking": {
+    default: { label: "Expert Thinking",   icon: "🧭" },
+    surgeon: { label: "Surgeon's Approach", icon: "🧭" },
+    pilot:   { label: "Captain's Approach", icon: "🧭" },
+    dental:  { label: "Clinician's Approach", icon: "🧭" },
+  },
+  "Why This Matters": {
+    default: { label: "Why This Matters",          icon: "💡" },
+    surgeon: { label: "Why This Matters Clinically", icon: "💡" },
+    pilot:   { label: "Why This Matters in Flight",  icon: "💡" },
+    dental:  { label: "Why This Matters Clinically", icon: "💡" },
+  },
+  "Pattern Recognition": {
+    default: { label: "Pattern Recognition", icon: "🧩" },
+    surgeon: { label: "Pattern Recognition", icon: "🧩" },
+    pilot:   { label: "Pattern Recognition", icon: "🧩" },
+    dental:  { label: "Pattern Recognition", icon: "🧩" },
+  },
+  "Decision Tree": {
+    default: { label: "Decision Tree",   icon: "🌳" },
+    surgeon: { label: "Operative Decision Tree", icon: "🌳" },
+    pilot:   { label: "Go/No-Go Decision Tree", icon: "🌳" },
+    dental:  { label: "Clinical Decision Tree", icon: "🌳" },
+  },
+  "Visual Mnemonic": {
+    default: { label: "Visual Mnemonic", icon: "🖼️" },
+    surgeon: { label: "Visual Mnemonic", icon: "🖼️" },
+    pilot:   { label: "Visual Mnemonic", icon: "🖼️" },
+    dental:  { label: "Visual Mnemonic", icon: "🖼️" },
+  },
+  "Formula Breakdown": {
+    default: { label: "Formula Breakdown", icon: "🧮" },
+    surgeon: { label: "Formula Breakdown", icon: "🧮" },
+    pilot:   { label: "Formula Breakdown", icon: "🧮" },
+    dental:  { label: "Formula Breakdown", icon: "🧮" },
+  },
+  "Diagram": {
+    default: { label: "Diagram", icon: "📐" },
+    surgeon: { label: "Diagram", icon: "📐" },
+    pilot:   { label: "Diagram", icon: "📐" },
+    dental:  { label: "Diagram", icon: "📐" },
+  },
 };
 
 export function getSectionLens(mode: ProfessionMode, genericLabel: string): LensEntry | null {

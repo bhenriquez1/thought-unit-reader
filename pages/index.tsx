@@ -56,7 +56,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildThoughtUnitDetail, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
+import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
@@ -79,7 +79,6 @@ import {
 
 // Surgeon View 2.0 - Relationship-first Cockpit
 import {
-  WhiteboardOverlay,
   useRelationshipStore,
 } from "@/components/surgeonView2";
 import type { SourceRef } from "@/lib/page-intelligence";
@@ -3913,16 +3912,6 @@ export default function ThoughtUnitReader() {
                 onOpenExplainIt={() => handleOpenExplainIt()}
               />
             </div>
-
-            {/* Whiteboard Overlay (for explanations) */}
-            <WhiteboardOverlay
-              onSaveToNoteLab={() => {
-                console.log('Whiteboard: Save to NoteLab');
-              }}
-              onAddToStudy={() => {
-                trySwitchShellTab("study", "study");
-              }}
-            />
           </ErrorBoundary>
         </div>
       );
@@ -3945,10 +3934,13 @@ export default function ThoughtUnitReader() {
                   trySwitchShellTab("reader", "reader");
                 }}
                 onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
-                onOpenWhiteboard={(note) => {
-                  setWbConcept(note.topic);
-                  setWbContext(note.coreIdea || "");
+                onOpenWhiteboard={(note, card) => {
+                  setWbConcept(card?.title || note.topic);
+                  setWbContext(card?.body || note.coreIdea || "");
                   setShowWhiteboardPanel(true);
+                }}
+                onExplainCard={(note, card) => {
+                  openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
                 }}
               />
             </ErrorBoundary>

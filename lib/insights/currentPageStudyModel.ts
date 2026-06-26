@@ -7,10 +7,11 @@
 //   Left Panel  = visual cortex (reads ONLY visualAnchors — no other highlight source)
 //   NoteLab / Recall Lab = consume pageThesis, studyNotes, conceptBlocks
 
-import type { MiniTestItem, PageType } from "@/lib/insights/synthesizeTeachingOutput";
+import type { MiniTestItem, NoteCard, PageType } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanThesisLine, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindPriorityIndex } from "@/lib/insights/domainPresets";
+import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 
 // ---------------------------------------------------------------------------
 // VisualAnchor — the final left-panel highlight contract.
@@ -161,6 +162,9 @@ export type CurrentPageStudyModel = {
   visualAnchors: VisualAnchor[];
   externalStudyLinks: Array<{ label: string; searchQuery: string; type: string }>;
   relatedVideoQueries?: string[];
+  /** Adaptive Expert Notebook cards — AI-generated when present, else derived
+   *  client-side from studyNotes/conceptBlocks via deriveNoteCardsFromStudyModel. */
+  noteCards: NoteCard[];
 };
 
 type AnchorCandidate = {
@@ -430,7 +434,7 @@ export function buildStudyModel(
     topText: visualAnchors[0]?.exactText.slice(0, 80) ?? null,
   });
 
-  return {
+  const model: CurrentPageStudyModel = {
     page,
     bookId,
     pageType,
@@ -456,5 +460,18 @@ export function buildStudyModel(
     visualAnchors,
     externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
+    noteCards: [],
   };
+
+  const aiNoteCards = (synth.noteCards as NoteCard[] | null) ?? null;
+  model.noteCards = aiNoteCards?.length ? aiNoteCards : deriveNoteCardsFromStudyModel(model);
+
+  console.log("[NOTE_CARDS_READY]", {
+    page,
+    source: aiNoteCards?.length ? "ai" : "derived",
+    count: model.noteCards.length,
+    types: model.noteCards.map((c) => c.type),
+  });
+
+  return model;
 }

@@ -52,6 +52,58 @@ export const SynthHighlightAnchorSchema = z.object({
 
 export type SynthHighlightAnchor = z.infer<typeof SynthHighlightAnchorSchema>;
 
+// ---------------------------------------------------------------------------
+// NoteCard — SECTION 1.5. The Adaptive Expert Notebook's card-based output.
+// Generated FROM Section 1's highlightAnchors (same as Section 2's prose fields),
+// but independent of Section 2 — no forced cross-consistency required.
+// Mirrors (does not import) lib/whiteboard/diagramPlan.ts's node/arrow shape.
+// Every field .nullable(), never .optional() — OpenAI structured-output strict mode.
+// ---------------------------------------------------------------------------
+
+export const NoteCardTypeSchema = z.enum([
+  "must_know", "mechanism", "clinical_reasoning", "dat_trap", "common_mistake",
+  "memory_hook", "connection_map", "procedure_flow", "clinical_pearl",
+  "expert_thinking", "why_this_matters", "pattern_recognition", "decision_tree",
+  "visual_mnemonic", "formula_breakdown", "diagram", "recall_questions", "other",
+]);
+export type NoteCardType = z.infer<typeof NoteCardTypeSchema>;
+
+export const NoteCardVisualNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  nx: z.number().nullable(), // normalized 0-1 x position; null = auto-layout
+  ny: z.number().nullable(), // normalized 0-1 y position; null = auto-layout
+});
+
+export const NoteCardVisualArrowSchema = z.object({
+  from: z.string(), // node id
+  to: z.string(),   // node id
+  label: z.string().nullable(),
+});
+
+export const NoteCardVisualSchema = z.object({
+  drawType: z.enum(["flow", "anatomy", "comparison", "table", "graph", "equation", "timeline", "cycle"]),
+  nodes: z.array(NoteCardVisualNodeSchema),
+  arrows: z.array(NoteCardVisualArrowSchema),
+});
+export type NoteCardVisual = z.infer<typeof NoteCardVisualSchema>;
+
+export const NoteCardSchema = z.object({
+  type: NoteCardTypeSchema,
+  title: z.string(),
+  body: z.string(),
+  visual: NoteCardVisualSchema.nullable(),
+  // AI-assigned 1-5 importance — drives glow/border strength, layered on the same
+  // scale as SynthHighlightAnchorSchema.priorityTier but scoped to this card.
+  priorityTier: z.number().int().min(1).max(5).nullable(),
+  // Short verbatim phrases from highlightAnchors this card elaborates on — lets the
+  // UI link a card back to its source anchor(s) without a second AI call.
+  sourceAnchorHints: z.array(z.string()).nullable(),
+  // Grid width hint: "2" = wide card (e.g. a diagram or multi-step flow), "1" = standard.
+  span: z.enum(["1", "2"]).nullable(),
+});
+export type NoteCard = z.infer<typeof NoteCardSchema>;
+
 export const TeachingSynthesisConceptSchema = z.object({
   title: z.string(),
   role: z.enum([
@@ -90,6 +142,10 @@ export const TeachingSynthesisSchema = z.object({
   // FROM these anchors, not an independent pass. See buildSystemPrompt's "SECTION 1 / SECTION 2"
   // framing — this is the pipeline-reversal mechanism: understand (anchors) first, narrate second.
   highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
+  // SECTION 1.5 — Adaptive Notebook Cards. Generated FROM Section 1's anchors,
+  // sibling to (not gated on) Section 2's flat prose fields below. Stage 2 only —
+  // never added to Stage1SynthesisSchema, to protect the fast-path token budget.
+  noteCards: z.array(NoteCardSchema).nullable(),
   // SECTION 2 — elaboration FROM Section 1's anchors below.
   coreIdea: z.string(),
   mechanism: z.string().nullable(),
@@ -177,6 +233,21 @@ algorithm. Every domainCategory you assign on this page's anchors MUST be one of
 ${categories}
 Choose anchors that fill these specific categories, not generic thesis/mechanism labels.`;
 }
+
+// Soft per-pageType card guidance — examples only, never a hard template. The model
+// chooses which cards a page actually needs; this just shows what "good" looks like
+// for each shape of page so every page doesn't default to the same card set.
+const PAGE_TYPE_CARD_GUIDANCE: Record<PageType, string> = {
+  definition:        "e.g. Must Know, Why This Matters, Memory Hook, Connection Map",
+  mechanism:          "e.g. Mechanism (with a flow diagram), Clinical Pearl, Expert Thinking",
+  math_example:       "e.g. Formula Breakdown, Worked example in Mechanism, Common Mistake, shortcut in DAT Trap",
+  clinical:           "e.g. Clinical Reasoning, Clinical Pearl, Decision Tree, Common Mistake",
+  comparison:         "e.g. Pattern Recognition (side-by-side), Connection Map, Common Mistake",
+  figure_table:       "e.g. Diagram (recreate the figure as a card visual), Must Know, Why This Matters",
+  case_study:         "e.g. Procedure Flow, Clinical Reasoning, Expert Thinking, Decision Tree",
+  review_checkpoint:  "e.g. Recall Questions, Must Know — keep this page light, 1-2 cards max",
+  mixed:              "e.g. Must Know plus whichever 2-3 cards best match the dominant content",
+};
 
 export function buildSystemPrompt(domain: PageDomain, presetId?: string): string {
   const domainCategoryBlock = buildDomainCategoryBlock(presetId);
@@ -482,9 +553,54 @@ VISUAL TRUST PRINCIPLE: When the student sees these highlights, they must immedi
 Return null ONLY if the page has fewer than 3 real instructional sentences.
 ${domainCategoryBlock}
 ══════════════════════════════════════════════════════════════════════════════
-SECTION 1 is now finalized. Every field below is SECTION 2 — elaboration FROM
-the anchors above, not an independent re-read of the page.
+SECTION 1 is now finalized. SECTION 1.5 below (noteCards) is generated FROM
+these anchors. Everything after that is SECTION 2 — independent elaboration
+FROM the same anchors, not gated on noteCards.
 ══════════════════════════════════════════════════════════════════════════════
+
+─── SECTION 1.5 — ADAPTIVE NOTEBOOK CARDS (noteCards) ───────────────────────
+NoteLab is not a note generator. It is an Expert Notebook — every page should
+feel like it was handcrafted by an experienced professor/surgeon/researcher,
+not auto-summarized. Decide which cards THIS page actually needs — never force
+every page into the same layout. EVERY PAGE SHOULD LOOK DIFFERENT.
+
+Card types and the learning question each one answers:
+• must_know            — "What can I not afford to forget?"
+• mechanism            — "How does it work?" (causal/process chain; add a visual flow if 3+ steps)
+• clinical_reasoning    — "How would an expert reason through this in the moment?" (the internal if-X-check-Y-because-Z chain, not a textbook fact)
+• dat_trap              — "What's the exam trap or shortcut here?"
+• common_mistake        — "What error do beginners make?"
+• memory_hook           — "What analogy or mnemonic makes this stick?"
+• connection_map        — "How does this relate to other concepts?" (REQUIRES a visual: 3+ nodes, e.g. Atomic Mass → Molecular Weight → Moles → Stoichiometry)
+• procedure_flow        — "What are the ordered steps?" (REQUIRES a visual flow if there are 3+ steps)
+• clinical_pearl         — "Why does this matter in practice?" (a practical "in real practice..." observation, distinct from memory_hook)
+• expert_thinking        — "How would an experienced professional approach this?" (e.g. "A beginner memorizes the formula. An expert immediately asks: what's the limiting variable? what's missing? what mistake is most likely?")
+• why_this_matters       — "Why must I know this for exams or practice?"
+• pattern_recognition    — "What recurring pattern should I recognize across examples?"
+• decision_tree          — "What branching decision logic applies?" (REQUIRES a visual: 3+ nodes)
+• visual_mnemonic        — "What image makes this memorable?" (REQUIRES a visual)
+• formula_breakdown      — "What does each part of this formula/equation mean?"
+• diagram                — recreate a structure/pathway/anatomy the page describes (REQUIRES a visual: 3+ nodes)
+• recall_questions       — 2-3 short self-test questions for this page, body = the questions
+• other                  — anything genuinely useful that doesn't fit the above
+
+PER-PAGE-TYPE GUIDANCE (soft — examples of what fits each page shape, not a mandatory template):
+${Object.entries(PAGE_TYPE_CARD_GUIDANCE).map(([pt, g]) => `• ${pt}: ${g}`).join("\n")}
+
+RULES:
+• Generate 2-5 cards. Fewer, sharper cards beat many shallow ones — quality over coverage.
+• visual: only set when the card type calls for one (connection_map/procedure_flow/
+  decision_tree/diagram/visual_mnemonic, or mechanism/clinical_reasoning with a clear
+  3+ step chain). When set, nodes must have ≥3 entries with short labels (≤4 words) and
+  arrows must reference real node ids. Leave visual null for purely textual cards.
+• priorityTier: 1-5, same scale as highlightAnchors — the single most exam-critical
+  card on the page should be a 5; most pages should have one 5 and the rest spread 2-4.
+• sourceAnchorHints: 1-3 short verbatim phrases (≤8 words) copied from the highlightAnchors
+  you wrote in Section 1 that this card elaborates on. Empty array if none apply directly.
+• span: "2" for a card whose visual or content genuinely needs double width (a multi-node
+  diagram, a long procedure); "1" otherwise. Most cards should be "1".
+• title: ≤6 words. body: 1-3 sentences, professor-level, never a restatement of coreIdea.
+Return null only if the page has fewer than 3 real instructional sentences.
 
 ─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
 miniTestItems: Generate 4–5 structured after-reading comprehension questions.
@@ -595,7 +711,7 @@ Produce a structured educational interpretation for this page. Works for ANY sub
 
 FIRST: Set pageType — classify what kind of page this is (definition/mechanism/math_example/clinical/comparison/figure_table/case_study/review_checkpoint/mixed). This drives concept block priorities and anchor selection.
 
-For page level: pageType, coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, clinicalReasoning, commonMistake, examStrategy, connectionMap, clinicalPearl, externalStudyLinks, highlightAnchors, miniTestItems, relatedVideoQueries.
+For page level: pageType, coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, clinicalReasoning, commonMistake, examStrategy, connectionMap, clinicalPearl, externalStudyLinks, highlightAnchors, noteCards, miniTestItems, relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
@@ -837,6 +953,10 @@ export function makeStubFromStage1(stage1: Stage1Synthesis, pageText?: string): 
   return {
     pageType:           filled.pageType,          // flows to anchor pipeline for page-type-aware filtering
     coreIdea:           filled.coreIdea,
+    // noteCards is a Stage 2-only field — Stage 1 never produces it. The client-side
+    // fallback in lib/notelab/deriveNoteCards.ts derives cards from these stub fields
+    // until Stage 2 (or never, on failure) resolves it.
+    noteCards:          null,
     // Map Stage 1 study fields → TeachingSynthesis fields that RightPanel reads via _synth.
     // whyThisMatters → synth.application → _synth.whyItMatters
     // keyMechanism   → synth.mechanism   → _synth.keyMechanism
@@ -912,6 +1032,7 @@ export function makeLocalFallbackSynthesis(
   return {
     pageType:           "mixed" as const,
     coreIdea,
+    noteCards:          null, // no network — lib/notelab/deriveNoteCards.ts fallback derives cards client-side
     mechanism:          sentences[1]?.slice(0, 200) ?? null,
     rule:               "",
     trap:               null,

@@ -3,6 +3,7 @@
 // Primary entry point: buildNoteFromStudyModel — consumes PageBrain directly.
 
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
 export type NoteSubject =
   | "Biology"
@@ -91,6 +92,8 @@ export interface UltraNote {
   highlightAnchors?: Array<{ text: string; anchorType: string; reason: string }>;
   /** Ordinals of concepts the reader has starred/bookmarked within this note */
   starredConcepts?: number[];
+  /** Adaptive Notebook cards — AI-curated (or derived) variable card set for this page */
+  noteCards?: NoteCard[];
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -128,6 +131,16 @@ function compact(note: UltraNote): UltraNote {
       content: s.content.slice(0, 500),
     })),
     starredConcepts: note.starredConcepts?.slice(0, 8),
+    noteCards: note.noteCards?.slice(0, 8).map((c) => ({
+      ...c,
+      body: c.body.slice(0, 600),
+      sourceAnchorHints: c.sourceAnchorHints?.slice(0, 5) ?? null,
+      visual: c.visual ? {
+        ...c.visual,
+        nodes: c.visual.nodes.slice(0, 12),
+        arrows: c.visual.arrows.slice(0, 16),
+      } : null,
+    })),
   };
 }
 
@@ -500,6 +513,7 @@ export function buildNoteFromStudyModel(
     externalStudyLinks: model.externalStudyLinks?.length ? model.externalStudyLinks : undefined,
     relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,
     highlightAnchors: model.highlightAnchors?.length   ? model.highlightAnchors   : undefined,
+    noteCards:        model.noteCards?.length          ? model.noteCards          : undefined,
   };
 }
 

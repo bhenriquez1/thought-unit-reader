@@ -6,6 +6,7 @@ import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ul
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
+import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -517,6 +518,36 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
     pageNumber:   note.pageNumber,
     subject:      note.subject ?? "General Notes",
     topic:        note.topic,
+    cards,
+    createdAt:    Date.now(),
+    sourceNoteId: note.id,
+  };
+}
+
+// ── Build from a single Adaptive Notebook card ("Generate Card" action) ───
+// Scoped to one NoteCard rather than the whole note, mirroring
+// buildRecallSetFromThoughtUnit's single-anchor scoping — built in-memory,
+// not persisted by this function (caller decides whether to save).
+
+export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, opts?: BuildRecallSetOpts): RecallSet {
+  const cardType: CardType =
+    noteCard.type === "mechanism" ? "mechanism"
+    : noteCard.type === "dat_trap" || noteCard.type === "common_mistake" ? "concept"
+    : noteCard.type === "why_this_matters" ? "application"
+    : "fact";
+
+  const cards: RecallCard[] = [
+    card(`nc-${noteCard.type}`, cardType, `${noteCard.title}?`, noteCard.body),
+  ];
+
+  return {
+    id:           stableRecallId(note.bookId, note.pageNumber, `notecard-${note.id}-${noteCard.type}`),
+    bookId:       note.bookId,
+    bookTitle:    note.bookTitle ?? opts?.bookTitle,
+    sourceLabel:  opts?.sourceLabel ?? "notelab",
+    pageNumber:   note.pageNumber,
+    subject:      note.subject ?? "General Notes",
+    topic:        noteCard.title,
     cards,
     createdAt:    Date.now(),
     sourceNoteId: note.id,

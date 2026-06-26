@@ -41,7 +41,7 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   mechanism:   { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
   application: { color: "#c084fc", bg: "rgba(192,132,252,0.12)" },
   trap:        { color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
-  clinical:    { color: "#fda4af", bg: "rgba(253,164,175,0.12)" },
+  clinical:    { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
   formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
   dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
 };
@@ -163,6 +163,25 @@ export default function ThoughtUnitNavigator({
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
       {header}
+      <div className="flex items-center gap-1.5 flex-wrap px-1" data-testid="thought-unit-summary-strip">
+        {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+          const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
+          const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
+          const tier = getImportanceTier(groupIndex);
+          return (
+            <span
+              key={`summary-${id}`}
+              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
+              style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
+              title={`${tier.label} priority`}
+            >
+              <span>{renderStars(tier.stars)}</span>
+              <span className="uppercase">{meta.label}</span>
+              {items.length > 1 && <span className="opacity-70">×{items.length}</span>}
+            </span>
+          );
+        })}
+      </div>
       {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const meta = { ...colors, label: label ?? getKindLabel(presetId, representativeKind as ParagraphKind) };
