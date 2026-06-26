@@ -398,6 +398,8 @@ export interface BuildRecallSetOpts {
   bookTitle?: string;
   sourceLabel?: SourceLabel;
   studyModel?: CurrentPageStudyModel;
+  /** Scope buildRecallSetFromNote to just these concept ordinals instead of the whole note. */
+  conceptOrdinals?: number[];
 }
 
 export function buildRecallSetFromView(
@@ -483,7 +485,11 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
 
   cards.push(card("core-0", "concept", `What is the core idea of "${note.topic}"?`, note.coreIdea || "See note for core idea."));
 
-  note.concepts.forEach((c, ci) => {
+  const concepts = opts?.conceptOrdinals?.length
+    ? note.concepts.filter((c) => opts.conceptOrdinals!.includes(c.ordinal))
+    : note.concepts;
+
+  concepts.forEach((c, ci) => {
     const p = `n${ci + 1}`;
     if (c.pattern)
       cards.push(card(`${p}-def`, "concept", `Define or state the pattern for: ${c.title}`, c.pattern));
@@ -500,7 +506,11 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
   });
 
   return {
-    id:           stableRecallId(note.bookId, note.pageNumber, `note-${note.id}`),
+    id:           stableRecallId(
+      note.bookId,
+      note.pageNumber,
+      opts?.conceptOrdinals?.length ? `note-${note.id}-c${opts.conceptOrdinals.join("-")}` : `note-${note.id}`
+    ),
     bookId:       note.bookId,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",

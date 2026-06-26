@@ -75,6 +75,8 @@ export interface UltraNote {
   relatedVideoQueries?: string[];
   /** OpenAI highlight anchors — source spans selected for left-panel highlights */
   highlightAnchors?: Array<{ text: string; anchorType: string; reason: string }>;
+  /** Ordinals of concepts the reader has starred/bookmarked within this note */
+  starredConcepts?: number[];
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -107,6 +109,7 @@ function compact(note: UltraNote): UltraNote {
       label: s.label,
       content: s.content.slice(0, 500),
     })),
+    starredConcepts: note.starredConcepts?.slice(0, 8),
   };
 }
 
