@@ -14,8 +14,11 @@
 //   - "ideogram"      — Ideogram. Stronger for diagrams that need clean, readable
 //                        text labels. Requires IDEOGRAM_API_KEY.
 //   - "sdxl"          — Stable Diffusion XL via a custom endpoint. Requires
-//                        SDXL_API_ENDPOINT + SDXL_API_KEY (or per-request
-//                        sdxlOptions.endpoint). Supports style preset,
+//                        SDXL_API_ENDPOINT + SDXL_API_KEY. A request may select
+//                        SDXL_FINE_TUNED_ENDPOINT or any host listed in
+//                        SDXL_ALLOWED_ENDPOINTS via sdxlOptions.endpoint, but
+//                        never an arbitrary client-supplied URL (SSRF guard —
+//                        see resolveSdxlEndpoint). Supports style preset,
 //                        negative prompt, and seed for reproducible regen.
 //   - "sdxlFineTuned" — Same SDXL path pointed at a fine-tuned model id
 //                        (SDXL_FINE_TUNED_MODEL_ID or sdxlOptions.modelId) —
@@ -222,6 +225,25 @@ async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ i
   return { imageUrl, raw: raw.slice(0, 4000), status: resp.status };
 }
 
+/** Endpoints the server operator has explicitly configured. The client may only
+ *  *select* among these (e.g. to pick the fine-tuned endpoint) — it can never
+ *  supply an arbitrary URL, which would let any caller make this server issue
+ *  requests to attacker-controlled or internal hosts (SSRF). */
+const ALLOWED_SDXL_ENDPOINTS = new Set(
+  [process.env.SDXL_API_ENDPOINT, process.env.SDXL_FINE_TUNED_ENDPOINT, ...(process.env.SDXL_ALLOWED_ENDPOINTS || "").split(",")]
+    .map((s) => (s || "").trim())
+    .filter(Boolean)
+);
+
+function resolveSdxlEndpoint(provider: "sdxl" | "sdxlFineTuned", opts: SdxlOptions): string {
+  const defaultEndpoint = provider === "sdxlFineTuned"
+    ? (process.env.SDXL_FINE_TUNED_ENDPOINT || process.env.SDXL_API_ENDPOINT || "")
+    : (process.env.SDXL_API_ENDPOINT || "");
+  const requested = (opts.endpoint || "").trim();
+  if (requested && ALLOWED_SDXL_ENDPOINTS.has(requested)) return requested;
+  return defaultEndpoint;
+}
+
 /** Stable Diffusion XL (custom endpoint) — also used for the fine-tuned
  *  ("sdxlFineTuned") provider, which just points `modelId` at a fine-tuned
  *  checkpoint instead of the base SDXL model. Architecture is ready for an
@@ -233,7 +255,7 @@ async function generateWithSDXL(
   opts: SdxlOptions,
   debug: boolean,
 ): Promise<{ imageUrl: string; raw: string; status: number }> {
-  const endpoint = opts.endpoint || process.env.SDXL_API_ENDPOINT || "";
+  const endpoint = resolveSdxlEndpoint(provider, opts);
   const modelId = opts.modelId
     || (provider === "sdxlFineTuned" ? process.env.SDXL_FINE_TUNED_MODEL_ID : process.env.SDXL_MODEL_ID)
     || undefined;
@@ -310,7 +332,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     );
   }
 
-  if ((provider === "sdxl" || provider === "sdxlFineTuned") && !(sdxlOptions.endpoint || process.env.SDXL_API_ENDPOINT)) {
+  if ((provider === "sdxl" || provider === "sdxlFineTuned") && !resolveSdxlEndpoint(provider, sdxlOptions)) {
     const failureReason = `SDXL endpoint not configured — ${provider === "sdxlFineTuned" ? "fine-tuned SDXL" : "SDXL"} provider is not yet enabled.`;
     console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
     return res.status(debug ? 200 : 501).json(
