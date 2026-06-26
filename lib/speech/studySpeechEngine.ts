@@ -170,6 +170,7 @@ const ANCHOR_ROLE_LABEL: Record<VisualAnchorRole, string> = {
   keyDetail:       "Key Detail",
   confusionTrap:   "Watch Out",
   datFact:         "High-Yield Fact",
+  clinicalPearl:   "Clinical Pearl",
 };
 
 const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
@@ -180,6 +181,7 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   keyDetail:       0.98,
   confusionTrap:   0.85,
   datFact:         0.92,
+  clinicalPearl:   0.92,
 };
 
 // LeftPanel order — same groupThoughtUnits(entries, presetId) call
@@ -275,6 +277,9 @@ export function buildSpeechScript(
       source: "finalStudyModel.visualAnchors filtered to priorityTier===5 (Master This), LeftPanel order",
       presetId,
       itemCount: masterAnchors.length,
+      anchorIds: masterAnchors.map((a) => a.id),
+      sourceField: Array.from(new Set(masterAnchors.map((a) => a.sourceField))),
+      firstItems: masterAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
     });
     return segments;
   }
@@ -313,6 +318,7 @@ export function buildSpeechScript(
       });
     });
     const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
+    const guidedAnchors = groups.flatMap((g) => g.items);
     console.log("[SPEECH_SOURCE]", {
       mode,
       source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order)",
@@ -320,6 +326,9 @@ export function buildSpeechScript(
       groupCount: groups.length,
       itemCount: model.visualAnchors.length,
       charCount: totalChars,
+      anchorIds: guidedAnchors.map((a) => a.id),
+      sourceField: Array.from(new Set(guidedAnchors.map((a) => a.sourceField))),
+      firstItems: guidedAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
     });
     return segments;
   }
@@ -346,6 +355,9 @@ export function buildSpeechScript(
       presetId,
       itemCount: model.visualAnchors.length,
       charCount: totalChars,
+      anchorIds: orderedAnchors.map((a) => a.id),
+      sourceField: Array.from(new Set(orderedAnchors.map((a) => a.sourceField))),
+      firstItems: orderedAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
     });
     return segments;
   }
@@ -372,6 +384,9 @@ export function buildSpeechScript(
       source: "finalStudyModel.visualAnchors filtered to tier>=4 or definition/example, LeftPanel order",
       presetId,
       itemCount: studyAnchors.length,
+      anchorIds: studyAnchors.map((a) => a.id),
+      sourceField: Array.from(new Set(studyAnchors.map((a) => a.sourceField))),
+      firstItems: studyAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
     });
     return segments;
   }
@@ -397,6 +412,9 @@ export function buildSpeechScript(
     presetId,
     itemCount: segments.length,
     charCount: totalChars,
+    anchorIds: pageOrderedAnchors.map((a) => a.id),
+    sourceField: Array.from(new Set(pageOrderedAnchors.map((a) => a.sourceField))),
+    firstItems: pageOrderedAnchors.slice(0, 3).map((a) => a.exactText.slice(0, 60)),
   });
   return segments;
 }

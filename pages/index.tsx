@@ -980,7 +980,7 @@ export default function ThoughtUnitReader() {
 
     // Filter: all VisualAnchorRole values reach the PDF overlay — including
     // "definition" and "keyDetail", which prove definitions/details on the page.
-    const OVERLAY_ROLES = new Set(["coreIdea", "definition", "mechanism", "exampleEvidence", "keyDetail", "confusionTrap", "datFact"]);
+    const OVERLAY_ROLES = new Set(["coreIdea", "definition", "mechanism", "exampleEvidence", "keyDetail", "confusionTrap", "datFact", "clinicalPearl"]);
     const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
     console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "finalStudyModel.visualAnchors" });
     const sanitized = sanitizeHighlightAnchors(roleFiltered);
@@ -1499,7 +1499,8 @@ export default function ThoughtUnitReader() {
   // Keep ref in sync so the finalHighlightAnchors effect can read pageRole without TDZ issues.
   currentPageRoleRef.current = currentPageRole ?? null;
   console.log("[TRACE LIVE_WIRING]", {
-    deployedCommit: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_DEPLOYED_COMMIT ?? "unknown",
+    deployedCommit: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_DEPLOYED_COMMIT ?? process.env.NEXT_PUBLIC_BUILD_SHA ?? "unknown",
+    deployedBuildTime: process.env.NEXT_PUBLIC_BUILD_TIME ?? "unknown",
     bookId,
     currentPage,
     activePageTextLength: (pageTextByPage.get(activePageTextKey) || "").length,
@@ -4328,6 +4329,11 @@ export default function ThoughtUnitReader() {
             />
           </div>
           <p className="mt-1 text-xs md:text-sm tracking-wide text-slate-300">Read. Understand. Think clearly.</p>
+          {process.env.NEXT_PUBLIC_BUILD_SHA && (
+            <p className="mt-0.5 text-[9px] font-mono text-slate-500 select-none" title={`Built ${process.env.NEXT_PUBLIC_BUILD_TIME || "unknown"}`}>
+              build {process.env.NEXT_PUBLIC_BUILD_SHA} · {(process.env.NEXT_PUBLIC_BUILD_TIME || "").slice(0, 16).replace("T", " ")}
+            </p>
+          )}
         </div>
       </header>
 

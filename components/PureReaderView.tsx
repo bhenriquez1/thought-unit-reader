@@ -210,6 +210,8 @@ export default function PureReaderView({
       case "keyDetail":       return "definition";
       case "datFact":         return "dat_fact";
       case "dat_fact":        return "dat_fact";
+      case "clinicalPearl":   return "clinical";
+      case "clinical_pearl":  return "clinical";
       // Math-specific anchor types
       case "formula":      return "definition";    // formula = key term / rule (blue)
       case "example_step": return "application";   // worked step = evidence (purple)

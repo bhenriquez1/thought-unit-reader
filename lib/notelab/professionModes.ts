@@ -143,6 +143,49 @@ const SECTION_LENS: Record<string, Record<ProfessionMode, LensEntry>> = {
     pilot:   { label: "Go/No-Go Decision Tree", icon: "🌳" },
     dental:  { label: "Clinical Decision Tree", icon: "🌳" },
   },
+  // Surgeon-notes NoteLab schema (lib/notelab/ultraNoteStore.ts buildNoteFromStudyModel)
+  "Chief Concern / Problem": {
+    default: { label: "Chief Concern / Problem", icon: "🎯" },
+    surgeon: { label: "Chief Complaint",          icon: "🩺" },
+    pilot:   { label: "Mission Brief",            icon: "🧭" },
+    dental:  { label: "Chief Complaint",          icon: "🦷" },
+  },
+  "Why This Matters Clinically": {
+    default: { label: "Why This Matters Clinically",  icon: "💡" },
+    surgeon: { label: "Why This Matters Clinically",  icon: "💡" },
+    pilot:   { label: "Why This Matters Operationally", icon: "💡" },
+    dental:  { label: "Why This Matters Clinically",  icon: "💡" },
+  },
+  "Diagnostic Reasoning": {
+    default: { label: "Diagnostic Reasoning",     icon: "🧩" },
+    surgeon: { label: "Preoperative Reasoning",   icon: "🧩" },
+    pilot:   { label: "In-Flight Diagnostic Reasoning", icon: "🧩" },
+    dental:  { label: "Diagnostic Reasoning",     icon: "🧩" },
+  },
+  "Procedure Logic": {
+    default: { label: "Procedure Logic",  icon: "⚙️" },
+    surgeon: { label: "Operative Logic",  icon: "⚙️" },
+    pilot:   { label: "Flight Procedure Logic", icon: "✈️" },
+    dental:  { label: "Procedure Logic",  icon: "⚙️" },
+  },
+  "Danger Zone": {
+    default: { label: "Danger Zone",  icon: "⚠️" },
+    surgeon: { label: "Danger Zone",  icon: "⚠️" },
+    pilot:   { label: "Hazard Zone",  icon: "🚨" },
+    dental:  { label: "Danger Zone",  icon: "⚠️" },
+  },
+  "Complication Risk": {
+    default: { label: "Complication Risk", icon: "🚧" },
+    surgeon: { label: "Complication Risk", icon: "🚧" },
+    pilot:   { label: "Risk Factors",      icon: "🚧" },
+    dental:  { label: "Complication Risk", icon: "🚧" },
+  },
+  "Case-Style Recall Questions": {
+    default: { label: "Case-Style Recall Questions", icon: "📝" },
+    surgeon: { label: "Case Review Questions",        icon: "📋" },
+    pilot:   { label: "Oral Exam Questions",          icon: "🎙️" },
+    dental:  { label: "Board Review Questions",       icon: "📝" },
+  },
   "Visual Mnemonic": {
     default: { label: "Visual Mnemonic", icon: "🖼️" },
     surgeon: { label: "Visual Mnemonic", icon: "🖼️" },

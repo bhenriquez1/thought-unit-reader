@@ -1017,7 +1017,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
-      console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
+      console.log("[SPEECH_SOURCE]", {
+        mode: "fullPage",
+        source: "activePageText, each sentence matched to nearest finalStudyModel.visualAnchors entry",
+        sentenceCount: sents.length,
+        charCount: activePageText.length,
+        anchorPoolSize: studyModel?.visualAnchors?.length ?? 0,
+        anchorPoolIds: (studyModel?.visualAnchors ?? []).map((a) => a.id),
+      });
       console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
       playFullPageSequential(sents, fromIdx, session);
       return;
@@ -1027,7 +1034,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (mode === "highlights") {
       const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId) : []);
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
-      console.log("[SPEECH_SOURCE]", { mode: "highlights", source: "finalStudyModel.visualAnchors", itemCount: segsToPlay.length, charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0) });
+      console.log("[SPEECH_SOURCE]", {
+        mode: "highlights",
+        source: "finalStudyModel.visualAnchors",
+        itemCount: segsToPlay.length,
+        charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
+        anchorIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
+      });
       console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
         mode: "highlights",
         segmentCount: segsToPlay.length,
@@ -1051,6 +1064,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       source: "finalStudyModel.visualAnchors via buildSpeechScript (LeftPanel order)",
       itemCount: segsToPlay.length,
       charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
+      anchorIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
     });
 
     setPlayState("loading");

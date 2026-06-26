@@ -47,12 +47,11 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
-// Dynamic relabel, not a new kind/group: a Mechanism group with 2+ chained
-// steps reads as a "Process Flow" to the student (same chain-length signal
-// PdfEvidenceOverlay's mechanismChain uses for its arrow connectors); a lone
-// mechanism anchor still reads as "Mechanism".
+// Group display label — currently a passthrough to the preset's own
+// kindGroup label (e.g. "Procedure Step"). Kept as its own function (not
+// inlined at the two call sites) since ThoughtRoadmap imports it too, so
+// both views stay guaranteed to agree on a group's display label.
 export function groupDisplayLabel(representativeKind: string, itemCount: number, fallbackLabel: string): string {
-  if (representativeKind === "mechanism" && itemCount >= 2) return "Process Flow";
   return fallbackLabel;
 }
 
