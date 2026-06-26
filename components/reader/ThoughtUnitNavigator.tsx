@@ -11,7 +11,7 @@
 // — no separate "play" plumbing needed. The "Explain" button is the one new
 // hook, wired to pages/index.tsx's openExplainStepForThoughtUnit.
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, renderStars, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
@@ -72,6 +72,14 @@ export default function ThoughtUnitNavigator({
   onPresetChange?: (presetId: string | null) => void;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // Guided teach-loop / PDF-click focus: scroll the active card into view, same
+  // pattern RightPanel.tsx already uses for its own Study Notes cards — without
+  // this, a focused entry only changed its border color and could sit off-screen.
+  const activeEntryRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusedId]);
 
   // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
@@ -156,6 +164,7 @@ export default function ThoughtUnitNavigator({
               return (
                 <div
                   key={entry.id}
+                  ref={focused ? activeEntryRef : undefined}
                   role="button"
                   tabIndex={0}
                   onClick={() => onJump(entry.id)}

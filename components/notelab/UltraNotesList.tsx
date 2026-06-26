@@ -7,12 +7,14 @@ import {
   getAllUltraNotesAsync,
   getAllUltraNotes,
   deleteUltraNote,
+  saveUltraNote,
   formatUltraNoteText,
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNotesMarkdown, downloadNotesPdf } from "@/lib/notelab/exportNote";
+import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
 import {
   PROFESSION_MODES,
   getStoredProfessionMode,
@@ -32,13 +34,28 @@ interface UltraNotesListProps {
   onOpenWhiteboard?: (note: UltraNote) => void;
 }
 
-const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
+const SUBJECT_ORDER: NoteSubject[] = [
+  "Biology",
+  "Calculus",
+  "Chemistry",
+  "Physics",
+  "Computer Science",
+  "Law",
+  "Nursing / Pharmacology",
+  "Dental / Clinical",
+  "General Notes",
+];
 
 const SUBJECT_ICON: Record<NoteSubject, string> = {
-  "Biology":          "🧬",
-  "Calculus":         "📐",
-  "Dental / Clinical":"🦷",
-  "General Notes":    "📝",
+  "Biology":               "🧬",
+  "Calculus":              "📐",
+  "Chemistry":             "🧪",
+  "Physics":               "⚛️",
+  "Computer Science":      "💻",
+  "Law":                   "⚖️",
+  "Nursing / Pharmacology":"💊",
+  "Dental / Clinical":     "🦷",
+  "General Notes":         "📝",
 };
 
 export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard }: UltraNotesListProps) {
@@ -53,7 +70,9 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [collapsedBooks, setCollapsedBooks]       = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<UltraNote | null>(null);
   const [mode, setMode] = useState<ProfessionMode>(() => getStoredProfessionMode());
+  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const noteRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   function handleModeChange(next: ProfessionMode) {
     setMode(next);
@@ -126,6 +145,42 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       setCopiedId(note.id);
       setTimeout(() => setCopiedId(null), 1800);
     } catch { /* silently skip */ }
+  }
+
+  // ── Concept star toggle ──────────────────────────────────────────────────
+
+  async function handleToggleConceptStar(note: UltraNote, ordinal: number) {
+    const current = note.starredConcepts ?? [];
+    const next = current.includes(ordinal) ? current.filter((o) => o !== ordinal) : [...current, ordinal];
+    const updated: UltraNote = { ...note, starredConcepts: next };
+    setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
+    try {
+      await saveUltraNote(updated);
+    } catch (e) {
+      console.error("[NOTELAB_STAR_SAVE_FAILED]", String(e));
+    }
+  }
+
+  // ── Jump to related note ─────────────────────────────────────────────────
+
+  function handleJumpToNote(target: UltraNote) {
+    const subject = target.subject ?? "General Notes";
+    setCollapsedSubjects((prev) => {
+      const next = new Set(prev);
+      next.delete(subject);
+      return next;
+    });
+    setCollapsedBooks((prev) => {
+      const next = new Set(prev);
+      next.delete(`${subject}:${target.bookId}`);
+      return next;
+    });
+    setExpandedId(target.id);
+    setHighlightedNoteId(target.id);
+    setTimeout(() => {
+      noteRefs.current.get(target.id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 60);
+    setTimeout(() => setHighlightedNoteId((cur) => (cur === target.id ? null : cur)), 1600);
   }
 
   // ── Collapse toggles ──────────────────────────────────────────────────────
@@ -233,15 +288,23 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                             <NoteCard
                               key={note.id}
                               note={note}
+                              allNotes={notes}
                               mode={mode}
                               isExpanded={isExpanded}
                               copiedId={copiedId}
+                              highlighted={highlightedNoteId === note.id}
+                              cardRef={(el) => {
+                                if (el) noteRefs.current.set(note.id, el);
+                                else noteRefs.current.delete(note.id);
+                              }}
                               onToggle={() => setExpandedId(isExpanded ? null : note.id)}
                               onCopy={() => handleCopy(note)}
                               onDelete={() => requestDelete(note)}
                               onNavigate={onNavigateToPage}
                               onCardsGenerated={onCardsGenerated}
                               onOpenWhiteboard={onOpenWhiteboard}
+                              onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
+                              onJumpToNote={handleJumpToNote}
                             />
                           );
                         })}
@@ -333,18 +396,23 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, mode, isExpanded, copiedId, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onToggleConceptStar, onJumpToNote,
 }: {
   note: UltraNote;
+  allNotes: UltraNote[];
   mode: ProfessionMode;
   isExpanded: boolean;
   copiedId: string | null;
+  highlighted?: boolean;
+  cardRef?: (el: HTMLDivElement | null) => void;
   onToggle: () => void;
   onCopy: () => void;
   onDelete: () => void;
   onNavigate?: (page: number) => void;
   onCardsGenerated?: (setId: string) => void;
   onOpenWhiteboard?: (note: UltraNote) => void;
+  onToggleConceptStar: (ordinal: number) => void;
+  onJumpToNote: (target: UltraNote) => void;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
@@ -366,7 +434,17 @@ function NoteCard({
   }
 
   return (
-    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(10,18,38,0.8)", overflow: "hidden" }}>
+    <div
+      ref={cardRef}
+      style={{
+        borderRadius: 12,
+        border: highlighted ? "1px solid rgba(252,211,77,0.7)" : "1px solid rgba(255,255,255,0.08)",
+        boxShadow: highlighted ? "0 0 0 3px rgba(252,211,77,0.18)" : "none",
+        background: "rgba(10,18,38,0.8)",
+        overflow: "hidden",
+        transition: "border-color 0.3s, box-shadow 0.3s",
+      }}
+    >
       {/* Header */}
       <div
         onClick={onToggle}
@@ -420,7 +498,15 @@ function NoteCard({
 
               {/* Concept blocks — each collapsible */}
               {note.concepts.length > 0 && note.concepts.map((c) => (
-                <ConceptBlock key={c.ordinal} concept={c} mode={mode} />
+                <ConceptBlock
+                  key={c.ordinal}
+                  concept={c}
+                  mode={mode}
+                  note={note}
+                  starred={note.starredConcepts?.includes(c.ordinal) ?? false}
+                  onToggleStar={() => onToggleConceptStar(c.ordinal)}
+                  onCardsGenerated={onCardsGenerated}
+                />
               ))}
             </>
           )}
@@ -466,6 +552,37 @@ function NoteCard({
               })}
             </NoteBlock>
           )}
+
+          {/* Related Notes — keyword-overlap heuristic, no AI */}
+          {(() => {
+            const related = findRelatedNotes(note, allNotes, 3);
+            if (related.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(34,211,238,0.75)" }}>🔗 RELATED NOTES</span>
+                {related.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onJumpToNote(r); }}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(34,211,238,0.3)",
+                      background: "rgba(34,211,238,0.08)",
+                      color: "#67e8f9",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {r.topic} · p{r.pageNumber}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Action buttons */}
           <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
@@ -598,8 +715,42 @@ function ConceptMiniTable({ concepts, mode }: { concepts: import("@/lib/notelab/
 
 // ── ConceptBlock — individually collapsible ───────────────────────────────
 
-function ConceptBlock({ concept, mode }: { concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept; mode: ProfessionMode }) {
+function ConceptBlock({
+  concept, mode, note, starred, onToggleStar, onCardsGenerated,
+}: {
+  concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept;
+  mode: ProfessionMode;
+  note: UltraNote;
+  starred: boolean;
+  onToggleStar: () => void;
+  onCardsGenerated?: (setId: string) => void;
+}) {
   const [collapsed, setCollapsed] = useState(true);
+  const [cardSaving, setCardSaving] = useState(false);
+  const [cardSaved, setCardSaved] = useState(false);
+
+  function handleToggleStar(e: React.MouseEvent) {
+    e.stopPropagation();
+    onToggleStar();
+  }
+
+  async function handleGenerateCard(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (cardSaving) return;
+    setCardSaving(true);
+    try {
+      const set = buildRecallSetFromNote(note, { sourceLabel: "notelab", conceptOrdinals: [concept.ordinal] });
+      await saveRecallSet(set);
+      setCardSaved(true);
+      onCardsGenerated?.(set.id);
+      setTimeout(() => setCardSaved(false), 2500);
+    } catch (err) {
+      console.error("[NOTELAB_CONCEPT_CARD_SAVE_FAILED]", String(err));
+    } finally {
+      setCardSaving(false);
+    }
+  }
+
   return (
     <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
       <div
@@ -609,6 +760,23 @@ function ConceptBlock({ concept, mode }: { concept: import("@/lib/notelab/ultraN
         <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", flex: 1 }}>
           🧩 {concept.ordinal}. {concept.title}
         </span>
+        <button
+          type="button"
+          onClick={handleToggleStar}
+          title="Star this concept"
+          style={{ flexShrink: 0, padding: "3px 7px", borderRadius: 6, border: starred ? "1px solid rgba(252,211,77,0.5)" : "1px solid rgba(255,255,255,0.12)", background: starred ? "rgba(252,211,77,0.14)" : "rgba(255,255,255,0.04)", color: starred ? "#fcd34d" : "rgba(148,163,184,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+        >
+          {starred ? "⭐" : "☆"}
+        </button>
+        <button
+          type="button"
+          onClick={handleGenerateCard}
+          disabled={cardSaving}
+          title="Generate a recall card from this concept"
+          style={{ flexShrink: 0, padding: "3px 7px", borderRadius: 6, border: cardSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)", background: cardSaved ? "rgba(99,102,241,0.14)" : "rgba(99,102,241,0.06)", color: cardSaved ? "#a5b4fc" : "#818cf8", fontSize: 11, fontWeight: 600, cursor: cardSaving ? "wait" : "pointer", opacity: cardSaving ? 0.6 : 1 }}
+        >
+          {cardSaving ? "…" : cardSaved ? "✓" : "🃏"}
+        </button>
         <span style={{ fontSize: 10, color: "rgba(148,163,184,0.35)" }}>{collapsed ? "▶" : "▼"}</span>
       </div>
       {!collapsed && (

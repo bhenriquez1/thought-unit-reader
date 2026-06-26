@@ -4,7 +4,16 @@
 
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
-export type NoteSubject = "Biology" | "Calculus" | "Dental / Clinical" | "General Notes";
+export type NoteSubject =
+  | "Biology"
+  | "Calculus"
+  | "Chemistry"
+  | "Physics"
+  | "Computer Science"
+  | "Law"
+  | "Nursing / Pharmacology"
+  | "Dental / Clinical"
+  | "General Notes";
 
 export interface UltraNoteFolder {
   id: string;
@@ -19,7 +28,12 @@ export function inferSubject(bookId: string): NoteSubject {
   const lower = bookId.toLowerCase();
   if (/bio(logy)?|anatomy|physiology|genetics|cell|organism/.test(lower)) return "Biology";
   if (/calc|math|algebra|geometry|trig|statistic|linear|differential/.test(lower)) return "Calculus";
-  if (/dental|dent|medical|med|clinical|nursing|pharma|patho|histology/.test(lower)) return "Dental / Clinical";
+  if (/chem(istry)?|organic|biochem/.test(lower)) return "Chemistry";
+  if (/physics|mechanics|thermodynamic|electromagnet/.test(lower)) return "Physics";
+  if (/nursing|pharma|nclex/.test(lower)) return "Nursing / Pharmacology";
+  if (/\blaw\b|legal|contract|tort/.test(lower)) return "Law";
+  if (/computer science|programming|algorithm|software|coding/.test(lower)) return "Computer Science";
+  if (/dental|dent|medical|med|clinical|patho|histology/.test(lower)) return "Dental / Clinical";
   return "General Notes";
 }
 
@@ -75,6 +89,8 @@ export interface UltraNote {
   relatedVideoQueries?: string[];
   /** OpenAI highlight anchors — source spans selected for left-panel highlights */
   highlightAnchors?: Array<{ text: string; anchorType: string; reason: string }>;
+  /** Ordinals of concepts the reader has starred/bookmarked within this note */
+  starredConcepts?: number[];
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -107,6 +123,7 @@ function compact(note: UltraNote): UltraNote {
       label: s.label,
       content: s.content.slice(0, 500),
     })),
+    starredConcepts: note.starredConcepts?.slice(0, 8),
   };
 }
 

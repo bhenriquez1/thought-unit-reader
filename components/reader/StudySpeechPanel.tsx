@@ -18,6 +18,14 @@ import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
 import { renderStars } from "@/lib/insights/importanceTiers";
 import {
+  tokenizeWords,
+  estimateWordWeights,
+  wordIndexForFraction,
+  wordIndexForCharIndex,
+  scaleIndex,
+  type SyncWord,
+} from "@/lib/speech/wordSync";
+import {
   claimSpeech,
   isSpeechStale,
   registerActiveAudio,
@@ -199,6 +207,9 @@ interface Props {
   presetId?: string;
   /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
   onEvidenceFocus?: (id: string | null) => void;
+  /** Called when the reader clicks "💬 Explain" during a Guided teach-loop pause —
+   *  opens Explain This Step seeded with that segment's evidence. */
+  onExplainSegment?: (evidenceRefId: string) => void;
   /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
   onSnippetFocus?: (snippet: string | null) => void;
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
@@ -218,7 +229,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onSnippetFocus, onPlayStateChange, primary = false },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -237,6 +248,75 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [eyeRole, setEyeRole]   = useState<string | null>(null);
   // Guided mode only: star tier of the segment currently being spoken
   const [eyeTier, setEyeTier]   = useState<{ stars: number; label: string } | null>(null);
+
+  // Natural Reading: word-by-word karaoke sync, layered on top of the Eye Guide
+  // text above — words tokenized from the DISPLAYED text; the active index is
+  // driven by whichever provider is actually speaking (see beginKaraoke below).
+  const [karaokeWords, setKaraokeWords] = useState<SyncWord[]>([]);
+  const [activeWordIdx, setActiveWordIdx] = useState(0);
+  const spokenWordsRef        = useRef<SyncWord[]>([]);      // tokenized from the SPOKEN text (post formula-normalization)
+  const cumulativeWeightsRef  = useRef<number[]>([]);        // estimated start-fraction per spoken word (OpenAI/audio.currentTime path)
+  const displayWordCountRef   = useRef(0);
+
+  // Tokenizes both the displayed and spoken text variants for the segment about
+  // to be read, and resets the karaoke cursor to the first word. Call this
+  // alongside every setEyeText(...) so word-sync always matches what's playing.
+  function beginKaraoke(displayText: string, spokenText: string) {
+    const displayWords = tokenizeWords(displayText);
+    const spokenWords  = tokenizeWords(spokenText);
+    setKaraokeWords(displayWords);
+    setActiveWordIdx(0);
+    spokenWordsRef.current       = spokenWords;
+    cumulativeWeightsRef.current = estimateWordWeights(spokenWords);
+    displayWordCountRef.current  = displayWords.length;
+  }
+
+  function onSpokenWordIndex(spokenIdx: number) {
+    const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
+    setActiveWordIdx(scaled);
+  }
+
+  // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
+  const karaokeBoxRef = useRef<HTMLParagraphElement | null>(null);
+  const activeWordRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    activeWordRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeWordIdx]);
+
+  // Guided teach-loop: at a requiresConfirm segment, playback stops and waits for
+  // the reader to click Continue (or Explain, then Continue) instead of advancing
+  // on a fixed timer — a passive listener still gets a generous auto-continue
+  // fallback so they never get stuck.
+  const [awaitingContinue, setAwaitingContinue] = useState(false);
+  const continueResolverRef  = useRef<(() => void) | null>(null);
+  const autoContinueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const explainEngagedRef    = useRef(false);
+
+  function resolveContinue() {
+    if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
+    const resolve = continueResolverRef.current;
+    continueResolverRef.current = null;
+    setAwaitingContinue(false);
+    explainEngagedRef.current = false;
+    resolve?.();
+  }
+
+  function waitForContinue(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      continueResolverRef.current = resolve;
+      explainEngagedRef.current = false;
+      setAwaitingContinue(true);
+      autoContinueTimerRef.current = setTimeout(() => {
+        if (!explainEngagedRef.current) resolveContinue();
+      }, 4000);
+    });
+  }
+
+  function explainCurrentSegment(evidenceRefId: string) {
+    if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
+    explainEngagedRef.current = true;
+    onExplainSegment?.(evidenceRefId);
+  }
 
   // Active audio element ref — so we can stop/pause
   const audioRef   = useRef<HTMLAudioElement | null>(null);
@@ -275,6 +355,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
+    setKaraokeWords([]);
+    setActiveWordIdx(0);
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -286,6 +368,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
+    setKaraokeWords([]);
+    setActiveWordIdx(0);
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -297,6 +381,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
+    setKaraokeWords([]);
+    setActiveWordIdx(0);
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -508,6 +594,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
+    setKaraokeWords([]);
+    setActiveWordIdx(0);
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -604,6 +692,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     providerRef.current = "openai";
     const token = globalTokenRef.current;
     registerActiveAudio(token, audio, () => stopAudio());
+    // Word-by-word karaoke sync: OpenAI TTS gives no timing metadata, so the
+    // active word is estimated from playback position against the per-word
+    // duration weights computed in beginKaraoke().
+    audio.ontimeupdate = () => {
+      if (!audio.duration || !isFinite(audio.duration)) return;
+      const frac = audio.currentTime / audio.duration;
+      onSpokenWordIndex(wordIndexForFraction(cumulativeWeightsRef.current, frac));
+    };
     return new Promise((resolve, reject) => {
       audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
       // Do NOT notifySpeechEnd here — a multi-segment session (Study/Full/Focus/
@@ -664,6 +760,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
     utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
+    // Word-by-word karaoke sync: browser TTS fires real boundary events with an
+    // exact charIndex into `normalized` — no estimation needed. `normalized`
+    // only substitutes punctuation (never adds/removes words), so its word
+    // count matches spokenWordsRef's tokenization of the pre-normalization
+    // spoken text 1:1, and the index is used as-is.
+    utt.onboundary = (e) => {
+      if (superseded() || e.name !== "word") return;
+      onSpokenWordIndex(wordIndexForCharIndex(spokenWordsRef.current, e.charIndex));
+    };
     // See the comment on fetchAndPlayAudio's audio.onended — same reasoning:
     // don't release the shared session token after just one segment.
     utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
@@ -728,6 +833,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
       setEyeTier(null);
+      beginKaraoke(text.slice(0, 160), text);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
@@ -787,6 +893,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
+      beginKaraoke(seg.text.slice(0, 160), hText);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -924,6 +1031,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
+      beginKaraoke(seg.text.slice(0, 160), segText);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
@@ -938,7 +1046,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
-          await new Promise((r) => setTimeout(r, seg.pauseAfterMs ?? 250));
+          if (mode === "guided" && seg.requiresConfirm) {
+            await waitForContinue();
+          } else {
+            await new Promise((r) => setTimeout(r, seg.pauseAfterMs ?? 250));
+          }
         }
       } catch (err: unknown) {
         if (isStale(session)) break;
@@ -984,10 +1096,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function stop() {
     console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     stopAudio();
+    resolveContinue();
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
+    setKaraokeWords([]);
+    setActiveWordIdx(0);
     onEvidenceFocus?.(null);
   }
 
@@ -1138,12 +1253,56 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                     </span>
                   )}
                 </div>
-                <p style={{ margin: 0, fontSize: 11, color: "#cbd5e1", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const }}>
-                  {eyeText}
-                </p>
+                {karaokeWords.length > 0 ? (
+                  <p
+                    ref={karaokeBoxRef}
+                    style={{ margin: 0, fontSize: 11, color: "#cbd5e1", lineHeight: 1.6, maxHeight: 56, overflowY: "auto" }}
+                  >
+                    {karaokeWords.map((w, i) => (
+                      <span
+                        key={i}
+                        ref={i === activeWordIdx ? activeWordRef : undefined}
+                        style={
+                          i === activeWordIdx
+                            ? { background: ec.text, color: "#0f172a", borderRadius: 3, padding: "0 2px", fontWeight: 600 }
+                            : undefined
+                        }
+                      >
+                        {w.word}{" "}
+                      </span>
+                    ))}
+                  </p>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 11, color: "#cbd5e1", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const }}>
+                    {eyeText}
+                  </p>
+                )}
               </div>
             );
           })()}
+
+          {/* Guided teach-loop checkpoint — playback is stopped, waiting for the
+              reader to continue (or explain first, then continue). */}
+          {awaitingContinue && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                onClick={resolveContinue}
+                style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.15)", color: "#a5b4fc", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+              >
+                ▶ Continue
+              </button>
+              {segments[segIdx]?.evidenceRefId && (
+                <button
+                  type="button"
+                  onClick={() => explainCurrentSegment(segments[segIdx].evidenceRefId as string)}
+                  style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#cbd5e1", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                >
+                  💬 Explain
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Segment list */}
           {segments.length > 0 && (

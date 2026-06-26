@@ -3889,6 +3889,7 @@ export default function ThoughtUnitReader() {
                 }}
                 onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
                 onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
+                onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}
                 onOpenExplainIt={() => handleOpenExplainIt()}

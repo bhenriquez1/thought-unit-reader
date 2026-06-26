@@ -262,6 +262,8 @@ interface RightPanelProps {
   onSpeechEvidenceFocus?: (id: string | null) => void;
   onSpeechSnippetFocus?: (snippet: string | null) => void;
   onSpeechPlayStateChange?: (isReading: boolean) => void;
+  /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
+  onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
    *  rendered by the caller (pages/index.tsx); RightPanel only surfaces the entry points. */
   onOpenWhiteboard?: () => void;
@@ -507,6 +509,7 @@ export function RightPanel({
   onSpeechEvidenceFocus,
   onSpeechSnippetFocus,
   onSpeechPlayStateChange,
+  onSpeechExplainSegment,
   onOpenWhiteboard,
   onOpenExplainStep,
   onOpenExplainIt,
@@ -1302,6 +1305,7 @@ export function RightPanel({
             onEvidenceFocus={onSpeechEvidenceFocus}
             onSnippetFocus={onSpeechSnippetFocus}
             onPlayStateChange={onSpeechPlayStateChange}
+            onExplainSegment={onSpeechExplainSegment}
             primary
           />
           <div className="grid grid-cols-2 gap-2">
