@@ -645,12 +645,27 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
   "Exam Strategy":      { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🎯" },
   "Connection Map":     { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🔗" },
   "Clinical Pearl":     { accent: "#facc15", bg: "rgba(250,204,21,0.06)",  icon: "💎" },
+  "Summary":            { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🧾" },
 };
 
+// Expert-notebook reading order for the card grid below. Sort, not filter —
+// any label absent from this list (future section) still renders, just last,
+// instead of silently disappearing (the lesson from Phase 4's SUBJECT_ORDER).
+const SECTION_ORDER = [
+  "Core Idea", "Must Know", "Mechanism", "Clinical Reasoning", "DAT/Dental Trap",
+  "Common Mistake", "Memory Hook", "Exam Strategy", "Connection Map",
+  "Clinical Pearl", "Recall Questions", "Summary", "Source",
+];
+
 function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {
+  const ordered = [...sections].sort((a, b) => {
+    const ai = SECTION_ORDER.indexOf(a.label);
+    const bi = SECTION_ORDER.indexOf(b.label);
+    return (ai === -1 ? SECTION_ORDER.length : ai) - (bi === -1 ? SECTION_ORDER.length : bi);
+  });
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {sections.map((sec) => {
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+      {ordered.map((sec) => {
         const style = SECTION_STYLE[sec.label] ?? { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "•" };
         const lens = getSectionLens(mode, sec.label);
         const label = lens?.label ?? sec.label;
@@ -670,7 +685,7 @@ function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultr
   );
 }
 
-const NEW_SCHEMA_LABELS = new Set(["Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook", "Recall Questions", "Source"]);
+const NEW_SCHEMA_LABELS = new Set(["Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook", "Recall Questions", "Summary", "Source"]);
 
 function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
   if (!sections?.length) return false;

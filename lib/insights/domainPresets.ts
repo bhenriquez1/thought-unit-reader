@@ -58,6 +58,27 @@ export const UNIVERSAL_PRESET: DomainPreset = {
   label: "Universal (generic)",
   description: "Generic academic taxonomy — used when no domain preset is detected.",
   contentKeywords: [],
+  kindLabels: {
+    thesis: "Master This",
+    definition: "Master This",
+    mechanism: "Mechanism",
+    formula: "Mechanism",
+    trap: "Trap / Danger",
+    application: "Decision Point",
+    clinical: "Decision Point",
+    comparison: "Decision Point",
+  },
+  // Expert-priority order so star tier (getImportanceTier(groupIndex)) lines up
+  // with how a resident/surgeon would triage a page: nail the core idea first,
+  // then how it works, then what trips people up, then applied judgment calls,
+  // then everything else as supporting detail.
+  kindGroups: [
+    { id: "master_this", label: "Master This", kinds: ["thesis", "definition"] },
+    { id: "mechanism", label: "Mechanism", kinds: ["mechanism", "formula"] },
+    { id: "trap_danger", label: "Trap / Danger", kinds: ["trap"] },
+    { id: "decision_point", label: "Decision Point", kinds: ["application", "clinical", "comparison"] },
+    { id: "supporting_detail", label: "Supporting Detail", kinds: ["memoryAnchor", "reference", "filler", "dat_fact", "unknown"] },
+  ],
 };
 
 // Seed presets. Not an exhaustive or hard-coded list — this is meant to grow.

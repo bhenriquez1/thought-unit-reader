@@ -2,7 +2,7 @@
 // Converts CurrentPageStudyModel → ordered speech segments.
 // Used exclusively by StudySpeechPanel — no direct PDF/paragraph dependency.
 
-import type { CurrentPageStudyModel, VisualAnchor, VisualAnchorRole, VisualAnchorSourceField } from "@/lib/insights/currentPageStudyModel";
+import type { CurrentPageStudyModel, VisualAnchor, VisualAnchorRole } from "@/lib/insights/currentPageStudyModel";
 import { getImportanceTier, type ImportanceTier } from "@/lib/insights/importanceTiers";
 import { groupThoughtUnits } from "@/lib/insights/domainPresets";
 
@@ -11,9 +11,9 @@ import { groupThoughtUnits } from "@/lib/insights/domainPresets";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type StudySpeechMode =
-  | "study"      // Thesis + study notes (why/mech/confusion/exam)
-  | "highlights" // Visual anchors only, Right Panel field order
-  | "full"       // Thesis + notes + concept blocks + anchors
+  | "study"      // Thesis + visual anchors, LeftPanel (groupThoughtUnits) order
+  | "highlights" // Visual anchors only, LeftPanel (groupThoughtUnits) order
+  | "full"       // Thesis + visual anchors (LeftPanel order) + concept blocks
   | "focus"      // Thesis only (single sentence overview)
   | "guided"     // Visual anchors in importance order, paced/framed by star tier
   | "fullPage";  // Whole page text sentence-by-sentence
@@ -184,13 +184,12 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   datFact:         0.92,
 };
 
-// Returns the id of the first visualAnchor whose sourceField matches — used to
-// attach an evidenceRefId to study/full mode segments so per-segment eye guidance works.
-function anchorForField(
-  anchors: CurrentPageStudyModel["visualAnchors"],
-  field: VisualAnchorSourceField,
-): string | undefined {
-  return anchors.find((a) => a.sourceField === field)?.id;
+// LeftPanel order — same groupThoughtUnits(entries, presetId) call
+// ThoughtUnitNavigator/ThoughtRoadmap use, flattened group-by-group. Every
+// non-focus, non-guided mode reads anchors through this so Speech never
+// drifts back into its own RightPanel-style field ordering.
+function flattenInLeftPanelOrder(anchors: VisualAnchor[], presetId: string): VisualAnchor[] {
+  return groupThoughtUnits<VisualAnchor>(anchors, presetId).flatMap((group) => group.items);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,7 +263,7 @@ export function buildSpeechScript(
           anchor.id,
           tier,
           tier.stars >= 4 ? 700 : 250,
-          tier.stars >= 4,
+          tier.stars >= 4 || anchor.kind === "trap" || anchor.kind === "thesis" || anchor.kind === "dat_fact",
         );
         flatIndex++;
       });
@@ -281,23 +280,12 @@ export function buildSpeechScript(
     return segments;
   }
 
-  // ── Highlight mode: only visual anchors, Right Panel field order ─────────
-  // Order matches what the student sees in the Right Panel: thesis → whyThisMatters
-  // → keyMechanism → commonConfusion → quickMemory → conceptBlock → conceptMap.
-  const FIELD_SPEECH_ORDER: Record<string, number> = {
-    pageThesis:      1,
-    whyThisMatters:  2,
-    keyMechanism:    3,
-    commonConfusion: 4,
-    quickMemory:     5,
-    conceptBlock:    6,
-    conceptMap:      7,
-  };
+  // ── Highlight mode: only visual anchors, LeftPanel order ──────────────────
+  // Same groupThoughtUnits(entries, presetId) flatten the left panel itself
+  // renders with — Speech must never compute its own independent ordering.
   if (mode === "highlights") {
-    const sortedAnchors = [...model.visualAnchors].sort(
-      (a, b) => (FIELD_SPEECH_ORDER[a.sourceField] ?? 99) - (FIELD_SPEECH_ORDER[b.sourceField] ?? 99),
-    );
-    sortedAnchors.forEach((anchor) => {
+    const orderedAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
+    orderedAnchors.forEach((anchor) => {
       push(
         anchor.id,
         "visualAnchor",
@@ -310,36 +298,32 @@ export function buildSpeechScript(
     const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
     console.log("[SPEECH_SOURCE]", {
       mode,
-      source: "finalStudyModel.visualAnchors",
+      source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order)",
+      presetId,
       itemCount: model.visualAnchors.length,
       charCount: totalChars,
     });
     return segments;
   }
 
-  // ── Study + Full: study notes — each segment carries evidenceRefId so the
-  // per-segment sequential loop in StudySpeechPanel can focus the matching
-  // left-panel highlight while that note is being spoken.
-  const sn      = model.studyNotes;
-  const anchors = model.visualAnchors;
-  push("why",  "whyThisMatters",  "Why This Matters",  sn.whyThisMatters  ?? "", 1.00,
-       anchorForField(anchors, "whyThisMatters"));
-  push("mech", "keyMechanism",    "Key Mechanism",     sn.keyMechanism    ?? "", 0.92,
-       anchorForField(anchors, "keyMechanism"));
-  push("conf", "commonConfusion", "Common Confusion",  sn.commonConfusion ? `Watch out. ${sn.commonConfusion}` : "", 0.88,
-       anchorForField(anchors, "commonConfusion"));
-  push("exam", "examSignal",      "Exam Signal",       sn.examSignal      ?? "", 0.90);
+  // ── Study + Full: same LeftPanel-ordered anchors — each segment carries
+  // evidenceRefId so the per-segment sequential loop in StudySpeechPanel can
+  // focus the matching left-panel highlight while that anchor is being spoken.
+  const orderedAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
+  orderedAnchors.forEach((anchor) => {
+    push(
+      anchor.id,
+      "visualAnchor",
+      ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
+      anchor.exactText,
+      ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
+      anchor.id,
+    );
+  });
 
   if (mode === "study") return segments;
 
-  // ── Full mode: reasoning flow + concept blocks + anchors ─────────────────
-  if (sn.reasoningFlow && sn.reasoningFlow.includes("→")) {
-    const nodes = sn.reasoningFlow.split(/\s*→\s*/).filter(Boolean);
-    push("flow", "reasoningFlow", "Reasoning Chain",
-      `The reasoning chain goes: ${nodes.join(", then ")}`,
-      0.90);
-  }
-
+  // ── Full mode: concept blocks appended after the LeftPanel-ordered anchors ──
   model.conceptBlocks.slice(0, 5).forEach((block, i) => {
     const parts: string[] = [];
     if (block.title) parts.push(`${block.title}.`);
@@ -355,21 +339,11 @@ export function buildSpeechScript(
     );
   });
 
-  model.visualAnchors.slice(0, 6).forEach((anchor) => {
-    push(
-      anchor.id,
-      "visualAnchor",
-      ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
-      anchor.exactText,
-      ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
-      anchor.id,
-    );
-  });
-
   const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
   console.log("[SPEECH_SOURCE]", {
     mode,
-    source: mode === "full" ? "finalStudyModel.visualAnchors + studyNotes + conceptBlocks" : "finalStudyModel.studyNotes",
+    source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order) + conceptBlocks",
+    presetId,
     itemCount: segments.length,
     charCount: totalChars,
   });
@@ -388,9 +362,9 @@ export interface ModeInfo {
 
 export const STUDY_SPEECH_MODES: ModeInfo[] = [
   { id: "focus",      label: "Focus",        description: "Core idea only" },
-  { id: "study",      label: "Study",        description: "Thesis + all study notes" },
-  { id: "highlights", label: "Highlight Only", description: "Read just the highlighted anchors, Right Panel order" },
-  { id: "full",       label: "Full",         description: "All content + concept blocks" },
+  { id: "study",      label: "Study",        description: "Thesis + highlighted anchors, LeftPanel order" },
+  { id: "highlights", label: "Highlight Only", description: "Read just the highlighted anchors, LeftPanel order" },
+  { id: "full",       label: "Full",         description: "Thesis + all anchors (LeftPanel order) + concept blocks" },
   { id: "guided",     label: "Guided",       description: "Most important points first, paced and framed by star tier" },
   { id: "fullPage",   label: "Current Page", description: "Whole page text sentence-by-sentence, click any sentence to start there" },
 ];
