@@ -4,6 +4,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { generateWhiteboardStepsFromModel, splitMechanism, trunc } from "@/lib/insights/whiteboardFromStudyModel";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import { buildDiagramPlan, type DiagramPlan } from "@/lib/whiteboard/diagramPlan";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -38,8 +39,45 @@ type DebugInfo = {
   httpStatus?: number;
 };
 
-type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean; debugInfo?: DebugInfo };
+type Ok  = { steps: Step[]; narrationScript: string; diagramPlan?: DiagramPlan; aiDisabled?: boolean; debugInfo?: DebugInfo };
 type Err = { error: string; aiDisabled?: boolean; debugInfo?: DebugInfo };
+
+/** Top-level fields the model may supply directly alongside `steps`. */
+type AiTopLevelPlanFields = {
+  learningGoal?: string;
+  formulas?: string[];
+  warnings?: string[];
+  memoryHooks?: string[];
+};
+
+/** Assembles the whole-board DiagramPlan from finalized steps + page context.
+ *  Used at every response point that returns `steps` — AI-success, AI-JSON-
+ *  recovered, and the zero-API-call fallback all funnel through here so the
+ *  client always gets a populated plan, never a partial one. */
+function assembleDiagramPlan(
+  steps: Step[],
+  concept: string,
+  studyModel: any,
+  focusedAnchorId: string | null,
+  pageNumber: number | null,
+  aiFields: AiTopLevelPlanFields = {},
+): DiagramPlan {
+  const sn = studyModel?.studyNotes;
+  const title = trunc(studyModel?.pageThesis || concept || "This concept", 80);
+  const learningGoal = aiFields.learningGoal || sn?.whyThisMatters || `Understand: ${title}`;
+  const warnings = aiFields.warnings?.length ? aiFields.warnings : (sn?.commonConfusion ? [sn.commonConfusion] : []);
+  const memoryHooks = aiFields.memoryHooks?.length ? aiFields.memoryHooks : (sn?.quickMemory ? [sn.quickMemory] : []);
+  const formulas = aiFields.formulas ?? [];
+  return buildDiagramPlan(steps as any, {
+    title,
+    learningGoal,
+    sourceThoughtUnitId: focusedAnchorId,
+    pageNumber,
+    warnings,
+    memoryHooks,
+    formulas,
+  });
+}
 
 /* ─── Whiteboard mode derivation ────────────────────────────────────────────── */
 
@@ -187,6 +225,8 @@ export default async function handler(
       studyModel?: any;
       pageText?: string;
       debug?: boolean;
+      focusedAnchorId?: string | null;
+      pageNumber?: number | null;
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
@@ -195,6 +235,8 @@ export default async function handler(
     // Debug mode (P3): on any failure, return diagnostics instead of silently
     // falling back to buildFallbackSteps() generic content.
     const debug      = Boolean(body.debug);
+    const focusedAnchorId = body.focusedAnchorId ?? null;
+    const pageNumber = typeof body.pageNumber === "number" ? body.pageNumber : (studyModel?.page ?? null);
 
     if (!concept && !studyModel?.pageThesis) {
       return res.status(400).json({ error: "Missing concept/studyModel" });
@@ -213,6 +255,7 @@ export default async function handler(
       return res.status(200).json({
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
+        diagramPlan: assembleDiagramPlan(fb, concept, studyModel, focusedAnchorId, pageNumber),
         aiDisabled: true,
       });
     }
@@ -234,8 +277,13 @@ export default async function handler(
       '  "arrows"?: [{"from": string, "to": string, "label"?: string}],',
       '  "payload"?: {"text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null}',
       '  "objects"?: string[] // one or more of: sketch, arrow, label, equation, graph, tooth, organ, pathway',
-      '}], "visualDrawingPlan": {"title": string, "narration": string}, "narrationScript": string }',
+      '}], "visualDrawingPlan": {"title": string, "narration": string}, "narrationScript": string,',
+      '"learningGoal": string, "formulas": string[], "warnings": string[], "memoryHooks": string[] }',
       "Rules:",
+      "- learningGoal: one sentence — what the student should be able to do after studying this board.",
+      "- formulas: any equations/formulas relevant to this concept as plain strings (empty array if none).",
+      "- warnings: common mistakes or traps a student could fall into on this concept (empty array if none).",
+      "- memoryHooks: short mnemonics or memory tricks for this concept (empty array if none).",
       "- 3–5 steps. Each step draws ONE teaching idea — mechanism, relationship, or comparison.",
       "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step.",
       "- Do NOT invent concepts — only visualize what is in the study model below.",
@@ -301,6 +349,7 @@ export default async function handler(
       return res.status(200).json({
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
+        diagramPlan: assembleDiagramPlan(fb, concept, studyModel, focusedAnchorId, pageNumber),
         aiDisabled: true,
       });
     }
@@ -310,6 +359,7 @@ export default async function handler(
 
     let steps: Step[] | null = null;
     let narrationScript = "";
+    let aiTopLevel: AiTopLevelPlanFields = {};
 
     try {
       const j   = JSON.parse(rawContent || "{}");
@@ -329,6 +379,12 @@ export default async function handler(
         .filter((s: Step) => s.title || s.content)
         .slice(0, 6);
       narrationScript = String(j.narrationScript ?? "");
+      aiTopLevel = {
+        learningGoal: typeof j.learningGoal === "string" ? j.learningGoal : undefined,
+        formulas:     Array.isArray(j.formulas)    ? j.formulas.map(String)    : undefined,
+        warnings:     Array.isArray(j.warnings)    ? j.warnings.map(String)    : undefined,
+        memoryHooks:  Array.isArray(j.memoryHooks) ? j.memoryHooks.map(String) : undefined,
+      };
     } catch {
       if (debug) {
         return res.status(200).json({
@@ -363,6 +419,7 @@ export default async function handler(
       return res.status(200).json({
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
+        diagramPlan: assembleDiagramPlan(fb, concept, studyModel, focusedAnchorId, pageNumber),
         aiDisabled: true,
       });
     }
@@ -373,13 +430,19 @@ export default async function handler(
 
     console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
 
-    return res.status(200).json({ steps, narrationScript });
+    return res.status(200).json({
+      steps,
+      narrationScript,
+      diagramPlan: assembleDiagramPlan(steps, concept, studyModel, focusedAnchorId, pageNumber, aiTopLevel),
+    });
 
   } catch (err: any) {
     const body    = (req.body || {}) as any;
     const concept = String(body?.concept  || req.query?.concept  || "");
     const context = String(body?.context  || req.query?.context  || "");
     const sm      = body?.studyModel ?? null;
+    const anchorId = body?.focusedAnchorId ?? null;
+    const pageNum  = typeof body?.pageNumber === "number" ? body.pageNumber : (sm?.page ?? null);
     if (body?.debug) {
       return res.status(200).json({
         error: "Unexpected error generating whiteboard",
@@ -391,6 +454,7 @@ export default async function handler(
     return res.status(200).json({
       steps: fb,
       narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
+      diagramPlan: assembleDiagramPlan(fb, concept, sm, anchorId, pageNum),
       aiDisabled: true,
     });
   }
