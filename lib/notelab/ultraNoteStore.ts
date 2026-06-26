@@ -119,7 +119,11 @@ function compact(note: UltraNote): UltraNote {
       trap: c.trap.slice(0, 200),
       rule: c.rule.slice(0, 200),
     })),
-    sections: note.sections?.slice(0, 8).map((s) => ({
+    // Cap generous enough to cover every section buildNoteFromStudyModel can produce
+    // (Core Idea/Must Know/Mechanism/Trap/Memory Hook/Recall Questions/5 Level-2
+    // fields/Summary/Source = 13) — an 8-cap was silently dropping Summary and
+    // Source since they're always pushed last.
+    sections: note.sections?.slice(0, 16).map((s) => ({
       label: s.label,
       content: s.content.slice(0, 500),
     })),
@@ -352,9 +356,9 @@ export function buildUltraNote(
 
 /**
  * Primary NoteLab entry point — builds a structured note directly from PageBrain.
- * Produces 6 explicit sections matching the cognitive architecture:
- *   1. Page Thesis  2. Key Mechanisms  3. Definitions
- *   4. Confusions & Traps  5. Exam Signals  6. Summary
+ * Produces sections matching the cognitive architecture: Core Idea, Must Know,
+ * Mechanism, Trap, Memory Hook, Recall Questions, deeper Level-2 reasoning
+ * fields when resolved, a closing Summary, and Source.
  *
  * All content comes from the same StudyModel that powers the right panel and
  * left-panel highlights — NoteLab is a different view of the same brain.
@@ -431,6 +435,13 @@ export function buildNoteFromStudyModel(
   }
   if (sn.clinicalPearl) {
     sections.push({ label: "Clinical Pearl", content: sn.clinicalPearl });
+  }
+
+  // 6b. Summary — closing recap built from already-computed fields, no new AI call
+  const summaryParts = [model.pageThesis, sn.keyMechanism, sn.quickMemory]
+    .filter((v): v is string => typeof v === "string" && v.length > 10);
+  if (summaryParts.length) {
+    sections.push({ label: "Summary", content: summaryParts.join(" ") });
   }
 
   // 7. Source — book title, page, topic
