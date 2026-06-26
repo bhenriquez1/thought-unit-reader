@@ -262,6 +262,9 @@ interface RightPanelProps {
   onSpeechEvidenceFocus?: (id: string | null) => void;
   onSpeechSnippetFocus?: (snippet: string | null) => void;
   onSpeechPlayStateChange?: (isReading: boolean) => void;
+  /** Fires on every karaoke word-index change, for every speech mode — drives the
+   *  live word box in the PDF and the marked word in the active LeftPanel card. */
+  onSpeechActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
   /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
@@ -509,6 +512,7 @@ export function RightPanel({
   onSpeechEvidenceFocus,
   onSpeechSnippetFocus,
   onSpeechPlayStateChange,
+  onSpeechActiveWordChange,
   onSpeechExplainSegment,
   onOpenWhiteboard,
   onOpenExplainStep,
@@ -672,6 +676,20 @@ export function RightPanel({
   // active page. This is the root-cause fix for "[WIRE] _synth synthPresent:false".
   const hasUsablePageText = (ctx?.pageText?.length ?? 0) > 500;
   const synthEnabled = !isStructuralPage && (!!ultraPageView || hasUsablePageText);
+
+  // Auto-detected domain preset — same keyword-matching detectDomainPreset() the
+  // left panel uses, run independently here on whatever page text RightPanel
+  // already has. Only a fallback: the `presetId` prop (the left panel's actual
+  // effective preset, including any manual override) wins whenever the caller
+  // has reported one, so RightPanel/Guided-speech never disagrees with what's
+  // actually displayed in the left panel. Computed here (not just below) so the
+  // synthesis call below can pass it through for B3's domain-category prompt injection.
+  const detectedPresetId = useMemo(
+    () => detectDomainPreset(ctx?.pageText ?? "", ctx?.chapterTitle ?? ctx?.sectionTitle ?? undefined),
+    [ctx?.pageText, ctx?.chapterTitle, ctx?.sectionTitle],
+  );
+  const effectivePresetId = presetId ?? detectedPresetId;
+
   const {
     synthesis: teachingSynthesis,
     status: synthStatus,
@@ -689,6 +707,7 @@ export function RightPanel({
     // Pass full pageText — cleaner + synthesis hook slices to 1500 internally.
     pageText:      ctx?.pageText ?? undefined,
     domain: (ultraPageView?._debug?.domain) ?? null,
+    presetId: effectivePresetId,
     blocks: ultraPageView?.blocks ?? [],
     enabled: synthEnabled,
     pageNumber: ctx?.pageNumber ?? undefined,
@@ -971,18 +990,6 @@ export function RightPanel({
     });
     return result;
   }, [ultraPageView, teachingSynthesis, ctx?.pageNumber, ctx?.sectionTitle, ctx?.chapterTitle]);
-
-  // Auto-detected domain preset — same keyword-matching detectDomainPreset() the
-  // left panel uses, run independently here on whatever page text RightPanel
-  // already has. Only a fallback: the `presetId` prop (the left panel's actual
-  // effective preset, including any manual override) wins whenever the caller
-  // has reported one, so RightPanel/Guided-speech never disagrees with what's
-  // actually displayed in the left panel.
-  const detectedPresetId = useMemo(
-    () => detectDomainPreset(ctx?.pageText ?? "", ctx?.chapterTitle ?? ctx?.sectionTitle ?? undefined),
-    [ctx?.pageText, ctx?.chapterTitle, ctx?.sectionTitle],
-  );
-  const effectivePresetId = presetId ?? detectedPresetId;
 
   // Typed study model built when synthesis resolves — shared with all downstream features.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
@@ -1305,6 +1312,7 @@ export function RightPanel({
             onEvidenceFocus={onSpeechEvidenceFocus}
             onSnippetFocus={onSpeechSnippetFocus}
             onPlayStateChange={onSpeechPlayStateChange}
+            onActiveWordChange={onSpeechActiveWordChange}
             onExplainSegment={onSpeechExplainSegment}
             primary
           />

@@ -111,6 +111,77 @@ function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement 
   );
 }
 
+/**
+ * Locates the on-page rect for a single word within an already-highlighted anchor's
+ * text — drives the Speechify-style live word box. Re-measures spans fresh each call
+ * (cheap — only runs on word-index changes, not full anchor re-matching) using the
+ * same punctuation-stripped matching AI-highlight-anchor matching uses. When a span
+ * batches multiple words, interpolates the word's box within that span's bounding
+ * rect by character-width fraction. Returns null if the anchor text can't be located
+ * or the word falls outside it — callers should fall back to the whole-anchor highlight.
+ */
+function computeActiveWordRect(
+  textLayer: Element,
+  anchorText: string,
+  wordIndex: number,
+): { top: number; left: number; width: number; height: number } | null {
+  const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
+  const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+  if (!spans.length) return null;
+
+  const spanNorm = spans.map((s) => stripPunctForMatch(s.textContent || ""));
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const t of spanNorm) { offsets.push(cursor); cursor += t.length + 1; }
+  const concatText = spanNorm.join(" ");
+
+  const baseText = stripPunctForMatch(anchorText);
+  if (baseText.length < 4) return null;
+  let startIdx = concatText.indexOf(baseText);
+  if (startIdx === -1) {
+    // Fallback: pin by the anchor's first few words only — handles cases where
+    // the full anchor text runs slightly past what matched on this render pass.
+    const firstWords = baseText.split(" ").filter(Boolean).slice(0, 6).join(" ");
+    startIdx = firstWords.length >= 8 ? concatText.indexOf(firstWords) : -1;
+  }
+  if (startIdx === -1) return null;
+  const endIdx = Math.min(startIdx + baseText.length, concatText.length);
+
+  const words = concatText.slice(startIdx, endIdx).split(" ").filter(Boolean);
+  if (!words.length) return null;
+  const idx = Math.min(Math.max(wordIndex, 0), words.length - 1);
+  let off = 0;
+  for (let i = 0; i < idx; i++) off += words[i].length + 1;
+  const wordStart = startIdx + off;
+  const wordEnd = wordStart + words[idx].length;
+
+  let top = Infinity, left = Infinity, bottom = -Infinity, right = -Infinity;
+  for (let i = 0; i < spans.length; i++) {
+    const sStart = offsets[i];
+    const sEnd = sStart + spanNorm[i].length;
+    if (sEnd <= wordStart || sStart >= wordEnd) continue;
+    const dr = spans[i].getBoundingClientRect();
+    if (dr.width < 1 || dr.height < 1) continue;
+    const spanLen = Math.max(1, spanNorm[i].length);
+    const fracStart = Math.max(0, (wordStart - sStart) / spanLen);
+    const fracEnd = Math.min(1, (wordEnd - sStart) / spanLen);
+    const wLeft = dr.left + dr.width * fracStart;
+    const wRight = dr.left + dr.width * fracEnd;
+    top = Math.min(top, dr.top);
+    bottom = Math.max(bottom, dr.bottom);
+    left = Math.min(left, wLeft);
+    right = Math.max(right, wRight);
+  }
+  if (!isFinite(top) || !isFinite(left) || right <= left) return null;
+
+  return {
+    top: top - layerRect.top,
+    left: left - layerRect.left,
+    width: Math.max(3, right - left),
+    height: Math.max(10, bottom - top),
+  };
+}
+
 /** Outline (TOC) shape bubbled up to the page */
 export type TocItem = {
   title: string;
@@ -151,6 +222,9 @@ export interface SmartPDFViewerProps {
   highlightNeighborhoods?: HighlightNeighborhood[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (evidenceId: string) => void;
+  /** Live word-by-word Speech position within focusedEvidenceId's anchor — drives
+   *  a secondary Speechify-style live word box on top of the anchor highlight. */
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -247,6 +321,7 @@ export default function SmartPDFViewer({
   highlightNeighborhoods,
   focusedEvidenceId,
   onEvidenceFocus,
+  activeSpokenWord,
   isPageChanging = false,
   onPageRenderComplete,
   onPageTextExtracted,
@@ -274,6 +349,11 @@ export default function SmartPDFViewer({
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const [overlayVersion, setOverlayVersion] = useState(0);
+  // Speechify-style live word box — a small rect within the currently-spoken anchor's
+  // highlight, recomputed per word-index change (cheap single-anchor re-measure, not a
+  // full overlayRects rebuild). Null whenever word-level mapping isn't available —
+  // callers fall back to the whole-anchor highlight already rendered via overlayRects.
+  const [activeWordRect, setActiveWordRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   // Increments after every successful page render (including zoom-triggered re-renders).
   // Adding it to the rebuild effect deps ensures overlay rects recompute at the new scale.
   const [pageRenderKey, setPageRenderKey] = useState(0);
@@ -628,6 +708,7 @@ export default function SmartPDFViewer({
         targetId: string,
         level: OverlayRect["level"],
         semanticKind: OverlayRect["semanticKind"],
+        priorityTier?: OverlayRect["priorityTier"],
       ): OverlayRect[] {
         if (!matched.length) return [];
         const byLine = new Map<number, DOMRect[]>();
@@ -660,6 +741,7 @@ export default function SmartPDFViewer({
             id: lineIndex === 0 ? targetId : `${targetId}-L${lineIndex}`,
             level,
             semanticKind,
+            priorityTier,
             top: top - 1,                    // shift up 1px for marker-swipe feel
             left,
             width,
@@ -668,6 +750,32 @@ export default function SmartPDFViewer({
           lineIndex++;
         }
         return lineRects;
+      }
+
+      // Ensure adjacent highlights on the same line never visually merge into one block —
+      // "Apple Pencil marker" feel, not a solid paint bar. When two rects' vertical ranges
+      // overlap and their horizontal ranges touch or overlap, trim the facing edges so a
+      // minimum gap survives between them.
+      function applyMinimumGap(input: OverlayRect[]): OverlayRect[] {
+        const MIN_GAP = 3;
+        const out = input.map((r) => ({ ...r }));
+        for (let i = 0; i < out.length; i++) {
+          for (let j = i + 1; j < out.length; j++) {
+            const a = out[i];
+            const b = out[j];
+            const verticalOverlap = a.top < b.top + b.height && b.top < a.top + a.height;
+            if (!verticalOverlap) continue;
+            const [left, right] = a.left <= b.left ? [a, b] : [b, a];
+            const gap = right.left - (left.left + left.width);
+            if (gap < MIN_GAP) {
+              const shrink = (MIN_GAP - gap) / 2;
+              left.width = Math.max(4, left.width - shrink);
+              right.left = right.left + shrink;
+              right.width = Math.max(4, right.width - shrink);
+            }
+          }
+        }
+        return out;
       }
 
       const rects: OverlayRect[] = [];
@@ -717,14 +825,14 @@ export default function SmartPDFViewer({
             return; // Skip — no partial misleading highlights
           }
           const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
-          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
+          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier);
           console.log("[AI_HIGHLIGHT:matched]", { id: target.evidenceRefId, via: "fallback", lines: fbRects.length });
           rects.push(...fbRects);
           return;
         }
 
         const matchedSpans = spansForRange(location.startIdx, location.endIdx);
-        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
+        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier);
         console.log("[AI_HIGHLIGHT:matched]", {
           id: target.evidenceRefId, kind: target.kind,
           text: target.text?.slice(0, 50),
@@ -752,7 +860,7 @@ export default function SmartPDFViewer({
         return;
       }
       console.log("[PDF] rendered rect count", rects.length, "from", highlightTargets?.length ?? 0, "anchors");
-      setOverlayRects(rects);
+      setOverlayRects(applyMinimumGap(rects));
     };
 
     console.log("[OVERLAY_SOURCE_USED]", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey, overlayVersion });
@@ -763,6 +871,25 @@ export default function SmartPDFViewer({
   // pageRenderKey fires after every successful page render (including zoom changes) so
   // overlay rects are recomputed at the correct scale. effectiveZoom is a safety net.
   }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey, effectiveZoom, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Speechify-style live word box — recomputes only the active anchor's word position,
+  // not the full overlayRects rebuild above. Falls back to null (whole-anchor highlight
+  // only) when the anchor isn't currently rendered or word-level mapping fails.
+  useEffect(() => {
+    if (!activeSpokenWord || !activeSpokenWord.anchorId) {
+      setActiveWordRect(null);
+      return;
+    }
+    const container = viewerRef.current;
+    const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
+    const target = highlightTargets?.find((t) => t.evidenceRefId === activeSpokenWord.anchorId);
+    if (!textLayer || !target) {
+      setActiveWordRect(null);
+      return;
+    }
+    const rect = computeActiveWordRect(textLayer, target.normalizedText || target.text, activeSpokenWord.wordIndex);
+    setActiveWordRect(rect);
+  }, [activeSpokenWord, currentPage, overlayRects]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -1150,6 +1277,23 @@ export default function SmartPDFViewer({
                     onFocus={onEvidenceFocus}
                   />
                 </React.Fragment>
+              )}
+
+              {/* Speechify-style live word box — solid, on top of the soft anchor highlight */}
+              {activeWordRect && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute z-30 transition-all duration-100"
+                  style={{
+                    top: activeWordRect.top,
+                    left: activeWordRect.left,
+                    width: activeWordRect.width,
+                    height: activeWordRect.height,
+                    borderRadius: "3px",
+                    background: "rgba(253,224,71,0.85)",
+                    boxShadow: "0 0 6px rgba(253,224,71,0.6)",
+                  }}
+                />
               )}
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}

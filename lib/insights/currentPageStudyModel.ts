@@ -50,6 +50,11 @@ export type VisualAnchor = {
   priority:    number;          // 1 = highest; ascending — determines render order
   spanStart?:  string;          // optional PDF span boundary
   spanEnd?:    string;
+  /** AI-assigned 1-5 importance (5 = "Master This") — layered on top of, not
+   *  replacing, the ordinal group-level tier in lib/insights/importanceTiers.ts. */
+  priorityTier?: number;
+  /** Domain-specific extraction category (e.g. "mechanism", "clinical pearl"). */
+  domainCategory?: string;
 };
 
 // Role priority — determines render order and budget arbitration.
@@ -158,7 +163,11 @@ export type CurrentPageStudyModel = {
   relatedVideoQueries?: string[];
 };
 
-type AnchorCandidate = { text: string; anchorType: string; reason: string; spanStart?: string | null; spanEnd?: string | null };
+type AnchorCandidate = {
+  text: string; anchorType: string; reason: string;
+  spanStart?: string | null; spanEnd?: string | null;
+  priorityTier?: number | null; domainCategory?: string | null;
+};
 
 // Build 3–5 anchor candidates so the left panel (the "visual pathway") reflects the
 // full right-panel brain — not just the one or two verbatim spans the model returned.
@@ -231,6 +240,8 @@ type ContractAnchorSeed = {
   anchorType:  string;
   spanStart?:  string | null;
   spanEnd?:    string | null;
+  priorityTier?: number | null;
+  domainCategory?: string | null;
 };
 
 // Build the full proof-contract anchor pool — every right-panel field that makes a
@@ -255,6 +266,8 @@ function buildContractAnchorSeeds(
       anchorType:  a.anchorType,
       spanStart:   a.spanStart,
       spanEnd:     a.spanEnd,
+      priorityTier: a.priorityTier ?? undefined,
+      domainCategory: a.domainCategory ?? undefined,
     });
   }
 
@@ -380,6 +393,8 @@ export function buildStudyModel(
       priority:    rolePriority(s.role, presetId),
       spanStart:   s.spanStart ?? undefined,
       spanEnd:     s.spanEnd   ?? undefined,
+      priorityTier: s.priorityTier ?? undefined,
+      domainCategory: s.domainCategory ?? undefined,
     }))
     .sort((a, b) => a.priority - b.priority)
     .slice(0, 12)

@@ -42,6 +42,12 @@ export const SynthHighlightAnchorSchema = z.object({
   // requires every property to be required or nullable; .optional() makes zodTextFormat throw.
   spanStart: z.string().nullable(), // first 8-10 verbatim words from where concept begins
   spanEnd: z.string().nullable(),   // last 8-10 verbatim words where concept ends
+  // AI-assigned importance, 5 = Master This / ★★★★★, 1 = Optional / ★ — drives visual glow strength,
+  // separate from and layered on top of importanceTiers.ts's ordinal group-level tier.
+  priorityTier: z.number().int().min(1).max(5).nullable(),
+  // Domain-specific extraction category (e.g. "mechanism", "trap", "clinical pearl") — verbatim
+  // from the matched domain's category list in DOMAIN_CATEGORY_BLOCKS below, not a generic relabel.
+  domainCategory: z.string().nullable(),
 });
 
 export type SynthHighlightAnchor = z.infer<typeof SynthHighlightAnchorSchema>;
@@ -80,6 +86,11 @@ export type MiniTestItem = z.infer<typeof MiniTestItemSchema>;
 
 export const TeachingSynthesisSchema = z.object({
   pageType: PageTypeSchema.nullable(),  // from Stage 1; Stage 2 re-confirms or inherits
+  // SECTION 1 — write and finalize this FIRST. Every prose field below is elaboration
+  // FROM these anchors, not an independent pass. See buildSystemPrompt's "SECTION 1 / SECTION 2"
+  // framing — this is the pipeline-reversal mechanism: understand (anchors) first, narrate second.
+  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
+  // SECTION 2 — elaboration FROM Section 1's anchors below.
   coreIdea: z.string(),
   mechanism: z.string().nullable(),
   rule: z.string(),
@@ -101,7 +112,6 @@ export const TeachingSynthesisSchema = z.object({
   miniTests: z.array(z.string()).nullable(),             // legacy — kept for backward compat
   miniTestItems: z.array(MiniTestItemSchema).nullable(), // after-reading Page Checkpoint
   preReadRecallItems: z.array(MiniTestItemSchema).nullable(), // before-reading diagnostic
-  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
   relatedVideoQueries: z.array(z.string()).nullable(),
 });
 
@@ -123,6 +133,9 @@ export interface SynthesisConceptInput {
 
 export interface SynthesisInput {
   domain: PageDomain;
+  /** lib/insights/domainPresets.ts preset id — selects the domain-specific anchor
+   *  category block (DOMAIN_CATEGORY_BLOCKS) layered onto the universal prompt. */
+  presetId?: string;
   /** Heading + canonical teaching statement — primary anchor for what this page teaches */
   pageObjective?: string;
   /** Full page thesis — the professor's one-sentence governing idea */
@@ -140,7 +153,33 @@ export interface SynthesisInput {
 // Prompt builders
 // ---------------------------------------------------------------------------
 
-export function buildSystemPrompt(domain: PageDomain): string {
+// Domain-specific anchor extraction categories, keyed by lib/insights/domainPresets.ts preset id.
+// Every book/page type needs a different highlighting strategy — this is the override layer
+// appended after the universal LEFT-PANEL HIGHLIGHT ANCHORS section, never replacing it.
+const DOMAIN_CATEGORY_BLOCKS: Record<string, string> = {
+  medical_surgical: "diagnosis, procedure, anatomy, complication, contraindication, clinical pearl, treatment decision",
+  dental_school: "diagnosis, procedure, anatomy, complication, contraindication, clinical pearl, treatment decision",
+  nursing_pharmacology: "diagnosis, procedure, anatomy, complication, contraindication, clinical pearl, treatment decision",
+  chemistry: "mechanism, reaction, formula, law, concept, exception, calculation",
+  biology: "pathway, function, regulation, structure, sequence",
+  math: "theorem, assumption, equation, proof step",
+  dat: "trap, shortcut, common mistake, high-yield concept",
+  fiction: "plot event, character action, emotional shift, foreshadowing, symbolism",
+};
+
+function buildDomainCategoryBlock(presetId?: string): string {
+  const categories = presetId ? DOMAIN_CATEGORY_BLOCKS[presetId] : undefined;
+  if (!categories) return "";
+  return `
+─── DOMAIN-SPECIFIC ANCHOR CATEGORIES (this page's subject) ────────────────
+This page's subject requires ITS OWN highlighting strategy — do not use a generic
+algorithm. Every domainCategory you assign on this page's anchors MUST be one of:
+${categories}
+Choose anchors that fill these specific categories, not generic thesis/mechanism labels.`;
+}
+
+export function buildSystemPrompt(domain: PageDomain, presetId?: string): string {
+  const domainCategoryBlock = buildDomainCategoryBlock(presetId);
   const domainRole: Record<PageDomain, string> = {
     math:     "You are a mathematics professor (think: 3Blue1Brown, Gilbert Strang). You make abstract structures intuitive through visual reasoning and precise condition→conclusion statements.",
     science:  "You are a biology/chemistry/physics professor (think: Ninja Nerd, Khan Academy science). You explain mechanisms causally: what triggers what, why it matters biologically, what breaks if conditions change.",
@@ -234,15 +273,40 @@ NEW information, not rephrase what's already covered:
 
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
-─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
+─── SECTION 1 (write and finalize FIRST) — LEFT-PANEL HIGHLIGHT ANCHORS ─────
+This is highlightAnchors. Do NOT write any Section 2 field (coreIdea, mechanism, rule,
+trap, application, etc.) until this section is finalized — every Section 2 field below
+must be elaboration FROM the anchors you select here, not an independent pass over the
+page. understand first, narrate second.
+
 highlightAnchors: You are the REAL-TIME PAGE UNDERSTANDING ENGINE.
 
 Your job is NOT to annotate. Your job is to compress the entire page into the minimum
 set of spans that give a student instant, expert-guided understanding.
 
+THE GOAL IS NOT to highlight every important sentence. The goal is to highlight the
+MINIMUM amount of text necessary to understand the page. Target ratio: 85–90% of the
+page stays plain white text; only 10–15% becomes a highlighted anchor. If your anchors
+would visually read as "a student highlighted everything," you have failed this task.
+Prefer several SHORT anchors over one long sentence: e.g. for "ethanol reacts with
+oxygen to produce acetic acid through a multi-step oxidation...", highlight just
+"ethanol + oxygen → acetic acid" — not the surrounding sentence. Likewise prefer
+"chemical formula", "balanced equation", and "quantitative relationships" as separate
+short anchors rather than fusing them into one long highlighted block.
+
 DEFAULT: 2–4 highlights. Allow 5–6 ONLY when the page has multiple independent teaching
 sections (e.g., a page covering two unrelated mechanisms or a concept + a case + a contrast
 that cannot be represented with fewer spans). Over-highlighting defeats the purpose.
+
+priorityTier: Assign every anchor a 1–5 importance rating, 5 = "Master This" (★★★★★,
+the single most exam-critical anchor on the page) down to 1 = "Optional" (★, nice-to-know
+but skippable). Most pages should have one 5 (the thesis) and the rest spread 2–4 — do
+not rate everything a 5.
+
+domainCategory: Tag every anchor with the specific extraction category it belongs to
+(see the domain-specific category list appended below, if present for this page's
+subject). If no domain-specific category list is given, use the closest matching
+anchorType name as the category.
 
 When a student looks only at the colored highlights, they must immediately understand:
   1. What the page is about (thesis)
@@ -416,6 +480,11 @@ the enzyme mechanism is one supporting detail.
 VISUAL TRUST PRINCIPLE: When the student sees these highlights, they must immediately feel:
 "The AI understood this page." — not "random sentences were marked."
 Return null ONLY if the page has fewer than 3 real instructional sentences.
+${domainCategoryBlock}
+══════════════════════════════════════════════════════════════════════════════
+SECTION 1 is now finalized. Every field below is SECTION 2 — elaboration FROM
+the anchors above, not an independent re-read of the page.
+══════════════════════════════════════════════════════════════════════════════
 
 ─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
 miniTestItems: Generate 4–5 structured after-reading comprehension questions.
@@ -560,7 +629,8 @@ export const Stage1SynthesisSchema = z.object({
 });
 export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
 
-export function buildStage1SystemPrompt(_domain: PageDomain): string {
+export function buildStage1SystemPrompt(_domain: PageDomain, presetId?: string): string {
+  const domainCategoryBlock = buildDomainCategoryBlock(presetId);
   return `You are a universal academic educator. Given any textbook page — biology, chemistry, math, history, business, medicine, dental, law, or any other subject — classify the page type first, then generate structured study output.
 
 STEP 1 — CLASSIFY THE PAGE TYPE (required first field: pageType):
@@ -642,6 +712,8 @@ highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never
   • "comparison" → prefer the contrast sentence(s) that name the key difference
   spanStart + spanEnd REQUIRED: first/last 8–10 verbatim words of each span.
   Minimum span: ≥8 words. Must end with a period. Return null if fewer than 3 real instructional sentences exist.
+  priorityTier: 1–5 importance rating per anchor, 5 = "Master This", 1 = "Optional".
+  domainCategory: tag each anchor with its specific extraction category.${domainCategoryBlock}
 
 miniTestItems — 3 after-reading comprehension questions.
   Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism or logic). Q3: trap.
@@ -833,6 +905,8 @@ export function makeLocalFallbackSynthesis(
     reason: "Key sentence on this page",
     spanStart: null,
     spanEnd: null,
+    priorityTier: i === 0 ? 5 : null,
+    domainCategory: null,
   }));
 
   return {
@@ -962,6 +1036,7 @@ export function buildSynthesisInput(
   pageSummary?: string,
   pageNumber?: number,
   pageText?: string,
+  presetId?: string,
 ): SynthesisInput {
   // Prioritize substantive educational roles
   const ROLE_RANK: Record<string, number> = {
@@ -1002,7 +1077,7 @@ export function buildSynthesisInput(
       })()
     : rankedConcepts;
 
-  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, pageText, rankedConcepts: chunkedConcepts };
+  return { domain, presetId, pageObjective, pageThesis, pageSummary, pageNumber, pageText, rankedConcepts: chunkedConcepts };
 }
 
 /** Estimate token count from char count — rough 4 chars/token heuristic. */

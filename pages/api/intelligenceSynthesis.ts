@@ -65,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as Partial<SynthesisInput> & { stage?: string };
-  const { stage = "2", domain, pageObjective, pageThesis, pageSummary, pageText, rankedConcepts } = body;
+  const { stage = "2", domain, presetId, pageObjective, pageThesis, pageSummary, pageText, rankedConcepts } = body;
 
   if (!Array.isArray(rankedConcepts)) {
     return res.status(400).json({ error: "'rankedConcepts' must be an array." });
@@ -97,9 +97,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const safeDomain: PageDomain = VALID_DOMAINS.includes(domain as PageDomain)
     ? (domain as PageDomain)
     : "general";
+  const safePresetId: string | undefined = typeof presetId === "string" ? presetId : undefined;
 
   const safeInput: SynthesisInput = {
     domain:        safeDomain,
+    presetId:      safePresetId,
     pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
     pageThesis:    typeof pageThesis    === "string" ? pageThesis    : undefined,
     pageSummary:   typeof pageSummary   === "string" ? pageSummary   : undefined,
@@ -122,7 +124,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
         text: { format: FORMAT_STAGE1 },
         input: [
-          { role: "system", content: buildStage1SystemPrompt(safeDomain) },
+          { role: "system", content: buildStage1SystemPrompt(safeDomain, safePresetId) },
           { role: "user",   content: buildStage1UserPrompt(safeInput) },
         ],
       });
@@ -169,7 +171,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       max_output_tokens: 1800,
       text: { format: FORMAT_FULL },
       input: [
-        { role: "system", content: buildSystemPrompt(safeDomain) },
+        { role: "system", content: buildSystemPrompt(safeDomain, safePresetId) },
         { role: "user",   content: buildUserPrompt(safeInput) },
       ],
     });

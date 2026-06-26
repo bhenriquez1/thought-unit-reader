@@ -18,15 +18,13 @@ export type StudySpeechMode =
   | "guided"     // Visual anchors in importance order, paced/framed by star tier
   | "fullPage";  // Whole page text sentence-by-sentence
 
+// Note: these are LeftPanel/source-text roles only — never RightPanel field names
+// (coreIdea/mechanism/trap/... live in synthesizeTeachingOutput.ts and must stay
+// out of this union, since Speech reads source anchors, not RightPanel prose).
 export type SpeechSegmentRole =
   | "thesis"
-  | "whyThisMatters"
-  | "keyMechanism"
-  | "commonConfusion"
-  | "examSignal"
   | "conceptBlock"
-  | "visualAnchor"
-  | "reasoningFlow";
+  | "visualAnchor";
 
 export interface SpeechSegment {
   id: string;

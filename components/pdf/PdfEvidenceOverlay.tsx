@@ -8,6 +8,9 @@ export interface OverlayRect {
   height: number;
   level: "important" | "support" | "additional" | "trap";
   semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact";
+  /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
+   *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
+  priorityTier?: number;
 }
 
 // All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
@@ -30,70 +33,105 @@ interface KindConfig {
   label:       string;
   bgNormal:    string;
   bgFocused:   string;
+  // Faint always-on glow — the "Apple Pencil marker" feel at rest, distinct from
+  // and weaker than ringClass's focused-state glow.
+  restGlow:    string;
   ringClass:   string;
   badgeBg:     string;
   badgeColor:  string;
+  /** Bare "r,g,b" triplet (no alpha) — reused to build a tier-scaled glow in tierGlowStyle(). */
+  glowColor:   string;
 }
 
 const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
   thesis: {
     label:      "CORE IDEA",
-    bgNormal:   "rgba(253,224,71,0.28)",
-    bgFocused:  "rgba(253,224,71,0.55)",
-    ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
+    bgNormal:   "rgba(253,224,71,0.22)",
+    bgFocused:  "rgba(253,224,71,0.50)",
+    restGlow:   "0 0 3px rgba(253,224,71,0.32)",
+    ringClass:  "ring-1 ring-yellow-300/70 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
     badgeBg:    "rgba(113,63,18,0.92)",
     badgeColor: "#fde047",
+    glowColor:  "253,224,71",
   },
   definition: {
     label:      "DEFINITION",
-    bgNormal:   "rgba(147,197,253,0.35)",
-    bgFocused:  "rgba(147,197,253,0.62)",
-    ringClass:  "ring-2 ring-blue-300/80 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
+    bgNormal:   "rgba(147,197,253,0.26)",
+    bgFocused:  "rgba(147,197,253,0.56)",
+    restGlow:   "0 0 3px rgba(147,197,253,0.32)",
+    ringClass:  "ring-1 ring-blue-300/70 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
     badgeBg:    "rgba(29,78,216,0.92)",
     badgeColor: "#bfdbfe",
+    glowColor:  "147,197,253",
   },
   mechanism: {
     label:      "MECHANISM",
-    bgNormal:   "rgba(134,239,172,0.35)",
-    bgFocused:  "rgba(134,239,172,0.62)",
-    ringClass:  "ring-2 ring-green-300/80 shadow-[0_0_8px_rgba(134,239,172,0.55)]",
+    bgNormal:   "rgba(134,239,172,0.26)",
+    bgFocused:  "rgba(134,239,172,0.56)",
+    restGlow:   "0 0 3px rgba(134,239,172,0.32)",
+    ringClass:  "ring-1 ring-green-300/70 shadow-[0_0_8px_rgba(134,239,172,0.55)]",
     badgeBg:    "rgba(20,83,45,0.92)",
     badgeColor: "#86efac",
+    glowColor:  "134,239,172",
   },
   application: {
     label:      "EXAMPLE",
-    bgNormal:   "rgba(192,132,252,0.30)",
-    bgFocused:  "rgba(192,132,252,0.58)",
-    ringClass:  "ring-2 ring-purple-300/80 shadow-[0_0_8px_rgba(192,132,252,0.55)]",
+    bgNormal:   "rgba(192,132,252,0.22)",
+    bgFocused:  "rgba(192,132,252,0.52)",
+    restGlow:   "0 0 3px rgba(192,132,252,0.30)",
+    ringClass:  "ring-1 ring-purple-300/70 shadow-[0_0_8px_rgba(192,132,252,0.55)]",
     badgeBg:    "rgba(88,28,135,0.92)",
     badgeColor: "#e9d5ff",
+    glowColor:  "192,132,252",
   },
   trap: {
     label:      "CAUTION",
-    bgNormal:   "rgba(252,165,165,0.35)",
-    bgFocused:  "rgba(252,165,165,0.62)",
-    ringClass:  "ring-2 ring-red-300/80 shadow-[0_0_8px_rgba(252,165,165,0.55)]",
+    bgNormal:   "rgba(252,165,165,0.26)",
+    bgFocused:  "rgba(252,165,165,0.56)",
+    restGlow:   "0 0 3px rgba(252,165,165,0.32)",
+    ringClass:  "ring-1 ring-red-300/70 shadow-[0_0_8px_rgba(252,165,165,0.55)]",
     badgeBg:    "rgba(127,29,29,0.92)",
     badgeColor: "#fca5a5",
+    glowColor:  "252,165,165",
   },
   dat_fact: {
     label:      "DAT FACT",
-    bgNormal:   "rgba(251,146,60,0.28)",
-    bgFocused:  "rgba(251,146,60,0.55)",
-    ringClass:  "ring-2 ring-orange-300/80 shadow-[0_0_8px_rgba(251,146,60,0.55)]",
+    bgNormal:   "rgba(251,146,60,0.22)",
+    bgFocused:  "rgba(251,146,60,0.50)",
+    restGlow:   "0 0 3px rgba(251,146,60,0.30)",
+    ringClass:  "ring-1 ring-orange-300/70 shadow-[0_0_8px_rgba(251,146,60,0.55)]",
     badgeBg:    "rgba(124,45,18,0.92)",
     badgeColor: "#fed7aa",
+    glowColor:  "251,146,60",
   },
 };
 
 const FALLBACK_CONFIG: KindConfig = {
   label:      "",
-  bgNormal:   "rgba(253,224,71,0.28)",
-  bgFocused:  "rgba(253,224,71,0.55)",
-  ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
+  bgNormal:   "rgba(253,224,71,0.22)",
+  bgFocused:  "rgba(253,224,71,0.50)",
+  restGlow:   "0 0 3px rgba(253,224,71,0.32)",
+  ringClass:  "ring-1 ring-yellow-300/70 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
   badgeBg:    "rgba(113,63,18,0.88)",
   badgeColor: "#fde047",
+  glowColor:  "253,224,71",
 };
+
+// B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha and
+// border weight on top of the kind's base fill color — layered on, not replacing,
+// the guided-tier fill opacity above. Tier 1 ("Optional") gets a thin outline only;
+// tier 5 gets the strongest glow. Undefined defaults to tier 3 (medium).
+function tierGlowStyle(tier: number | undefined, cfg: KindConfig): { boxShadow: string; border: string } {
+  const t = Math.min(5, Math.max(1, tier ?? 3));
+  const blur = 2 + t;             // 3px .. 7px
+  const alpha = 0.08 + t * 0.05;  // 0.13 .. 0.33
+  const borderWidth = t <= 1 ? 1 : t >= 5 ? 2 : 1.5;
+  const borderAlpha = t <= 1 ? 0.22 : 0.45;
+  return {
+    boxShadow: `0 0 ${blur}px rgba(${cfg.glowColor},${alpha})`,
+    border: `${borderWidth}px solid rgba(${cfg.glowColor},${borderAlpha})`,
+  };
+}
 
 function getConfig(rect: OverlayRect): KindConfig {
   const kind = rect.semanticKind as string | undefined;
@@ -190,6 +228,7 @@ export default function PdfEvidenceOverlay({
         // label in the margin to the left of the highlight. Falls back to above-highlight
         // when there's no left margin (e.g. narrow pages or flush-left text).
         const hasLeftMargin = rect.left >= 50;
+        const tierStyle = tierGlowStyle(rect.priorityTier, cfg);
         return (
           <button
             key={rect.id}
@@ -202,8 +241,10 @@ export default function PdfEvidenceOverlay({
               left: rect.left,
               width: rect.width,
               height: rect.height,
-              borderRadius: "3px",
+              borderRadius: "6px",
               backgroundColor: focused ? cfg.bgFocused : cfg.bgNormal,
+              boxShadow: focused ? undefined : tierStyle.boxShadow,
+              border: focused ? undefined : tierStyle.border,
               overflow: "visible",
             }}
             aria-label={`${cfg.label || "Evidence"} highlight`}

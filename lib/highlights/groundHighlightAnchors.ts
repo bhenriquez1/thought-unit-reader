@@ -24,6 +24,10 @@ export type RawAnchor = {
   // so multi-sentence highlighting survives to SmartPDFViewer.
   spanStart?: string | null;
   spanEnd?: string | null;
+  // AI-assigned per-anchor importance (1-5) and domain extraction category — carried
+  // through grounding (via the ...anchor spread) for B4 visual-emphasis rendering.
+  priorityTier?: number | null;
+  domainCategory?: string | null;
 };
 
 export type GroundedAnchor = RawAnchor & {
@@ -188,8 +192,46 @@ function splitIntoParagraphs(text: string): string[] {
 
 // Cap on "reasonable thought-unit size" — shared by paragraph-level expansion and
 // the chained-neighbor merge below, so both expansion paths agree on what counts
-// as a coherent unit vs. an over-broad span.
-const THOUGHT_UNIT_MAX_WORDS = 70;
+// as a coherent unit vs. an over-broad span. Kept small: the goal is the minimum
+// text necessary to understand the page, not a full sentence by default.
+const THOUGHT_UNIT_MAX_WORDS = 14;
+
+// A matched span at or above this length already reads as a complete thought
+// (e.g. "ethanol + oxygen yields acetic acid") — no further expansion needed.
+const MIN_STANDALONE_WORDS = 5;
+
+// Roles whose causal/explanatory language can genuinely span an entire sentence —
+// only these may expand past their immediate clause (and only when the causal
+// marker spans the whole sentence, not just the matched fragment).
+const NEEDS_FULL_SENTENCE_TYPES = new Set(["mechanism"]);
+
+// Roles that may justify a multi-sentence paragraph span (worked examples, applied
+// procedures, high-yield fact blocks) — paragraphSpanFor is opt-in to these roles
+// only, never the universal default.
+const ALLOWS_PARAGRAPH_SPAN_TYPES = new Set(["exampleEvidence", "application", "datFact"]);
+
+// Clause-level delimiters — commas, semicolons, colons, em/en dashes, and
+// coordinating conjunctions surrounded by whitespace — finer-grained than sentence
+// boundaries, used to pad a short matched span only as far as its own clause.
+const CLAUSE_SPLIT_RE = /,|;|:|—|–|\s(?:and|but|or|so|yet|nor|because|since|while|whereas|although|though)\s/i;
+
+function splitIntoClauses(sentence: string): string[] {
+  return sentence
+    .split(CLAUSE_SPLIT_RE)
+    .map(c => c.replace(/\s+/g, ' ').trim())
+    .filter(c => c.length > 0);
+}
+
+// Pad a short match just enough to read as a complete clause — never the whole
+// sentence — falling back to the full sentence only when it has no internal
+// clause structure to pad to (e.g. a short sentence with no punctuation at all).
+function clauseSpanFor(matchedText: string, core: string): string {
+  const clauses = splitIntoClauses(core);
+  if (clauses.length <= 1) return core;
+  const normedMatch = normText(matchedText);
+  const containing = clauses.find(c => normText(c).includes(normedMatch));
+  return containing ?? core;
+}
 
 // If `core`'s containing paragraph is a reasonable "thought unit" size — bigger than
 // the sentence itself but not the whole page — span the highlight across the full
@@ -256,24 +298,35 @@ function mergeWithNeighbor(
   return { spanStart: firstWords(sentences[startIdx], 5), spanEnd: lastWords(sentences[endIdx], 5) };
 }
 
-// Thought-unit span for a sentence already identified as the "core" highlight:
-// prefer the full containing paragraph (from real "\n\n" structure); fall back to
-// merging in one topically-related neighboring sentence.
+// Multi-sentence span for a sentence already identified as the "core" highlight —
+// only reached for roles that are explicitly allowed a block (paragraph) or a
+// chained neighbor (causal mechanisms); everything else stays within its sentence.
 function thoughtUnitSpan(
+  anchorType: string,
   core: string,
   sentences: string[],
   idx: number,
   paragraphs: string[],
 ): { spanStart: string; spanEnd: string } | undefined {
-  return paragraphSpanFor(core, paragraphs) ?? mergeWithNeighbor(sentences, idx);
+  if (ALLOWS_PARAGRAPH_SPAN_TYPES.has(anchorType)) {
+    const paraSpan = paragraphSpanFor(core, paragraphs);
+    if (paraSpan) return paraSpan;
+  }
+  if (NEEDS_FULL_SENTENCE_TYPES.has(anchorType)) {
+    return mergeWithNeighbor(sentences, idx);
+  }
+  return undefined;
 }
 
 /**
- * Expand a verbatim-matched span to its containing sentence ("thought unit") so a
- * short phrase like "Diagnosis" highlights the whole sentence it belongs to instead
- * of just the matched word. If that sentence's paragraph is a reasonable size, or a
- * neighboring sentence continues the same idea (high key-term overlap), extend the
- * highlight span to cover the full thought unit via spanStart/spanEnd.
+ * Expand a verbatim-matched span to the minimum text needed to read as a complete
+ * thought — never more. A match that's already a complete short phrase (>=
+ * MIN_STANDALONE_WORDS, e.g. "ethanol + oxygen yields acetic acid") is returned
+ * as-is. A short fragment (e.g. "Diagnosis") is padded only to its own clause
+ * boundary, never the whole sentence. Only causal-mechanism anchors may expand to
+ * a full sentence (or one chained neighbor), and only when the causal language
+ * genuinely spans the whole sentence rather than just the matched clause.
+ * Worked-example/procedure/fact-block roles may expand to a full paragraph.
  *
  * Returns the matched text unchanged when no containing sentence can be found
  * (e.g. the match spans multiple sentences already) or when the match already
@@ -281,6 +334,7 @@ function thoughtUnitSpan(
  */
 function expandToThoughtUnit(
   matchedText: string,
+  anchorType: string,
   sentences: string[],
   paragraphs: string[],
 ): { groundedText: string; spanStart?: string; spanEnd?: string } {
@@ -296,8 +350,22 @@ function expandToThoughtUnit(
     return { groundedText: matchedText };
   }
 
-  const span = thoughtUnitSpan(core, sentences, idx, paragraphs);
-  return span ? { groundedText: core, ...span } : { groundedText: core };
+  // Already reads as a complete thought on its own — the minimum text necessary.
+  if (wordCount(matchedText) >= MIN_STANDALONE_WORDS) {
+    return { groundedText: matchedText };
+  }
+
+  if (NEEDS_FULL_SENTENCE_TYPES.has(anchorType) && CAUSAL_RE.test(core)) {
+    const span = thoughtUnitSpan(anchorType, core, sentences, idx, paragraphs);
+    return span ? { groundedText: core, ...span } : { groundedText: core };
+  }
+
+  const clause = clauseSpanFor(matchedText, core);
+  if (ALLOWS_PARAGRAPH_SPAN_TYPES.has(anchorType)) {
+    const span = thoughtUnitSpan(anchorType, core, sentences, idx, paragraphs);
+    if (span) return { groundedText: clause, ...span };
+  }
+  return { groundedText: clause };
 }
 
 /**
@@ -346,7 +414,7 @@ export function groundHighlightAnchors(
     if (!anchorIsHeader && cleanedPage.includes(anchor.text)) {
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
-        : expandToThoughtUnit(anchor.text, sentences, paragraphs);
+        : expandToThoughtUnit(anchor.text, anchor.anchorType, sentences, paragraphs);
       console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "exact" });
       grounded.push({
@@ -363,7 +431,7 @@ export function groundHighlightAnchors(
     if (!anchorIsHeader && normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
-        : expandToThoughtUnit(anchor.text, sentences, paragraphs);
+        : expandToThoughtUnit(anchor.text, anchor.anchorType, sentences, paragraphs);
       console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "normalized" });
       // Keep anchor.text (or its expanded sentence) — SmartPDFViewer's normForMatch
@@ -421,7 +489,7 @@ export function groundHighlightAnchors(
       console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
       const bestIdx = sentences.indexOf(bestSentence);
       const span = !(anchor.spanStart && anchor.spanEnd) && bestIdx !== -1
-        ? thoughtUnitSpan(bestSentence, sentences, bestIdx, paragraphs)
+        ? thoughtUnitSpan(anchor.anchorType, bestSentence, sentences, bestIdx, paragraphs)
         : undefined;
       grounded.push({
         ...anchor,

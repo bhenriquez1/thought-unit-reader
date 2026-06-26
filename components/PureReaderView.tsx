@@ -117,6 +117,10 @@ interface PureReaderViewProps {
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
+  /** Live word-by-word Speech position — null when nothing is playing or the
+   *  current segment has no evidenceRefId. Drives the marked word in the active
+   *  ThoughtUnitNavigator card snippet and the live word box in the PDF. */
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
   /** Raw text of the current page — used to validate highlight anchors before rendering */
@@ -161,6 +165,7 @@ export default function PureReaderView({
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
+  activeSpokenWord,
   onPageTextExtracted,
   pageText,
   synthStatus,
@@ -318,6 +323,8 @@ export default function PureReaderView({
         evidenceRefId:        anchorId,
         spanStart,
         spanEnd,
+        priorityTier:         s.anchor.priorityTier ?? undefined,
+        domainCategory:       s.anchor.domainCategory ?? undefined,
       };
     });
 
@@ -528,8 +535,10 @@ export default function PureReaderView({
               kind: t.kind,
               page: t.page,
               confidence: t.score,
+              priorityTier: t.priorityTier,
             }))}
             focusedId={focusedEvidenceId}
+            activeSpokenWord={activeSpokenWord}
             onJump={(id) => onEvidenceFocus?.(id)}
             onExplain={onExplainThoughtUnit}
             onOpenRecall={onOpenThoughtUnitRecall}
@@ -628,6 +637,7 @@ export default function PureReaderView({
               authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
               focusedEvidenceId={focusedEvidenceId}
               onEvidenceFocus={onEvidenceFocus}
+              activeSpokenWord={activeSpokenWord}
               isPageChanging={isPageChanging}
               onPageRenderComplete={() => setIsPageChanging(false)}
               onPageTextExtracted={onPageTextExtracted}
