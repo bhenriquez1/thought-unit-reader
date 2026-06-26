@@ -7,28 +7,55 @@
 //   Phase 2: An image model renders that script as a hand-drawn-style
 //            educational illustration.
 //
-// Dual image provider:
-//   - "openai"   — OpenAI Images (dall-e-3). Best integration with the
-//                   Explain This Step tutor flow; good for anatomy/biology/
-//                   chemistry/dental visual explanations.
-//   - "ideogram" — Ideogram. Stronger for diagrams that need clean, readable
-//                   text labels. Requires IDEOGRAM_API_KEY — if unset, returns
-//                   a debug-aware error so the UI can fall back to the
-//                   SVG/process-map whiteboard instead of hiding the failure.
+// Image provider options (the "model selector" — directive item 2):
+//   - "openai"        — OpenAI Images (dall-e-3). Best integration with the
+//                        Explain This Step tutor flow; good for anatomy/biology/
+//                        chemistry/dental visual explanations.
+//   - "ideogram"      — Ideogram. Stronger for diagrams that need clean, readable
+//                        text labels. Requires IDEOGRAM_API_KEY.
+//   - "sdxl"          — Stable Diffusion XL via a custom endpoint. Requires
+//                        SDXL_API_ENDPOINT + SDXL_API_KEY (or per-request
+//                        sdxlOptions.endpoint). Supports style preset,
+//                        negative prompt, and seed for reproducible regen.
+//   - "sdxlFineTuned" — Same SDXL path pointed at a fine-tuned model id
+//                        (SDXL_FINE_TUNED_MODEL_ID or sdxlOptions.modelId) —
+//                        the prepared path for an eventual Armando H-style
+//                        fine-tune.
+// Any provider that's unconfigured (missing key/endpoint) returns the same
+// debug-aware `{error, aiDisabled: true}` shape rather than throwing, so the
+// caller can always fall back to the SVG/canvas whiteboard instead of
+// surfacing a raw provider error to the student.
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+const HAS_OPENAI_KEY = !!process.env.OPENAI_API_KEY;
+const openai = HAS_OPENAI_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY! }) : (null as any);
 
-type Provider = "openai" | "ideogram";
+type Provider = "openai" | "ideogram" | "sdxl" | "sdxlFineTuned";
+
+type SdxlOptions = {
+  endpoint?: string;
+  modelId?: string;
+  stylePreset?: string;
+  negativePrompt?: string;
+  seed?: number;
+};
 
 type Body = {
   concept?: string;
   context?: string;
   provider?: Provider;
   debug?: boolean;
+  diagramPlan?: DiagramPlan;
+  sdxlOptions?: SdxlOptions;
 };
+
+/** Shared style guardrail (directive item 4) — applied to every provider's
+ *  prompt, and sent as the literal negative_prompt for SDXL. */
+const NEGATIVE_STYLE_HINT =
+  "decorative illustration, photorealism, stock-photo style, generic bullet-point text slide, watermark, clutter";
 
 type DebugInfo = {
   failureReason: string;
@@ -37,6 +64,15 @@ type DebugInfo = {
   rawResponse?: string;
   httpStatus?: number;
 };
+
+function modelLabelForProvider(provider: Provider): string {
+  switch (provider) {
+    case "ideogram": return "ideogram-v2";
+    case "sdxl": return "sdxl";
+    case "sdxlFineTuned": return "sdxl-fine-tuned";
+    default: return "dall-e-3";
+  }
+}
 
 type Ok = {
   imageUrl: string;
@@ -89,11 +125,29 @@ async function buildTeachingScript(concept: string, context: string, debug: bool
   return { script, raw: JSON.stringify(completion).slice(0, 4000) };
 }
 
-function imagePromptFromScript(script: string, concept: string): string {
+/** Builds the image prompt from the Director script, plus — when available —
+ *  the same DiagramPlan the canvas renders, so the illustration stays
+ *  accurate to the plan instead of drifting into a freeform interpretation
+ *  (directive item 5, the "accuracy rule"). */
+function imagePromptFromScript(script: string, concept: string, diagramPlan?: DiagramPlan): string {
+  const planHints: string[] = [];
+  if (diagramPlan) {
+    if (diagramPlan.nodes?.length) {
+      planHints.push(`Required labeled elements: ${diagramPlan.nodes.map((n) => n.label).join(", ")}.`);
+    }
+    if (diagramPlan.warnings?.length) {
+      planHints.push(`Mark a "Watch out" callout for: ${diagramPlan.warnings.join("; ")}.`);
+    }
+    if (diagramPlan.memoryHooks?.length) {
+      planHints.push(`Include a "Remember" box with: ${diagramPlan.memoryHooks.join("; ")}.`);
+    }
+  }
   return [
     `A hand-drawn educational whiteboard illustration teaching the concept: "${concept}".`,
     script,
+    ...planHints,
     "Style: Armando Hasudungan style — clean black ink hand-drawn lines and simple shapes on a plain white background, like a teacher's whiteboard sketch. VERY LARGE, BOLD, CLEARLY READABLE handwritten-style text labels (short, 1-3 words each) placed next to each structure with generous spacing so NO labels overlap or touch. Bold directional arrows showing relationships, flow, and sequence between elements, each with a short label on the arrow. Use a few distinct colors (as described) to color-code related elements. Lay the diagram out left-to-right or top-to-bottom in numbered steps so it tells a clear visual story. Avoid clutter — prioritize large legible text and generous whitespace over decorative detail.",
+    `Strictly avoid: ${NEGATIVE_STYLE_HINT}.`,
   ].join("\n\n");
 }
 
@@ -168,6 +222,56 @@ async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ i
   return { imageUrl, raw: raw.slice(0, 4000), status: resp.status };
 }
 
+/** Stable Diffusion XL (custom endpoint) — also used for the fine-tuned
+ *  ("sdxlFineTuned") provider, which just points `modelId` at a fine-tuned
+ *  checkpoint instead of the base SDXL model. Architecture is ready for an
+ *  eventual Armando H-style fine-tune; no real endpoint is required to exist
+ *  yet — missing config fails the same friendly way as Ideogram's missing key. */
+async function generateWithSDXL(
+  prompt: string,
+  provider: "sdxl" | "sdxlFineTuned",
+  opts: SdxlOptions,
+  debug: boolean,
+): Promise<{ imageUrl: string; raw: string; status: number }> {
+  const endpoint = opts.endpoint || process.env.SDXL_API_ENDPOINT || "";
+  const modelId = opts.modelId
+    || (provider === "sdxlFineTuned" ? process.env.SDXL_FINE_TUNED_MODEL_ID : process.env.SDXL_MODEL_ID)
+    || undefined;
+  const negativePrompt = [opts.negativePrompt, NEGATIVE_STYLE_HINT].filter(Boolean).join(", ");
+
+  const requestBody = {
+    prompt: prompt.slice(0, 4000),
+    negative_prompt: negativePrompt,
+    style_preset: opts.stylePreset || undefined,
+    seed: typeof opts.seed === "number" ? opts.seed : undefined,
+    model: modelId,
+  };
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_SDXL_REQUEST]", { provider, endpoint, modelId, promptChars: requestBody.prompt.length });
+  }
+
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.SDXL_API_KEY ?? ""}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+  const raw = await resp.text();
+
+  if (debug || process.env.NODE_ENV !== "production") {
+    console.log("[WHITEBOARD_IMAGE_SDXL_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
+  }
+
+  if (!resp.ok) throw Object.assign(new Error("SDXL request failed"), { httpStatus: resp.status, raw });
+  const data = JSON.parse(raw);
+  const imageUrl = data?.imageUrl || data?.data?.[0]?.url || (data?.image_b64 ? `data:image/png;base64,${data.image_b64}` : undefined);
+  if (!imageUrl) throw Object.assign(new Error("SDXL response missing image URL"), { httpStatus: resp.status, raw });
+  return { imageUrl, raw: raw.slice(0, 4000), status: resp.status };
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Ok | Err>) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -177,18 +281,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const body = (req.body || {}) as Body;
   const concept = (body.concept || "").trim();
   const context = (body.context || "").trim();
-  const provider: Provider = body.provider === "ideogram" ? "ideogram" : "openai";
+  const VALID_PROVIDERS: Provider[] = ["openai", "ideogram", "sdxl", "sdxlFineTuned"];
+  const provider: Provider = VALID_PROVIDERS.includes(body.provider as Provider) ? (body.provider as Provider) : "openai";
+  const sdxlOptions: SdxlOptions = body.sdxlOptions ?? {};
   const debug = Boolean(body.debug);
 
   if (!concept) {
     return res.status(400).json({ error: "Missing 'concept'." });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!HAS_OPENAI_KEY) {
     const failureReason = "OPENAI_API_KEY missing — cannot build the visual teaching script (Phase 1).";
     console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason });
     return res.status(debug ? 200 : 500).json(
-      debug ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason } } : { error: failureReason }
+      debug
+        ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason } }
+        : { error: failureReason, aiDisabled: true }
     );
   }
 
@@ -197,7 +305,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
     return res.status(debug ? 200 : 501).json(
       debug
-        ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: "ideogram-v2" } }
+        ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
+        : { error: failureReason, aiDisabled: true }
+    );
+  }
+
+  if ((provider === "sdxl" || provider === "sdxlFineTuned") && !(sdxlOptions.endpoint || process.env.SDXL_API_ENDPOINT)) {
+    const failureReason = `SDXL endpoint not configured — ${provider === "sdxlFineTuned" ? "fine-tuned SDXL" : "SDXL"} provider is not yet enabled.`;
+    console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
+    return res.status(debug ? 200 : 501).json(
+      debug
+        ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
         : { error: failureReason, aiDisabled: true }
     );
   }
@@ -228,11 +346,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     );
   }
 
-  const prompt = imagePromptFromScript(script, concept);
+  const prompt = imagePromptFromScript(script, concept, body.diagramPlan);
 
   try {
     const drawn = provider === "ideogram"
       ? await generateWithIdeogram(prompt, debug)
+      : provider === "sdxl" || provider === "sdxlFineTuned"
+      ? await generateWithSDXL(prompt, provider, sdxlOptions, debug)
       : await generateWithOpenAI(prompt, debug);
 
     console.log("[WHITEBOARD_IMAGE_READY]", { provider, concept: concept.slice(0, 80), scriptChars: script.length });
@@ -247,7 +367,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             aiDisabled: true,
             debugInfo: {
               failureReason,
-              model: provider === "ideogram" ? "ideogram-v2" : "dall-e-3",
+              model: modelLabelForProvider(provider),
               promptSent: { system: DIRECTOR_SYSTEM_PROMPT, user: prompt.slice(0, 2000) },
               rawResponse: err?.raw ?? String(err),
               httpStatus: err?.httpStatus,

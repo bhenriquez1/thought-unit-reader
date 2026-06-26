@@ -3,9 +3,14 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
-import Whiteboard from "./Whiteboard";
+import Whiteboard, { type WhiteboardHandle } from "./Whiteboard";
 import { Button } from "./ui/button";
 import { AnimatePresence, motion } from "framer-motion";
+import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
+import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
+import type { StudyGuideRecord } from "@/lib/studyguide/types";
 
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
@@ -24,6 +29,9 @@ function defaultDiagramHeuristic(text: string): boolean {
 }
 
 type StickyNote = { pageNumber: number; content: string };
+
+/** Image-generation provider (item 2 of the Whiteboard directive). */
+type Provider = "openai" | "ideogram" | "sdxl" | "sdxlFineTuned";
 
 type Props = {
   concept: string;
@@ -78,10 +86,12 @@ type WhiteboardDebugInfo = {
   error?: string;
 };
 
+type CachedPayload = { steps: WhiteboardStep[]; narrationScript: string; diagramPlan: DiagramPlan | null };
+
 /** In-memory LRU-ish cache (oldest evicted on overflow) */
 const memCache = new Map<
   string,
-  { steps: WhiteboardStep[]; narrationScript: string; audioDataUrl?: string }
+  { steps: WhiteboardStep[]; narrationScript: string; diagramPlan: DiagramPlan | null; audioDataUrl?: string }
 >();
 
 export default function WhiteboardPanel({
@@ -108,20 +118,29 @@ export default function WhiteboardPanel({
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
   const [narrationScript, setNarrationScript] = useState("");
+  const [diagramPlan, setDiagramPlan] = useState<DiagramPlan | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [wbProvider, setWbProvider] = useState<string>("unknown");
   const [debugInfo, setDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
 
-  // "AI Drawing" mode — Armando-style hand-drawn illustration generated from a
-  // GPT visual-teaching-script via OpenAI Images or Ideogram (dual provider).
-  const [wbMode, setWbMode] = useState<"steps" | "aiDrawing">("aiDrawing");
-  const [imageProvider, setImageProvider] = useState<"openai" | "ideogram">("openai");
+  // Single unified Whiteboard: the structured diagram (canvas) is always the
+  // base layer; the AI illustration (when it succeeds) is an optional view on
+  // top of it — never a separate tab the student has to pick.
+  const [provider, setProvider] = useState<Provider>("openai");
+  const [sdxlEndpoint, setSdxlEndpoint] = useState("");
+  const [sdxlModelId, setSdxlModelId] = useState("");
+  const [sdxlStylePreset, setSdxlStylePreset] = useState("");
+  const [sdxlNegativePrompt, setSdxlNegativePrompt] = useState("");
+  const [sdxlSeed, setSdxlSeed] = useState("");
   const [aiImageLoading, setAiImageLoading] = useState(false);
   const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
   const [aiTeachingScript, setAiTeachingScript] = useState("");
   const [aiImageError, setAiImageError] = useState<string | null>(null);
   const [aiImageDebugInfo, setAiImageDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
+  const [viewMode, setViewMode] = useState<"illustration" | "diagram">("diagram");
+  const [showFallbackNote, setShowFallbackNote] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -131,6 +150,7 @@ export default function WhiteboardPanel({
   const [pulseExplain, setPulseExplain] = useState(false);   // pulse the button briefly when auto
   const [showDetectedChip, setShowDetectedChip] = useState(false); // your original chip (auto-refresh)
   const scrollRef = useRef<HTMLDivElement>(null);
+  const whiteboardRef = useRef<WhiteboardHandle>(null);
 
   const debounceRef = useRef<number | null>(null);
   const lastCallTsRef = useRef<number>(0); // rate-limit
@@ -174,38 +194,43 @@ export default function WhiteboardPanel({
   }
 
   /** Try to read from localStorage mirror (for a warm reload) */
-  const tryLocalRestore = () => {
+  const tryLocalRestore = (): CachedPayload | null => {
     try {
       const raw = localStorage.getItem(cacheKey);
-      if (!raw) return false;
+      if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (parsed?.steps && parsed?.narrationScript) {
+        const plan: DiagramPlan | null = parsed.diagramPlan ?? null;
         setSteps(parsed.steps);
         setNarrationScript(parsed.narrationScript);
+        setDiagramPlan(plan);
         if (parsed.audioDataUrl) {
           try {
-            const b = dataUrlToBlob(parsed.audioDataUrl);
-            setAudioBlob(b);
+            setAudioBlob(dataUrlToBlob(parsed.audioDataUrl));
           } catch {
             setAudioBlob(null);
           }
         } else {
           setAudioBlob(null);
         }
-        return true;
+        return { steps: parsed.steps, narrationScript: parsed.narrationScript, diagramPlan: plan };
       }
     } catch {
       /* ignore */
     }
-    return false;
+    return null;
   };
 
   /** Write to both memory cache and localStorage (bounded) */
-  const writeCache = (key: string, payload: { steps: WhiteboardStep[]; narrationScript: string; audioBlob?: Blob | null }) => {
+  const writeCache = (
+    key: string,
+    payload: { steps: WhiteboardStep[]; narrationScript: string; diagramPlan: DiagramPlan | null; audioBlob?: Blob | null },
+  ) => {
     // memory
     memCache.set(key, {
       steps: payload.steps,
       narrationScript: payload.narrationScript,
+      diagramPlan: payload.diagramPlan,
       audioDataUrl: undefined, // keep memory lean
     });
     // evict oldest
@@ -224,6 +249,7 @@ export default function WhiteboardPanel({
         const toStore = JSON.stringify({
           steps: payload.steps,
           narrationScript: payload.narrationScript,
+          diagramPlan: payload.diagramPlan,
           audioDataUrl,
           savedAt: Date.now(),
         });
@@ -235,18 +261,88 @@ export default function WhiteboardPanel({
   };
 
   /** Try a cache hit (mem → local) */
-  const tryCache = (): boolean => {
+  const tryCache = (): CachedPayload | null => {
     const memHit = memCache.get(cacheKey);
     if (memHit?.steps?.length) {
       setSteps(memHit.steps);
       setNarrationScript(memHit.narrationScript);
+      setDiagramPlan(memHit.diagramPlan ?? null);
       setAudioBlob(null); // LS restore may set audio later if needed
-      return true;
+      return { steps: memHit.steps, narrationScript: memHit.narrationScript, diagramPlan: memHit.diagramPlan ?? null };
     }
     return tryLocalRestore();
   };
 
-  /** Core generate call — calls /api/whiteboard-explain with full studyModel + pageText context */
+  /** AI illustration (Phase 1 director script + Phase 2 image model) — runs in
+   *  parallel with the always-present diagram, never gating it. Failure of any
+   *  kind degrades silently: the diagram stays up, and (outside debug mode) a
+   *  small auto-fading note is shown instead of a raw model error. */
+  const generateAIDrawing = useCallback(async (plan: DiagramPlan | null) => {
+    if (!effectiveConcept) return;
+    setAiImageLoading(true);
+    setAiImageError(null);
+    setAiImageDebugInfo(null);
+    try {
+      const sdxlOptions = provider === "sdxl" || provider === "sdxlFineTuned"
+        ? {
+            endpoint: sdxlEndpoint || undefined,
+            modelId: sdxlModelId || undefined,
+            stylePreset: sdxlStylePreset || undefined,
+            negativePrompt: sdxlNegativePrompt || undefined,
+            seed: sdxlSeed ? Number(sdxlSeed) : undefined,
+          }
+        : undefined;
+
+      const resp = await fetch("/api/whiteboard-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          concept: effectiveConcept,
+          context: effectiveContext,
+          provider,
+          debug: isDebugMode,
+          diagramPlan: plan ?? undefined,
+          sdxlOptions,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.error) {
+        console.warn("[WHITEBOARD_IMAGE_CLIENT_FAILURE]", { provider, error: data.error, ...(data.debugInfo ?? {}) });
+        setAiImageUrl(null);
+        setAiTeachingScript("");
+        if (isDebugMode && data.debugInfo) {
+          setAiImageDebugInfo({ ...data.debugInfo, error: data.error });
+        } else {
+          setAiImageError(data.error);
+          setShowFallbackNote(true);
+          window.setTimeout(() => setShowFallbackNote(false), 3200);
+        }
+        return;
+      }
+
+      setAiImageUrl(data.imageUrl ?? null);
+      setAiTeachingScript(data.teachingScript ?? "");
+      setViewMode("illustration");
+      console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
+    } catch (err: any) {
+      console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
+      setAiImageUrl(null);
+      setAiTeachingScript("");
+      if (isDebugMode) {
+        setAiImageDebugInfo({ failureReason: err?.message ?? String(err) });
+      } else {
+        setAiImageError(err?.message ?? "Something went wrong generating the drawing.");
+        setShowFallbackNote(true);
+        window.setTimeout(() => setShowFallbackNote(false), 3200);
+      }
+    } finally {
+      setAiImageLoading(false);
+    }
+  }, [effectiveConcept, effectiveContext, provider, isDebugMode, sdxlEndpoint, sdxlModelId, sdxlStylePreset, sdxlNegativePrompt, sdxlSeed]);
+
+  /** Core generate call — calls /api/whiteboard-explain with full studyModel + pageText context,
+   *  then kicks off the (parallel, non-gating) AI illustration from the resulting diagramPlan. */
   const runGenerate = useCallback(async () => {
     if (!effectiveConcept && !studyModel) return;
 
@@ -257,7 +353,11 @@ export default function WhiteboardPanel({
 
     // cache first
     console.log("[WHITEBOARD_CACHE_KEY]", { cacheKey, page: currentPage ?? null, hasModel: !!studyModel });
-    if (tryCache()) return;
+    const cached = tryCache();
+    if (cached) {
+      generateAIDrawing(cached.diagramPlan);
+      return;
+    }
 
     console.log("[WHITEBOARD_OPENAI_SOURCE]", {
       page: currentPage ?? null,
@@ -273,11 +373,13 @@ export default function WhiteboardPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          concept:    effectiveConcept || null,
-          context:    effectiveContext || null,
-          studyModel: studyModel ?? null,
-          pageText:   (pageText ?? "").slice(0, 1500),
-          debug:      isDebugMode,
+          concept:         effectiveConcept || null,
+          context:         effectiveContext || null,
+          studyModel:      studyModel ?? null,
+          pageText:        (pageText ?? "").slice(0, 1500),
+          debug:           isDebugMode,
+          focusedAnchorId: activeAnchorId ?? null,
+          pageNumber:      currentPage ?? null,
         }),
       });
       const data = await resp.json();
@@ -294,6 +396,7 @@ export default function WhiteboardPanel({
         setDebugInfo({ ...data.debugInfo, error: data.error });
         setSteps([]);
         setNarrationScript("");
+        setDiagramPlan(data.diagramPlan ?? null);
         setAudioBlob(null);
         setWbProvider("debug-error");
         return;
@@ -310,9 +413,11 @@ export default function WhiteboardPanel({
         payload:     s?.payload ?? {},
       }));
       const narration: string = data.narrationScript ?? newSteps.map((s) => `${s.title}: ${s.description}`).join(" ");
+      const plan: DiagramPlan | null = data.diagramPlan ?? null;
 
       setSteps(newSteps);
       setNarrationScript(narration);
+      setDiagramPlan(plan);
       setAudioBlob(null);
       setWbProvider(data.provider ?? (data.aiDisabled ? "fallback" : "unknown"));
 
@@ -380,7 +485,10 @@ export default function WhiteboardPanel({
       setTimeout(() => setJustGenerated(false), 1400);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
 
-      writeCache(cacheKey, { steps: newSteps, narrationScript: narration, audioBlob: null });
+      writeCache(cacheKey, { steps: newSteps, narrationScript: narration, diagramPlan: plan, audioBlob: null });
+
+      // Kick off the AI illustration in parallel — it never gates the diagram above.
+      generateAIDrawing(plan);
     } catch (err) {
       console.error("[WHITEBOARD_GENERATE_ERROR]", err);
       setAudioBlob(null);
@@ -388,75 +496,13 @@ export default function WhiteboardPanel({
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, effectiveConcept, effectiveContext, studyModel, pageText, currentPage]);
+  }, [cacheKey, effectiveConcept, effectiveContext, studyModel, pageText, currentPage, activeAnchorId, isDebugMode, generateAIDrawing]);
 
   /** Manual trigger button */
   const handleExplainConcept = async () => {
     setShowDetectedChip(false); // manual run — hide chip
     await runGenerate();
   };
-
-  /** "AI Drawing" mode — Phase 1 (GPT teaching script) + Phase 2 (image model).
-   *  `auto` marks the mount-triggered call (vs. a manual "Generate Drawing"
-   *  click) — only auto calls silently fall back to the real diagram-steps
-   *  view on failure, so a user who deliberately picked AI Drawing isn't
-   *  yanked away from the tab they chose. */
-  const generateAIDrawing = useCallback(async (auto = false) => {
-    if (!effectiveConcept) return;
-    setAiImageLoading(true);
-    setAiImageError(null);
-    setAiImageDebugInfo(null);
-    try {
-      const resp = await fetch("/api/whiteboard-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept: effectiveConcept,
-          context: effectiveContext,
-          provider: imageProvider,
-          debug: isDebugMode,
-        }),
-      });
-      const data = await resp.json();
-
-      if (data.error) {
-        console.error("[WHITEBOARD_IMAGE_CLIENT_FAILURE]", { provider: imageProvider, error: data.error, ...(data.debugInfo ?? {}) });
-        setAiImageUrl(null);
-        setAiTeachingScript("");
-        if (isDebugMode && data.debugInfo) {
-          setAiImageDebugInfo({ ...data.debugInfo, error: data.error });
-        } else {
-          setAiImageError(data.error);
-          if (auto) {
-            console.warn("[WHITEBOARD_AI_DRAWING_AUTO_FALLBACK]", { reason: data.error });
-            setWbMode("steps");
-          }
-        }
-        return;
-      }
-
-      setAiImageUrl(data.imageUrl ?? null);
-      setAiTeachingScript(data.teachingScript ?? "");
-      console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
-    } catch (err: any) {
-      console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
-      setAiImageUrl(null);
-      setAiTeachingScript("");
-      setAiImageError(err?.message ?? "Something went wrong generating the drawing.");
-      if (auto) setWbMode("steps");
-    } finally {
-      setAiImageLoading(false);
-    }
-  }, [effectiveConcept, effectiveContext, imageProvider, isDebugMode]);
-
-  /** AI Drawing mode is the default — auto-generate once on mount when a concept is available
-   *  (e.g. came from "Explain This Step → Visualize"). */
-  useEffect(() => {
-    if (wbMode !== "aiDrawing") return;
-    if (!effectiveConcept) return;
-    generateAIDrawing(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount-only — new concept means a new key/remount of this panel
 
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
@@ -469,7 +515,13 @@ export default function WhiteboardPanel({
         conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
       });
     }
-    if (!shouldTrigger) return;
+    if (!shouldTrigger) {
+      // No studyModel/autoTrigger path fired — but a bare concept (e.g. from
+      // "Explain This Step → Visualize") should still get an illustration even
+      // though the structured-diagram explain call above won't run for it.
+      if (effectiveConcept) generateAIDrawing(null);
+      return;
+    }
     setJustDetected(true);
     setPulseExplain(true);
     const t1 = setTimeout(() => setJustDetected(false), 2500);
@@ -529,6 +581,88 @@ export default function WhiteboardPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const flashAction = (msg: string) => {
+    setActionMessage(msg);
+    window.setTimeout(() => setActionMessage(null), 2200);
+  };
+
+  /** Save to NoteLab — reuses the existing ultraNoteStore save path. */
+  const handleSaveToNoteLab = async () => {
+    if (!studyModel || !diagramPlan) return;
+    try {
+      const note = buildNoteFromStudyModel(studyModel as any, {
+        bookId: lessonId ?? "book",
+        pageNumber: diagramPlan.pageNumber ?? currentPage ?? 0,
+        topic: diagramPlan.title,
+      });
+      await saveUltraNote(note);
+      flashAction("✅ Saved to NoteLab");
+    } catch (err) {
+      console.error("[WHITEBOARD_SAVE_NOTELAB_ERROR]", err);
+      flashAction("⚠ Could not save to NoteLab");
+    }
+  };
+
+  /** Create Recall Card — reuses the existing recallStore save path. */
+  const handleCreateRecallCard = async () => {
+    if (!studyModel || !diagramPlan) return;
+    try {
+      const note = buildNoteFromStudyModel(studyModel as any, {
+        bookId: lessonId ?? "book",
+        pageNumber: diagramPlan.pageNumber ?? currentPage ?? 0,
+        topic: diagramPlan.title,
+      });
+      const set = buildRecallSetFromNote(note);
+      await saveRecallSet(set);
+      flashAction("✅ Recall card created");
+    } catch (err) {
+      console.error("[WHITEBOARD_RECALL_CARD_ERROR]", err);
+      flashAction("⚠ Could not create recall card");
+    }
+  };
+
+  /** Add to Study Guide — builds a minimal record directly from the DiagramPlan. */
+  const handleAddToStudyGuide = async () => {
+    if (!diagramPlan) return;
+    try {
+      const record: StudyGuideRecord = {
+        id: `sg-${lessonId ?? "book"}-${diagramPlan.pageNumber ?? "p"}-${Date.now()}`,
+        bookId: lessonId ?? "book",
+        mode: "visual",
+        chapterTitle: diagramPlan.title,
+        topic: diagramPlan.title,
+        priority: "Medium",
+        mustKnow: [],
+        datFacts: [],
+        mechanisms: diagramPlan.steps.map((s) => ({ title: s.title, steps: [s.content] })),
+        traps: diagramPlan.warnings,
+        recallQuestions: [],
+        memoryHooks: diagramPlan.memoryHooks,
+        dailyTasks: [],
+        sourceLabels: ["Whiteboard"],
+        createdAt: Date.now(),
+      };
+      await saveStudyGuide(record);
+      flashAction("✅ Added to Study Guide");
+    } catch (err) {
+      console.error("[WHITEBOARD_STUDYGUIDE_ERROR]", err);
+      flashAction("⚠ Could not add to Study Guide");
+    }
+  };
+
+  const handleExportPNG = () => whiteboardRef.current?.exportPNG();
+  const handleExportPDF = () => whiteboardRef.current?.exportPDF();
+
+  /** Regenerate — bypass the cache and re-run both the diagram + illustration calls. */
+  const handleRegenerate = () => {
+    memCache.delete(cacheKey);
+    try { localStorage.removeItem(cacheKey); } catch { /* ignore */ }
+    setAiImageUrl(null);
+    setAiImageError(null);
+    setAiTeachingScript("");
+    runGenerate();
+  };
+
   const zoomPct = Math.round(zoom * 100);
   const canRender = steps.length > 0;
 
@@ -582,7 +716,7 @@ export default function WhiteboardPanel({
                 </Button>
               </motion.div>
 
-              {canRender && wbMode === "steps" && (
+              {canRender && (
                 <>
                   <div className="h-6 w-px bg-gray-700 mx-1" />
                   <label className="text-xs opacity-80">Zoom</label>
@@ -615,26 +749,30 @@ export default function WhiteboardPanel({
               )}
             </div>
 
-            <div className="h-6 w-px bg-gray-700 mx-1" />
-            <div className="flex items-center rounded-lg border border-gray-700 overflow-hidden text-xs">
-              <button
-                onClick={() => setWbMode("steps")}
-                className={`px-2.5 py-1.5 transition-colors ${wbMode === "steps" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
-              >
-                Diagram Steps
-              </button>
-              <button
-                onClick={() => setWbMode("aiDrawing")}
-                className={`px-2.5 py-1.5 transition-colors ${wbMode === "aiDrawing" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
-                title="Generate an Armando-style hand-drawn AI illustration"
-              >
-                🖌️ AI Drawing
-              </button>
-            </div>
+            {/* Illustration / Diagram view toggle — only appears once an illustration exists */}
+            {aiImageUrl && (
+              <>
+                <div className="h-6 w-px bg-gray-700 mx-1" />
+                <div className="flex items-center rounded-lg border border-gray-700 overflow-hidden text-xs">
+                  <button
+                    onClick={() => setViewMode("illustration")}
+                    className={`px-2.5 py-1.5 transition-colors ${viewMode === "illustration" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
+                  >
+                    🖼 Illustration
+                  </button>
+                  <button
+                    onClick={() => setViewMode("diagram")}
+                    className={`px-2.5 py-1.5 transition-colors ${viewMode === "diagram" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
+                  >
+                    ✏️ Diagram
+                  </button>
+                </div>
+              </>
+            )}
 
             <div className="flex-1" />
 
-            {canRender && wbMode === "steps" && (
+            {canRender && (
               <div className="flex items-center gap-2">
                 <label className="text-sm opacity-80">Speed</label>
                 <select
@@ -712,139 +850,184 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* Whiteboard stage (scaled wrapper + glow when new) */}
-          {wbMode === "steps" && (canRender ? (
-            <motion.div
-              ref={scrollRef}
-              initial={false}
-              animate={
-                justGenerated
-                  ? { boxShadow: "0 0 0 2px rgba(234,179,8,0.55), 0 0 30px rgba(234,179,8,0.25)" }
-                  : { boxShadow: "0 0 0 1px rgba(55,65,81,0.7)" }
-              }
-              transition={{ duration: 0.35 }}
-              className="relative rounded-lg bg-black/30 overflow-auto max-h-[70vh] border border-gray-800"
-            >
-              {/* The scale wrapper keeps your renderer untouched */}
-              <div
-                style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: 900 }}
-                className="origin-top-left"
-              >
-                <Whiteboard
-                  steps={steps}
-                  audioBlob={audioBlob ?? undefined}
-                  narrationScript={narrationScript}
-                  useAIVoice={!!audioBlob}
-                  stickyNotes={stickyNotes}
-                  lessonTitle={lessonTitle}
-                  baseStepDurationMs={4000}
-                  playbackSpeed={playbackSpeed}
-                  /** 🔐 pass-through for persistence */
-                  lessonId={lessonId}
-                  userId={userId}
-                  onAnchorStep={onAnchorStep}
-                  activeAnchorId={activeAnchorId}
-                />
-              </div>
-            </motion.div>
-          ) : !(isDebugMode && debugInfo) ? (
-            <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
-              {loading
-                ? "Preparing whiteboard…"
-                : !studyModel && !effectiveConcept
-                ? "⏳ Whiteboard waiting for current page study model."
-                : "Click 'Explain with Whiteboard' to generate."}
+          {/* Generating-illustration chip — non-blocking, the diagram below stays interactive */}
+          {aiImageLoading && (
+            <div className="text-xs bg-blue-900/40 text-blue-300 border border-blue-700/40 px-2 py-1 rounded inline-flex items-center gap-1 w-fit">
+              ✨ Generating illustration…
             </div>
-          ) : null)}
+          )}
 
-          {/* AI Drawing mode — Armando-style hand-drawn illustration */}
-          {wbMode === "aiDrawing" && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="text-xs opacity-80">Image provider</label>
-                <select
-                  value={imageProvider}
-                  onChange={(e) => setImageProvider(e.target.value as "openai" | "ideogram")}
-                  className="border rounded px-2 py-1 bg-gray-900 text-xs"
-                >
-                  <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
-                  <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
-                </select>
-                <Button onClick={() => generateAIDrawing()} disabled={aiImageLoading || !effectiveConcept}>
-                  {aiImageLoading ? "Drawing..." : "🖌️ Generate Drawing"}
-                </Button>
+          {/* Silent-fallback note — only shown briefly, outside debug mode, when the
+              illustration failed. The diagram above is already visible — never blank,
+              never a raw model error. */}
+          <AnimatePresence>
+            {showFallbackNote && !isDebugMode && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-xs bg-gray-800/70 text-gray-300 px-2 py-1 rounded inline-block w-fit"
+              >
+                Generated as structured diagram
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Debug panel — illustration failure with diagnostics instead of silent fallback */}
+          {isDebugMode && aiImageDebugInfo && (
+            <div className="text-xs bg-red-950/60 text-red-200 border border-red-800/60 rounded-lg p-3 space-y-2">
+              <div className="font-semibold text-red-300">
+                ⚠ AI illustration failed — debug mode (no silent fallback)
               </div>
-
-              {/* Debug panel — failure with diagnostics instead of silent fallback */}
-              {isDebugMode && aiImageDebugInfo && (
-                <div className="text-xs bg-red-950/60 text-red-200 border border-red-800/60 rounded-lg p-3 space-y-2">
-                  <div className="font-semibold text-red-300">
-                    ⚠ AI Drawing failed — debug mode (no silent fallback)
-                  </div>
-                  <div><span className="text-red-400">Failure reason:</span> {aiImageDebugInfo.failureReason}</div>
-                  {aiImageDebugInfo.error && (
-                    <div><span className="text-red-400">Error:</span> {aiImageDebugInfo.error}</div>
-                  )}
-                  {typeof aiImageDebugInfo.httpStatus === "number" && (
-                    <div><span className="text-red-400">HTTP status:</span> {aiImageDebugInfo.httpStatus}</div>
-                  )}
-                  {aiImageDebugInfo.model && (
-                    <div><span className="text-red-400">Model:</span> {aiImageDebugInfo.model}</div>
-                  )}
-                  <div><span className="text-red-400">Provider:</span> {imageProvider}</div>
-                  <div><span className="text-red-400">Concept:</span> {effectiveConcept || "(none)"}</div>
-                  {aiImageDebugInfo.promptSent && (
-                    <details>
-                      <summary className="cursor-pointer text-red-400">Prompt sent</summary>
-                      <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+              <div><span className="text-red-400">Failure reason:</span> {aiImageDebugInfo.failureReason}</div>
+              {aiImageDebugInfo.error && (
+                <div><span className="text-red-400">Error:</span> {aiImageDebugInfo.error}</div>
+              )}
+              {typeof aiImageDebugInfo.httpStatus === "number" && (
+                <div><span className="text-red-400">HTTP status:</span> {aiImageDebugInfo.httpStatus}</div>
+              )}
+              {aiImageDebugInfo.model && (
+                <div><span className="text-red-400">Model:</span> {aiImageDebugInfo.model}</div>
+              )}
+              <div><span className="text-red-400">Provider:</span> {provider}</div>
+              <div><span className="text-red-400">Concept:</span> {effectiveConcept || "(none)"}</div>
+              {aiImageDebugInfo.promptSent && (
+                <details>
+                  <summary className="cursor-pointer text-red-400">Prompt sent</summary>
+                  <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
 {`SYSTEM:\n${aiImageDebugInfo.promptSent.system}\n\nUSER:\n${aiImageDebugInfo.promptSent.user}`}
-                      </pre>
-                    </details>
-                  )}
-                  {aiImageDebugInfo.rawResponse && (
-                    <details>
-                      <summary className="cursor-pointer text-red-400">Raw model/API response</summary>
-                      <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
+                  </pre>
+                </details>
+              )}
+              {aiImageDebugInfo.rawResponse && (
+                <details>
+                  <summary className="cursor-pointer text-red-400">Raw model/API response</summary>
+                  <pre className="whitespace-pre-wrap mt-1 max-h-48 overflow-auto bg-black/30 p-2 rounded">
 {aiImageDebugInfo.rawResponse}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              )}
-
-              {/* Non-debug failure — point at the SVG/process-map fallback instead of hiding it */}
-              {!isDebugMode && aiImageError && (
-                <div className="text-xs bg-red-900/60 text-red-300 border border-red-700/50 px-3 py-2 rounded">
-                  ⚠ AI Drawing unavailable ({aiImageError}). Try "Diagram Steps" instead.
-                </div>
-              )}
-
-              {aiImageUrl ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={aiImageUrl} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[60vh] object-contain bg-white" />
-                  {aiTeachingScript && (
-                    <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
-                      <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
-                      <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
-                    </details>
-                  )}
-                </motion.div>
-              ) : (
-                !aiImageLoading && !aiImageDebugInfo && !aiImageError && (
-                  <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
-                    {effectiveConcept
-                      ? "Click 'Generate Drawing' for an Armando-style hand-drawn illustration of this concept."
-                      : "⏳ Select text or open Explain This Step → Visualize to set a concept first."}
-                  </div>
-                )
+                  </pre>
+                </details>
               )}
             </div>
           )}
+
+          {/* Illustration view — hidden (not unmounted) while viewMode === "diagram" */}
+          <div style={{ display: aiImageUrl && viewMode === "illustration" ? "block" : "none" }}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={aiImageUrl ?? undefined} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[60vh] object-contain bg-white" />
+              {aiTeachingScript && (
+                <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
+                  <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
+                  <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
+                </details>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Diagram (canvas) view — the permanent base layer, always present, never blank */}
+          <div style={{ display: !aiImageUrl || viewMode === "diagram" ? "block" : "none" }}>
+            {canRender ? (
+              <motion.div
+                ref={scrollRef}
+                initial={false}
+                animate={
+                  justGenerated
+                    ? { boxShadow: "0 0 0 2px rgba(234,179,8,0.55), 0 0 30px rgba(234,179,8,0.25)" }
+                    : { boxShadow: "0 0 0 1px rgba(55,65,81,0.7)" }
+                }
+                transition={{ duration: 0.35 }}
+                className="relative rounded-lg bg-black/30 overflow-auto max-h-[70vh] border border-gray-800"
+              >
+                {/* The scale wrapper keeps your renderer untouched */}
+                <div
+                  style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: 900 }}
+                  className="origin-top-left"
+                >
+                  <Whiteboard
+                    ref={whiteboardRef}
+                    steps={steps}
+                    audioBlob={audioBlob ?? undefined}
+                    narrationScript={narrationScript}
+                    useAIVoice={!!audioBlob}
+                    stickyNotes={stickyNotes}
+                    lessonTitle={lessonTitle}
+                    baseStepDurationMs={4000}
+                    playbackSpeed={playbackSpeed}
+                    /** 🔐 pass-through for persistence */
+                    lessonId={lessonId}
+                    userId={userId}
+                    onAnchorStep={onAnchorStep}
+                    activeAnchorId={activeAnchorId}
+                  />
+                </div>
+              </motion.div>
+            ) : !(isDebugMode && debugInfo) ? (
+              <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
+                {loading
+                  ? "Preparing whiteboard…"
+                  : !studyModel && !effectiveConcept
+                  ? "⏳ Whiteboard waiting for current page study model."
+                  : "Click 'Explain with Whiteboard' to generate."}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Model/provider selector + integration controls */}
+          <div className="flex flex-col gap-2 border-t border-gray-800 pt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs opacity-80">Image provider</label>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as Provider)}
+                className="border rounded px-2 py-1 bg-gray-900 text-xs"
+              >
+                <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
+                <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
+                <option value="sdxl">Stable Diffusion XL</option>
+                <option value="sdxlFineTuned">Fine-tuned SDXL</option>
+                <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
+              </select>
+              <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
+                {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
+              </Button>
+            </div>
+
+            {(provider === "sdxl" || provider === "sdxlFineTuned") && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
+                <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
+                <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={handleSaveToNoteLab} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                📓 Save to NoteLab
+              </button>
+              <button onClick={handleCreateRecallCard} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                🧠 Create Recall Card
+              </button>
+              <button onClick={handleAddToStudyGuide} disabled={!diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                📘 Add to Study Guide
+              </button>
+              <button onClick={handleExportPNG} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                🖼 Export PNG
+              </button>
+              <button onClick={handleExportPDF} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                🧾 Export PDF
+              </button>
+              <button onClick={handleRegenerate} disabled={loading || aiImageLoading} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+                🔄 Regenerate
+              </button>
+              {actionMessage && <span className="text-xs text-emerald-300">{actionMessage}</span>}
+            </div>
+          </div>
 
           {/* Sticky notes */}
           {stickyNotes.length > 0 && (

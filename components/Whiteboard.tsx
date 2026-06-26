@@ -1,5 +1,5 @@
 // components/Whiteboard.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
 import {
   subscribeStepNotes,
@@ -62,6 +62,11 @@ interface WhiteboardProps {
   activeAnchorId?: string | null;
 }
 
+export interface WhiteboardHandle {
+  exportPDF: () => Promise<void>;
+  exportPNG: () => void;
+}
+
 /* ------------------------------------------------------------------ */
 /* Animation constants                                                */
 /* ------------------------------------------------------------------ */
@@ -82,7 +87,7 @@ const BOUNDARY_FRESHNESS_MS = 1500; // how long a speechSynthesis onboundary eve
 /* Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function Whiteboard({
+const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(function Whiteboard({
   steps,
   audioBlob = null,
   useAIVoice = false,
@@ -98,7 +103,7 @@ export default function Whiteboard({
   context = "",
   onAnchorStep,
   activeAnchorId,
-}: WhiteboardProps) {
+}, ref) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   // True once paused mid-playback — drives Play vs Resume so a paused-at-step-0
@@ -1025,6 +1030,16 @@ export default function Whiteboard({
     }
   };
 
+  /** Export: PNG snapshot of the current canvas frame */
+  const exportPNG = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const url = canvas.toDataURL("image/png");
+    triggerDownload(url, `${slugify(lessonTitle)}.png`);
+  };
+
+  useImperativeHandle(ref, () => ({ exportPDF, exportPNG }));
+
   /* ------------------------------------------------------------------ */
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
@@ -1354,10 +1369,20 @@ export default function Whiteboard({
         >
           🧾 Export PDF
         </button>
+        <button
+          onClick={exportPNG}
+          className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded"
+        >
+          🖼 Export PNG
+        </button>
       </div>
     </div>
   );
-}
+});
+
+Whiteboard.displayName = "Whiteboard";
+
+export default Whiteboard;
 
 /* ------------------------------------------------------------------ */
 /* Misc helpers                                                        */
