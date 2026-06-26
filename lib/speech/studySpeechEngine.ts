@@ -190,6 +190,31 @@ function flattenInLeftPanelOrder(anchors: VisualAnchor[], presetId: string): Vis
   return groupThoughtUnits<VisualAnchor>(anchors, presetId).flatMap((group) => group.items);
 }
 
+// Per-anchor importance tier (1-5, 5 = Master This) — falls back to the
+// medium tier when the AI didn't assign one, same default PdfEvidenceOverlay
+// and ThoughtUnitNavigator use for an anchor's own priorityTier.
+function anchorTier(anchor: VisualAnchor): number {
+  return anchor.priorityTier ?? 3;
+}
+
+// Full mode's "page order": locate each anchor's verbatim span in the raw
+// page text and sort by that position. Anchors that can't be located (no
+// activePageText, or the span isn't found verbatim) keep their relative
+// LeftPanel order and sort after every located anchor.
+function sortInPageOrder(anchors: VisualAnchor[], activePageText: string): VisualAnchor[] {
+  if (!activePageText) return anchors;
+  const haystack = activePageText.toLowerCase();
+  const indexOf = (anchor: VisualAnchor): number => {
+    const needle = (anchor.spanStart ?? anchor.exactText.split(/\s+/).slice(0, 6).join(" ")).toLowerCase();
+    const idx = needle ? haystack.indexOf(needle) : -1;
+    return idx === -1 ? Number.POSITIVE_INFINITY : idx;
+  };
+  return anchors
+    .map((anchor, i) => ({ anchor, i, pos: indexOf(anchor) }))
+    .sort((a, b) => (a.pos - b.pos) || (a.i - b.i))
+    .map((x) => x.anchor);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main builder
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +223,7 @@ export function buildSpeechScript(
   model: CurrentPageStudyModel,
   mode: StudySpeechMode,
   presetId: string = "universal",
+  activePageText: string = "",
 ): SpeechSegment[] {
   const segments: SpeechSegment[] = [];
 
@@ -231,7 +257,27 @@ export function buildSpeechScript(
   // ── Thesis — always first ──────────────────────────────────────────────────
   push("thesis", "thesis", "Core Idea", model.pageThesis, 0.93);
 
-  if (mode === "focus") return segments;
+  // ── Focus: thesis + only the Master This (tier-5) anchors, LeftPanel order ──
+  if (mode === "focus") {
+    const masterAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId).filter((a) => anchorTier(a) === 5);
+    masterAnchors.forEach((anchor) => {
+      push(
+        anchor.id,
+        "visualAnchor",
+        ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
+        anchor.exactText,
+        ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
+        anchor.id,
+      );
+    });
+    console.log("[SPEECH_SOURCE]", {
+      mode,
+      source: "finalStudyModel.visualAnchors filtered to priorityTier===5 (Master This), LeftPanel order",
+      presetId,
+      itemCount: masterAnchors.length,
+    });
+    return segments;
+  }
 
   // ── Guided: drive directly off the LeftPanel's own grouping — same
   // groupThoughtUnits(entries, presetId) call ThoughtUnitNavigator/ThoughtRoadmap
@@ -304,11 +350,36 @@ export function buildSpeechScript(
     return segments;
   }
 
-  // ── Study + Full: same LeftPanel-ordered anchors — each segment carries
-  // evidenceRefId so the per-segment sequential loop in StudySpeechPanel can
-  // focus the matching left-panel highlight while that anchor is being spoken.
-  const orderedAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
-  orderedAnchors.forEach((anchor) => {
+  // ── Study: tier ≥4 (Master/Important) plus essential examples/definitions,
+  // LeftPanel order — each segment carries evidenceRefId so the per-segment
+  // sequential loop in StudySpeechPanel can focus the matching left-panel
+  // highlight while that anchor is being spoken.
+  if (mode === "study") {
+    const studyAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId)
+      .filter((a) => anchorTier(a) >= 4 || a.role === "definition" || a.role === "exampleEvidence");
+    studyAnchors.forEach((anchor) => {
+      push(
+        anchor.id,
+        "visualAnchor",
+        ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
+        anchor.exactText,
+        ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
+        anchor.id,
+      );
+    });
+    console.log("[SPEECH_SOURCE]", {
+      mode,
+      source: "finalStudyModel.visualAnchors filtered to tier>=4 or definition/example, LeftPanel order",
+      presetId,
+      itemCount: studyAnchors.length,
+    });
+    return segments;
+  }
+
+  // ── Full: every LeftPanel thought unit, in page order, nothing else
+  // (no conceptBlocks append — Speech must read only LeftPanel thought units).
+  const pageOrderedAnchors = sortInPageOrder(model.visualAnchors, activePageText);
+  pageOrderedAnchors.forEach((anchor) => {
     push(
       anchor.id,
       "visualAnchor",
@@ -319,28 +390,10 @@ export function buildSpeechScript(
     );
   });
 
-  if (mode === "study") return segments;
-
-  // ── Full mode: concept blocks appended after the LeftPanel-ordered anchors ──
-  model.conceptBlocks.slice(0, 5).forEach((block, i) => {
-    const parts: string[] = [];
-    if (block.title) parts.push(`${block.title}.`);
-    if (block.pattern) parts.push(block.pattern);
-    if (block.mechanism) parts.push(`This works because: ${block.mechanism}`);
-    if (block.trap) parts.push(`Watch out: ${block.trap}`);
-    push(
-      `concept-${i}`,
-      "conceptBlock",
-      block.title ? block.title.slice(0, 30) : `Concept ${i + 1}`,
-      parts.join(" "),
-      0.93,
-    );
-  });
-
   const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
   console.log("[SPEECH_SOURCE]", {
     mode,
-    source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order) + conceptBlocks",
+    source: "finalStudyModel.visualAnchors, page order",
     presetId,
     itemCount: segments.length,
     charCount: totalChars,

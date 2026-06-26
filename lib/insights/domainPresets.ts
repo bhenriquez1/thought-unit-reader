@@ -59,24 +59,27 @@ export const UNIVERSAL_PRESET: DomainPreset = {
   description: "Generic academic taxonomy — used when no domain preset is detected.",
   contentKeywords: [],
   kindLabels: {
-    thesis: "Master This",
-    definition: "Master This",
+    thesis: "Core Idea",
+    definition: "Core Idea",
     mechanism: "Mechanism",
     formula: "Mechanism",
     trap: "Trap / Danger",
     application: "Decision Point",
-    clinical: "Decision Point",
     comparison: "Decision Point",
+    clinical: "Pearl",
   },
   // Expert-priority order so star tier (getImportanceTier(groupIndex)) lines up
   // with how a resident/surgeon would triage a page: nail the core idea first,
   // then how it works, then what trips people up, then applied judgment calls,
-  // then everything else as supporting detail.
+  // then a clinical pearl, then everything else as supporting detail. "Master
+  // This" is layered on top per-anchor (priorityTier === 5 star badge), not a
+  // group of its own — any of these groups can contain a Master This anchor.
   kindGroups: [
-    { id: "master_this", label: "Master This", kinds: ["thesis", "definition"] },
+    { id: "core_idea", label: "Core Idea", kinds: ["thesis", "definition"] },
     { id: "mechanism", label: "Mechanism", kinds: ["mechanism", "formula"] },
     { id: "trap_danger", label: "Trap / Danger", kinds: ["trap"] },
-    { id: "decision_point", label: "Decision Point", kinds: ["application", "clinical", "comparison"] },
+    { id: "decision_point", label: "Decision Point", kinds: ["application", "comparison"] },
+    { id: "pearl", label: "Pearl", kinds: ["clinical"] },
     { id: "supporting_detail", label: "Supporting Detail", kinds: ["memoryAnchor", "reference", "filler", "dat_fact", "unknown"] },
   ],
 };

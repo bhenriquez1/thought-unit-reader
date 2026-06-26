@@ -601,9 +601,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setSegments([]);
       return;
     }
-    const next = buildSpeechScript(studyModel, mode, presetId);
+    const next = buildSpeechScript(studyModel, mode, presetId, activePageText);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId]);
+  }, [studyModel, mode, pageNumber, presetId, activePageText]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -871,13 +871,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
       setEyeTier(null);
-      beginKaraoke(text.slice(0, 160), text, null);
+      const matchedAnchor = matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
+      beginKaraoke(text.slice(0, 160), text, matchedAnchor?.id ?? null);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
-      const matchedAnchor = matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
       if (matchedAnchor) {
         console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: matchedAnchor.id, source: "current-page-anchor-match" });
         onEvidenceFocus?.(matchedAnchor.id);
@@ -1040,7 +1040,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId) : []);
+    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText) : []);
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;

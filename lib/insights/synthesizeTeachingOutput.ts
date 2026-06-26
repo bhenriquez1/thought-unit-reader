@@ -64,7 +64,8 @@ export const NoteCardTypeSchema = z.enum([
   "must_know", "mechanism", "clinical_reasoning", "dat_trap", "common_mistake",
   "memory_hook", "connection_map", "procedure_flow", "clinical_pearl",
   "expert_thinking", "why_this_matters", "pattern_recognition", "decision_tree",
-  "visual_mnemonic", "formula_breakdown", "diagram", "recall_questions", "other",
+  "visual_mnemonic", "formula_breakdown", "diagram", "recall_questions",
+  "exam_strategy", "surgeon_lens", "other",
 ]);
 export type NoteCardType = z.infer<typeof NoteCardTypeSchema>;
 
@@ -146,6 +147,9 @@ export const TeachingSynthesisSchema = z.object({
   // sibling to (not gated on) Section 2's flat prose fields below. Stage 2 only —
   // never added to Stage1SynthesisSchema, to protect the fast-path token budget.
   noteCards: z.array(NoteCardSchema).nullable(),
+  // Free-form topic tags for this page (e.g. "thyroid", "high-yield", "boards") —
+  // metadata for filtering/search, not a card; rendered as a badge row in NoteLab.
+  tags: z.array(z.string()).nullable(),
   // SECTION 2 — elaboration FROM Section 1's anchors below.
   coreIdea: z.string(),
   mechanism: z.string().nullable(),
@@ -582,6 +586,8 @@ Card types and the learning question each one answers:
 • formula_breakdown      — "What does each part of this formula/equation mean?"
 • diagram                — recreate a structure/pathway/anatomy the page describes (REQUIRES a visual: 3+ nodes)
 • recall_questions       — 2-3 short self-test questions for this page, body = the questions
+• exam_strategy          — "How should I approach this on a timed exam?" (triage/elimination/time-budget tactic, distinct from why_this_matters)
+• surgeon_lens           — "What could go wrong, and how would an expert catch or handle it?" (complication, failure mode, or a surgeon/practitioner's risk-aware read of the page)
 • other                  — anything genuinely useful that doesn't fit the above
 
 PER-PAGE-TYPE GUIDANCE (soft — examples of what fits each page shape, not a mandatory template):
@@ -601,6 +607,11 @@ RULES:
   diagram, a long procedure); "1" otherwise. Most cards should be "1".
 • title: ≤6 words. body: 1-3 sentences, professor-level, never a restatement of coreIdea.
 Return null only if the page has fewer than 3 real instructional sentences.
+
+─── TAGS ─────────────────────────────────────────────────────────────────────
+tags: 2-5 short topic tags (1-3 words each, lowercase) for this page — e.g.
+"thyroid", "high-yield", "boards", "renal physiology". Used for filtering/search
+in NoteLab, not displayed as a card. Return null if no clear tags apply.
 
 ─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
 miniTestItems: Generate 4–5 structured after-reading comprehension questions.
@@ -957,6 +968,7 @@ export function makeStubFromStage1(stage1: Stage1Synthesis, pageText?: string): 
     // fallback in lib/notelab/deriveNoteCards.ts derives cards from these stub fields
     // until Stage 2 (or never, on failure) resolves it.
     noteCards:          null,
+    tags:               null, // Stage 1 doesn't produce tags; left null until Stage 2 resolves them.
     // Map Stage 1 study fields → TeachingSynthesis fields that RightPanel reads via _synth.
     // whyThisMatters → synth.application → _synth.whyItMatters
     // keyMechanism   → synth.mechanism   → _synth.keyMechanism
@@ -1033,6 +1045,7 @@ export function makeLocalFallbackSynthesis(
     pageType:           "mixed" as const,
     coreIdea,
     noteCards:          null, // no network — lib/notelab/deriveNoteCards.ts fallback derives cards client-side
+    tags:               null,
     mechanism:          sentences[1]?.slice(0, 200) ?? null,
     rule:               "",
     trap:               null,

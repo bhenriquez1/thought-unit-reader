@@ -2,7 +2,7 @@
 // localStorage-backed store for Ultra Notes generated from the right panel.
 // Primary entry point: buildNoteFromStudyModel — consumes PageBrain directly.
 
-import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
 export type NoteSubject =
@@ -94,6 +94,12 @@ export interface UltraNote {
   starredConcepts?: number[];
   /** Adaptive Notebook cards — AI-curated (or derived) variable card set for this page */
   noteCards?: NoteCard[];
+  /** Raw LeftPanel thought units this note was built from — lets NoteLab's own
+   *  left nav (ThoughtUnitNavigator) bind to a saved note instead of only its
+   *  lossy highlightAnchors summary. */
+  visualAnchors?: VisualAnchor[];
+  /** Free-form topic tags, surfaced as a badge row and included in exports. */
+  tags?: string[];
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -141,6 +147,12 @@ function compact(note: UltraNote): UltraNote {
         arrows: c.visual.arrows.slice(0, 16),
       } : null,
     })),
+    visualAnchors: note.visualAnchors?.slice(0, 12).map((a) => ({
+      ...a,
+      exactText: a.exactText.slice(0, 200),
+      reason: a.reason.slice(0, 100),
+    })),
+    tags: note.tags?.slice(0, 8),
   };
 }
 
@@ -514,6 +526,7 @@ export function buildNoteFromStudyModel(
     relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,
     highlightAnchors: model.highlightAnchors?.length   ? model.highlightAnchors   : undefined,
     noteCards:        model.noteCards?.length          ? model.noteCards          : undefined,
+    visualAnchors:    model.visualAnchors?.length      ? model.visualAnchors      : undefined,
   };
 }
 
