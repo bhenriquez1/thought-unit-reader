@@ -26,7 +26,8 @@ export type VisualAnchorRole =
   | "exampleEvidence" // worked example or application
   | "keyDetail"       // important supporting detail / formula
   | "confusionTrap"   // common mistake or misconception
-  | "datFact";        // DAT / high-yield exam fact
+  | "datFact"         // DAT / high-yield exam fact
+  | "clinicalPearl";  // expert aside / high-value clinical insight
 
 export type VisualAnchorSourceField =
   | "pageThesis"
@@ -35,7 +36,8 @@ export type VisualAnchorSourceField =
   | "commonConfusion"
   | "quickMemory"
   | "conceptBlock"
-  | "conceptMap";
+  | "conceptMap"
+  | "clinicalPearl";
 
 export type VisualAnchor = {
   /** Stable ID shared across left panel overlay, speech segment, and focusedEvidenceId */
@@ -69,7 +71,8 @@ const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   confusionTrap:   4,
   exampleEvidence: 5,
   definition:      6,
-  keyDetail:       7,
+  clinicalPearl:   7,
+  keyDetail:       8,
 };
 
 // Maps each VisualAnchorRole onto the closest-fit ParagraphKind, so the same
@@ -84,6 +87,7 @@ const VISUAL_ROLE_TO_KIND: Record<VisualAnchorRole, ParagraphKind> = {
   confusionTrap:   "trap",
   exampleEvidence: "application",
   definition:      "definition",
+  clinicalPearl:   "clinical",
   // Matches PureReaderView's canonical anchorTypeToKind() mapping, so a
   // keyDetail anchor lands in the same left-panel kindGroup either way.
   keyDetail:       "definition",
@@ -105,6 +109,7 @@ function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
     case "application":  return "whyThisMatters";
     case "example_step": return "whyThisMatters";
     case "conclusion":   return "pageThesis";
+    case "clinical_pearl": return "clinicalPearl";
     default:             return "pageThesis";
   }
 }
@@ -120,6 +125,7 @@ function anchorTypeToVisualRole(anchorType: string): VisualAnchorRole {
     case "formula":      return "keyDetail";
     case "example_step": return "exampleEvidence";
     case "conclusion":   return "keyDetail";
+    case "clinical_pearl": return "clinicalPearl";
     default:             return "keyDetail";
   }
 }
@@ -250,17 +256,18 @@ type ContractAnchorSeed = {
   domainCategory?: string | null;
 };
 
-// Build the full proof-contract anchor pool — every right-panel field that makes a
-// claim gets a corresponding left-panel highlight candidate. visualAnchors must NOT
-// rely solely on synth.highlightAnchors; it is the union of all reasoning fields below.
+// Surgeon-sparse anchor pool: ONLY the AI's verbatim, page-text-grounded
+// highlightAnchors (2-4 per page) plus the page thesis fallback. Earlier this
+// also unioned in whyThisMatters/keyMechanism/commonConfusion/quickMemory/
+// conceptBlock/conceptMap — paraphrased Right Panel prose, not verbatim PDF
+// spans — which is why Speech/LeftPanel ended up reading RightPanel-style
+// summaries and over-highlighting the page. Those fields stay Right-Panel-only
+// (model.studyNotes/conceptBlocks); they no longer get promoted to anchors.
 function buildContractAnchorSeeds(
-  synth: Record<string, unknown>,
   cleanThesis: string,
-  conceptBlocks: CurrentPageStudyModel["conceptBlocks"],
   aiCandidates: AnchorCandidate[],
 ): ContractAnchorSeed[] {
   const seeds: ContractAnchorSeed[] = [];
-  const clean = (s: string | null | undefined) => (s ? (cleanThesisLine(s) ?? s).trim() : "");
 
   // 1. AI highlightAnchors — verbatim spans the model selected.
   for (const a of aiCandidates) {
@@ -277,58 +284,11 @@ function buildContractAnchorSeeds(
     });
   }
 
-  // 2. pageThesis — the governing idea of the page.
-  if (cleanThesis.length >= 12) {
+  // 2. pageThesis — the governing idea of the page (only when the AI didn't
+  // already surface a thesis-type anchor above; avoids a near-duplicate).
+  const hasThesisAnchor = seeds.some((s) => s.anchorType === "thesis");
+  if (!hasThesisAnchor && cleanThesis.length >= 12) {
     seeds.push({ text: cleanThesis, role: "coreIdea", sourceField: "pageThesis", reason: "Page thesis", anchorType: "thesis" });
-  }
-
-  // 3. whyThisMatters — application / significance of the idea.
-  const whyThisMatters = clean(synth.whyItMatters as string | null);
-  if (whyThisMatters.length >= 12) {
-    seeds.push({ text: whyThisMatters, role: "exampleEvidence", sourceField: "whyThisMatters", reason: "Why this matters", anchorType: "application" });
-  }
-
-  // 4. keyMechanism — the causal chain / how-why.
-  const keyMechanism = clean(synth.keyMechanism as string | null);
-  if (keyMechanism.length >= 12) {
-    seeds.push({ text: keyMechanism, role: "mechanism", sourceField: "keyMechanism", reason: "Key mechanism", anchorType: "mechanism" });
-  }
-
-  // 5. commonConfusion — common mistake / misconception.
-  const commonConfusion = clean(synth.commonConfusion as string | null);
-  if (commonConfusion.length >= 12) {
-    seeds.push({ text: commonConfusion, role: "confusionTrap", sourceField: "commonConfusion", reason: "Common confusion", anchorType: "trap" });
-  }
-
-  // 6. quickMemory — high-yield memory anchor.
-  const quickMemory = clean(synth.memoryAnchor as string | null);
-  if (quickMemory.length >= 12) {
-    seeds.push({ text: quickMemory, role: "keyDetail", sourceField: "quickMemory", reason: "Quick memory anchor", anchorType: "memory" });
-  }
-
-  // 7. conceptBlocks — mechanism / trap / pattern per concept.
-  for (const block of conceptBlocks) {
-    const mechanism = clean(block.mechanism);
-    if (mechanism.length >= 12) {
-      seeds.push({ text: mechanism, role: "mechanism", sourceField: "conceptBlock", reason: `Mechanism — ${block.title}`, anchorType: "mechanism" });
-    }
-    const trap = clean(block.trap);
-    if (trap.length >= 12) {
-      seeds.push({ text: trap, role: "confusionTrap", sourceField: "conceptBlock", reason: `Common trap — ${block.title}`, anchorType: "trap" });
-    }
-    const pattern = clean(block.pattern);
-    if (pattern.length >= 12) {
-      seeds.push({ text: pattern, role: "definition", sourceField: "conceptBlock", reason: `Concept — ${block.title}`, anchorType: "definition" });
-    }
-  }
-
-  // 8. conceptMap — reasoning flow / causal chain diagram.
-  const reasoningFlow = (synth.reasoningFlow as string | null) ?? "";
-  if (reasoningFlow.includes("→")) {
-    const t = clean(reasoningFlow);
-    if (t.length >= 12) {
-      seeds.push({ text: t, role: "mechanism", sourceField: "conceptMap", reason: "Concept map / reasoning flow", anchorType: "mechanism" });
-    }
   }
 
   return seeds;
@@ -369,14 +329,13 @@ export function buildStudyModel(
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
   const highlightAnchors = buildAnchorCandidates(synth, cleanThesis);
 
-  // Build visualAnchors — the final left-panel highlight contract.
-  // The full proof contract: pageThesis, whyThisMatters, keyMechanism, commonConfusion,
-  // quickMemory, conceptBlocks, conceptMap, AND synth.highlightAnchors — not just the
-  // raw AI anchors. Sorted by role priority. Left panel uses ONLY this — no
-  // score-anchors, no universalSpecificityScore, no fallbacks.
-  // IDs assigned post-sort with per-field counters so they are stable across re-renders
-  // and map 1-to-1 to the Right Panel sourceField that owns each anchor.
-  const contractSeeds = buildContractAnchorSeeds(synth, cleanThesis, conceptBlocks, highlightAnchors);
+  // Build visualAnchors — the final left-panel highlight contract: the AI's
+  // verbatim highlightAnchors plus a pageThesis fallback, nothing else. Sorted
+  // by role priority. Left panel uses ONLY this — no score-anchors, no
+  // universalSpecificityScore, no fallbacks, no RightPanel-prose promotion.
+  // IDs assigned post-sort with per-field counters so they are stable across
+  // re-renders and map 1-to-1 to the Right Panel sourceField that owns each anchor.
+  const contractSeeds = buildContractAnchorSeeds(cleanThesis, highlightAnchors);
 
   const seenAnchorKeys = new Set<string>();
   const dedupedSeeds = contractSeeds.filter((s) => {
@@ -403,7 +362,7 @@ export function buildStudyModel(
       domainCategory: s.domainCategory ?? undefined,
     }))
     .sort((a, b) => a.priority - b.priority)
-    .slice(0, 12)
+    .slice(0, 6)
     .map((anchor) => {
       const n = (fieldCounters.get(anchor.sourceField) ?? 0) + 1;
       fieldCounters.set(anchor.sourceField, n);

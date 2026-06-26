@@ -689,28 +689,31 @@ function NoteCard({
 // ── SectionsView — renders new-schema sections (Core Idea, Must Know, etc.) ───
 
 const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }> = {
-  "Core Idea":         { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
-  "Must Know":         { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
-  "Mechanism":         { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "⚙️" },
-  "DAT/Dental Trap":   { accent: "#f87171", bg: "rgba(248,113,113,0.06)", icon: "⚠️" },
-  "Memory Hook":       { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
-  "Recall Questions":  { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "📝" },
-  "Source":            { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
-  "Clinical Reasoning": { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧩" },
-  "Common Mistake":     { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "❌" },
-  "Exam Strategy":      { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🎯" },
-  "Connection Map":     { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🔗" },
-  "Clinical Pearl":     { accent: "#facc15", bg: "rgba(250,204,21,0.06)",  icon: "💎" },
-  "Summary":            { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🧾" },
+  "Chief Concern / Problem":        { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
+  "Why This Matters Clinically":    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
+  "Diagnostic Reasoning":           { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧩" },
+  "Procedure Logic":                { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "⚙️" },
+  "Decision Tree":                  { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🌳" },
+  "Danger Zone":                    { accent: "#f87171", bg: "rgba(248,113,113,0.06)", icon: "⚠️" },
+  "Complication Risk":              { accent: "#fb923c", bg: "rgba(251,146,60,0.06)",  icon: "🚧" },
+  "Clinical Pearl":                 { accent: "#facc15", bg: "rgba(250,204,21,0.06)",  icon: "💎" },
+  "Common Mistake":                 { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "❌" },
+  "Case-Style Recall Questions":    { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "📝" },
+  "Connection Map":                 { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🔗" },
+  "Exam Strategy":                  { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🎓" },
+  "Memory Hook":                    { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
+  "Summary":                        { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🧾" },
+  "Source":                         { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
 };
 
 // Expert-notebook reading order for the card grid below. Sort, not filter —
 // any label absent from this list (future section) still renders, just last,
 // instead of silently disappearing (the lesson from Phase 4's SUBJECT_ORDER).
 const SECTION_ORDER = [
-  "Core Idea", "Must Know", "Mechanism", "Clinical Reasoning", "DAT/Dental Trap",
-  "Common Mistake", "Memory Hook", "Exam Strategy", "Connection Map",
-  "Clinical Pearl", "Recall Questions", "Summary", "Source",
+  "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
+  "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
+  "Clinical Pearl", "Common Mistake", "Case-Style Recall Questions",
+  "Connection Map", "Exam Strategy", "Memory Hook", "Summary", "Source",
 ];
 
 function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {
@@ -741,7 +744,17 @@ function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultr
   );
 }
 
-const NEW_SCHEMA_LABELS = new Set(["Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook", "Recall Questions", "Summary", "Source"]);
+// Includes both the current surgeon-notes labels and the older pre-rename
+// labels, so notes already saved to localStorage under the old schema still
+// render via SectionsView instead of silently falling back to the legacy
+// coreIdea/concept-block layout.
+const NEW_SCHEMA_LABELS = new Set([
+  "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
+  "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
+  "Case-Style Recall Questions",
+  "Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook",
+  "Recall Questions", "Summary", "Source",
+]);
 
 function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
   if (!sections?.length) return false;

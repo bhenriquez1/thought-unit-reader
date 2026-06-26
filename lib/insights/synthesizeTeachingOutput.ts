@@ -33,7 +33,7 @@ export type PageType = z.infer<typeof PageTypeSchema>;
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact"]),
+  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.
@@ -491,6 +491,9 @@ STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
                               Example: "O, C, H, and N make up about 96% of living matter."
                               Example: "Iodine deficiency leads to goiter."
   anchorType "definition"  🔵 Blue   — Core concept definition — what the key term IS (use sparingly).
+  anchorType "clinical_pearl" 💎 Cyan — A verbatim clinical/expert insight worth remembering on its own —
+                              not the mechanism and not a trap. Use only when the page contains a real
+                              "pearl" sentence (an expert aside, a high-value tip). Omit otherwise.
 
 ROLE LOGIC (abstract — apply to every page, every book):
   🟡 thesis:      The shortest sentence that names what the page is fundamentally about.
@@ -825,6 +828,7 @@ highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never
   • Worked step showing key logic (substituting values gives... therefore...)
   • Clinical/exam rules (when X is present, always suspect Y)
   • Conclusion sentences that summarize the page's central lesson
+  • A genuine clinical/expert pearl sentence — tag as anchorType "clinical_pearl" (only if one truly exists)
   REJECT ALWAYS:
   • Chapter or section titles (e.g. "2.1 Chemical Elements")
   • Running headers/footers/page numbers

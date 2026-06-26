@@ -59,25 +59,25 @@ export const UNIVERSAL_PRESET: DomainPreset = {
   description: "Generic academic taxonomy — used when no domain preset is detected.",
   contentKeywords: [],
   kindLabels: {
-    thesis: "Core Idea",
-    definition: "Core Idea",
-    mechanism: "Mechanism",
-    formula: "Mechanism",
-    trap: "Trap / Danger",
+    thesis: "Master This",
+    definition: "Master This",
+    mechanism: "Procedure Step",
+    formula: "Procedure Step",
+    trap: "Danger Zone",
     application: "Decision Point",
     comparison: "Decision Point",
     clinical: "Pearl",
   },
   // Expert-priority order so star tier (getImportanceTier(groupIndex)) lines up
-  // with how a resident/surgeon would triage a page: nail the core idea first,
-  // then how it works, then what trips people up, then applied judgment calls,
-  // then a clinical pearl, then everything else as supporting detail. "Master
-  // This" is layered on top per-anchor (priorityTier === 5 star badge), not a
-  // group of its own — any of these groups can contain a Master This anchor.
+  // with how a surgeon would triage a page: nail the must-master idea first,
+  // then the procedure logic, then danger/complication points, then applied
+  // judgment calls, then a clinical pearl, then everything else as supporting
+  // detail. The ★★★★★ "Master This" per-anchor badge is layered on top of
+  // whichever group an anchor lands in — any group can contain one.
   kindGroups: [
-    { id: "core_idea", label: "Core Idea", kinds: ["thesis", "definition"] },
-    { id: "mechanism", label: "Mechanism", kinds: ["mechanism", "formula"] },
-    { id: "trap_danger", label: "Trap / Danger", kinds: ["trap"] },
+    { id: "master_this", label: "Master This", kinds: ["thesis", "definition"] },
+    { id: "procedure_step", label: "Procedure Step", kinds: ["mechanism", "formula"] },
+    { id: "danger_zone", label: "Danger Zone", kinds: ["trap"] },
     { id: "decision_point", label: "Decision Point", kinds: ["application", "comparison"] },
     { id: "pearl", label: "Pearl", kinds: ["clinical"] },
     { id: "supporting_detail", label: "Supporting Detail", kinds: ["memoryAnchor", "reference", "filler", "dat_fact", "unknown"] },

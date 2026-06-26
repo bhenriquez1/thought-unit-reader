@@ -380,10 +380,11 @@ export function buildUltraNote(
 }
 
 /**
- * Primary NoteLab entry point — builds a structured note directly from PageBrain.
- * Produces sections matching the cognitive architecture: Core Idea, Must Know,
- * Mechanism, Trap, Memory Hook, Recall Questions, deeper Level-2 reasoning
- * fields when resolved, a closing Summary, and Source.
+ * Primary NoteLab entry point — builds a structured note directly from PageBrain,
+ * shaped like surgeon notes: Chief Concern, Why This Matters Clinically,
+ * Diagnostic Reasoning, Procedure Logic, Decision Tree, Danger Zone,
+ * Complication Risk, Clinical Pearl, Common Mistake, Case-Style Recall
+ * Questions, Connection Map, then a closing Memory Hook/Summary/Source.
  *
  * All content comes from the same StudyModel that powers the right panel and
  * left-panel highlights — NoteLab is a different view of the same brain.
@@ -396,40 +397,78 @@ export function buildNoteFromStudyModel(
   const sn = model.studyNotes;
   const sections: NoteSection[] = [];
 
-  // 1. Core Idea — 1-sentence governing idea
+  // 1. Chief Concern / Problem — the governing idea of the page
   if (model.pageThesis) {
-    sections.push({ label: "Core Idea", content: model.pageThesis });
+    sections.push({ label: "Chief Concern / Problem", content: model.pageThesis });
   }
 
-  // 2. Must Know — 3 bullets max (why it matters, key mechanism, first concept principle)
-  const mustKnowItems = [
-    sn.whyThisMatters,
-    sn.keyMechanism,
-    model.conceptBlocks[0]?.pattern ?? null,
-  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 3);
-  if (mustKnowItems.length) {
-    sections.push({ label: "Must Know", content: mustKnowItems.map((b) => `• ${b}`).join("\n") });
+  // 2. Why This Matters Clinically
+  if (sn.whyThisMatters) {
+    sections.push({ label: "Why This Matters Clinically", content: sn.whyThisMatters });
   }
 
-  // 3. Mechanism — numbered steps from keyMechanism + concept mechanisms
-  const mechanismParts = [
+  // 3. Diagnostic Reasoning
+  if (sn.clinicalReasoning) {
+    sections.push({ label: "Diagnostic Reasoning", content: sn.clinicalReasoning });
+  }
+
+  // 4. Procedure Logic — numbered steps from keyMechanism + concept mechanisms
+  const procedureParts = [
     sn.keyMechanism,
     ...model.conceptBlocks.map((b) => b.mechanism).filter(Boolean),
   ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 5);
-  if (mechanismParts.length) {
-    sections.push({ label: "Mechanism", content: mechanismParts.map((m, i) => `${i + 1}. ${m}`).join("\n") });
+  if (procedureParts.length) {
+    sections.push({ label: "Procedure Logic", content: procedureParts.map((m, i) => `${i + 1}. ${m}`).join("\n") });
   }
 
-  // 4. DAT/Dental Trap — 1–2 traps
-  const trapItems = [
-    sn.commonConfusion,
-    ...model.conceptBlocks.map((b) => b.trap).filter(Boolean),
-  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 2);
-  if (trapItems.length) {
-    sections.push({ label: "DAT/Dental Trap", content: trapItems.map((t) => `⚠ ${t}`).join("\n") });
+  // 5. Decision Tree — the page's causal/reasoning flow, when one exists
+  if (sn.reasoningFlow) {
+    sections.push({ label: "Decision Tree", content: sn.reasoningFlow });
   }
 
-  // 5. Memory Hook — 1 mnemonic
+  // 6. Danger Zone — the page-level misconception/trap
+  if (sn.commonConfusion) {
+    sections.push({ label: "Danger Zone", content: `⚠ ${sn.commonConfusion}` });
+  }
+
+  // 7. Complication Risk — per-concept traps (distinct from the page-level Danger Zone)
+  const complicationItems = model.conceptBlocks
+    .map((b) => b.trap)
+    .filter((v): v is string => typeof v === "string" && v.length > 10)
+    .slice(0, 3);
+  if (complicationItems.length) {
+    sections.push({ label: "Complication Risk", content: complicationItems.map((t) => `⚠ ${t}`).join("\n") });
+  }
+
+  // 8. Clinical Pearl
+  if (sn.clinicalPearl) {
+    sections.push({ label: "Clinical Pearl", content: sn.clinicalPearl });
+  }
+
+  // 9. Common Mistake
+  if (sn.commonMistake) {
+    sections.push({ label: "Common Mistake", content: sn.commonMistake });
+  }
+
+  // 10. Case-Style Recall Questions
+  const recallQs = (model.miniTest ?? [])
+    .filter((q): q is string => typeof q === "string" && q.length > 5)
+    .slice(0, 3);
+  if (recallQs.length) {
+    sections.push({ label: "Case-Style Recall Questions", content: recallQs.map((q, i) => `${i + 1}. ${q}`).join("\n") });
+  }
+
+  // 11. Connection Map
+  if (sn.connectionMap) {
+    sections.push({ label: "Connection Map", content: sn.connectionMap });
+  }
+
+  // 11b. Exam Strategy — kept as its own Level-2 section, not part of the core 11
+  if (sn.examStrategy) {
+    sections.push({ label: "Exam Strategy", content: sn.examStrategy });
+  }
+
+  // 12. Memory Hook — 1 mnemonic
   const memHook = sn.quickMemory
     ?? model.conceptBlocks.find((b) => b.rule && b.rule.length > 10)?.rule
     ?? null;
@@ -437,39 +476,14 @@ export function buildNoteFromStudyModel(
     sections.push({ label: "Memory Hook", content: memHook });
   }
 
-  // 6. Recall Questions — 3 questions from miniTest
-  const recallQs = (model.miniTest ?? [])
-    .filter((q): q is string => typeof q === "string" && q.length > 5)
-    .slice(0, 3);
-  if (recallQs.length) {
-    sections.push({ label: "Recall Questions", content: recallQs.map((q, i) => `${i + 1}. ${q}`).join("\n") });
-  }
-
-  // Level 2 — deeper reasoning fields, each its own section when resolved
-  if (sn.clinicalReasoning) {
-    sections.push({ label: "Clinical Reasoning", content: sn.clinicalReasoning });
-  }
-  if (sn.commonMistake) {
-    sections.push({ label: "Common Mistake", content: sn.commonMistake });
-  }
-  if (sn.examStrategy) {
-    sections.push({ label: "Exam Strategy", content: sn.examStrategy });
-  }
-  if (sn.connectionMap) {
-    sections.push({ label: "Connection Map", content: sn.connectionMap });
-  }
-  if (sn.clinicalPearl) {
-    sections.push({ label: "Clinical Pearl", content: sn.clinicalPearl });
-  }
-
-  // 6b. Summary — closing recap built from already-computed fields, no new AI call
+  // 13. Summary — closing recap built from already-computed fields, no new AI call
   const summaryParts = [model.pageThesis, sn.keyMechanism, sn.quickMemory]
     .filter((v): v is string => typeof v === "string" && v.length > 10);
   if (summaryParts.length) {
     sections.push({ label: "Summary", content: summaryParts.join(" ") });
   }
 
-  // 7. Source — book title, page, topic
+  // 14. Source — book title, page, topic
   const sourceParts = [
     bookTitle ? `Book: ${bookTitle}` : null,
     `Page: ${pageNumber}`,
