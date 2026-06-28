@@ -5,6 +5,7 @@
 import type { CurrentPageStudyModel, VisualAnchor, VisualAnchorRole } from "@/lib/insights/currentPageStudyModel";
 import { getImportanceTier, type ImportanceTier } from "@/lib/insights/importanceTiers";
 import { groupThoughtUnits } from "@/lib/insights/domainPresets";
+import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -49,6 +50,101 @@ export interface SpeechSegment {
   /** Guided mode only: stop and wait for the reader to click Continue (or Explain)
    *  instead of auto-advancing after pauseAfterMs — the teach-loop checkpoints. */
   requiresConfirm?: boolean;
+}
+
+export function buildSpeechTimeline({
+  thoughtUnits,
+  mode,
+  activePageText = "",
+  selectedUnitId,
+}: {
+  thoughtUnits: ExpertAnchor[];
+  mode: StudySpeechMode;
+  activePageText?: string;
+  selectedUnitId?: string | null;
+}): SpeechSegment[] {
+  if (mode === "fullPage") return [];
+  const units = thoughtUnits.slice();
+  const byPageOrder = (items: ExpertAnchor[]) =>
+    items.slice().sort((a, b) => {
+      const ai = activePageText.toLowerCase().indexOf(a.exactText.toLowerCase().slice(0, 60));
+      const bi = activePageText.toLowerCase().indexOf(b.exactText.toLowerCase().slice(0, 60));
+      return (ai < 0 ? Number.POSITIVE_INFINITY : ai) - (bi < 0 ? Number.POSITIVE_INFINITY : bi);
+    });
+  const essential = (u: ExpertAnchor) => u.priorityTier >= 4 || u.category === "definition" || u.category === "application";
+  const selected = selectedUnitId ? units.find((u) => u.id === selectedUnitId || u.evidenceRefId === selectedUnitId) : null;
+  const chosen =
+    mode === "focus" ? units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This") :
+    mode === "study" ? units.filter(essential) :
+    mode === "highlights" ? units.filter((u) => u.grounded !== false) :
+    mode === "guided" ? units :
+    byPageOrder(units);
+
+  const ordered = selected && mode !== "full"
+    ? [selected, ...chosen.filter((u) => u.id !== selected.id)]
+    : chosen;
+
+  const segments: SpeechSegment[] = [];
+  const pushUnit = (unit: ExpertAnchor, label = unit.importanceLabel, prefix = "") => {
+    const raw = `${prefix}${unit.exactText}`.trim();
+    if (raw.length < 8) return;
+    segments.push({
+      id: unit.id,
+      role: "visualAnchor",
+      label,
+      rawText: raw,
+      text: formulaToSpeech(raw),
+      rateModifier: unit.priorityTier >= 5 ? 0.88 : unit.priorityTier >= 4 ? 0.92 : 0.98,
+      evidenceRefId: unit.evidenceRefId,
+      tier: { key: unit.priorityTier >= 5 ? "critical" : unit.priorityTier >= 4 ? "important" : "medium", stars: Math.min(5, Math.max(1, unit.priorityTier)), label: unit.importanceLabel },
+    });
+  };
+
+  if (mode === "guided") {
+    const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
+      ordered.filter(predicate).forEach((unit, index) => {
+        pushUnit(unit, name, index === 0 ? prefix : "");
+        const last = segments[segments.length - 1];
+        if (last) {
+          last.pauseAfterMs = name === "Master This" || name === "Danger Zone" ? 700 : 250;
+          last.requiresConfirm = name === "Master This" || name === "Clinical Pearl" || name === "Danger Zone";
+        }
+      });
+    };
+    stage("Master This", (u) => u.priorityTier >= 5 || u.category === "thesis" || u.category === "definition", "Most important on this page: ");
+    stage("Procedure Step", (u) => u.category === "mechanism" || u.category === "application" || u.category === "formula");
+    stage("Clinical Pearl", (u) => u.category === "clinical");
+    stage("Danger Zone", (u) => u.category === "trap");
+    ordered
+      .filter((u) => !segments.some((s) => s.evidenceRefId === u.evidenceRefId))
+      .forEach((u) => pushUnit(u, u.importanceLabel));
+    const checkpointTarget = ordered[0];
+    if (checkpointTarget) {
+      segments.push({
+        id: `guided-question-${checkpointTarget.id}`,
+        role: "checkpoint",
+        label: "Check Your Understanding",
+        rawText: `Quick check: why does this matter — ${checkpointTarget.title}?`,
+        text: formulaToSpeech(`Quick check: why does this matter — ${checkpointTarget.title}?`),
+        rateModifier: 0.92,
+        pauseAfterMs: 900,
+        requiresConfirm: true,
+      });
+    }
+  } else {
+    ordered.forEach((unit) => pushUnit(unit));
+  }
+
+  console.log("[SPEECH_TIMELINE_SOURCE]", {
+    mode,
+    source: "canonical_left_panel_units",
+    page: ordered[0]?.page ?? null,
+    thoughtUnitId: ordered[0]?.id ?? null,
+    sourceText: ordered[0]?.exactText.slice(0, 80) ?? null,
+    fallbackUsed: ordered.some((u) => u.source !== "canonical_left_panel"),
+    itemCount: segments.length,
+  });
+  return segments;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
