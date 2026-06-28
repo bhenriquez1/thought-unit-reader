@@ -238,6 +238,10 @@ interface Props {
   /** Render as the promoted primary Study Tools action ("▶ Listen to this page"),
    *  open by default, instead of the compact collapsed header. */
   primary?: boolean;
+  /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
+   *  paint-budgeted effectiveHighlightTargets) — forwarded to buildSpeechScript
+   *  so "Highlight Only" mode reads only what's actually visible on the page. */
+  highlightedAnchorTexts?: string[];
 }
 
 export interface StudySpeechPanelHandle {
@@ -249,7 +253,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -601,9 +605,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setSegments([]);
       return;
     }
-    const next = buildSpeechScript(studyModel, mode, presetId, activePageText);
+    const next = buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId, activePageText]);
+  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -1032,7 +1036,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId) : []);
+      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId, activePageText, highlightedAnchorTexts) : []);
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1053,7 +1057,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText) : []);
+    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts) : []);
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;

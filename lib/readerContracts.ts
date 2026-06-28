@@ -80,6 +80,8 @@ export type ParagraphKind =
   | "reference"
   | "filler"
   | "dat_fact"
+  | "keyDetail"
+  | "keyAnatomy"
   | "unknown";
 
 export type HighlightLevel = "important" | "support" | "additional" | "trap";
@@ -119,6 +121,12 @@ export interface HighlightTarget {
   priorityTier?: number;
   /** Domain-specific extraction category (e.g. "mechanism", "clinical pearl"). */
   domainCategory?: string;
+  /** ≤10-word AI rationale ("why a professor would underline this") — verbatim from
+   *  SynthHighlightAnchor.reason, surfaced as the LeftPanel card's explanation line. */
+  reason?: string;
+  /** Best-effort "X–Y" line locator estimated from character offset within the page
+   *  text — see ThoughtUnitNavigatorEntry.lineRange for why this is an approximation. */
+  lineRange?: string;
 }
 
 export interface ParagraphSignal {

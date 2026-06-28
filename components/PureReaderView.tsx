@@ -207,21 +207,40 @@ export default function PureReaderView({
       case "coreIdea":        return "thesis";
       case "confusionTrap":   return "trap";
       case "exampleEvidence": return "application";
-      case "keyDetail":       return "definition";
+      case "keyDetail":       return "keyDetail";
       case "datFact":         return "dat_fact";
       case "dat_fact":        return "dat_fact";
       case "clinicalPearl":   return "clinical";
       case "clinical_pearl":  return "clinical";
+      case "memoryHook":      return "memoryAnchor";
+      case "memory_hook":     return "memoryAnchor";
+      case "keyAnatomy":      return "keyAnatomy";
+      case "anatomy":         return "keyAnatomy";
       // Math-specific anchor types
       case "formula":      return "definition";    // formula = key term / rule (blue)
       case "example_step": return "application";   // worked step = evidence (purple)
       case "conclusion":   return "thesis";        // conclusion = core idea (yellow)
       // Backward compat
-      case "memoryAnchor": return "definition";
+      case "memoryAnchor": return "memoryAnchor";
       case "clinicalTrap": return "trap";
       case "examSignal":   return "thesis";
       default:             return "thesis";
     }
+  };
+
+  // Best-effort "X–Y" line locator from a normalized anchor's character offset within the
+  // normalized page text. PDF.js text items carry no reliable per-line geometry through this
+  // pipeline (buildStructuredPageText flattens line-wraps to spaces, keeping only paragraph
+  // breaks), so this assumes a fixed ~90-char textbook line width — an approximation, not a
+  // readout of the PDF's actual rendered line breaks.
+  const CHARS_PER_LINE = 90;
+  const estimateLineRange = (normedPageText: string, normalizedAnchorText: string, rawAnchorLen: number): string | undefined => {
+    if (!normedPageText || !normalizedAnchorText) return undefined;
+    const offset = normedPageText.indexOf(normalizedAnchorText);
+    if (offset < 0) return undefined;
+    const startLine = Math.floor(offset / CHARS_PER_LINE) + 1;
+    const endLine = Math.floor((offset + rawAnchorLen) / CHARS_PER_LINE) + 1;
+    return startLine === endLine ? `${startLine}` : `${startLine}–${endLine}`;
   };
 
   // Convert a SynthHighlightAnchor[] (grounded + semantically arbitrated in pages/index.tsx)
@@ -327,6 +346,8 @@ export default function PureReaderView({
         spanEnd,
         priorityTier:         s.anchor.priorityTier ?? undefined,
         domainCategory:       s.anchor.domainCategory ?? undefined,
+        reason:               s.anchor.reason ?? undefined,
+        lineRange:            estimateLineRange(normedPage, norm(s.anchor.text), s.anchor.text.length),
       };
     });
 
@@ -428,13 +449,14 @@ export default function PureReaderView({
     onEffectivePresetChange?.(effectivePresetId);
   }, [effectivePresetId, onEffectivePresetChange]);
 
-  const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
-    { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },
-    { kind: "definition",  color: "#93c5fd", bg: "rgba(147,197,253,0.15)",  label: "Definition / Term",    abbr: "DEF"  },
-    { kind: "mechanism",   color: "#86efac", bg: "rgba(134,239,172,0.15)",  label: "Mechanism / Function", abbr: "FCN"  },
-    { kind: "application", color: "#c084fc", bg: "rgba(192,132,252,0.15)",  label: "Example / Evidence",   abbr: "EX"   },
-    { kind: "trap",        color: "#fca5a5", bg: "rgba(252,165,165,0.15)",  label: "Confusion / Trap",     abbr: "TRAP" },
-    { kind: "dat_fact",    color: "#fed7aa", bg: "rgba(251,146,60,0.15)",   label: "DAT / High-Yield Fact", abbr: "DAT"  },
+  // 5 named layered-importance colors (spec) — every semantic kind folds into
+  // one of these tiers so the page reads as a textbook, not a marker explosion.
+  const HIGHLIGHT_KEY_ENTRIES: Array<{ tier: string; kinds: string[]; color: string; bg: string; label: string; abbr: string }> = [
+    { tier: "master",     kinds: ["thesis", "definition"],                                                            color: "#fde047", bg: "rgba(253,224,71,0.15)",  label: "Master This",     abbr: "★★★★★" },
+    { tier: "important",  kinds: ["mechanism", "application", "keyDetail", "keyAnatomy", "memoryAnchor", "formula", "comparison"], color: "#86efac", bg: "rgba(134,239,172,0.15)", label: "Important",       abbr: "★★★★"  },
+    { tier: "supporting", kinds: ["dat_fact", "reference", "filler", "unknown"],                                       color: "#93c5fd", bg: "rgba(147,197,253,0.15)", label: "Supporting Detail", abbr: "★★★"   },
+    { tier: "danger",     kinds: ["trap"],                                                                             color: "#fca5a5", bg: "rgba(252,165,165,0.15)", label: "Danger Zone",      abbr: "⚠"     },
+    { tier: "pearl",      kinds: ["clinical"],                                                                         color: "#67e8f9", bg: "rgba(103,232,249,0.15)", label: "Clinical Pearl",  abbr: "💎"    },
   ];
 
   console.log("[SINGLE_LEGEND_RENDER]", {
@@ -498,10 +520,10 @@ export default function PureReaderView({
             {!legendCollapsed && (
               <div className="flex flex-col gap-1.5 mt-2">
                 {HIGHLIGHT_KEY_ENTRIES.map(entry => {
-                  const active = !hasHighlights || usedKinds.has(entry.kind);
+                  const active = !hasHighlights || entry.kinds.some((k) => usedKinds.has(k));
                   return (
                     <div
-                      key={entry.kind}
+                      key={entry.tier}
                       className="flex items-start gap-2 transition-opacity"
                       style={{ opacity: active ? 1 : 0.22 }}
                     >
@@ -538,6 +560,8 @@ export default function PureReaderView({
               page: t.page,
               confidence: t.score,
               priorityTier: t.priorityTier,
+              reason: t.reason,
+              lineRange: t.lineRange,
             }))}
             focusedId={focusedEvidenceId}
             activeSpokenWord={activeSpokenWord}

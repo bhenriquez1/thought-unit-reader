@@ -704,6 +704,8 @@ export default function ThoughtUnitReader() {
       text: a.exactText,
       kind: a.kind,
       priorityTier: a.priorityTier,
+      reason: a.reason,
+      page: notelabActiveNote?.pageNumber,
     }));
   }, [notelabActiveNote]);
 
@@ -3903,6 +3905,7 @@ export default function ThoughtUnitReader() {
                 onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
+                activeSpokenWord={activeSpokenWord}
                 onNoteSaved={() => {
                   // Called by GenerateNoteButton only after save is verified — navigate is safe.
                   console.log("[NAV_AFTER_SAVE]", { destination: "notelab", bookId, page: currentPage, storageKey: "ultraNotes_v1" });
@@ -3925,6 +3928,7 @@ export default function ThoughtUnitReader() {
                 tocItems={tocItemsForSearch}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
+                highlightedAnchorTexts={safeHighlightAnchors.map((a) => a.text)}
                 speechPanelRef={speechPanelRef}
                 onSpeechEvidenceFocus={(id) => {
                   if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });

@@ -33,7 +33,7 @@ export type PageType = z.infer<typeof PageTypeSchema>;
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl"]),
+  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.
@@ -65,7 +65,8 @@ export const NoteCardTypeSchema = z.enum([
   "memory_hook", "connection_map", "procedure_flow", "clinical_pearl",
   "expert_thinking", "why_this_matters", "pattern_recognition", "decision_tree",
   "visual_mnemonic", "formula_breakdown", "diagram", "recall_questions",
-  "exam_strategy", "surgeon_lens", "other",
+  "exam_strategy", "surgeon_lens", "master_concepts", "worked_example",
+  "case_challenge", "quick_review", "complication_risk", "other",
 ]);
 export type NoteCardType = z.infer<typeof NoteCardTypeSchema>;
 
@@ -244,12 +245,12 @@ Choose anchors that fill these specific categories, not generic thesis/mechanism
 const PAGE_TYPE_CARD_GUIDANCE: Record<PageType, string> = {
   definition:        "e.g. Must Know, Why This Matters, Memory Hook, Connection Map",
   mechanism:          "e.g. Mechanism (with a flow diagram), Clinical Pearl, Expert Thinking",
-  math_example:       "e.g. Formula Breakdown, Worked example in Mechanism, Common Mistake, shortcut in DAT Trap",
+  math_example:       "e.g. Worked Example (full step-by-step solve), Formula Breakdown, Common Mistake, shortcut in DAT Trap",
   clinical:           "e.g. Clinical Reasoning, Clinical Pearl, Decision Tree, Common Mistake",
   comparison:         "e.g. Pattern Recognition (side-by-side), Connection Map, Common Mistake",
   figure_table:       "e.g. Diagram (recreate the figure as a card visual), Must Know, Why This Matters",
-  case_study:         "e.g. Procedure Flow, Clinical Reasoning, Expert Thinking, Decision Tree",
-  review_checkpoint:  "e.g. Recall Questions, Must Know — keep this page light, 1-2 cards max",
+  case_study:         "e.g. Case Challenge, Procedure Flow, Clinical Reasoning, Expert Thinking, Decision Tree",
+  review_checkpoint:  "e.g. Quick Review, Recall Questions, Must Know — keep this page light, 1-2 cards max",
   mixed:              "e.g. Must Know plus whichever 2-3 cards best match the dominant content",
 };
 
@@ -479,7 +480,7 @@ STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
   Default 2–4. Only exceed 4 if the page has multiple independent teaching sections.
   Quality over quantity. 2 sharp anchors beat 6 weak ones.
 
-══ 6-COLOR ROLE SYSTEM (2–5 anchors total) ══════════════════════════════════
+══ 8-COLOR ROLE SYSTEM (2–5 anchors total) ══════════════════════════════════
 
   anchorType "thesis"      🟡 Yellow — REQUIRED. The governing idea — what this page is fundamentally teaching.
                               Not a detail, not a list item — the one idea the whole page builds on.
@@ -494,6 +495,12 @@ STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
   anchorType "clinical_pearl" 💎 Cyan — A verbatim clinical/expert insight worth remembering on its own —
                               not the mechanism and not a trap. Use only when the page contains a real
                               "pearl" sentence (an expert aside, a high-value tip). Omit otherwise.
+  anchorType "memory_hook"  🪝 Pink   — A verbatim mnemonic, analogy, or memorable hook the page itself
+                              states — not one you invent. Use only when the page contains a real
+                              memory aid sentence (e.g. "Think of it like a lock and key"). Omit otherwise.
+  anchorType "anatomy"      🦴 Tan    — A verbatim anatomical structure/location statement (what connects
+                              to what, where something sits). Only for pages that actually describe
+                              anatomy — never force this onto a non-anatomical page.
 
 ROLE LOGIC (abstract — apply to every page, every book):
   🟡 thesis:      The shortest sentence that names what the page is fundamentally about.
@@ -591,6 +598,11 @@ Card types and the learning question each one answers:
 • recall_questions       — 2-3 short self-test questions for this page, body = the questions
 • exam_strategy          — "How should I approach this on a timed exam?" (triage/elimination/time-budget tactic, distinct from why_this_matters)
 • surgeon_lens           — "What could go wrong, and how would an expert catch or handle it?" (complication, failure mode, or a surgeon/practitioner's risk-aware read of the page)
+• master_concepts        — "What 2-3 foundational concepts does this entire page depend on?" (the prerequisite set, not the single most-critical fact — distinct from must_know)
+• worked_example         — "Walk through one full worked problem/example from start to finish." (a concrete step-by-step solve or applied case run to completion — distinct from mechanism's general causal explanation)
+• case_challenge         — "Here's a scenario — what would you do, and why?" (pose a short vignette/scenario as a challenge with the reasoning answer in body — distinct from clinical_reasoning's internal narration)
+• quick_review           — "30-second recap of this page — the one paragraph you'd reread the night before the exam." (a condensed statement-form recap, distinct from recall_questions' question format)
+• complication_risk      — "If I apply this concept/procedure wrong, what specifically goes wrong?" (a named, concrete failure consequence of misapplying THIS page's concept — distinct from dat_trap's exam-shortcut framing and surgeon_lens's broader expert-judgment framing)
 • other                  — anything genuinely useful that doesn't fit the above
 
 PER-PAGE-TYPE GUIDANCE (soft — examples of what fits each page shape, not a mandatory template):

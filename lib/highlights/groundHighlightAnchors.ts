@@ -85,11 +85,17 @@ const ROLE_KEYWORDS: Record<string, RegExp> = {
   confusionTrap:   /\b(however|unlike|not\b|except|contrast|confusion|mistake|caution|but\b|differ|whereas|warning|common error)\b/i,
   datFact:         /\b(exam|high.yield|test|board|key fact|important fact|remember|must know)\b/i,
   definition:      /\b(defined?|definition|means?|refers? to|known as|called|is the|are the|term)\b/i,
+  clinicalPearl:   /\b(pearl|clinically|in practice|tip|insight|experienced|seasoned)\b/i,
+  memoryHook:      /\b(think of|remember|mnemonic|analogy|like a|imagine|hook)\b/i,
+  keyAnatomy:      /\b(located|sits|connects? to|anatomy|structure|adjacent|borders?|attaches? to)\b/i,
 
   // Legacy AI anchorType aliases — grounding may still receive these from older callers.
-  thesis:      /\b(fundamental|primary|key|main|central|governing|principle|about|defines?|characterizes?)\b/i,
-  application: /\b(example|clinical|used|used in|seen in|applied|real.world|case|patient|practice|treatment)\b/i,
-  trap:        /\b(however|unlike|not\b|except|contrast|confusion|mistake|caution|but\b|differ|whereas|warning|common error)\b/i,
+  thesis:        /\b(fundamental|primary|key|main|central|governing|principle|about|defines?|characterizes?)\b/i,
+  application:   /\b(example|clinical|used|used in|seen in|applied|real.world|case|patient|practice|treatment)\b/i,
+  trap:          /\b(however|unlike|not\b|except|contrast|confusion|mistake|caution|but\b|differ|whereas|warning|common error)\b/i,
+  clinical_pearl: /\b(pearl|clinically|in practice|tip|insight|experienced|seasoned)\b/i,
+  memory_hook:    /\b(think of|remember|mnemonic|analogy|like a|imagine|hook)\b/i,
+  anatomy:        /\b(located|sits|connects? to|anatomy|structure|adjacent|borders?|attaches? to)\b/i,
 };
 
 // Split page text into candidate sentences for semantic recovery.

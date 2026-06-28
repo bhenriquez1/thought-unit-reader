@@ -27,7 +27,9 @@ export type VisualAnchorRole =
   | "keyDetail"       // important supporting detail / formula
   | "confusionTrap"   // common mistake or misconception
   | "datFact"         // DAT / high-yield exam fact
-  | "clinicalPearl";  // expert aside / high-value clinical insight
+  | "clinicalPearl"   // expert aside / high-value clinical insight
+  | "memoryHook"       // verbatim mnemonic/analogy the page states
+  | "keyAnatomy";      // anatomical structure/location statement
 
 export type VisualAnchorSourceField =
   | "pageThesis"
@@ -73,6 +75,8 @@ const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   definition:      6,
   clinicalPearl:   7,
   keyDetail:       8,
+  memoryHook:      9,
+  keyAnatomy:      10,
 };
 
 // Maps each VisualAnchorRole onto the closest-fit ParagraphKind, so the same
@@ -88,9 +92,9 @@ const VISUAL_ROLE_TO_KIND: Record<VisualAnchorRole, ParagraphKind> = {
   exampleEvidence: "application",
   definition:      "definition",
   clinicalPearl:   "clinical",
-  // Matches PureReaderView's canonical anchorTypeToKind() mapping, so a
-  // keyDetail anchor lands in the same left-panel kindGroup either way.
-  keyDetail:       "definition",
+  keyDetail:       "keyDetail",
+  memoryHook:      "memoryAnchor",
+  keyAnatomy:      "keyAnatomy",
 };
 
 function rolePriority(role: VisualAnchorRole, presetId: string): number {
@@ -110,6 +114,8 @@ function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
     case "example_step": return "whyThisMatters";
     case "conclusion":   return "pageThesis";
     case "clinical_pearl": return "clinicalPearl";
+    case "memory_hook":  return "quickMemory";
+    case "anatomy":      return "keyMechanism";
     default:             return "pageThesis";
   }
 }
@@ -126,6 +132,8 @@ function anchorTypeToVisualRole(anchorType: string): VisualAnchorRole {
     case "example_step": return "exampleEvidence";
     case "conclusion":   return "keyDetail";
     case "clinical_pearl": return "clinicalPearl";
+    case "memory_hook":  return "memoryHook";
+    case "anatomy":      return "keyAnatomy";
     default:             return "keyDetail";
   }
 }

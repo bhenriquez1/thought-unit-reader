@@ -25,6 +25,37 @@ import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, isUltraNotePe
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
+import { tokenizeWords } from "@/lib/speech/wordSync";
+
+// Marks the word at activeSpokenWord.wordIndex within this card's own text — same
+// approach as ThoughtUnitNavigator.tsx's renderSnippetWithActiveWord, kept local here
+// since each consumer tokenizes its own (independently-sourced) display text.
+function renderTextWithActiveWord(
+  text: string,
+  activeSpokenWord: { anchorId: string | null; wordIndex: number; word: string } | null | undefined,
+  anchorId: string | null | undefined,
+): React.ReactNode {
+  if (!activeSpokenWord || !anchorId || activeSpokenWord.anchorId !== anchorId) return text;
+  const words = tokenizeWords(text);
+  const target = words[activeSpokenWord.wordIndex];
+  if (!target) return text;
+  return (
+    <>
+      {text.slice(0, target.start)}
+      <mark
+        style={{
+          background: "rgba(253,224,71,0.55)",
+          color: "inherit",
+          borderRadius: "2px",
+          padding: "0 1px",
+        }}
+      >
+        {text.slice(target.start, target.end)}
+      </mark>
+      {text.slice(target.end)}
+    </>
+  );
+}
 
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
@@ -238,6 +269,10 @@ interface RightPanelProps {
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
   onRoleLabelMap?: (map: Map<string, string>) => void;
+  /** Word-level karaoke sync — the same shared state PureReaderView's PDF overlay and
+   *  ThoughtUnitNavigator already consume. RightPanel's own evidence cards mark the
+   *  active word when their anchor.id matches activeSpokenWord.anchorId. */
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   onNoteSaved?: () => void;
   onStudySetGenerated?: (setId: string) => void;
   /** Called when synthesis resolves with AI-selected highlight anchors for the left panel */
@@ -265,6 +300,10 @@ interface RightPanelProps {
   /** Fires on every karaoke word-index change, for every speech mode — drives the
    *  live word box in the PDF and the marked word in the active LeftPanel card. */
   onSpeechActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
+  /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
+   *  paint-budgeted effectiveHighlightTargets) — forwarded to the inline
+   *  StudySpeechPanel so "Highlight Only" mode reads only what's visible. */
+  highlightedAnchorTexts?: string[];
   /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
@@ -499,6 +538,7 @@ export function RightPanel({
   resolveEvidenceId,
   focusedEvidenceId,
   onRoleLabelMap,
+  activeSpokenWord,
   onNoteSaved,
   onStudySetGenerated,
   onSynthHighlightsReady,
@@ -513,6 +553,7 @@ export function RightPanel({
   onSpeechSnippetFocus,
   onSpeechPlayStateChange,
   onSpeechActiveWordChange,
+  highlightedAnchorTexts,
   onSpeechExplainSegment,
   onOpenWhiteboard,
   onOpenExplainStep,
@@ -1314,6 +1355,7 @@ export function RightPanel({
             onPlayStateChange={onSpeechPlayStateChange}
             onActiveWordChange={onSpeechActiveWordChange}
             onExplainSegment={onSpeechExplainSegment}
+            highlightedAnchorTexts={highlightedAnchorTexts}
             primary
           />
           <div className="grid grid-cols-2 gap-2">
@@ -1455,6 +1497,7 @@ export function RightPanel({
                 retrySynthesis={retrySynthesis}
                 studyModel={studyModel}
                 focusedEvidenceId={focusedEvidenceId}
+                activeSpokenWord={activeSpokenWord}
                 onEvidenceClick={onEvidenceClick}
                 onOpenThoughtUnit={onOpenThoughtUnit}
               />
@@ -1830,6 +1873,7 @@ function UltraView({
   retrySynthesis,
   studyModel,
   focusedEvidenceId,
+  activeSpokenWord,
   onEvidenceClick,
   onOpenThoughtUnit,
 }: {
@@ -1851,6 +1895,8 @@ function UltraView({
   studyModel?: CurrentPageStudyModel | null;
   /** Currently focused anchor ID — highlights the matching study card */
   focusedEvidenceId?: string | null;
+  /** Word-level karaoke sync — marks the active word within the focused card's text */
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   /** Called when a study card is clicked — focuses the matching left-panel highlight */
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   /** Called when the user wants to expand a thought-unit card into the Recall Lab v2 box layout */
@@ -2074,7 +2120,7 @@ function UltraView({
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-blue-300/70`}>
                   💡 Why This Matters
                 </div>
-                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.whyItMatters}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{renderTextWithActiveWord(synth.whyItMatters, isFocused ? activeSpokenWord : null, anchor?.id)}</p>
                 {anchor && onOpenThoughtUnit && (
                   <button
                     type="button"
@@ -2102,7 +2148,7 @@ function UltraView({
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-emerald-300/70`}>
                   ⚙️ Key Mechanism
                 </div>
-                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.keyMechanism}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{renderTextWithActiveWord(synth.keyMechanism, isFocused ? activeSpokenWord : null, anchor?.id)}</p>
                 {anchor && onOpenThoughtUnit && (
                   <button
                     type="button"
@@ -2130,7 +2176,7 @@ function UltraView({
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-red-300/70`}>
                   ⚠️ Common Confusion
                 </div>
-                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.commonConfusion}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{renderTextWithActiveWord(synth.commonConfusion, isFocused ? activeSpokenWord : null, anchor?.id)}</p>
                 {anchor && onOpenThoughtUnit && (
                   <button
                     type="button"
@@ -2158,7 +2204,7 @@ function UltraView({
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-purple-300/70`}>
                   🧠 Quick Memory
                 </div>
-                <p className={`${d.bodyText} ${d.lineHeight} italic text-white/85`}>{synth.memoryAnchor}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} italic text-white/85`}>{renderTextWithActiveWord(synth.memoryAnchor, isFocused ? activeSpokenWord : null, anchor?.id)}</p>
               </div>
               );
             })()}

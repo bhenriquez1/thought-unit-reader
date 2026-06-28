@@ -22,13 +22,34 @@ export interface ThoughtUnitNavigatorEntry {
   id: string;
   text: string;
   kind: ParagraphKind;
-  /** Source page — not rendered yet, carried through so future UI (e.g. cross-page search) doesn't need a data-shape change. */
+  /** Source page — rendered in each card's meta row. */
   page?: number;
   /** Anchor score/confidence, when the pipeline provides one. */
   confidence?: number;
   /** AI-assigned 1-5 importance (5 = "Master This") — drives this card's star badge,
    *  layered on top of (not replacing) the group-level ordinal tier above it. */
   priorityTier?: number;
+  /** ≤10-word AI rationale ("why a professor would underline this") — rendered as the
+   *  card's one-line explanation when present, in place of re-showing the full snippet twice. */
+  reason?: string;
+  /** Short human-readable heading for the card. Falls back to a derived title from `text`
+   *  when absent — no entry currently provides this field, but future AI schema additions can. */
+  title?: string;
+  /** Best-effort "Lines X–Y" locator estimated from the anchor's character offset within the
+   *  page text — PDF.js exposes no per-line geometry through this pipeline, so this is an
+   *  approximation (assumes ~90 chars/line), not an exact line count. */
+  lineRange?: string;
+}
+
+// Best-effort short heading derived from a thought unit's verbatim text when no
+// AI-authored title is available — first clause/sentence, word-boundary truncated.
+function deriveCardTitle(text: string, maxLen = 60): string {
+  const firstClause = text.split(/(?<=[.!?])\s/)[0] ?? text;
+  const trimmed = firstClause.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  const cut = trimmed.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim() + "…";
 }
 
 // Colors stay constant across domain presets — only the label text changes
@@ -44,6 +65,9 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   clinical:    { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
   formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
   dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
+  keyDetail:   { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+  memoryAnchor: { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+  keyAnatomy:  { color: "#c4915c", bg: "rgba(196,145,92,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
@@ -254,16 +278,41 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <span
-                    className="text-[10.5px] leading-snug text-white/80"
+                    className="text-[9px] font-semibold uppercase tracking-wide pr-6 truncate"
+                    style={{ color: meta.color }}
+                    data-testid="thought-unit-category"
+                  >
+                    {meta.label}
+                  </span>
+                  <span
+                    className="text-[10.5px] font-semibold leading-snug text-white/90 truncate"
+                    data-testid="thought-unit-title"
+                  >
+                    {entry.title ?? deriveCardTitle(entry.text)}
+                  </span>
+                  <span
+                    className="text-[10px] leading-snug text-white/70"
                     style={{
                       display: "-webkit-box",
-                      WebkitLineClamp: 3,
+                      WebkitLineClamp: 2,
                       WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}
                   >
                     {renderSnippetWithActiveWord(entry.text, focused ? activeSpokenWord : null, entry.id)}
                   </span>
+                  {entry.reason && (
+                    <span className="text-[9px] italic leading-snug text-white/45" data-testid="thought-unit-explanation">
+                      {entry.reason}
+                    </span>
+                  )}
+                  {(entry.page !== undefined || entry.lineRange) && (
+                    <span className="text-[8.5px] text-white/35 tracking-tight" data-testid="thought-unit-location">
+                      {entry.page !== undefined ? `Page ${entry.page}` : null}
+                      {entry.page !== undefined && entry.lineRange ? " · " : null}
+                      {entry.lineRange ? `Lines ${entry.lineRange}` : null}
+                    </span>
+                  )}
                   {(onExplain || onOpenRecall || onOpenNote) && (
                     <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
                       {onOpenNote && (

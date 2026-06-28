@@ -5,9 +5,23 @@
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
-import { DAT_PATTERN_MODULES, PatSubtype, getModulesBySection } from "@/lib/apex/datApex.seed";
-import { generateNextQuestion, scaleDifficulty, type GeneratorMode, type GeneratorDifficulty, type GeneratorProfile } from "@/lib/apex/datApex.generator";
+import { DAT_PATTERN_MODULES, PatSubtype, PatternModule, getModulesBySection } from "@/lib/apex/datApex.seed";
+import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
+import { DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
+import type { DifficultyLevel, EngineQuestion, QuestionType } from "@/lib/examEngine/types";
 import type { ApexSection } from "@/lib/apex/datApexTypes";
+
+// Training Arena has no real uploaded book — pattern modules are AI-grounded
+// directly from their own pattern/decisionRule/mechanism/trap text instead.
+const DAT_SEED_BOOK_ID = "dat-seed";
+
+function buildModuleConceptText(m: PatternModule): string {
+  return `${m.name}\nPattern: ${m.pattern}\nDecision Rule: ${m.decisionRule}\nMechanism: ${m.mechanism}\nTrap: ${m.trap}`;
+}
+
+function legacyDifficultyNumber(d: DifficultyLevel): number {
+  return d === "mastery" ? 9 : d === "simulation" ? 6 : 3;
+}
 
 // ---------------------------------------------------------------------------
 // Subject config
@@ -228,9 +242,9 @@ const PAT_SUBTYPES: { id: PatSubtype; label: string }[] = [
 
 function GenerateTab({ subject }: { subject: Subject }) {
   const [datPlus, setDatPlus] = useState(false);
-  const [mode, setMode] = useState<GeneratorMode>("pattern_drill");
+  const [questionType, setQuestionType] = useState<QuestionType>("application");
   const [generating, setGenerating] = useState(false);
-  const [activeQuestion, setActiveQuestion] = useState<import("@/lib/apex/datApexTypes").GeneratedQuestion | null>(null);
+  const [activeQuestion, setActiveQuestion] = useState<EngineQuestion | null>(null);
   const [selectedPatternId, setSelectedPatternId] = useState<string>("");
   const [patSubtype, setPatSubtype] = useState<PatSubtype>("keyhole");
   const [selectedAnswer, setSelectedAnswer] = useState<string>("");
@@ -247,13 +261,19 @@ function GenerateTab({ subject }: { subject: Subject }) {
   } = useApexEngineStore();
 
   const subjectModules = getModulesBySection(subject.id as ApexSection);
-  const latestPatternId = selectedPatternId || subjectModules[0]?.id || "";
+  const patFilteredModules = subject.id === "pat"
+    ? subjectModules.filter((m) => m.patSubtype === patSubtype)
+    : subjectModules;
+  const modulePool = patFilteredModules.length ? patFilteredModules : subjectModules;
+  const latestPatternId = selectedPatternId || modulePool[0]?.id || "";
+  const activeModule =
+    modulePool.find((m) => m.id === latestPatternId) ?? modulePool[0] ?? DAT_PATTERN_MODULES[0];
 
   const currentStorePattern = storePatterns.find((p) => p.section === subject.id && p.timesSeen > 0);
   const accuracy = currentStorePattern && currentStorePattern.timesSeen > 0
     ? currentStorePattern.timesCorrect / currentStorePattern.timesSeen
     : 0.5;
-  const difficulty = scaleDifficulty(5, { accuracy, datPlus }) as GeneratorDifficulty;
+  const difficulty: DifficultyLevel = datPlus ? "mastery" : accuracy >= 0.75 ? "simulation" : "foundation";
 
   // Session tracking
   const sessionIdRef = useRef<string | null>(null);
@@ -278,7 +298,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     // Start a session on first question
     if (!sessionIdRef.current) {
       sessionIdRef.current = startSession("pattern_drill", subject.id as ApexSection);
@@ -288,66 +308,78 @@ function GenerateTab({ subject }: { subject: Subject }) {
     setGenerating(true);
     setSelectedAnswer("");
     setRevealed(false);
-    setTimingStart(Date.now());
 
-    const profile: GeneratorProfile = {
-      section: subject.id as ApexSection,
-      mode,
-      difficulty,
-      datPlus,
-      targetPatternIds: latestPatternId ? [latestPatternId] : undefined,
-      patSubtype: subject.id === "pat" ? patSubtype : undefined,
-    };
-    const q = generateNextQuestion(profile);
-    setActiveQuestion(q);
+    try {
+      const questions = await getOrGenerateQuestions({
+        examProfileId: DAT_EXAM_PROFILE_ID,
+        bookId: DAT_SEED_BOOK_ID,
+        bookTitle: "DAT Pattern Modules",
+        conceptId: activeModule.id,
+        conceptText: buildModuleConceptText(activeModule),
+        topic: activeModule.name,
+        section: subject.id,
+        questionType,
+        difficulty,
+        count: 6,
+      });
+      const q = questions[Math.floor(Math.random() * questions.length)];
+      if (!q) {
+        setActiveQuestion(null);
+        return;
+      }
+      setActiveQuestion(q);
+      setTimingStart(Date.now());
 
-    saveGeneratedQuestion({
-      section: subject.id as ApexSection,
-      patternId: latestPatternId || q.patternId,
-      difficulty,
-      datPlus,
-      trapType: q.trapType,
-      question: q.question,
-      choices: q.choices,
-      answer: q.answer,
-      explanation: q.explanation,
-      pdrm: q.pdrm,
-    });
-    setGenerating(false);
-  }, [latestPatternId, subject.id, difficulty, datPlus, mode, patSubtype, saveGeneratedQuestion, startSession]);
+      saveGeneratedQuestion({
+        section: subject.id as ApexSection,
+        patternId: activeModule.id,
+        difficulty: legacyDifficultyNumber(difficulty),
+        datPlus,
+        trapType: q.trapType,
+        question: q.stem,
+        choices: q.choices,
+        answer: q.choices[q.correctIndex],
+        explanation: q.whyCorrect,
+        pdrm: { pattern: activeModule.pattern, decisionRule: activeModule.decisionRule, trap: activeModule.trap },
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }, [activeModule, subject.id, difficulty, datPlus, questionType, saveGeneratedQuestion, startSession]);
 
   const handleSubmit = () => {
     if (!selectedAnswer || !activeQuestion || !timingStart) return;
     const timeSeconds = Math.round((Date.now() - timingStart) / 1000);
-    const correct = selectedAnswer === activeQuestion.answer;
+    const correctChoice = activeQuestion.choices[activeQuestion.correctIndex];
+    const correct = selectedAnswer === correctChoice;
     setRevealed(true);
 
-    const pid = latestPatternId || activeQuestion.patternId;
+    const pid = activeModule.id;
 
     recordAttempt({
-      questionId: `gen-${Date.now()}`,
+      questionId: activeQuestion.id,
       section: subject.id,
       patternId: pid,
       correct,
       selectedAnswer,
       timeSeconds,
-      trapTriggered: !correct ? activeQuestion.pdrm.trap : undefined,
+      trapTriggered: !correct ? activeQuestion.trapType : undefined,
     });
 
     // Log mistake with full PDRM breakdown when wrong
     if (!correct) {
       addMistake({
-        questionId: `gen-${Date.now()}`,
+        questionId: activeQuestion.id,
         section: subject.id as ApexSection,
         patternId: pid,
         userAnswer: selectedAnswer,
-        correctAnswer: activeQuestion.answer,
+        correctAnswer: correctChoice,
         reasonMissed: activeQuestion.trapType ? "trap_fell_for" : "wrong_rule",
         pdrm: {
-          pattern: activeQuestion.pdrm.pattern,
-          decisionRule: activeQuestion.pdrm.decisionRule,
-          reason: activeQuestion.explanation,
-          miss: activeQuestion.pdrm.trap || "Selected wrong answer",
+          pattern: activeModule.pattern,
+          decisionRule: activeModule.decisionRule,
+          reason: activeQuestion.whyCorrect,
+          miss: activeQuestion.trapType || "Selected wrong answer",
         },
       });
     }
@@ -357,7 +389,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
     stats.total += 1;
     if (correct) stats.correct += 1;
     if (pid) stats.patternsTouched.add(pid);
-    if (!correct && activeQuestion.pdrm.trap) stats.trapsTriggered.add(activeQuestion.pdrm.trap);
+    if (!correct && activeQuestion.trapType) stats.trapsTriggered.add(activeQuestion.trapType);
     setSessionTotal(stats.total);
     setSessionCorrect(stats.correct);
   };
@@ -386,12 +418,12 @@ function GenerateTab({ subject }: { subject: Subject }) {
       {/* Mode + pattern selector row */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-wrap gap-1.5">
-          {subjectModules.slice(0, subject.id === "pat" ? 0 : 4).map((m) => (
+          {modulePool.slice(0, subject.id === "pat" ? 0 : 4).map((m) => (
             <button
               key={m.id}
               onClick={() => setSelectedPatternId(m.id)}
               className={`px-2 py-1 rounded text-xs border transition-colors ${
-                (selectedPatternId || subjectModules[0]?.id) === m.id
+                (selectedPatternId || modulePool[0]?.id) === m.id
                   ? `${subject.border} bg-white/10 text-white`
                   : "border-gray-600/30 text-gray-400 hover:text-white"
               }`}
@@ -412,19 +444,19 @@ function GenerateTab({ subject }: { subject: Subject }) {
         </button>
       </div>
 
-      {/* Mode selector */}
+      {/* Question-type selector */}
       <div className="flex flex-wrap gap-1.5">
-        {(["pattern_drill", "trap_training", "decision", "recognition"] as GeneratorMode[]).map((m) => (
+        {(["application", "recognition", "decision", "trap_training", "recall"] as QuestionType[]).map((t) => (
           <button
-            key={m}
-            onClick={() => setMode(m)}
+            key={t}
+            onClick={() => setQuestionType(t)}
             className={`px-2 py-1 rounded text-[11px] border transition-colors ${
-              mode === m
+              questionType === t
                 ? `${subject.border} bg-white/10 text-white`
                 : "border-gray-600/30 text-gray-500 hover:text-gray-300"
             }`}
           >
-            {m.replace("_", " ")}
+            {t.replace("_", " ")}
           </button>
         ))}
       </div>
@@ -451,11 +483,11 @@ function GenerateTab({ subject }: { subject: Subject }) {
       {/* Question */}
       {activeQuestion && (
         <div className="bg-black/30 rounded-lg p-4 border border-gray-600/30 space-y-3">
-          <p className="text-sm text-white leading-relaxed">{activeQuestion.question}</p>
+          <p className="text-sm text-white leading-relaxed">{activeQuestion.stem}</p>
 
           <div className="space-y-2">
             {activeQuestion.choices.map((choice, i) => {
-              const isCorrect = choice === activeQuestion.answer;
+              const isCorrect = i === activeQuestion.correctIndex;
               const isSelected = choice === selectedAnswer;
               let cls = "border border-gray-600/30 bg-black/20 text-gray-300 hover:bg-white/10";
               if (revealed) {
@@ -487,31 +519,36 @@ function GenerateTab({ subject }: { subject: Subject }) {
             </button>
           )}
 
-          {revealed && (
-            <div className="bg-black/20 rounded-lg p-3 border border-gray-600/20 space-y-2">
-              <p className="text-xs text-gray-300">{activeQuestion.explanation}</p>
-              <div className="grid grid-cols-3 gap-2 text-[11px]">
-                <div>
-                  <span className="text-purple-400">Pattern</span>
-                  <p className="text-gray-400">{activeQuestion.pdrm.pattern}</p>
+          {revealed && (() => {
+            const selIdx = activeQuestion.choices.indexOf(selectedAnswer);
+            const whyWrong = selIdx >= 0 && selIdx !== activeQuestion.correctIndex ? activeQuestion.whyWrong[selIdx] : null;
+            return (
+              <div className="bg-black/20 rounded-lg p-3 border border-gray-600/20 space-y-2">
+                <p className="text-xs text-gray-300">{activeQuestion.whyCorrect}</p>
+                {whyWrong && <p className="text-xs text-rose-300">{whyWrong}</p>}
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-purple-400">Pattern</span>
+                    <p className="text-gray-400">{activeModule.pattern}</p>
+                  </div>
+                  <div>
+                    <span className="text-blue-400">Decision Rule</span>
+                    <p className="text-gray-400">{activeModule.decisionRule}</p>
+                  </div>
+                  <div>
+                    <span className="text-rose-400">Trap</span>
+                    <p className="text-gray-400">{activeQuestion.trapType || activeModule.trap}</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-blue-400">Decision Rule</span>
-                  <p className="text-gray-400">{activeQuestion.pdrm.decisionRule}</p>
-                </div>
-                <div>
-                  <span className="text-rose-400">Trap</span>
-                  <p className="text-gray-400">{activeQuestion.pdrm.trap}</p>
-                </div>
+                <button
+                  onClick={handleGenerate}
+                  className="w-full py-1.5 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 text-xs transition-colors"
+                >
+                  Generate Another
+                </button>
               </div>
-              <button
-                onClick={handleGenerate}
-                className="w-full py-1.5 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 text-xs transition-colors"
-              >
-                Generate Another
-              </button>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>

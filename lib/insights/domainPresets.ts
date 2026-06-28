@@ -14,7 +14,7 @@ export const UNIVERSAL_KIND_LABELS: Record<ParagraphKind, string> = {
   mechanism: "Mechanism",
   application: "Example",
   trap: "Trap",
-  memoryAnchor: "Memory Anchor",
+  memoryAnchor: "Memory Hook",
   definition: "Definition",
   clinical: "Applied Note",
   comparison: "Comparison",
@@ -22,6 +22,8 @@ export const UNIVERSAL_KIND_LABELS: Record<ParagraphKind, string> = {
   reference: "Reference",
   filler: "Filler",
   dat_fact: "High Yield",
+  keyDetail: "Key Detail",
+  keyAnatomy: "Key Anatomy",
   unknown: "Other",
 };
 
@@ -80,7 +82,10 @@ export const UNIVERSAL_PRESET: DomainPreset = {
     { id: "danger_zone", label: "Danger Zone", kinds: ["trap"] },
     { id: "decision_point", label: "Decision Point", kinds: ["application", "comparison"] },
     { id: "pearl", label: "Pearl", kinds: ["clinical"] },
-    { id: "supporting_detail", label: "Supporting Detail", kinds: ["memoryAnchor", "reference", "filler", "dat_fact", "unknown"] },
+    { id: "key_detail", label: "Key Detail", kinds: ["keyDetail"] },
+    { id: "memory_hook", label: "Memory Hook", kinds: ["memoryAnchor"] },
+    { id: "key_anatomy", label: "Key Anatomy", kinds: ["keyAnatomy"] },
+    { id: "supporting_detail", label: "Supporting Detail", kinds: ["reference", "filler", "dat_fact", "unknown"] },
   ],
 };
 
@@ -111,7 +116,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "mechanisms", label: "Mechanisms", kinds: ["mechanism"] },
       { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
       { id: "traps", label: "Traps", kinds: ["trap"] },
-      { id: "high_yield_facts", label: "High-Yield Facts", kinds: ["dat_fact", "formula"] },
+      { id: "high_yield_facts", label: "High-Yield Facts", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -130,10 +135,10 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       dat_fact: "Complication",
     },
     kindGroups: [
-      { id: "anatomy", label: "Anatomy", kinds: ["definition"] },
+      { id: "anatomy", label: "Anatomy", kinds: ["definition", "keyAnatomy"] },
       { id: "procedure_steps", label: "Procedure Steps", kinds: ["mechanism"] },
       { id: "danger_zones", label: "Danger Zones", kinds: ["trap"] },
-      { id: "complications", label: "Complications", kinds: ["dat_fact", "formula"] },
+      { id: "complications", label: "Complications", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
       { id: "pearls", label: "Pearls", kinds: ["thesis", "application", "clinical"] },
     ],
   },
@@ -156,8 +161,8 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "normal", label: "Normal", kinds: ["thesis", "definition"] },
       { id: "procedures", label: "Procedures", kinds: ["mechanism", "application", "clinical"] },
       { id: "abnormal_emergency", label: "Abnormal / Emergency", kinds: ["trap"] },
-      { id: "memory_items", label: "Memory Items", kinds: ["dat_fact"] },
-      { id: "performance_calculations", label: "Performance Calculations", kinds: ["formula"] },
+      { id: "memory_items", label: "Memory Items", kinds: ["dat_fact", "memoryAnchor"] },
+      { id: "performance_calculations", label: "Performance Calculations", kinds: ["formula", "keyDetail"] },
     ],
   },
   {
@@ -179,9 +184,9 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
     kindGroups: [
       { id: "diagnosis", label: "Diagnosis", kinds: ["thesis"] },
       { id: "treatment_steps", label: "Treatment Steps", kinds: ["mechanism"] },
-      { id: "materials", label: "Materials", kinds: ["definition"] },
+      { id: "materials", label: "Materials", kinds: ["definition", "keyAnatomy"] },
       { id: "complications", label: "Complications", kinds: ["trap"] },
-      { id: "clinical_pearls", label: "Clinical Pearls", kinds: ["dat_fact", "formula", "application", "clinical"] },
+      { id: "clinical_pearls", label: "Clinical Pearls", kinds: ["dat_fact", "formula", "application", "clinical", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -205,7 +210,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "reaction_mechanisms", label: "Reaction Mechanisms", kinds: ["mechanism"] },
       { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
       { id: "common_errors", label: "Common Errors", kinds: ["trap"] },
-      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula"] },
+      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -229,7 +234,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "derivations", label: "Derivations", kinds: ["mechanism"] },
       { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
       { id: "common_mistakes", label: "Common Mistakes", kinds: ["trap"] },
-      { id: "key_constants", label: "Key Constants", kinds: ["dat_fact", "formula"] },
+      { id: "key_constants", label: "Key Constants", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -253,7 +258,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "pathways", label: "Pathways & Function", kinds: ["mechanism"] },
       { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
       { id: "common_errors", label: "Common Errors", kinds: ["trap"] },
-      { id: "key_facts", label: "Key Facts / Structures", kinds: ["dat_fact", "formula"] },
+      { id: "key_facts", label: "Key Facts / Structures", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -277,7 +282,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "proof_steps", label: "Proof Steps", kinds: ["mechanism"] },
       { id: "worked_examples", label: "Worked Examples", kinds: ["application", "clinical"] },
       { id: "common_mistakes", label: "Common Mistakes", kinds: ["trap"] },
-      { id: "key_identities", label: "Key Equations", kinds: ["dat_fact", "formula"] },
+      { id: "key_identities", label: "Key Equations", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -302,7 +307,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "plot_events", label: "Plot Events", kinds: ["mechanism"] },
       { id: "character_actions", label: "Character Actions", kinds: ["application", "clinical"] },
       { id: "foreshadowing", label: "Foreshadowing & Symbolism", kinds: ["trap", "dat_fact"] },
-      { id: "memory_anchors", label: "Key Moments", kinds: ["formula", "memoryAnchor"] },
+      { id: "memory_anchors", label: "Key Moments", kinds: ["formula", "memoryAnchor", "keyDetail"] },
     ],
   },
   {
@@ -326,7 +331,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "algorithm_steps", label: "Algorithm Steps", kinds: ["mechanism"] },
       { id: "applications", label: "Applications", kinds: ["application", "clinical"] },
       { id: "common_bugs", label: "Common Bugs", kinds: ["trap"] },
-      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula"] },
+      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -350,7 +355,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       { id: "legal_tests", label: "Legal Tests", kinds: ["mechanism"] },
       { id: "terms", label: "Terms", kinds: ["definition"] },
       { id: "common_pitfalls", label: "Common Pitfalls", kinds: ["trap"] },
-      { id: "key_holdings", label: "Key Holdings", kinds: ["dat_fact", "formula", "application", "clinical"] },
+      { id: "key_holdings", label: "Key Holdings", kinds: ["dat_fact", "formula", "application", "clinical", "keyDetail", "memoryAnchor"] },
     ],
   },
   {
@@ -370,11 +375,11 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
       clinical: "Patient Care",
     },
     kindGroups: [
-      { id: "concepts", label: "Concepts", kinds: ["thesis", "definition"] },
+      { id: "concepts", label: "Concepts", kinds: ["thesis", "definition", "keyAnatomy"] },
       { id: "mechanisms_of_action", label: "Mechanisms of Action", kinds: ["mechanism"] },
       { id: "patient_care", label: "Patient Care", kinds: ["application", "clinical"] },
       { id: "nursing_alerts", label: "Nursing Alerts", kinds: ["trap"] },
-      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula"] },
+      { id: "key_facts", label: "Key Facts", kinds: ["dat_fact", "formula", "keyDetail", "memoryAnchor"] },
     ],
   },
 ];

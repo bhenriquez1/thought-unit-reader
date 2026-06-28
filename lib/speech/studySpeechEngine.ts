@@ -24,7 +24,10 @@ export type StudySpeechMode =
 export type SpeechSegmentRole =
   | "thesis"
   | "conceptBlock"
-  | "visualAnchor";
+  | "visualAnchor"
+  /** Guided mode's "Question" stage — a synthetic self-check prompt inserted
+   *  after the Master and Trap stages, not a verbatim source anchor. */
+  | "checkpoint";
 
 export interface SpeechSegment {
   id: string;
@@ -171,6 +174,8 @@ const ANCHOR_ROLE_LABEL: Record<VisualAnchorRole, string> = {
   confusionTrap:   "Watch Out",
   datFact:         "High-Yield Fact",
   clinicalPearl:   "Clinical Pearl",
+  memoryHook:      "Memory Hook",
+  keyAnatomy:      "Key Anatomy",
 };
 
 const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
@@ -182,6 +187,8 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   confusionTrap:   0.85,
   datFact:         0.92,
   clinicalPearl:   0.92,
+  memoryHook:      0.95,
+  keyAnatomy:      0.92,
 };
 
 // LeftPanel order — same groupThoughtUnits(entries, presetId) call
@@ -217,6 +224,16 @@ function sortInPageOrder(anchors: VisualAnchor[], activePageText: string): Visua
     .map((x) => x.anchor);
 }
 
+// VisualAnchor.id is reassigned independently every time RightPanel rebuilds its
+// own CurrentPageStudyModel, so it cannot be compared against the PDF overlay's
+// evidenceRefId (assigned by groundHighlightAnchors.ts/buildHighlightTargets in
+// PureReaderView). Text identity is the only stable cross-pipeline key — same
+// normalization the rest of the codebase already uses to dedup anchor text
+// (see currentPageStudyModel.ts's seenAnchorKeys).
+function anchorTextKey(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main builder
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +243,11 @@ export function buildSpeechScript(
   mode: StudySpeechMode,
   presetId: string = "universal",
   activePageText: string = "",
+  /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
+   *  paint-budgeted effectiveHighlightTargets) — "highlights" mode reads only
+   *  these. Undefined/empty falls back to every visual anchor so callers that
+   *  haven't wired this yet (or pages where nothing painted) don't go silent. */
+  highlightedAnchorTexts?: string[],
 ): SpeechSegment[] {
   const segments: SpeechSegment[] = [];
 
@@ -284,23 +306,55 @@ export function buildSpeechScript(
     return segments;
   }
 
-  // ── Guided: drive directly off the LeftPanel's own grouping — same
-  // groupThoughtUnits(entries, presetId) call ThoughtUnitNavigator/ThoughtRoadmap
-  // use, so Guided speech reads in LeftPanel order, not an independently
-  // computed RightPanel order. Tier is assigned per GROUP (every anchor in
-  // "Core Ideas" shares one star tier), matching the left panel's semantics
-  // exactly instead of a per-item index that drifted from it.
+  // ── Guided: explicit named pedagogical sequence — Master → Pause → Explain →
+  // Mechanism → Pearl → Trap → Question → Continue — instead of the LeftPanel's
+  // own kind-grouped section order. Every page is taught the same way: lead
+  // with what to master, then how it works, then the clinical payoff, then the
+  // danger zone, then check understanding before moving on. Pause/Explain are
+  // not separate segments — they're the existing requiresConfirm pause-and-wait
+  // (StudySpeechPanel's teach-loop UI), where the reader explains by clicking
+  // 💬 Explain during the pause instead of Continue. Question is a synthetic
+  // checkpoint segment (role "checkpoint"), not a verbatim source anchor.
   if (mode === "guided") {
     if (segments[0]) {
       segments[0].tier = getImportanceTier(0);
       segments[0].pauseAfterMs = 600;
       segments[0].requiresConfirm = true;
     }
-    const groups = groupThoughtUnits<VisualAnchor>(model.visualAnchors, presetId);
+
+    const allAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
+    const STAGE_KINDS: Record<string, string[]> = {
+      master:    ["thesis", "definition"],
+      mechanism: ["mechanism", "application", "formula", "comparison", "keyDetail", "keyAnatomy"],
+      pearl:     ["clinical"],
+      trap:      ["trap"],
+    };
+    const claimedIds = new Set<string>();
+    const claim = (kinds: string[]) =>
+      allAnchors.filter((a) => {
+        if (claimedIds.has(a.id) || !kinds.includes(a.kind)) return false;
+        claimedIds.add(a.id);
+        return true;
+      });
+    const stageOrder: Array<{ stage: string; anchors: VisualAnchor[] }> = [
+      { stage: "master",    anchors: claim(STAGE_KINDS.master) },
+      { stage: "mechanism", anchors: claim(STAGE_KINDS.mechanism) },
+      { stage: "pearl",     anchors: claim(STAGE_KINDS.pearl) },
+      { stage: "trap",      anchors: claim(STAGE_KINDS.trap) },
+    ];
+    // Memory hooks / dat facts / references / anything the 4 named stages don't
+    // cover — read last, so Guided never silently drops an anchor the
+    // LeftPanel itself shows.
+    const remainder = allAnchors.filter((a) => !claimedIds.has(a.id));
+    if (remainder.length) stageOrder.push({ stage: "supporting", anchors: remainder });
+
+    const STAGE_TIER_INDEX: Record<string, number> = { master: 0, mechanism: 1, pearl: 2, trap: 3, supporting: 4 };
+
     let flatIndex = 0;
-    groups.forEach((group, groupIndex) => {
-      const tier = getImportanceTier(groupIndex);
-      group.items.forEach((anchor) => {
+    stageOrder.forEach(({ stage, anchors }) => {
+      if (!anchors.length) return;
+      const tier = getImportanceTier(STAGE_TIER_INDEX[stage] ?? 4);
+      anchors.forEach((anchor) => {
         const isTopAnchor = flatIndex === 0;
         const rawText = isTopAnchor ? `Most important on this page: ${anchor.exactText}` : anchor.exactText;
         push(
@@ -311,19 +365,35 @@ export function buildSpeechScript(
           tier.stars >= 4 ? Math.min(ANCHOR_ROLE_RATE[anchor.role] ?? 0.95, 0.88) : (ANCHOR_ROLE_RATE[anchor.role] ?? 0.95),
           anchor.id,
           tier,
-          tier.stars >= 4 ? 700 : 250,
-          tier.stars >= 4 || anchor.kind === "trap" || anchor.kind === "thesis" || anchor.kind === "dat_fact",
+          stage === "master" || stage === "trap" ? 700 : 250,
+          stage === "master" || stage === "trap" || stage === "pearl",
         );
         flatIndex++;
       });
+      // Question: a checkpoint after Master and after Trap — the two stages
+      // where "did this actually land?" matters most. Prefers a real AI mini-
+      // test question for this page when one exists, otherwise a generic
+      // self-explain prompt so the stage is never silently skipped.
+      if (stage === "master" || stage === "trap") {
+        const aiQuestion = stage === "trap"
+          ? model.miniTestItems?.find((q) => q.type === "trap")?.question ?? model.miniTestItems?.[0]?.question
+          : model.miniTestItems?.[0]?.question;
+        const questionText = aiQuestion
+          ? `Quick check: ${aiQuestion}`
+          : stage === "trap"
+            ? "Quick check: what's the one mistake students make here, and why?"
+            : "Quick check: in your own words, why does this matter?";
+        push(`guided-question-${stage}`, "checkpoint", "Check Your Understanding", questionText, 0.92, undefined, tier, 900, true);
+      }
     });
+
     const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
-    const guidedAnchors = groups.flatMap((g) => g.items);
+    const guidedAnchors = stageOrder.flatMap((s) => s.anchors);
     console.log("[SPEECH_SOURCE]", {
       mode,
-      source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order)",
+      source: "finalStudyModel.visualAnchors via named pedagogical stages (Master→Mechanism→Pearl→Trap→Question, then supporting)",
       presetId,
-      groupCount: groups.length,
+      stageCounts: stageOrder.map((s) => ({ stage: s.stage, count: s.anchors.length })),
       itemCount: model.visualAnchors.length,
       charCount: totalChars,
       anchorIds: guidedAnchors.map((a) => a.id),
@@ -337,7 +407,13 @@ export function buildSpeechScript(
   // Same groupThoughtUnits(entries, presetId) flatten the left panel itself
   // renders with — Speech must never compute its own independent ordering.
   if (mode === "highlights") {
-    const orderedAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
+    const allOrdered = flattenInLeftPanelOrder(model.visualAnchors, presetId);
+    const paintedKeys = highlightedAnchorTexts?.length
+      ? new Set(highlightedAnchorTexts.map(anchorTextKey))
+      : null;
+    const orderedAnchors = paintedKeys
+      ? allOrdered.filter((a) => paintedKeys.has(anchorTextKey(a.exactText)))
+      : allOrdered;
     orderedAnchors.forEach((anchor) => {
       push(
         anchor.id,
@@ -351,9 +427,12 @@ export function buildSpeechScript(
     const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
     console.log("[SPEECH_SOURCE]", {
       mode,
-      source: "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order)",
+      source: paintedKeys
+        ? "finalStudyModel.visualAnchors filtered to PDF-painted anchors (text match against effectiveHighlightTargets), LeftPanel order"
+        : "finalStudyModel.visualAnchors grouped via groupThoughtUnits (LeftPanel order) — no painted-anchor filter wired, showing all",
       presetId,
-      itemCount: model.visualAnchors.length,
+      itemCount: orderedAnchors.length,
+      droppedAsUnpainted: allOrdered.length - orderedAnchors.length,
       charCount: totalChars,
       anchorIds: orderedAnchors.map((a) => a.id),
       sourceField: Array.from(new Set(orderedAnchors.map((a) => a.sourceField))),

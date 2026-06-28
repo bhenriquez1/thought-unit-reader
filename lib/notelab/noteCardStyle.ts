@@ -88,6 +88,26 @@ export const NOTE_CARD_STYLE: Record<NoteCardType, NoteCardStyleEntry> = {
     icon: "🩺", label: "Surgeon Lens",
     accent: "#fb7185", glowColor: "251,113,133",
   },
+  master_concepts: {
+    icon: "🏛️", label: "Master Concepts",
+    accent: "#fbbf24", glowColor: "251,191,36",
+  },
+  worked_example: {
+    icon: "✏️", label: "Worked Example",
+    accent: "#60a5fa", glowColor: "96,165,250",
+  },
+  case_challenge: {
+    icon: "📋", label: "Case Challenge",
+    accent: "#fb923c", glowColor: "251,146,60",
+  },
+  quick_review: {
+    icon: "⏱️", label: "Quick Review",
+    accent: "#a3e635", glowColor: "163,230,53",
+  },
+  complication_risk: {
+    icon: "🚧", label: "Complication Risk",
+    accent: "#f87171", glowColor: "248,113,113",
+  },
   other: {
     icon: "•", label: "Note",
     accent: "#d4d4d8", glowColor: "212,212,216",

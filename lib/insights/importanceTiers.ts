@@ -35,13 +35,29 @@ export function renderStars(stars: number): string {
 }
 
 /**
- * Expert-map glyph: Trap/Danger and Pearl kinds carry their own fixed glyph
- * (⚠/💎) instead of a star count, so a student scanning the LeftPanel sees
- * "this is dangerous" or "this is a pearl" at a glance rather than decoding
- * a star tier. Every other kind still falls back to renderStars(stars).
+ * Expert-map glyph: per the fixed Left Panel taxonomy (Master This / Procedure
+ * Step / Decision Point / Key Detail / Key Anatomy / Mechanism / Danger Zone /
+ * Clinical Pearl / Memory Hook / Supporting Detail), most kinds carry a FIXED
+ * glyph or flat star count rather than one derived from a group's ordinal
+ * position — five different "important" kinds must all read as the same
+ * ★★★★, not decay by list position. Only kinds with no fixed mapping fall
+ * back to the positional renderStars(stars).
  */
 export function tierGlyph(stars: number, kind?: string): string {
   if (kind === "trap") return "⚠";
   if (kind === "clinical") return "💎";
+  if (kind === "memoryAnchor") return "🧠";
+  if (kind === "thesis" || kind === "definition") return renderStars(5);
+  if (
+    kind === "mechanism" ||
+    kind === "formula" ||
+    kind === "application" ||
+    kind === "comparison" ||
+    kind === "keyDetail" ||
+    kind === "keyAnatomy"
+  ) {
+    return renderStars(4);
+  }
+  if (kind === "reference" || kind === "filler" || kind === "dat_fact" || kind === "unknown") return "📍";
   return renderStars(stars);
 }
