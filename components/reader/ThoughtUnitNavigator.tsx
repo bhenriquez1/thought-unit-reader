@@ -122,6 +122,7 @@ export default function ThoughtUnitNavigator({
   overridePresetId,
   onPresetChange,
   activeSpokenWord,
+  emptyReason,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -141,6 +142,7 @@ export default function ThoughtUnitNavigator({
   /** Live Speech word position — when its anchorId matches a card's id, that
    *  card's snippet marks the matching word, Speechify-style. */
   activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
+  emptyReason?: string | null;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -185,8 +187,9 @@ export default function ThoughtUnitNavigator({
     return (
       <div className="flex flex-col gap-2">
         {header}
-        <div className="px-2.5 py-3 text-[10.5px] text-white/35 leading-relaxed">
+        <div className="px-2.5 py-3 text-[10.5px] text-white/45 leading-relaxed">
           No thought units detected on this page yet.
+          {emptyReason ? <span className="mt-1 block text-amber-200/70">Diagnostic: {emptyReason}.</span> : null}
         </div>
       </div>
     );

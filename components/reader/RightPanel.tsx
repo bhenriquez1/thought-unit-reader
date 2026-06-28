@@ -88,6 +88,7 @@ import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/curr
 import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
 import StudySpeechPanel, { type StudySpeechPanelHandle } from "./StudySpeechPanel";
+import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 
 // ---------------------------------------------------------------------------
 // Chapter / Unit / Section overview panel — shown when the page is a chapter
@@ -311,6 +312,8 @@ interface RightPanelProps {
   onOpenWhiteboard?: () => void;
   onOpenExplainStep?: () => void;
   onOpenExplainIt?: () => void;
+  canonicalLeftPanelUnits?: ExpertAnchor[];
+  activeThoughtUnit?: ExpertAnchor | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +561,8 @@ export function RightPanel({
   onOpenWhiteboard,
   onOpenExplainStep,
   onOpenExplainIt,
+  canonicalLeftPanelUnits = [],
+  activeThoughtUnit = null,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -575,6 +580,17 @@ export function RightPanel({
     );
     el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [focusedEvidenceId]);
+
+  useEffect(() => {
+    if (!activeThoughtUnit) return;
+    console.log("[RIGHT_PANEL_EXPANSION_SOURCE]", {
+      thoughtUnitId: activeThoughtUnit.id,
+      source: activeThoughtUnit.source,
+      page: activeThoughtUnit.page,
+      sourceText: activeThoughtUnit.exactText.slice(0, 80),
+      fallbackUsed: activeThoughtUnit.source !== "canonical_left_panel",
+    });
+  }, [activeThoughtUnit]);
 
   // [TRACE renderIdentity] — logs what document/page/text is being rendered.
   // If documentId or pageNumber in pageModel differs from pageTruthKey, you
@@ -1356,6 +1372,8 @@ export function RightPanel({
             onActiveWordChange={onSpeechActiveWordChange}
             onExplainSegment={onSpeechExplainSegment}
             highlightedAnchorTexts={highlightedAnchorTexts}
+            thoughtUnits={canonicalLeftPanelUnits}
+            selectedUnitId={activeThoughtUnit?.id ?? focusedEvidenceId ?? null}
             primary
           />
           <div className="grid grid-cols-2 gap-2">
@@ -1388,6 +1406,35 @@ export function RightPanel({
             </button>
           </div>
         </div>
+
+        {activeThoughtUnit && (
+          <div
+            className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs text-slate-200"
+            data-evidence-id={activeThoughtUnit.evidenceRefId}
+          >
+            <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
+              Active Thought Unit · {activeThoughtUnit.importanceLabel}
+            </div>
+            <h3 className="mt-1 text-sm font-semibold text-white">{activeThoughtUnit.title}</h3>
+            <p className="mt-2 leading-relaxed text-slate-300">{activeThoughtUnit.exactText}</p>
+            <div className="mt-3 grid gap-2">
+              {[
+                ["Why It Matters", activeThoughtUnit.reason],
+                ["Mechanism", activeThoughtUnit.category === "mechanism" ? activeThoughtUnit.exactText : `Connect this unit to the page process: ${activeThoughtUnit.exactText}`],
+                ["Clinical Pearl", activeThoughtUnit.category === "clinical" ? activeThoughtUnit.exactText : activeThoughtUnit.importanceLabel === "Clinical Pearl" ? activeThoughtUnit.reason : "Use this as an expert-checkpoint while reading the page."],
+                ["Danger Zone", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Watch for confusing this unit with lower-priority supporting detail."],
+                ["Case", `If this appeared in a case, identify where this unit changes the next decision.`],
+                ["Question", `Why is “${activeThoughtUnit.title}” important on this page?`],
+                ["Memory Anchor", activeThoughtUnit.title],
+              ].map(([label, body]) => (
+                <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2" data-thought-unit-id={activeThoughtUnit.id}>
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-slate-300">{body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── WIRING CARD — dev only, never shown in production studying ── */}
         {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
