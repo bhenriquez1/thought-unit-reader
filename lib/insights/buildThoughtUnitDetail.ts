@@ -117,7 +117,7 @@ export function buildThoughtUnitDetailFromNoteCard(card: NoteCard, note: UltraNo
     coreIdea: card.body,
     mechanism: card.type === "mechanism" ? card.body : null,
     whyItMatters: card.type === "must_know" || card.type === "why_this_matters" ? card.body : null,
-    commonConfusion: card.type === "dat_trap" || card.type === "common_mistake" ? card.body : null,
+    commonConfusion: card.type === "dat_trap" || card.type === "common_mistake" || card.type === "complication_risk" ? card.body : null,
     datFact: null,
     examTrap: card.type === "dat_trap" ? card.body : null,
     recallCard: { front: `Explain: ${card.title}`, back: card.body },

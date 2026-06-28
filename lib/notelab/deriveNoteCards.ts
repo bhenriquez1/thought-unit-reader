@@ -60,5 +60,12 @@ export function deriveNoteCardsFromStudyModel(model: CurrentPageStudyModel): Not
     if (pattern) cards.push(pattern);
   }
 
+  const complicationRisk = card(
+    "complication_risk",
+    "Complication Risk",
+    model.conceptBlocks.map((b) => b.trap).filter((v): v is string => typeof v === "string" && v.length > 10)[0],
+  );
+  if (complicationRisk) cards.push(complicationRisk);
+
   return cards;
 }

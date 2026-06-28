@@ -104,6 +104,10 @@ export const NOTE_CARD_STYLE: Record<NoteCardType, NoteCardStyleEntry> = {
     icon: "⏱️", label: "Quick Review",
     accent: "#a3e635", glowColor: "163,230,53",
   },
+  complication_risk: {
+    icon: "🚧", label: "Complication Risk",
+    accent: "#f87171", glowColor: "248,113,113",
+  },
   other: {
     icon: "•", label: "Note",
     accent: "#d4d4d8", glowColor: "212,212,216",

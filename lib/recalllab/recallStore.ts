@@ -532,7 +532,7 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
 export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, opts?: BuildRecallSetOpts): RecallSet {
   const cardType: CardType =
     noteCard.type === "mechanism" ? "mechanism"
-    : noteCard.type === "dat_trap" || noteCard.type === "common_mistake" ? "concept"
+    : noteCard.type === "dat_trap" || noteCard.type === "common_mistake" || noteCard.type === "complication_risk" ? "concept"
     : noteCard.type === "why_this_matters" ? "application"
     : "fact";
 

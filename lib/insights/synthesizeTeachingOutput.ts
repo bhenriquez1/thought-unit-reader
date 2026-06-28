@@ -66,7 +66,7 @@ export const NoteCardTypeSchema = z.enum([
   "expert_thinking", "why_this_matters", "pattern_recognition", "decision_tree",
   "visual_mnemonic", "formula_breakdown", "diagram", "recall_questions",
   "exam_strategy", "surgeon_lens", "master_concepts", "worked_example",
-  "case_challenge", "quick_review", "other",
+  "case_challenge", "quick_review", "complication_risk", "other",
 ]);
 export type NoteCardType = z.infer<typeof NoteCardTypeSchema>;
 
@@ -602,6 +602,7 @@ Card types and the learning question each one answers:
 • worked_example         — "Walk through one full worked problem/example from start to finish." (a concrete step-by-step solve or applied case run to completion — distinct from mechanism's general causal explanation)
 • case_challenge         — "Here's a scenario — what would you do, and why?" (pose a short vignette/scenario as a challenge with the reasoning answer in body — distinct from clinical_reasoning's internal narration)
 • quick_review           — "30-second recap of this page — the one paragraph you'd reread the night before the exam." (a condensed statement-form recap, distinct from recall_questions' question format)
+• complication_risk      — "If I apply this concept/procedure wrong, what specifically goes wrong?" (a named, concrete failure consequence of misapplying THIS page's concept — distinct from dat_trap's exam-shortcut framing and surgeon_lens's broader expert-judgment framing)
 • other                  — anything genuinely useful that doesn't fit the above
 
 PER-PAGE-TYPE GUIDANCE (soft — examples of what fits each page shape, not a mandatory template):

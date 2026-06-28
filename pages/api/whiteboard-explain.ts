@@ -174,7 +174,7 @@ function buildModelContext(studyModel: any): string {
 function buildFallbackSteps(concept: string, context: string, studyModel: any): Step[] {
   const hasRichModel =
     studyModel && typeof studyModel === "object" &&
-    (studyModel.pageThesis || studyModel.studyNotes || (studyModel.conceptBlocks?.length ?? 0) > 0);
+    (studyModel.pageThesis || studyModel.studyNotes || (studyModel.conceptBlocks?.length ?? 0) > 0 || (studyModel.visualAnchors?.length ?? 0) > 0);
 
   if (hasRichModel) {
     const wbSteps = generateWhiteboardStepsFromModel(studyModel as CurrentPageStudyModel, 0).slice(0, 5);
@@ -302,9 +302,13 @@ export default async function handler(
       "- narrationScript: one fluent paragraph the teacher speaks while drawing — conversational, not formal.",
     ].join(" ");
 
+    // Anchor-derived context is authoritative whenever it exists — raw page text is only
+    // a fallback source for bare-concept requests with no Left Panel study model at all,
+    // never a competing input alongside it (mirrors Current Page speech mode's "anchors
+    // first, verbatim text only as its own distinct mode" rule).
     const user = [
       modelCtx ? `STUDY MODEL:\n${modelCtx}` : "",
-      pageText  ? `PAGE TEXT (excerpt):\n${pageText.slice(0, 600)}` : "",
+      !modelCtx && pageText ? `PAGE TEXT (excerpt):\n${pageText.slice(0, 600)}` : "",
       `CONCEPT: """${concept || studyModel?.pageThesis || ""}"""`,
       context   ? `CONTEXT: ${context}` : "",
     ].filter(Boolean).join("\n\n");

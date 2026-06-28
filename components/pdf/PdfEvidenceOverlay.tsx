@@ -8,7 +8,9 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact" | "clinical";
+  semanticKind?:
+    | "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact" | "clinical"
+    | "keyDetail" | "memoryAnchor" | "keyAnatomy" | "formula" | "comparison" | "reference" | "filler" | "unknown";
   /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
    *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
   priorityTier?: number;
@@ -17,18 +19,44 @@ export interface OverlayRect {
 // All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
 function shouldRender(rect: OverlayRect): boolean {
   const kind = rect.semanticKind as string | undefined;
-  if (kind && kind in KIND_CONFIG) return true;
+  if (kind && kind in KIND_TIER) return true;
   return rect.level === "important" || rect.level === "support";
 }
 
-// ── 5-category color config ────────────────────────────────────────────────
-//   🟨 thesis      (yellow)  — core idea / page thesis / key concept
-//   🟦 definition  (blue)    — foundational term / formula / rule
-//   🟩 mechanism   (green)   — mechanism / process / cause-effect chain
-//   🟪 application (purple)  — example / evidence / worked step / application
-//   🟥 trap        (red)     — exam trap / confusion / misconception
+// ── 5 named layered-importance colors (spec) ───────────────────────────────
+// The page must still read like a textbook, not a "yellow marker explosion" —
+// every semantic kind maps onto exactly one of these 5 tiers, never its own
+// distinct color, so the PDF never carries more than 5 highlight colors.
+//   ★★★★★ Master Gold      — thesis / definition ("Master This")
+//   ★★★★  Important Green  — mechanism / application / key detail / key anatomy /
+//                             memory hook / formula / comparison
+//   ★★★   Supporting Blue  — dat_fact / reference / filler / unknown
+//   ⚠     Danger Red       — trap
+//   💎     Pearl Cyan       — clinical pearl
 
-type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical" | "keyDetail" | "memoryAnchor" | "keyAnatomy";
+type SemanticKind =
+  | "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical"
+  | "keyDetail" | "memoryAnchor" | "keyAnatomy" | "formula" | "comparison" | "reference" | "filler" | "unknown";
+
+type HighlightTier = "master" | "important" | "supporting" | "danger" | "pearl";
+
+const KIND_TIER: Record<SemanticKind, HighlightTier> = {
+  thesis: "master",
+  definition: "master",
+  mechanism: "important",
+  application: "important",
+  keyDetail: "important",
+  keyAnatomy: "important",
+  memoryAnchor: "important",
+  formula: "important",
+  comparison: "important",
+  trap: "danger",
+  clinical: "pearl",
+  dat_fact: "supporting",
+  reference: "supporting",
+  filler: "supporting",
+  unknown: "supporting",
+};
 
 interface KindConfig {
   label:       string;
@@ -44,9 +72,9 @@ interface KindConfig {
   glowColor:   string;
 }
 
-const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
-  thesis: {
-    label:      "CORE IDEA",
+const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
+  master: {
+    label:      "MASTER THIS",
     bgNormal:   "rgba(253,224,71,0.22)",
     bgFocused:  "rgba(253,224,71,0.50)",
     restGlow:   "0 0 3px rgba(253,224,71,0.32)",
@@ -55,18 +83,8 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeColor: "#fde047",
     glowColor:  "253,224,71",
   },
-  definition: {
-    label:      "DEFINITION",
-    bgNormal:   "rgba(147,197,253,0.26)",
-    bgFocused:  "rgba(147,197,253,0.56)",
-    restGlow:   "0 0 3px rgba(147,197,253,0.32)",
-    ringClass:  "ring-1 ring-blue-300/70 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
-    badgeBg:    "rgba(29,78,216,0.92)",
-    badgeColor: "#bfdbfe",
-    glowColor:  "147,197,253",
-  },
-  mechanism: {
-    label:      "MECHANISM",
+  important: {
+    label:      "IMPORTANT",
     bgNormal:   "rgba(134,239,172,0.26)",
     bgFocused:  "rgba(134,239,172,0.56)",
     restGlow:   "0 0 3px rgba(134,239,172,0.32)",
@@ -75,18 +93,18 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeColor: "#86efac",
     glowColor:  "134,239,172",
   },
-  application: {
-    label:      "EXAMPLE",
-    bgNormal:   "rgba(192,132,252,0.22)",
-    bgFocused:  "rgba(192,132,252,0.52)",
-    restGlow:   "0 0 3px rgba(192,132,252,0.30)",
-    ringClass:  "ring-1 ring-purple-300/70 shadow-[0_0_8px_rgba(192,132,252,0.55)]",
-    badgeBg:    "rgba(88,28,135,0.92)",
-    badgeColor: "#e9d5ff",
-    glowColor:  "192,132,252",
+  supporting: {
+    label:      "SUPPORTING",
+    bgNormal:   "rgba(147,197,253,0.22)",
+    bgFocused:  "rgba(147,197,253,0.50)",
+    restGlow:   "0 0 3px rgba(147,197,253,0.30)",
+    ringClass:  "ring-1 ring-blue-300/70 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
+    badgeBg:    "rgba(29,78,216,0.92)",
+    badgeColor: "#bfdbfe",
+    glowColor:  "147,197,253",
   },
-  trap: {
-    label:      "CAUTION",
+  danger: {
+    label:      "DANGER ZONE",
     bgNormal:   "rgba(252,165,165,0.26)",
     bgFocused:  "rgba(252,165,165,0.56)",
     restGlow:   "0 0 3px rgba(252,165,165,0.32)",
@@ -95,17 +113,7 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeColor: "#fca5a5",
     glowColor:  "252,165,165",
   },
-  dat_fact: {
-    label:      "DAT FACT",
-    bgNormal:   "rgba(251,146,60,0.22)",
-    bgFocused:  "rgba(251,146,60,0.50)",
-    restGlow:   "0 0 3px rgba(251,146,60,0.30)",
-    ringClass:  "ring-1 ring-orange-300/70 shadow-[0_0_8px_rgba(251,146,60,0.55)]",
-    badgeBg:    "rgba(124,45,18,0.92)",
-    badgeColor: "#fed7aa",
-    glowColor:  "251,146,60",
-  },
-  clinical: {
+  pearl: {
     label:      "CLINICAL PEARL",
     bgNormal:   "rgba(103,232,249,0.22)",
     bgFocused:  "rgba(103,232,249,0.50)",
@@ -115,55 +123,15 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeColor: "#67e8f9",
     glowColor:  "103,232,249",
   },
-  keyDetail: {
-    label:      "KEY DETAIL",
-    bgNormal:   "rgba(251,191,36,0.22)",
-    bgFocused:  "rgba(251,191,36,0.50)",
-    restGlow:   "0 0 3px rgba(251,191,36,0.30)",
-    ringClass:  "ring-1 ring-amber-300/70 shadow-[0_0_8px_rgba(251,191,36,0.55)]",
-    badgeBg:    "rgba(120,53,15,0.92)",
-    badgeColor: "#fde68a",
-    glowColor:  "251,191,36",
-  },
-  memoryAnchor: {
-    label:      "MEMORY HOOK",
-    bgNormal:   "rgba(244,114,182,0.22)",
-    bgFocused:  "rgba(244,114,182,0.50)",
-    restGlow:   "0 0 3px rgba(244,114,182,0.30)",
-    ringClass:  "ring-1 ring-pink-300/70 shadow-[0_0_8px_rgba(244,114,182,0.55)]",
-    badgeBg:    "rgba(131,24,67,0.92)",
-    badgeColor: "#fbcfe8",
-    glowColor:  "244,114,182",
-  },
-  keyAnatomy: {
-    label:      "KEY ANATOMY",
-    bgNormal:   "rgba(196,145,92,0.22)",
-    bgFocused:  "rgba(196,145,92,0.50)",
-    restGlow:   "0 0 3px rgba(196,145,92,0.30)",
-    ringClass:  "ring-1 ring-amber-700/70 shadow-[0_0_8px_rgba(196,145,92,0.55)]",
-    badgeBg:    "rgba(87,57,28,0.92)",
-    badgeColor: "#e3c39c",
-    glowColor:  "196,145,92",
-  },
 };
 
-const FALLBACK_CONFIG: KindConfig = {
-  label:      "",
-  bgNormal:   "rgba(253,224,71,0.22)",
-  bgFocused:  "rgba(253,224,71,0.50)",
-  restGlow:   "0 0 3px rgba(253,224,71,0.32)",
-  ringClass:  "ring-1 ring-yellow-300/70 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
-  badgeBg:    "rgba(113,63,18,0.88)",
-  badgeColor: "#fde047",
-  glowColor:  "253,224,71",
-};
-
-// B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha and
+// B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha — see tierGlowStyle().
 function getConfig(rect: OverlayRect): KindConfig {
-  const kind = rect.semanticKind as string | undefined;
-  if (kind && kind in KIND_CONFIG) return KIND_CONFIG[kind as SemanticKind];
-  if (rect.level === "trap") return KIND_CONFIG.trap;
-  return FALLBACK_CONFIG;
+  const kind = rect.semanticKind as SemanticKind | undefined;
+  if (kind && kind in KIND_TIER) return TIER_CONFIG[KIND_TIER[kind]];
+  if (rect.level === "trap") return TIER_CONFIG.danger;
+  if (rect.level === "support") return TIER_CONFIG.supporting;
+  return TIER_CONFIG.important;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
