@@ -207,17 +207,21 @@ export default function PureReaderView({
       case "coreIdea":        return "thesis";
       case "confusionTrap":   return "trap";
       case "exampleEvidence": return "application";
-      case "keyDetail":       return "definition";
+      case "keyDetail":       return "keyDetail";
       case "datFact":         return "dat_fact";
       case "dat_fact":        return "dat_fact";
       case "clinicalPearl":   return "clinical";
       case "clinical_pearl":  return "clinical";
+      case "memoryHook":      return "memoryAnchor";
+      case "memory_hook":     return "memoryAnchor";
+      case "keyAnatomy":      return "keyAnatomy";
+      case "anatomy":         return "keyAnatomy";
       // Math-specific anchor types
       case "formula":      return "definition";    // formula = key term / rule (blue)
       case "example_step": return "application";   // worked step = evidence (purple)
       case "conclusion":   return "thesis";        // conclusion = core idea (yellow)
       // Backward compat
-      case "memoryAnchor": return "definition";
+      case "memoryAnchor": return "memoryAnchor";
       case "clinicalTrap": return "trap";
       case "examSignal":   return "thesis";
       default:             return "thesis";

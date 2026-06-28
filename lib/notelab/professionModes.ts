@@ -204,6 +204,30 @@ const SECTION_LENS: Record<string, Record<ProfessionMode, LensEntry>> = {
     pilot:   { label: "Diagram", icon: "📐" },
     dental:  { label: "Diagram", icon: "📐" },
   },
+  "Master Concepts": {
+    default: { label: "Master Concepts",      icon: "🏛️" },
+    surgeon: { label: "Foundational Anatomy", icon: "🏛️" },
+    pilot:   { label: "Foundational Systems", icon: "🏛️" },
+    dental:  { label: "Foundational Concepts", icon: "🏛️" },
+  },
+  "Worked Example": {
+    default: { label: "Worked Example",   icon: "✏️" },
+    surgeon: { label: "Case Walkthrough", icon: "✏️" },
+    pilot:   { label: "Scenario Walkthrough", icon: "✏️" },
+    dental:  { label: "Case Walkthrough", icon: "✏️" },
+  },
+  "Case Challenge": {
+    default: { label: "Case Challenge",  icon: "📋" },
+    surgeon: { label: "Case Challenge",  icon: "📋" },
+    pilot:   { label: "Scenario Challenge", icon: "📋" },
+    dental:  { label: "Case Challenge",  icon: "📋" },
+  },
+  "Quick Review": {
+    default: { label: "Quick Review",  icon: "⏱️" },
+    surgeon: { label: "Quick Review",  icon: "⏱️" },
+    pilot:   { label: "Quick Review",  icon: "⏱️" },
+    dental:  { label: "Quick Review",  icon: "⏱️" },
+  },
 };
 
 export function getSectionLens(mode: ProfessionMode, genericLabel: string): LensEntry | null {

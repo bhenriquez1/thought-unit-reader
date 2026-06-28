@@ -36,6 +36,8 @@ const ROLE_LABEL: Record<VisualAnchor["role"], string> = {
   confusionTrap: "Common Confusion",
   datFact: "DAT High-Yield Fact",
   clinicalPearl: "Clinical Pearl",
+  memoryHook: "Memory Hook",
+  keyAnatomy: "Key Anatomy",
 };
 
 // Concept-block reasons are written as "Mechanism — Title" / "Common trap — Title" /

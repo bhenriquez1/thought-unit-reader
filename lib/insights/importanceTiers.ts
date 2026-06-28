@@ -43,5 +43,7 @@ export function renderStars(stars: number): string {
 export function tierGlyph(stars: number, kind?: string): string {
   if (kind === "trap") return "⚠";
   if (kind === "clinical") return "💎";
+  if (kind === "memoryAnchor") return "🪝";
+  if (kind === "keyAnatomy") return "🦴";
   return renderStars(stars);
 }

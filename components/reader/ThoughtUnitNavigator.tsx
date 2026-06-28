@@ -44,6 +44,9 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   clinical:    { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
   formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
   dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
+  keyDetail:   { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+  memoryAnchor: { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+  keyAnatomy:  { color: "#c4915c", bg: "rgba(196,145,92,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 

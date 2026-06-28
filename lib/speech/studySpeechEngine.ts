@@ -171,6 +171,8 @@ const ANCHOR_ROLE_LABEL: Record<VisualAnchorRole, string> = {
   confusionTrap:   "Watch Out",
   datFact:         "High-Yield Fact",
   clinicalPearl:   "Clinical Pearl",
+  memoryHook:      "Memory Hook",
+  keyAnatomy:      "Key Anatomy",
 };
 
 const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
@@ -182,6 +184,8 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   confusionTrap:   0.85,
   datFact:         0.92,
   clinicalPearl:   0.92,
+  memoryHook:      0.95,
+  keyAnatomy:      0.92,
 };
 
 // LeftPanel order — same groupThoughtUnits(entries, presetId) call

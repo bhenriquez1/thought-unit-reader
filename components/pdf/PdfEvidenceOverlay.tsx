@@ -28,7 +28,7 @@ function shouldRender(rect: OverlayRect): boolean {
 //   🟪 application (purple)  — example / evidence / worked step / application
 //   🟥 trap        (red)     — exam trap / confusion / misconception
 
-type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical";
+type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical" | "keyDetail" | "memoryAnchor" | "keyAnatomy";
 
 interface KindConfig {
   label:       string;
@@ -114,6 +114,36 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeBg:    "rgba(22,78,99,0.92)",
     badgeColor: "#67e8f9",
     glowColor:  "103,232,249",
+  },
+  keyDetail: {
+    label:      "KEY DETAIL",
+    bgNormal:   "rgba(251,191,36,0.22)",
+    bgFocused:  "rgba(251,191,36,0.50)",
+    restGlow:   "0 0 3px rgba(251,191,36,0.30)",
+    ringClass:  "ring-1 ring-amber-300/70 shadow-[0_0_8px_rgba(251,191,36,0.55)]",
+    badgeBg:    "rgba(120,53,15,0.92)",
+    badgeColor: "#fde68a",
+    glowColor:  "251,191,36",
+  },
+  memoryAnchor: {
+    label:      "MEMORY HOOK",
+    bgNormal:   "rgba(244,114,182,0.22)",
+    bgFocused:  "rgba(244,114,182,0.50)",
+    restGlow:   "0 0 3px rgba(244,114,182,0.30)",
+    ringClass:  "ring-1 ring-pink-300/70 shadow-[0_0_8px_rgba(244,114,182,0.55)]",
+    badgeBg:    "rgba(131,24,67,0.92)",
+    badgeColor: "#fbcfe8",
+    glowColor:  "244,114,182",
+  },
+  keyAnatomy: {
+    label:      "KEY ANATOMY",
+    bgNormal:   "rgba(196,145,92,0.22)",
+    bgFocused:  "rgba(196,145,92,0.50)",
+    restGlow:   "0 0 3px rgba(196,145,92,0.30)",
+    ringClass:  "ring-1 ring-amber-700/70 shadow-[0_0_8px_rgba(196,145,92,0.55)]",
+    badgeBg:    "rgba(87,57,28,0.92)",
+    badgeColor: "#e3c39c",
+    glowColor:  "196,145,92",
   },
 };
 

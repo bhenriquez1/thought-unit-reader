@@ -80,6 +80,8 @@ export type ParagraphKind =
   | "reference"
   | "filler"
   | "dat_fact"
+  | "keyDetail"
+  | "keyAnatomy"
   | "unknown";
 
 export type HighlightLevel = "important" | "support" | "additional" | "trap";
