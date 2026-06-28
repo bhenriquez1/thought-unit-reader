@@ -1412,26 +1412,58 @@ export function RightPanel({
             className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs text-slate-200"
             data-evidence-id={activeThoughtUnit.evidenceRefId}
           >
-            <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
-              Active Thought Unit · {activeThoughtUnit.importanceLabel}
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
+              <span>🧠 Expert Brain</span>
+              <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5">
+                {activeThoughtUnit.importanceLabel} ★★★★★
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">
+                Confidence {Math.min(98, Math.max(68, activeThoughtUnit.priorityTier * 18))}%
+              </span>
             </div>
-            <h3 className="mt-1 text-sm font-semibold text-white">{activeThoughtUnit.title}</h3>
-            <p className="mt-2 leading-relaxed text-slate-300">{activeThoughtUnit.exactText}</p>
-            <div className="mt-3 grid gap-2">
-              {[
-                ["Why It Matters", activeThoughtUnit.reason],
-                ["Mechanism", activeThoughtUnit.category === "mechanism" ? activeThoughtUnit.exactText : `Connect this unit to the page process: ${activeThoughtUnit.exactText}`],
-                ["Clinical Pearl", activeThoughtUnit.category === "clinical" ? activeThoughtUnit.exactText : activeThoughtUnit.importanceLabel === "Clinical Pearl" ? activeThoughtUnit.reason : "Use this as an expert-checkpoint while reading the page."],
-                ["Danger Zone", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Watch for confusing this unit with lower-priority supporting detail."],
-                ["Case", `If this appeared in a case, identify where this unit changes the next decision.`],
-                ["Question", `Why is “${activeThoughtUnit.title}” important on this page?`],
-                ["Memory Anchor", activeThoughtUnit.title],
-              ].map(([label, body]) => (
-                <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2" data-thought-unit-id={activeThoughtUnit.id}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
-                  <div className="mt-0.5 text-[11px] leading-relaxed text-slate-300">{body}</div>
-                </div>
-              ))}
+            <h3 className="mt-2 whitespace-normal break-words text-sm font-semibold leading-snug text-white">{activeThoughtUnit.title}</h3>
+            <p className="mt-2 whitespace-normal break-words rounded-xl border border-white/8 bg-black/15 p-2 leading-relaxed text-slate-200">
+              {activeThoughtUnit.exactText}
+            </p>
+            <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
+              {(() => {
+                const sections: Array<[string, string]> = [
+                  ["Why It Matters", activeThoughtUnit.reason],
+                  ["Common Trap", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Do not memorize this as isolated trivia; connect it to the surrounding expert anchors."],
+                  ["Connection Map", canonicalLeftPanelUnits
+                    .filter((u) => u.id !== activeThoughtUnit.id)
+                    .slice(0, 5)
+                    .map((u) => `✓ ${u.title}`)
+                    .join("\n") || "No linked canonical units yet."],
+                  ["Checkpoint", `Which phrase proves this ${activeThoughtUnit.importanceLabel.toLowerCase()}?`],
+                ];
+                if (activeThoughtUnit.category === "mechanism" || activeThoughtUnit.category === "application" || activeThoughtUnit.category === "formula") {
+                  sections.splice(1, 0, ["Procedure Logic", activeThoughtUnit.exactText]);
+                }
+                if (activeThoughtUnit.category === "clinical") {
+                  sections.splice(2, 0, ["Clinical Link", activeThoughtUnit.exactText]);
+                }
+                if (activeThoughtUnit.category === "memoryAnchor") {
+                  sections.splice(2, 0, ["Memory", activeThoughtUnit.exactText]);
+                }
+                return sections.slice(0, 6).map(([label, body]) => (
+                  <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
+                    <div className="mt-0.5 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">{body}</div>
+                  </div>
+                ));
+              })()}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => (onSpeechExplainSegment ? onSpeechExplainSegment(activeThoughtUnit.evidenceRefId) : onOpenExplainStep?.())}
+                  className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200"
+                >
+                  Explain
+                </button>
+                <button type="button" onClick={onOpenWhiteboard} className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">Whiteboard</button>
+                <button type="button" onClick={openShadowRecall} className="rounded-lg border border-violet-300/20 bg-violet-300/10 px-2 py-1 text-[11px] font-semibold text-violet-200">Shadow Recall</button>
+              </div>
             </div>
           </div>
         )}

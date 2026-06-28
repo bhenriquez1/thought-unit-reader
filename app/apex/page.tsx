@@ -119,17 +119,17 @@ export default function DATLearningHub() {
   const aiInsights = insights;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_28%),linear-gradient(135deg,#020617,#0f172a_48%,#111827)] text-white">
       {/* Header */}
       <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-white">
-                🧠 DAT Learning Hub
+              <h1 className="text-3xl font-black tracking-tight text-white">
+                🎯 DAT Apex Expert Dashboard
               </h1>
-              <p className="text-blue-200 mt-1">
-                Cognitive Command Center · Pattern Engine · Score Builder
+              <p className="text-blue-200 mt-1 max-w-2xl">
+                Pattern engine · decision rules · weak-pattern review · score projection
               </p>
             </div>
 
@@ -158,6 +158,19 @@ export default function DATLearningHub() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[
+            ["Pattern Engine", "Learn the recognition patterns that actually drive DAT questions.", "🧠"],
+            ["Decision Rules", "Convert misses into if/then rules you can apply under time pressure.", "⚖️"],
+            ["Weak-Pattern Review", "Prioritize unstable concepts before they become score leaks.", "🔍"],
+          ].map(([title, body, icon]) => (
+            <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/20 backdrop-blur">
+              <div className="text-2xl">{icon}</div>
+              <div className="mt-2 text-sm font-bold uppercase tracking-widest text-emerald-300">{title}</div>
+              <p className="mt-1 text-sm leading-relaxed text-slate-300">{body}</p>
+            </div>
+          ))}
+        </div>
         {/* ── Top 4 stat cards ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {/* Deep Work */}

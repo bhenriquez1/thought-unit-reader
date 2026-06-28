@@ -907,8 +907,10 @@ export default function ThoughtUnitReader() {
       "chapter_opener", "learning_objectives",
     ]);
 
-    // Canonical evidence: if the canonical LeftPanel produced units, this page is instructional.
-    const aiConfirmsInstructional = visualAnchors.length > 0;
+    // Canonical evidence: only real model-backed anchors confirm instructional content —
+    // page_text_fallback/model_fallback units are locally generated and must not bypass
+    // the structural-page skip below (contents/glossary/chapter_opener, etc.).
+    const aiConfirmsInstructional = visualAnchors.some((a) => a.source === "canonical_left_panel");
 
     console.log("[CLASSIFIER_EVIDENCE]", {
       page:                currentPage,
@@ -951,7 +953,7 @@ export default function ThoughtUnitReader() {
         page:    currentPage,
         verdict: "instructional — AI anchors override stale local pageRole",
         pageRole,
-        anchorCount: visualAnchors.length,
+        anchorCount: visualAnchors.filter((a) => a.source === "canonical_left_panel").length,
         note:    "local pageRole may be stale from previous page or running-header false-positive",
       });
     }
