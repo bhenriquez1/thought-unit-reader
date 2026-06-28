@@ -90,8 +90,13 @@ function buildQuickSentences(activePageText: string): string[] {
   for (const chunk of rawChunks) {
     const t = chunk.trim();
     if (!t) continue;
-    const isLowercaseContinuation = merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !QUICK_ABBREV_RE.test(merged[merged.length - 1]);
-    if (isLowercaseContinuation) {
+    // A split right after an abbreviation ("Fig.", "Dr.", "approx.") is never a
+    // real sentence end and must always rejoin, regardless of how the next chunk
+    // starts. Otherwise, only rejoin when the next chunk looks like a false split
+    // (starts lowercase/digit/quote — real sentences start capitalized).
+    const prevEndsInAbbrev = merged.length > 0 && QUICK_ABBREV_RE.test(merged[merged.length - 1]);
+    const looksLikeContinuation = /^[a-z"'(0-9]/.test(t);
+    if (merged.length > 0 && (prevEndsInAbbrev || looksLikeContinuation)) {
       merged[merged.length - 1] += " " + t;
     } else {
       merged.push(t);
@@ -483,8 +488,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       for (const chunk of rawChunks) {
         const t = chunk.trim();
         if (!t) continue;
-        const isLowercaseContinuation = merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1]);
-        if (isLowercaseContinuation) {
+        // Same rejoin rule as buildQuickSentences() above: an abbreviation
+        // ("Fig.", "Dr.", "approx.") never ends a real sentence, so always
+        // rejoin after one; otherwise rejoin only when the next chunk looks
+        // like a false split (starts lowercase/digit/quote).
+        const prevEndsInAbbrev = merged.length > 0 && ABBREV_RE.test(merged[merged.length - 1]);
+        const looksLikeContinuation = /^[a-z"'(0-9]/.test(t);
+        if (merged.length > 0 && (prevEndsInAbbrev || looksLikeContinuation)) {
           merged[merged.length - 1] += " " + t;
         } else {
           merged.push(t);

@@ -81,6 +81,7 @@ export interface UltraConceptBlock {
   memoryHook?: string;       // science: analogy/mnemonic sentence
   fictionCard?: FictionCard; // fiction: scene-state structured card
   synthDerived?: boolean;    // true when block was built directly from synthesis concepts (no heuristic base)
+  recallQuestion?: string;   // page-native self-test question for this exact concept (from buildPageStepModel's per-step miniTest hooks)
 }
 
 export interface UltraPageViewStep {
@@ -1224,6 +1225,32 @@ export function buildUltraPageView(
       trap: c.trapCandidates[0] ?? null,
     })),
   });
+
+  // Per-block recall question: each highlight neighborhood maps 1:1 to a concept
+  // (highlightNeighborhoods was built from `concepts`, same id as each block's
+  // conceptId), so step.left.neighborhoodId is an exact join key back to the
+  // block — no fuzzy matching needed. Pull the strongest available page-native
+  // question hook for that concept so every block can show its own recall
+  // question instead of only the page-level (cross-concept) Mini Test.
+  const recallQuestionByConceptId = new Map<string, string>();
+  for (const step of pageStepResult.steps) {
+    const conceptId = step.left.neighborhoodId;
+    if (!conceptId) continue;
+    const q =
+      step.miniTest.coreMeaning ||
+      step.miniTest.mechanism ||
+      step.miniTest.application ||
+      step.miniTest.distinction ||
+      step.miniTest.skimTrap ||
+      step.miniTest.whatHappensIf ||
+      step.miniTest.nextStep ||
+      step.miniTest.compareContrast;
+    if (q) recallQuestionByConceptId.set(conceptId, q);
+  }
+  for (const b of dedupedBlocks) {
+    const q = recallQuestionByConceptId.get(b.conceptId);
+    if (q) b.recallQuestion = q;
+  }
 
   // Mini test: role-balanced selection in step order from shared step model
   const miniTestCandidates: MiniTestQuestionCandidate[] = pageStepResult.steps.flatMap((step) =>

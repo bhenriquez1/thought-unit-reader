@@ -1427,9 +1427,20 @@ export function RightPanel({
             </p>
             <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
               {(() => {
+                // Exactly the 4 sections the Expert Brain card owns beyond the
+                // Master statement (above) and Confidence/mastery (header badge):
+                // Why It Matters, Common Trap, Connection Map, Checkpoint. No
+                // category-conditional sections that just re-echo exactText —
+                // that duplicates the Master statement paragraph above.
+                const isTrap = activeThoughtUnit.category === "trap";
+                const pageTrap = isTrap
+                  ? activeThoughtUnit
+                  : canonicalLeftPanelUnits.find((u) => u.category === "trap");
                 const sections: Array<[string, string]> = [
                   ["Why It Matters", activeThoughtUnit.reason],
-                  ["Common Trap", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Do not memorize this as isolated trivia; connect it to the surrounding expert anchors."],
+                  ["Common Trap", pageTrap
+                    ? (isTrap ? pageTrap.exactText : `Related danger zone on this page: ${pageTrap.exactText}`)
+                    : "No danger zone flagged for this page yet."],
                   ["Connection Map", canonicalLeftPanelUnits
                     .filter((u) => u.id !== activeThoughtUnit.id)
                     .slice(0, 5)
@@ -1437,33 +1448,13 @@ export function RightPanel({
                     .join("\n") || "No linked canonical units yet."],
                   ["Checkpoint", `Which phrase proves this ${activeThoughtUnit.importanceLabel.toLowerCase()}?`],
                 ];
-                if (activeThoughtUnit.category === "mechanism" || activeThoughtUnit.category === "application" || activeThoughtUnit.category === "formula") {
-                  sections.splice(1, 0, ["Procedure Logic", activeThoughtUnit.exactText]);
-                }
-                if (activeThoughtUnit.category === "clinical") {
-                  sections.splice(2, 0, ["Clinical Link", activeThoughtUnit.exactText]);
-                }
-                if (activeThoughtUnit.category === "memoryAnchor") {
-                  sections.splice(2, 0, ["Memory", activeThoughtUnit.exactText]);
-                }
-                return sections.slice(0, 6).map(([label, body]) => (
+                return sections.map(([label, body]) => (
                   <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2">
                     <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
                     <div className="mt-0.5 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">{body}</div>
                   </div>
                 ));
               })()}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => (onSpeechExplainSegment ? onSpeechExplainSegment(activeThoughtUnit.evidenceRefId) : onOpenExplainStep?.())}
-                  className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200"
-                >
-                  Explain
-                </button>
-                <button type="button" onClick={onOpenWhiteboard} className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">Whiteboard</button>
-                <button type="button" onClick={openShadowRecall} className="rounded-lg border border-violet-300/20 bg-violet-300/10 px-2 py-1 text-[11px] font-semibold text-violet-200">Shadow Recall</button>
-              </div>
             </div>
           </div>
         )}
@@ -2025,12 +2016,21 @@ function UltraView({
   useEffect(() => {
     setResolvedResources({ articles: [], videos: [], resolved: false });
     setCohereQueries({ readings: [], videos: [] });
-    const thesis = (view.pageThesis ?? view.coreIdea ?? "").trim();
+    // "Current topic" = the concept card the student actually has open, when one
+    // exists — falls back to the page-level thesis only when no block is
+    // selected. Without this, Related Reading/Videos stayed pinned to the whole
+    // page's broad topic regardless of which concept the student was reading.
+    const currentTopic = (selectedBlock?.pattern || selectedBlock?.title || "").trim();
+    const thesis = (currentTopic || view.pageThesis || view.coreIdea || "").trim();
     if (!thesis || !hasSynth) { setResolvedResources(r => ({ ...r, resolved: true })); return; }
     const controller = new AbortController();
-    const conceptTitles = view.blocks.map(b => b.title).filter(Boolean).slice(0, 5);
-    const anchorTexts   = view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
-    console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50), concepts: conceptTitles.length });
+    const conceptTitles = selectedBlock?.title
+      ? [selectedBlock.title]
+      : view.blocks.map(b => b.title).filter(Boolean).slice(0, 5);
+    const anchorTexts = selectedBlock?.anchorText
+      ? [selectedBlock.anchorText]
+      : view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
+    console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50), concepts: conceptTitles.length, scopedToSelectedBlock: !!currentTopic });
 
     // OpenAI: specific article URLs + channel-targeted videos
     fetch("/api/resolveResources", {
@@ -2064,7 +2064,7 @@ function UltraView({
 
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.coreIdea, view.pageThesis, hasSynth]);
+  }, [view.coreIdea, view.pageThesis, hasSynth, selectedBlock?.conceptId]);
 
   // Interactive Mini Test items — structured questions from OpenAI
   const miniTestItems = synth?.miniTestItems ?? null;
@@ -2484,6 +2484,14 @@ function UltraView({
           const fMemHook  = (selectedBlock as UltraConceptBlock & { memoryHook?: string }).memoryHook
             ? sanitizeDisplay((selectedBlock as UltraConceptBlock & { memoryHook?: string }).memoryHook)
             : null;
+          // Exact source anchor — the verbatim PDF sentence this block was built from.
+          // Shown as a quote (not just a jump-to-PDF button) so the block is visibly
+          // traceable to this page, not generic. Suppressed when it just repeats the
+          // already-shown pattern/concept line.
+          const fAnchorQuote = selectedBlock.anchorText && !isSimilarText(selectedBlock.anchorText, fPattern ?? "", 0.75)
+            ? sanitizeDisplay(selectedBlock.anchorText)
+            : null;
+          const fRecallQuestion = sanitizeDisplay(selectedBlock.recallQuestion);
 
           // Mechanism field: requires causal language + cannot duplicate pattern
           const fReason = renderNoteQualityGate("mechanism", selectedBlock.surgicalReason, {
@@ -2528,6 +2536,17 @@ function UltraView({
                 </button>
               )}
             </div>
+            {fAnchorQuote && (
+              <button
+                type="button"
+                onClick={() => onAnchorClick(selectedBlock.anchorText ?? selectedBlock.pattern)}
+                className="mb-3 block w-full rounded-lg border border-amber-400/15 bg-amber-400/4 px-3 py-2 text-left transition-colors hover:bg-amber-400/8"
+                title="Jump to this exact text in the PDF"
+              >
+                <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-300/70">📍 Source (page {pageNumber ?? "—"})</div>
+                <p className="text-[12.5px] italic leading-5 text-amber-100/85">"{fAnchorQuote}"</p>
+              </button>
+            )}
             <div className="space-y-4">
               {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight. */}
               {fPattern && (
@@ -2684,6 +2703,12 @@ function UltraView({
                   <p className="text-[14px] leading-6 text-white/90">{fImportance}</p>
                 </div>
               )}
+              {fRecallQuestion && (
+                <div className="rounded-lg border border-cyan-400/15 bg-cyan-400/5 px-3 py-2">
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-cyan-300">🧠 Recall Question</div>
+                  <p className="text-[14px] leading-6 text-cyan-100/90">{fRecallQuestion}</p>
+                </div>
+              )}
             </div>
           </div>
           );
@@ -2727,7 +2752,7 @@ function UltraView({
               ))}
             </ul>
           ) : (
-            <p className="text-[12px] text-slate-500 italic">No reading resources found for this page.</p>
+            <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>
       ) : null}
@@ -2796,15 +2821,20 @@ function UltraView({
               })}
             </ul>
           ) : (
-            <p className="text-[12px] text-slate-500 italic">No video recommendations found for this page.</p>
+            <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>
       ) : null}
 
-      {/* ── Cohere: Related Search Topics (readings + videos) ── */}
-      {hasSynth && (cohereQueries.readings.length > 0 || cohereQueries.videos.length > 0) ? (
-        <PanelSection title="🔍 Related Study Topics">
-          {cohereQueries.readings.length > 0 && (
+      {/* ── Cohere: broad search starting points — shown ONLY when the exact-match
+           pipeline above found nothing for that category, so a verified exact match
+           is never cluttered by unrelated broad-topic search suggestions. ── */}
+      {hasSynth && resolvedResources.resolved && (
+        (resolvedResources.articles.length === 0 && cohereQueries.readings.length > 0) ||
+        (resolvedResources.videos.length === 0 && cohereQueries.videos.length > 0)
+      ) ? (
+        <PanelSection title="🔍 Broad Search (no exact match found)">
+          {resolvedResources.articles.length === 0 && cohereQueries.readings.length > 0 && (
             <div className="mb-2">
               <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400/70 mb-1.5">Readings</p>
               <div className="flex flex-wrap gap-1.5">
@@ -2822,7 +2852,7 @@ function UltraView({
               </div>
             </div>
           )}
-          {cohereQueries.videos.length > 0 && (
+          {resolvedResources.videos.length === 0 && cohereQueries.videos.length > 0 && (
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-red-400/70 mb-1.5">Videos</p>
               <div className="flex flex-wrap gap-1.5">
