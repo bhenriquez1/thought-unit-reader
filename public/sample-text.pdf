@@ -1,0 +1,54 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1421 >>
+stream
+BT /F1 11 Tf 12 TL 50 760 Td
+(Chapter 4: Acid-Base Equilibrium and Buffer Systems) Tj T*
+() Tj T*
+(The mechanism by which buffer solutions resist changes in pH depends on the) Tj T*
+(equilibrium between a weak acid and its conjugate base. When a strong acid is) Tj T*
+(added to the buffer, the conjugate base reacts with the excess protons, shifting) Tj T*
+(the equilibrium and minimizing the resulting change in pH.) Tj T*
+() Tj T*
+(A common trap students fall into is assuming buffer capacity is unlimited.) Tj T*
+(In reality, once the weak acid or conjugate base is fully consumed, the) Tj T*
+(buffer system loses its ability to resist pH changes, and the solution) Tj T*
+(pH will change rapidly with further addition of acid or base.) Tj T*
+() Tj T*
+(Clinically, this principle explains why the bicarbonate buffer system in) Tj T*
+(blood plasma is critical: small disruptions in the ratio of bicarbonate to) Tj T*
+(carbonic acid can cause significant changes in blood pH, leading to acidosis) Tj T*
+(or alkalosis. Diagnosis of these conditions often requires interpreting) Tj T*
+(arterial blood gas values relative to the Henderson-Hasselbalch equation.) Tj T*
+() Tj T*
+(Why this matters: the DAT and MCAT both test buffer calculations heavily,) Tj T*
+(and understanding the underlying mechanism \(not just memorizing the formula\)) Tj T*
+(is the key to answering multi-step equilibrium questions correctly.) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1784
+%%EOF
