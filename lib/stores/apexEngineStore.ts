@@ -89,6 +89,67 @@ function now(): string {
   return new Date().toISOString();
 }
 
+// ---------------------------------------------------------------------------
+// Book-scoped persistence
+// ---------------------------------------------------------------------------
+// sessions/scores/questionBank are per-book (a student's DAT practice on one
+// uploaded book shouldn't mix question history with another); patterns/
+// patternReadiness/traps stay global so skill mastery (e.g. "equilibrium")
+// keeps accumulating across every uploaded book. Both slices live under
+// separate localStorage keys so they can have independent lifecycles even
+// though Zustand persist only sees a single logical store.
+
+const APEX_GLOBAL_KEY = "apex-engine-global-v1";
+const GLOBAL_FIELDS = ["patterns", "patternReadiness", "traps", "projection", "currentRecommendation", "insights"] as const;
+const BOOK_FIELDS = ["sessions", "scores", "questionBank"] as const;
+
+let activeApexBookId = "global";
+
+function apexBookKey(bookId: string): string {
+  return `apex-engine-book-v1::${bookId}`;
+}
+
+function pick<T extends Record<string, unknown>>(obj: T, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) out[k] = obj[k];
+  return out;
+}
+
+const rawBookScopedStorage = {
+  getItem(_name: string): string | null {
+    const globalRaw = localStorage.getItem(APEX_GLOBAL_KEY);
+    const bookRaw = localStorage.getItem(apexBookKey(activeApexBookId));
+    if (!globalRaw && !bookRaw) return null;
+    const globalParsed = globalRaw ? JSON.parse(globalRaw) : { state: {}, version: 0 };
+    const bookParsed = bookRaw ? JSON.parse(bookRaw) : { state: {}, version: 0 };
+    return JSON.stringify({
+      state: { ...globalParsed.state, ...bookParsed.state },
+      version: bookParsed.version ?? globalParsed.version ?? 0,
+    });
+  },
+  setItem(_name: string, value: string): void {
+    const parsed = JSON.parse(value);
+    const state = parsed.state ?? {};
+    localStorage.setItem(APEX_GLOBAL_KEY, JSON.stringify({ state: pick(state, GLOBAL_FIELDS), version: parsed.version }));
+    localStorage.setItem(apexBookKey(activeApexBookId), JSON.stringify({ state: pick(state, BOOK_FIELDS), version: parsed.version }));
+  },
+  removeItem(_name: string): void {
+    localStorage.removeItem(apexBookKey(activeApexBookId));
+  },
+};
+
+/** Switches which uploaded book's sessions/scores/questionBank are active,
+ *  then rehydrates the store from that book's localStorage slice. Global
+ *  pattern-mastery data is unaffected. */
+export function setActiveApexBook(bookId: string): void {
+  activeApexBookId = bookId && bookId.trim() ? bookId : "global";
+  void useApexEngineStore.persist.rehydrate();
+}
+
+export function getActiveApexBook(): string {
+  return activeApexBookId;
+}
+
 function masteryLevel(timesSeen: number, timesCorrect: number): UserPattern["masteryLevel"] {
   if (timesSeen === 0) return "unseen";
   const r = timesCorrect / timesSeen;
@@ -345,7 +406,7 @@ export const useApexEngineStore = create<ApexEngineStore>()(
             removeItem: () => {},
           };
         }
-        return localStorage;
+        return rawBookScopedStorage;
       }),
       partialize: (s) => ({
         sessions: s.sessions,

@@ -7,6 +7,35 @@ import type { ExamAttempt, DATQuestion } from '@/types/apex-exam';
 import type { GeneratedExam } from '@/lib/apex/examGenerator';
 import TUExplainModal from '@/components/apex/TUExplainModal';
 import { mistakeLogger } from '@/lib/apex/mistakeLogger';
+import { buildWeaknessReport } from '@/lib/examEngine/weaknessAnalytics';
+import { buildStudyRecommendation } from '@/lib/examEngine/recommendationEngine';
+import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/datProfile';
+import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
+import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
+
+const ANSWER_LETTERS = ['A', 'B', 'C', 'D', 'E'];
+
+function buildEngineAttempts(exam: GeneratedExam, attempt: ExamAttempt): QuestionAttempt[] {
+  return exam.questions.map((q) => {
+    const response = attempt.responses.find((r) => r.questionId === q.id);
+    return {
+      id: `${attempt.id}-${q.id}`,
+      questionId: q.id,
+      examProfileId: DAT_EXAM_PROFILE_ID,
+      bookId: q.sourceBookId ?? 'unknown',
+      examAttemptId: attempt.id,
+      section: q.sectionId,
+      topic: q.topic,
+      difficulty: legacyToDifficulty(q.difficulty),
+      questionType: (q.engineQuestionType as QuestionType) ?? 'application',
+      correct: !!response && response.selectedAnswer === q.correctAnswer,
+      selectedIndex: response?.selectedAnswer ? ANSWER_LETTERS.indexOf(response.selectedAnswer) : -1,
+      timeSeconds: response?.timeSpent ?? 0,
+      trapTriggered: q.trapType,
+      createdAt: response?.timestamp ?? attempt.startTime,
+    };
+  });
+}
 
 interface ExamResults {
   attempt: ExamAttempt;
@@ -47,6 +76,8 @@ export default function ExamResultsPage() {
   const [tuModalOpen, setTuModalOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<DATQuestion | null>(null);
   const [selectedUserAnswer, setSelectedUserAnswer] = useState<string | undefined>(undefined);
+  const [recommendation, setRecommendation] = useState<StudyRecommendation | null>(null);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadResults = () => {
@@ -200,6 +231,28 @@ export default function ExamResultsPage() {
     loadResults();
   }, []);
 
+  useEffect(() => {
+    if (!results) return;
+    const bookId = results.exam.questions.find((q) => q.sourceBookId)?.sourceBookId;
+    if (!bookId) return;
+
+    const attempts = buildEngineAttempts(results.exam, results.attempt);
+    const report = buildWeaknessReport(bookId, DAT_EXAM_PROFILE_ID, attempts, DAT_EXAM_PROFILE.weaknessAnalytics);
+
+    let cancelled = false;
+    buildStudyRecommendation(report, DAT_EXAM_PROFILE, bookId)
+      .then((rec) => {
+        if (!cancelled) setRecommendation(rec);
+      })
+      .catch((error) => {
+        console.error('Failed to build study recommendation:', error);
+        if (!cancelled) setRecommendationError('Could not build a study recommendation for this attempt.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [results]);
+
   const exportResults = (format: 'json' | 'csv') => {
     if (!results) return;
 
@@ -342,6 +395,67 @@ export default function ExamResultsPage() {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* Diagnostic & Study Recommendation */}
+              {recommendation && (
+                <div className="bg-gradient-to-br from-purple-900/40 to-blue-900/40 rounded-lg p-6 border border-purple-500/30">
+                  <h3 className="text-xl font-semibold mb-3 text-purple-300">🧭 Diagnostic & Next Steps</h3>
+                  <p className="text-gray-200 text-sm mb-4 whitespace-pre-line">{recommendation.narrative}</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-black/20 rounded-lg p-4">
+                      <div className="text-xs font-semibold text-gray-400 uppercase mb-2">Weakest Topics</div>
+                      {recommendation.weakestTopics.length > 0 ? (
+                        <ul className="space-y-1 text-sm text-red-200">
+                          {recommendation.weakestTopics.map((topic) => (
+                            <li key={topic}>• {topic}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-sm text-gray-400">No clear weak spots yet — keep practicing.</div>
+                      )}
+                    </div>
+
+                    <div className="bg-black/20 rounded-lg p-4">
+                      <div className="text-xs font-semibold text-gray-400 uppercase mb-2">Highest-Return Topic</div>
+                      <div className="text-sm text-yellow-200">
+                        {recommendation.highestReturnTopic ?? 'Not enough data yet'}
+                      </div>
+                      <div className="text-xs font-semibold text-gray-400 uppercase mt-3 mb-1">Next Exam Mode</div>
+                      <div className="text-sm text-blue-200 capitalize">{recommendation.nextExamMode}</div>
+                    </div>
+                  </div>
+
+                  {recommendation.readerPages.length > 0 && (
+                    <div className="mt-4 bg-black/20 rounded-lg p-4">
+                      <div className="text-xs font-semibold text-gray-400 uppercase mb-2">Review in the Reader</div>
+                      <ul className="space-y-1 text-sm text-gray-200">
+                        {recommendation.readerPages.map((rp, i) => (
+                          <li key={i}>📖 {rp.topic} — page {rp.pageNumber}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {recommendation.recallSetId && (
+                    <div className="mt-4 text-sm text-gray-300">
+                      🎯 A weak-topic review set has been built — open <span className="font-semibold text-indigo-300">Recall Lab</span> in the Reader to study it.
+                    </div>
+                  )}
+
+                  {recommendation.podcastDeepLink && (
+                    <div className="mt-2 text-sm text-gray-300">
+                      🎧 Cram this in Podcast Lab — open page {recommendation.podcastDeepLink.pageNumber} in the Reader and start a page-review podcast.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {recommendationError && (
+                <div className="bg-red-900/20 rounded-lg p-4 border border-red-500/30 text-sm text-red-200">
+                  {recommendationError}
+                </div>
+              )}
+
               {/* Score Summary */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-gray-800/50 rounded-lg p-6 text-center">
@@ -583,6 +697,30 @@ export default function ExamResultsPage() {
                             </button>
                           </div>
                           <div className="text-sm text-blue-200">{question.explanation}</div>
+                        </div>
+                      )}
+
+                      {question.trapType && (
+                        <div className="mt-2 p-3 bg-orange-900/20 rounded border border-orange-500/30">
+                          <div className="text-xs font-semibold text-orange-400 mb-1">⚠️ Common Trap: {question.trapType}</div>
+                        </div>
+                      )}
+
+                      {question.whyWrong && question.whyWrong.some(Boolean) && (
+                        <div className="mt-2 p-3 bg-gray-900/30 rounded border border-gray-600/40">
+                          <div className="text-xs font-semibold text-gray-400 mb-2">Why each option is wrong:</div>
+                          <div className="space-y-1 text-sm text-gray-300">
+                            {Object.keys(question.options).map((key, i) => {
+                              if (key === question.correctAnswer) return null;
+                              const why = question.whyWrong?.[i];
+                              if (!why) return null;
+                              return (
+                                <div key={key}>
+                                  <span className="font-semibold text-blue-400">{key}.</span> {why}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                       

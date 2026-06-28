@@ -41,6 +41,15 @@ export interface DATQuestion {
   tags: string[];
   source?: string;
   lastUpdated: string;
+
+  // Universal Exam Engine fields — only populated for AI-generated questions
+  // (lib/examEngine/legacyAdapter.ts). Optional so static/legacy questions
+  // built before the engine existed still satisfy this type.
+  whyWrong?: string[];
+  trapType?: string;
+  engineQuestionType?: string;
+  sourceBookId?: string;
+  sourcePageNumber?: number;
 }
 
 export interface ExamConfiguration {
