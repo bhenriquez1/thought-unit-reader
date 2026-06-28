@@ -1454,7 +1454,13 @@ export function RightPanel({
                 ));
               })()}
               <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" onClick={onOpenExplainStep} className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200">Explain</button>
+                <button
+                  type="button"
+                  onClick={() => (onSpeechExplainSegment ? onSpeechExplainSegment(activeThoughtUnit.evidenceRefId) : onOpenExplainStep?.())}
+                  className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200"
+                >
+                  Explain
+                </button>
                 <button type="button" onClick={onOpenWhiteboard} className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">Whiteboard</button>
                 <button type="button" onClick={openShadowRecall} className="rounded-lg border border-violet-300/20 bg-violet-300/10 px-2 py-1 text-[11px] font-semibold text-violet-200">Shadow Recall</button>
               </div>
