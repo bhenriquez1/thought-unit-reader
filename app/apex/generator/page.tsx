@@ -268,11 +268,20 @@ export default function ExamGeneratorPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-300">Selected Sections:</span>
-                  <span className="font-medium text-white">{options.sectionIds.length}</span>
+                  <span className="font-medium text-white">
+                    {generatedExam ? generatedExam.config.sections.length : options.sectionIds.length}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-300">Total Questions:</span>
-                  <span className="font-medium text-white">{options.questionCount}</span>
+                  <span className="font-medium text-white">
+                    {generatedExam ? generatedExam.questions.length : options.questionCount}
+                    {generatedExam && generatedExam.questions.length < options.questionCount && (
+                      <span className="ml-1 text-xs text-amber-400">
+                        (requested {options.questionCount})
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-300">Time Limit:</span>
@@ -285,6 +294,11 @@ export default function ExamGeneratorPage() {
                   </span>
                 </div>
               </div>
+              {generatedExam && generatedExam.questions.length < options.questionCount && (
+                <p className="mt-3 text-xs text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-3 py-2">
+                  Only {generatedExam.questions.length} of {options.questionCount} requested questions could be generated from this book's notes. Read and synthesize more pages to unlock additional questions.
+                </p>
+              )}
             </div>
 
             {/* Generate Button */}

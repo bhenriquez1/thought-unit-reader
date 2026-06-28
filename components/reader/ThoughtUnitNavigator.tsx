@@ -288,7 +288,7 @@ export default function ThoughtUnitNavigator({
                     {meta.label}
                   </span>
                   <span
-                    className="text-[10.5px] font-semibold leading-snug text-white/90 truncate"
+                    className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
                     data-testid="thought-unit-title"
                   >
                     {entry.title ?? deriveCardTitle(entry.text)}
