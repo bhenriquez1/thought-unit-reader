@@ -85,12 +85,12 @@ export function buildSpeechTimeline({
     : chosen;
 
   const segments: SpeechSegment[] = [];
-  const pushUnit = (unit: ExpertAnchor, label = unit.importanceLabel, prefix = "") => {
-    const raw = `${prefix}${unit.exactText}`.trim();
+  const pushUnit = (unit: ExpertAnchor, label = unit.importanceLabel, prefix = "", overrideText?: string, role: SpeechSegmentRole = "visualAnchor") => {
+    const raw = (overrideText ?? `${prefix}${unit.exactText}`).trim();
     if (raw.length < 8) return;
     segments.push({
-      id: unit.id,
-      role: "visualAnchor",
+      id: role === "checkpoint" ? `${unit.id}-${label.toLowerCase().replace(/\W+/g, "-")}` : unit.id,
+      role,
       label,
       rawText: raw,
       text: formulaToSpeech(raw),
@@ -131,6 +131,14 @@ export function buildSpeechTimeline({
         requiresConfirm: true,
       });
     }
+  } else if (mode === "study") {
+    ordered.forEach((unit) => {
+      pushUnit(unit, unit.importanceLabel);
+      const explanation = unit.reason && unit.reason !== unit.importanceLabel
+        ? `Why it matters: ${unit.reason}.`
+        : `Why it matters: this is one of the page's expert-ranked thought units.`;
+      pushUnit(unit, "Why It Matters", "", explanation, "checkpoint");
+    });
   } else {
     ordered.forEach((unit) => pushUnit(unit));
   }
