@@ -1428,13 +1428,6 @@ export function RightPanel({
             </p>
             <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
               {(() => {
-                const sections: Array<[string, string]> = [
-                  ["Why It Matters", activeThoughtUnit.reason],
-                  ["Common Trap", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Do not memorize this as isolated trivia; connect it to the surrounding expert anchors."],
-              {activeThoughtUnit.exactText}
-            </p>
-            <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
-              {(() => {
                 // Exactly the 4 sections the Expert Brain card owns beyond the
                 // Master statement (above) and Confidence/mastery (header badge):
                 // Why It Matters, Common Trap, Connection Map, Checkpoint. No
@@ -1466,7 +1459,6 @@ export function RightPanel({
                   sections.splice(2, 0, ["Memory", activeThoughtUnit.exactText]);
                 }
                 return sections.slice(0, 6).map(([label, body]) => (
-                return sections.map(([label, body]) => (
                   <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2">
                     <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
                     <div className="mt-0.5 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">{body}</div>
@@ -2800,7 +2792,6 @@ function UltraView({
             </ul>
           ) : (
             <p className="text-[12px] text-slate-500 italic">No exact reading match found for this page.</p>
-            <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>
       ) : null}
@@ -2871,7 +2862,6 @@ function UltraView({
             </ul>
           ) : (
             <p className="text-[12px] text-slate-500 italic">No exact video match found for this page.</p>
-            <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>
       ) : null}
