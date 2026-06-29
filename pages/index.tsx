@@ -62,6 +62,7 @@ import { buildRecallSetFromView, buildRecallSetFromNote, saveRecallSet, getAllRe
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx } from "@/lib/notelab/exportNote";
 import { getStoredProfessionMode } from "@/lib/notelab/professionModes";
 import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/components/reader/ThoughtUnitNavigator";
+import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -619,6 +620,8 @@ export default function ThoughtUnitReader() {
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
   const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
+  const [canonicalLeftPanelUnits, setCanonicalLeftPanelUnits] = useState<ExpertAnchor[]>([]);
+  const [canonicalLeftPanelDiagnostic, setCanonicalLeftPanelDiagnostic] = useState<string | null>("Still preparing thought units");
 
   // RightPanel's "studyModel ready" effect (RightPanel.tsx ~line 1014-1031) depends on
   // this callback's identity. An inline arrow here would be recreated every parent
@@ -682,13 +685,15 @@ export default function ThoughtUnitReader() {
   // Clear stale synthesis state immediately when the user navigates to a new page.
   useEffect(() => {
     setCurrentPageStudyModel(null);
+    setCanonicalLeftPanelUnits([]);
+    setCanonicalLeftPanelDiagnostic("Still preparing thought units");
   }, [currentPage]);
 
-  // finalHighlightAnchors: grounded visualAnchors from finalStudyModel — left panel source.
-  // Pipeline: finalStudyModel.visualAnchors → sanitize → ground → budget → render.
+  // finalHighlightAnchors: grounded canonicalLeftPanelUnits — left panel source.
+  // Pipeline: canonicalLeftPanelUnits → sanitize → ground → budget → render.
   // Blocked paths: /api/score-anchors, universalSpecificityScore, highlightNeighborhoods,
   //                priorityHighlights, localStorage highlights.
-  // Rule: if visualAnchors is empty, render zero highlights — no fallback.
+  // Rule: if canonical units are empty, render diagnostics instead of silent empty UI.
   const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
 
   // Effective domain preset reported by the left panel (PureReaderView) — including
@@ -831,11 +836,11 @@ export default function ThoughtUnitReader() {
       return [...fromGrounded, ...fallback];
     };
 
-    // ── No studyModel (loading) — keep existing highlights until new model arrives ──
-    if (!currentPageStudyModel) {
+    // ── No canonical units yet — keep existing highlights until extraction/model arrives ──
+    if (!canonicalLeftPanelUnits.length && !currentPageStudyModel) {
       console.log("[HIGHLIGHT_PERSIST]", {
         page:          currentPage,
-        reason:        "study-model-loading",
+        reason:        canonicalLeftPanelDiagnostic ?? "canonical-units-loading",
         existingCount: finalHighlightAnchors.length,
       });
       return;
@@ -848,14 +853,14 @@ export default function ThoughtUnitReader() {
       console.log("[LEFT_PANEL_GROUND_WAITING_FOR_TEXT]", {
         page:        currentPage,
         pageTextLen: pageText.length,
-        anchorCount: currentPageStudyModel.visualAnchors?.length ?? 0,
+        anchorCount: canonicalLeftPanelUnits.length,
         note:        "skipping grounding — waiting for PDF text extraction",
       });
       return;
     }
 
     // ── Stale model for wrong page — clear live anchors, keep saved highlights ──
-    if (currentPageStudyModel.page !== currentPage) {
+    if (currentPageStudyModel && currentPageStudyModel.page !== currentPage) {
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged(null);
@@ -865,25 +870,25 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    const pageType   = currentPageStudyModel.pageType ?? null;
-    const visualAnchors = currentPageStudyModel.visualAnchors ?? [];
+    const pageType   = currentPageStudyModel?.pageType ?? null;
+    const visualAnchors = canonicalLeftPanelUnits;
 
-    console.log("[LEFT_PANEL_VISUAL_ANCHORS_COUNT]", { page: currentPage, count: visualAnchors.length, roles: visualAnchors.map(a => a.role) });
+    console.log("[LEFT_PANEL_VISUAL_ANCHORS_COUNT]", { page: currentPage, count: visualAnchors.length, roles: visualAnchors.map(a => a.category), source: "canonicalLeftPanelUnits" });
     visualAnchors.forEach((a) => {
-      console.log("[LEFT_PANEL_ANCHOR_EXACT_TEXT]", { page: currentPage, id: a.id, role: a.role, sourceField: a.sourceField, exactText: a.exactText.slice(0, 100) });
+      console.log("[LEFT_PANEL_ANCHOR_EXACT_TEXT]", { page: currentPage, id: a.id, role: a.category, sourceField: a.source, exactText: a.exactText.slice(0, 100) });
     });
 
     const pageRole = currentPageRoleRef.current;
 
     // ── Page classification ────────────────────────────────────────────────
-    const conceptBlockCount = currentPageStudyModel.conceptBlocks?.length ?? 0;
+    const conceptBlockCount = currentPageStudyModel?.conceptBlocks?.length ?? 0;
     console.log("[PAGE_CLASSIFY]", {
       page:              currentPage,
       pageType:          pageType ?? "unknown",
       pageRole:          pageRole ?? "unknown",
       visualAnchorCount: visualAnchors.length,
       conceptBlockCount,
-      pageThesis:        currentPageStudyModel.pageThesis?.slice(0, 60) ?? null,
+      pageThesis:        currentPageStudyModel?.pageThesis?.slice(0, 60) ?? null,
     });
 
     // ── Non-instructional skip (two-tier) ──────────────────────────────────
@@ -902,7 +907,7 @@ export default function ThoughtUnitReader() {
       "chapter_opener", "learning_objectives",
     ]);
 
-    // AI evidence: if OpenAI produced anchors, this page is instructional.
+    // Canonical evidence: if the canonical LeftPanel produced units, this page is instructional.
     const aiConfirmsInstructional = visualAnchors.length > 0;
 
     console.log("[CLASSIFIER_EVIDENCE]", {
@@ -953,9 +958,9 @@ export default function ThoughtUnitReader() {
 
     console.log("[VISUAL_ANCHOR_COUNT_BEFORE_SKIP]", { page: currentPage, count: visualAnchors.length });
 
-    // ── Empty visualAnchors — no live highlights; saved highlights still render ──
+    // ── Empty canonicalLeftPanelUnits — no live highlights; saved highlights still render ──
     if (!visualAnchors.length) {
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "visual-anchors-empty", note: "AI returned no highlight anchors for this page" });
+      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: canonicalLeftPanelDiagnostic ?? "canonical-units-empty", note: "Canonical LeftPanel returned no units for this page" });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: 0, groundedCount: 0, failedCount: 0, anchors: [] });
@@ -964,27 +969,27 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    // ── Ground visualAnchors against PDF text ──────────────────────────────
+    // ── Ground canonical LeftPanel units against PDF text ──────────────────
     // Allowed: sanitize + ground + budget.
     // Blocked: /api/score-anchors, universalSpecificityScore, all legacy fallbacks.
-    // Pass VisualAnchor.id through as evidenceRefId so left-panel overlay, speech, and
+    // Pass ExpertAnchor.id through as evidenceRefId so left-panel overlay, speech, and
     // focusedEvidenceId all share the same stable ID (e.g. "va-0", "va-1").
     const rawForGrounding = visualAnchors.map((a) => ({
       text:          a.exactText,
-      anchorType:    a.role,
+      anchorType:    a.category === "clinical" ? "clinical_pearl" : a.category === "memoryAnchor" ? "memory_hook" : a.category === "keyAnatomy" ? "anatomy" : a.category === "keyDetail" ? "dat_fact" : a.category === "unknown" ? "dat_fact" : a.category,
       reason:        a.reason,
       spanStart:     a.spanStart ?? null,
       spanEnd:       a.spanEnd   ?? null,
       priorityTier:  a.priorityTier ?? null,
       domainCategory: a.domainCategory ?? null,
-      evidenceRefId: a.id,
+      evidenceRefId: a.evidenceRefId,
     })) as (SynthHighlightAnchor & { evidenceRefId: string })[];
 
     // Filter: all VisualAnchorRole values reach the PDF overlay — including
     // "definition" and "keyDetail", which prove definitions/details on the page.
-    const OVERLAY_ROLES = new Set(["coreIdea", "definition", "mechanism", "exampleEvidence", "keyDetail", "confusionTrap", "datFact", "clinicalPearl"]);
+    const OVERLAY_ROLES = new Set(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy"]);
     const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
-    console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "finalStudyModel.visualAnchors" });
+    console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "canonicalLeftPanelUnits" });
     const sanitized = sanitizeHighlightAnchors(roleFiltered);
     const grounded  = groundHighlightAnchors(sanitized, pageText);
     console.log("[LEFT_PANEL_GROUND_RESULT]", {
@@ -996,7 +1001,7 @@ export default function ThoughtUnitReader() {
         .filter(a => !grounded.find(g => g.groundedText?.toLowerCase().includes(a.exactText.toLowerCase().slice(0, 20))))
         .map(a => a.exactText.slice(0, 60)),
       groundMethods: grounded.map(g => g.groundMethod),
-      source: "groundHighlightAnchors",
+      source: "groundHighlightAnchors(canonicalLeftPanelUnits)",
     });
     if (grounded.length === 0 && visualAnchors.length > 0) {
       console.warn("[LEFT_PANEL_GROUND_FAILED]", {
@@ -1020,7 +1025,7 @@ export default function ThoughtUnitReader() {
 
     // Dev-mode diagnostics snapshot — same grounded/confidence/groundMethod data
     // already computed above, just retained instead of discarded after the logs.
-    const anchorById = new Map(visualAnchors.map((a) => [a.id, a]));
+    const anchorById = new Map(visualAnchors.map((a) => [a.evidenceRefId, a]));
     setHighlightDiagnosticsIfChanged({
       page: currentPage,
       requestedCount: visualAnchors.length,
@@ -1032,7 +1037,7 @@ export default function ThoughtUnitReader() {
         return {
           evidenceRefId: refId,
           role: a.anchorType,
-          sourceField: source?.sourceField,
+          sourceField: source?.source,
           confidence: a.confidence,
           groundMethod: a.groundMethod,
           matchedLength: a.groundedText.trim().split(/\s+/).filter(Boolean).length,
@@ -1041,7 +1046,7 @@ export default function ThoughtUnitReader() {
     });
 
     console.log("[LEFT_PANEL_SOURCE]", {
-      source:     "finalStudyModel.visualAnchors",
+      source:     "canonicalLeftPanelUnits",
       page:       currentPage,
       count:      groundedAnchors.length,
       ids:        groundedAnchors.map((a) => a.evidenceRefId),
@@ -1087,11 +1092,16 @@ export default function ThoughtUnitReader() {
       page: currentPage,
       note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors + savedHighlightsStore only",
     });
-  }, [currentPageStudyModel, currentPage, pageTextByPage, savedHighlightAnchors]);
+  }, [currentPageStudyModel, canonicalLeftPanelUnits, canonicalLeftPanelDiagnostic, currentPage, pageTextByPage, savedHighlightAnchors]);
 
   const whiteboardSteps = useMemo(
     () => currentPageStudyModel ? generateWhiteboardStepsFromModel(currentPageStudyModel, currentPage) : [],
     [currentPageStudyModel, currentPage],
+  );
+
+  const activeCanonicalThoughtUnit = useMemo(
+    () => canonicalLeftPanelUnits.find((unit) => unit.evidenceRefId === focusedEvidenceId || unit.id === focusedEvidenceId) ?? canonicalLeftPanelUnits[0] ?? null,
+    [canonicalLeftPanelUnits, focusedEvidenceId],
   );
 
   /* =========================================================================
@@ -1245,6 +1255,26 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+
+  useEffect(() => {
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const built = buildCanonicalLeftPanelUnits({
+      page: currentPage,
+      pageText,
+      studyModel: currentPageStudyModel,
+    });
+    setCanonicalLeftPanelUnits(built.units);
+    setCanonicalLeftPanelDiagnostic(built.diagnosticReason);
+    console.log("[LEFT_PANEL_CANONICAL_READY]", {
+      thoughtUnitId: built.units[0]?.id ?? null,
+      source: built.units[0]?.source ?? "none",
+      page: currentPage,
+      sourceText: built.units[0]?.exactText.slice(0, 80) ?? null,
+      fallbackUsed: built.fallbackUsed,
+      count: built.units.length,
+      diagnosticReason: built.diagnosticReason,
+    });
+  }, [bookId, currentPage, currentPageStudyModel, pageTextByPage]);
 
   // Record this page as visited — the durable signal Syllabus's chapter-level
   // "Read %" is computed from (see lib/syllabus/chapterProgress.ts). Without this,
@@ -1544,7 +1574,7 @@ export default function ThoughtUnitReader() {
   // groundHighlightAnchors' sentence scoring) for card text that paraphrases or
   // excerpts an anchor rather than literally containing/being contained by it.
   const resolveEvidenceId = useCallback((snippet: string) => {
-    const anchors = currentPageStudyModel?.visualAnchors ?? [];
+    const anchors = canonicalLeftPanelUnits;
     if (!anchors.length) return undefined;
     const needle = snippet.toLowerCase().replace(/\s+/g, " ").trim();
     if (!needle) return undefined;
@@ -1553,7 +1583,7 @@ export default function ThoughtUnitReader() {
       const hay = a.exactText.toLowerCase().replace(/\s+/g, " ").trim();
       return hay.includes(needle) || needle.includes(hay);
     });
-    if (contained) return contained.id;
+    if (contained) return contained.evidenceRefId;
 
     const needleTerms = new Set(needle.split(/\W+/).filter((w) => w.length >= 3));
     if (!needleTerms.size) return undefined;
@@ -1564,10 +1594,10 @@ export default function ThoughtUnitReader() {
       if (!hayTerms.length) continue;
       const matched = hayTerms.filter((t) => needleTerms.has(t)).length;
       const score = matched / Math.min(needleTerms.size, hayTerms.length);
-      if (score > 0.5 && (!best || score > best.score)) best = { id: a.id, score };
+      if (score > 0.5 && (!best || score > best.score)) best = { id: a.evidenceRefId, score };
     }
     return best?.id;
-  }, [currentPageStudyModel]);
+  }, [canonicalLeftPanelUnits]);
 
   // Shared "focus this evidence" handler — used by RightPanel cards, the left-panel
   // Thought Unit strip, and speech segment focus. Sets focusedEvidenceId (drives the
@@ -1599,11 +1629,24 @@ export default function ThoughtUnitReader() {
   const onPdfHighlightFocus = useCallback((id: string) => {
     setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
-    if (anchor?.text) speechPanelRef.current?.playFromSnippet(anchor.text);
+    const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
+    console.log("[THOUGHT_UNIT_JUMP]", {
+      thoughtUnitId: id,
+      page: currentPage,
+      anchorFound: !!anchor,
+      scrolledToPdf: !!anchor,
+    });
+    if (anchor?.text) {
+      setFocusSnippet(anchor.text);
+      speechPanelRef.current?.playFromSnippet(anchor.text);
+    } else if (activeUnit?.exactText) {
+      setFocusSnippet(activeUnit.exactText);
+      speechPanelRef.current?.playFromSnippet(activeUnit.exactText);
+    }
     // playFromSnippet() calls stop() internally, which resets focus to null —
     // re-affirm it so the active style stays visible once playback starts.
     setFocusedEvidenceId(id);
-  }, [finalHighlightAnchors]);
+  }, [finalHighlightAnchors, canonicalLeftPanelUnits, currentPage]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
@@ -1613,12 +1656,53 @@ export default function ThoughtUnitReader() {
 
   // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
   const sendCurrentPageToNoteLab = useCallback(async () => {
-    const sm = currentPageStudyModel;
-    if (!sm) return;
     const topic = `Page ${currentPage}`;
-    console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", hasThesis: !!sm.pageThesis, destination: "NoteLab" });
+    const activeUnit = activeCanonicalThoughtUnit ?? canonicalLeftPanelUnits[0] ?? null;
+    if (!activeUnit && !currentPageStudyModel) return;
+    console.log("[NOTELAB_SOURCE]", {
+      thoughtUnitId: activeUnit?.id ?? null,
+      source: activeUnit?.source ?? "page-level fallback",
+      page: currentPage,
+      sourceText: activeUnit?.exactText.slice(0, 80) ?? null,
+      fallbackUsed: !activeUnit || activeUnit.source !== "canonical_left_panel",
+    });
+    console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", thoughtUnitId: activeUnit?.id ?? null, destination: "NoteLab" });
     try {
-      const note = buildNoteFromStudyModel(sm, { bookId, pageNumber: currentPage, topic, bookTitle: uploadedFile?.name });
+      const note = activeUnit
+        ? buildUltraNote(bookId, currentPage, activeUnit.title, activeUnit.exactText, [], uploadedFile?.name)
+        : buildNoteFromStudyModel(currentPageStudyModel!, { bookId, pageNumber: currentPage, topic, bookTitle: uploadedFile?.name });
+      if (activeUnit) {
+        const neighbors = canonicalLeftPanelUnits
+          .filter((u) => u.id !== activeUnit.id)
+          .slice(0, 3)
+          .map((u) => `• ${u.title}: ${u.exactText}`)
+          .join("\n");
+        note.sections = [
+          { label: "Chief Concern / Core Problem", content: activeUnit.exactText },
+          { label: "Why This Matters", content: activeUnit.reason },
+          { label: "Diagnostic Reasoning", content: activeUnit.category === "trap" ? `Danger Zone: ${activeUnit.exactText}` : `Use this unit to decide what matters next on page ${currentPage}.` },
+          { label: "Procedure Logic", content: activeUnit.category === "mechanism" || activeUnit.category === "application" ? activeUnit.exactText : "Connect this anchor to the neighboring expert units before moving on." },
+          { label: "Decision Tree", content: neighbors || activeUnit.exactText },
+          { label: "Danger Zone", content: activeUnit.category === "trap" ? activeUnit.exactText : "Do not treat this as isolated trivia; connect it to the page's ranked units." },
+          { label: "Complication Risk", content: "Missing this unit can cause the downstream reasoning chain to fail." },
+          { label: "Clinical Pearl", content: activeUnit.category === "clinical" ? activeUnit.exactText : activeUnit.reason },
+          { label: "Common Mistake", content: "Reading the page summary without anchoring this exact source text." },
+          { label: "Connection Map", content: neighbors || "No neighboring canonical units available yet." },
+          { label: "Case Recall", content: `In a case, when would “${activeUnit.title}” change the answer?` },
+          { label: "Recall Questions", content: `1. Why is this a ${activeUnit.importanceLabel}?\n2. What detail in the source text proves it?\n3. What would you confuse it with?` },
+          { label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` },
+        ];
+        note.visualAnchors = canonicalLeftPanelUnits.map((u) => ({
+          id: u.id,
+          sourceField: "conceptBlock",
+          exactText: u.exactText,
+          role: u.category === "clinical" ? "clinical_pearl" : u.category === "memoryAnchor" ? "memory_hook" : u.category === "keyAnatomy" ? "anatomy" : u.category === "keyDetail" ? "dat_fact" : u.category === "unknown" ? "dat_fact" : u.category as any,
+          kind: u.category,
+          reason: u.reason,
+          priority: 1,
+          priorityTier: u.priorityTier,
+        }));
+      }
       await saveUltraNote(note);
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
@@ -1635,7 +1719,7 @@ export default function ThoughtUnitReader() {
     } catch (err: any) {
       console.error("[NOTELAB_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
     }
-  }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
+  }, [currentPageStudyModel, currentPage, bookId, uploadedFile, activeCanonicalThoughtUnit, canonicalLeftPanelUnits]);
 
   // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
   const sendCurrentPageToRecallLab = useCallback(async () => {
@@ -2017,28 +2101,105 @@ export default function ThoughtUnitReader() {
   // Expand a thought-unit (VisualAnchor) into the Recall Lab v2 box layout —
   // deterministic, no new LLM call (see buildThoughtUnitDetail).
   const openThoughtUnitInRecallLab = useCallback((anchorId: string) => {
+    const unit = canonicalLeftPanelUnits.find((u) => u.id === anchorId || u.evidenceRefId === anchorId);
+    if (unit) {
+      setRecallLabOpenUnit({
+        evidenceRefId: unit.evidenceRefId,
+        bookId,
+        pageNumber: unit.page,
+        title: unit.title,
+        sourceText: unit.exactText,
+        coreIdea: unit.exactText,
+        mechanism: unit.category === "mechanism" ? unit.exactText : null,
+        whyItMatters: unit.reason,
+        commonConfusion: unit.category === "trap" ? unit.exactText : null,
+        datFact: unit.category === "dat_fact" ? unit.exactText : null,
+        examTrap: unit.category === "trap" ? unit.exactText : null,
+        recallCard: { front: `Explain: ${unit.title}`, back: unit.exactText },
+      });
+      trySwitchShellTab("study", "study");
+      return;
+    }
     const sm = currentPageStudyModel;
     const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
     if (!sm || !anchor) return;
     setRecallLabOpenUnit(buildThoughtUnitDetail(anchor, sm, bookId));
     trySwitchShellTab("study", "study");
-  }, [currentPageStudyModel, bookId]);
+  }, [canonicalLeftPanelUnits, currentPageStudyModel, bookId, trySwitchShellTab]);
 
   // LeftPanel Thought Unit Navigator "Explain" button — resolves the clicked
   // evidenceRefId back to its VisualAnchor and opens Explain This Step seeded
   // from that exact thought unit, same path as openThoughtUnitInRecallLab.
   const explainThoughtUnitById = useCallback((anchorId: string) => {
+    const unit = canonicalLeftPanelUnits.find((u) => u.id === anchorId || u.evidenceRefId === anchorId);
+    if (unit) {
+      openExplainStepForThoughtUnit({
+        evidenceRefId: unit.evidenceRefId,
+        bookId,
+        pageNumber: unit.page,
+        title: unit.title,
+        sourceText: unit.exactText,
+        coreIdea: unit.exactText,
+        mechanism: unit.category === "mechanism" ? unit.exactText : null,
+        whyItMatters: unit.reason,
+        commonConfusion: unit.category === "trap" ? unit.exactText : null,
+        datFact: unit.category === "dat_fact" ? unit.exactText : null,
+        examTrap: unit.category === "trap" ? unit.exactText : null,
+        recallCard: { front: `Explain: ${unit.title}`, back: unit.exactText },
+      });
+      return;
+    }
     const sm = currentPageStudyModel;
     const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
     if (!sm || !anchor) return;
     openExplainStepForThoughtUnit(buildThoughtUnitDetail(anchor, sm, bookId));
-  }, [currentPageStudyModel, bookId, openExplainStepForThoughtUnit]);
+  }, [canonicalLeftPanelUnits, currentPageStudyModel, bookId, openExplainStepForThoughtUnit]);
 
   // LeftPanel Thought Unit Navigator "Note" button — seeds a NoteLab note from
   // just this thought unit (same buildThoughtUnitDetail input as Explain/Recall),
   // saves it immediately, then switches to NoteLab — same save-then-navigate
   // pattern as GenerateNoteButton's onNoteSaved.
   const noteThoughtUnitById = useCallback(async (anchorId: string) => {
+    const unit = canonicalLeftPanelUnits.find((u) => u.id === anchorId || u.evidenceRefId === anchorId);
+    if (unit) {
+      console.log("[NOTELAB_SOURCE]", {
+        thoughtUnitId: unit.id,
+        source: unit.source,
+        page: unit.page,
+        sourceText: unit.exactText.slice(0, 80),
+        fallbackUsed: unit.source !== "canonical_left_panel",
+      });
+      const note = buildUltraNote(bookId, unit.page, unit.title, unit.exactText, [], uploadedFile?.name);
+      note.sections = [
+        { label: "Chief Concern / Core Problem", content: unit.exactText },
+        { label: "Why This Matters", content: unit.reason },
+        { label: "Diagnostic Reasoning", content: `This is a ${unit.importanceLabel} unit on page ${unit.page}.` },
+        { label: "Procedure Logic", content: unit.category === "mechanism" || unit.category === "application" ? unit.exactText : "Connect this unit to the surrounding canonical units." },
+        { label: "Decision Tree", content: canonicalLeftPanelUnits.filter((u) => u.id !== unit.id).slice(0, 3).map((u) => `• ${u.title}`).join("\n") || unit.title },
+        { label: "Danger Zone", content: unit.category === "trap" ? unit.exactText : "Do not memorize this without linking it to the source text." },
+        { label: "Complication Risk", content: "Losing this anchor weakens downstream recall and explanation." },
+        { label: "Clinical Pearl", content: unit.category === "clinical" ? unit.exactText : unit.reason },
+        { label: "Common Mistake", content: "Using page-level summary instead of this exact thought unit." },
+        { label: "Connection Map", content: canonicalLeftPanelUnits.slice(0, 5).map((u) => `• ${u.importanceLabel}: ${u.title}`).join("\n") },
+        { label: "Case Recall", content: `When would “${unit.title}” change a decision?` },
+        { label: "Recall Questions", content: `1. What makes this high-value?\n2. What is the key phrase?\n3. What trap does it prevent?` },
+        { label: "Source", content: `Page ${unit.page} · thoughtUnitId: ${unit.id}` },
+      ];
+      note.visualAnchors = canonicalLeftPanelUnits.map((u) => ({
+        id: u.id,
+        sourceField: "conceptBlock",
+        exactText: u.exactText,
+        role: u.category === "clinical" ? "clinical_pearl" : u.category === "memoryAnchor" ? "memory_hook" : u.category === "keyAnatomy" ? "anatomy" : u.category === "keyDetail" ? "dat_fact" : u.category === "unknown" ? "dat_fact" : u.category as any,
+        kind: u.category,
+        reason: u.reason,
+        priority: 1,
+        priorityTier: u.priorityTier,
+      }));
+      await saveUltraNote(note);
+      setNoteLabRefreshKey((k) => k + 1);
+      trySwitchShellTab("notelab", "notelab");
+      return;
+    }
     const sm = currentPageStudyModel;
     const anchor = sm?.visualAnchors.find((a) => a.id === anchorId);
     if (!sm || !anchor) return;
@@ -2060,7 +2221,7 @@ export default function ThoughtUnitReader() {
     await saveUltraNote(note);
     setNoteLabRefreshKey((k) => k + 1);
     trySwitchShellTab("notelab", "notelab");
-  }, [currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab]);
+  }, [canonicalLeftPanelUnits, currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab]);
 
   // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
   // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
@@ -3781,7 +3942,7 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
-      // Left Panel source: finalStudyModel.visualAnchors only.
+      // Left Panel source: canonicalLeftPanelUnits only.
       // Non-instructional filtering is handled in the grounding effect.
       // Render-time rule: if we have grounded anchors, show them — no extra gating.
       const safeHighlightAnchors = (() => {
@@ -3803,14 +3964,14 @@ export default function ThoughtUnitReader() {
           page:       currentPage,
           count:      budgeted.length,
           ids:        (budgeted as any[]).map(a => (a as any).evidenceRefId),
-          source:     "finalStudyModel.visualAnchors",
+          source:     "canonicalLeftPanelUnits",
           firstTexts: budgeted.slice(0, 3).map(a => a.text?.slice(0, 60)),
         });
         return budgeted;
       })();
 
       console.log("[LEFT_PANEL_SOURCE]", {
-        source:     "finalStudyModel.visualAnchors",
+        source:     "canonicalLeftPanelUnits",
         page:       currentPage,
         count:      safeHighlightAnchors.length,
         firstTexts: safeHighlightAnchors.slice(0, 3).map(a => a.text?.slice(0, 60)),
@@ -3875,6 +4036,7 @@ export default function ThoughtUnitReader() {
                     return next;
                   })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
+                  emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}
                 />
               </div>
@@ -3941,6 +4103,11 @@ export default function ThoughtUnitReader() {
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}
                 onOpenExplainIt={() => handleOpenExplainIt()}
+                canonicalLeftPanelUnits={canonicalLeftPanelUnits.map((unit) => ({
+                  ...unit,
+                  grounded: safeHighlightAnchors.some((a) => (a as any).evidenceRefId === unit.evidenceRefId),
+                }))}
+                activeThoughtUnit={activeCanonicalThoughtUnit}
               />
             </div>
           </ErrorBoundary>
@@ -4891,16 +5058,16 @@ export default function ThoughtUnitReader() {
               {(console.log("[WHITEBOARD_SOURCE]", {
                 page: currentPage,
                 bookId,
-                hasStudyModel: !!currentPageStudyModel,
-                pageThesis: currentPageStudyModel?.pageThesis?.slice(0, 60) ?? null,
-                hasKeyMechanism: !!currentPageStudyModel?.studyNotes?.keyMechanism,
-                conceptBlockCount: currentPageStudyModel?.conceptBlocks?.length ?? 0,
+                thoughtUnitId: activeCanonicalThoughtUnit?.id ?? null,
+                source: activeCanonicalThoughtUnit?.source ?? (wbConcept ? "selected/focused anchor text" : "page-level fallback"),
+                sourceText: (activeCanonicalThoughtUnit?.exactText ?? wbContext ?? wbConcept ?? "").slice(0, 80),
+                fallbackUsed: !activeCanonicalThoughtUnit,
                 pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
               }) as any) && null}
               <WhiteboardPanel
                 key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
-                concept={wbConcept || currentPageStudyModel?.pageThesis || ""}
-                context={wbContext || currentPageStudyModel?.studyNotes?.keyMechanism || ""}
+                concept={activeCanonicalThoughtUnit?.title || wbConcept || ""}
+                context={activeCanonicalThoughtUnit?.exactText || wbContext || wbConcept || ""}
                 studyModel={currentPageStudyModel as any}
                 pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}

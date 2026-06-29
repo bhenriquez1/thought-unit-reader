@@ -9,11 +9,13 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import {
   buildSpeechScript,
+  buildSpeechTimeline,
   STUDY_SPEECH_MODES,
   formulaToSpeech,
   type StudySpeechMode,
   type SpeechSegment,
 } from "@/lib/speech/studySpeechEngine";
+import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
 import { renderStars } from "@/lib/insights/importanceTiers";
@@ -141,6 +143,20 @@ function matchSentenceToAnchor(sentence: string, anchors: VisualAnchor[]): Visua
   return bestScore >= MIN_ANCHOR_OVERLAP ? best : null;
 }
 
+function matchSentenceToThoughtUnit(sentence: string, units: ExpertAnchor[]): ExpertAnchor | null {
+  const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2);
+  const sentenceWords = new Set(words(sentence));
+  if (sentenceWords.size === 0 || units.length === 0) return null;
+  let best: ExpertAnchor | null = null;
+  let bestScore = 0;
+  for (const unit of units) {
+    let score = 0;
+    for (const w of words(unit.exactText)) if (sentenceWords.has(w)) score++;
+    if (score > bestScore) { bestScore = score; best = unit; }
+  }
+  return bestScore >= MIN_ANCHOR_OVERLAP ? best : null;
+}
+
 // ── Role colour map ──────────────────────────────────────────────────────────
 
 // Matches SpeechSegmentRole exactly — Speech only ever produces these three
@@ -242,6 +258,10 @@ interface Props {
    *  paint-budgeted effectiveHighlightTargets) — forwarded to buildSpeechScript
    *  so "Highlight Only" mode reads only what's actually visible on the page. */
   highlightedAnchorTexts?: string[];
+  /** Canonical LeftPanel units — preferred source for every non-Current-Page speech mode. */
+  thoughtUnits?: ExpertAnchor[];
+  /** Focused/selected unit, promoted to the front of non-Full timelines. */
+  selectedUnitId?: string | null;
 }
 
 export interface StudySpeechPanelHandle {
@@ -253,7 +273,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -605,9 +625,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setSegments([]);
       return;
     }
-    const next = buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
+    const next = thoughtUnits.length
+      ? buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId })
+      : buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts]);
+  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits, selectedUnitId]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -858,6 +880,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Start from fromIdx directly — no secondary skip loop that would push index to "sentence 4".
     const effectiveFromIdx = fromIdx;
     console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
+    console.log("[CURRENT_PAGE_SPEECH_START]", {
+      page: pageNumber,
+      sentenceIndex: effectiveFromIdx,
+      wordIndex: 0,
+      textPreview: sentences[effectiveFromIdx]?.slice(0, 120) ?? null,
+    });
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (isStale(session)) break;
@@ -875,16 +903,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
       setEyeTier(null);
-      const matchedAnchor = matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
-      beginKaraoke(text.slice(0, 160), text, matchedAnchor?.id ?? null);
+      const matchedUnit = matchSentenceToThoughtUnit(raw, thoughtUnits);
+      const matchedAnchor = matchedUnit ? null : matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
+      const matchedId = matchedUnit?.evidenceRefId ?? matchedAnchor?.id ?? null;
+      beginKaraoke(text.slice(0, 160), text, matchedId);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
-      if (matchedAnchor) {
-        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: matchedAnchor.id, source: "current-page-anchor-match" });
-        onEvidenceFocus?.(matchedAnchor.id);
+      if (matchedId) {
+        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: matchedId, source: matchedUnit ? "current-page-canonical-unit-match" : "current-page-anchor-match" });
+        onEvidenceFocus?.(matchedId);
       }
       // No match: leave the previous focus as-is, consistent with other modes' behavior between anchors.
 
@@ -1020,7 +1050,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // degraded inline copy) if the mount-time effect hasn't populated it yet.
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
       if (!sents.length) { setErrorMsg("No page text available."); return; }
-      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
+      const startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
+      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", {
         mode: "fullPage",
         source: "activePageText, each sentence matched to nearest finalStudyModel.visualAnchors entry",
@@ -1028,15 +1059,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         charCount: activePageText.length,
         anchorPoolSize: studyModel?.visualAnchors?.length ?? 0,
         anchorPoolIds: (studyModel?.visualAnchors ?? []).map((a) => a.id),
+        canonicalUnitCount: thoughtUnits.length,
       });
       console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
-      playFullPageSequential(sents, fromIdx, session);
+      playFullPageSequential(sents, startIdx, session);
       return;
     }
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId, activePageText, highlightedAnchorTexts) : []);
+      const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId, activePageText, highlightedAnchorTexts) : []));
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1057,7 +1089,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts) : []);
+    const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts) : []));
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;
@@ -1177,7 +1209,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
     if (!sents.length) return;
     const idx = findBestSentenceIndex(sents, snippet);
-    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60) });
+    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60), sentenceStart: sents[idx]?.slice(0, 120) ?? null });
+    console.log("[CURRENT_PAGE_SPEECH_START]", { page: pageNumber, sentenceIndex: idx, wordIndex: 0, textPreview: sents[idx]?.slice(0, 120) ?? null });
     setOpen(true);
     setMode("fullPage");
     stop();

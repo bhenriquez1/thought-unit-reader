@@ -122,6 +122,7 @@ export default function ThoughtUnitNavigator({
   overridePresetId,
   onPresetChange,
   activeSpokenWord,
+  emptyReason,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -141,6 +142,7 @@ export default function ThoughtUnitNavigator({
   /** Live Speech word position — when its anchorId matches a card's id, that
    *  card's snippet marks the matching word, Speechify-style. */
   activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
+  emptyReason?: string | null;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -148,9 +150,20 @@ export default function ThoughtUnitNavigator({
   // pattern RightPanel.tsx already uses for its own Study Notes cards — without
   // this, a focused entry only changed its border color and could sit off-screen.
   const activeEntryRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [focusedId]);
+      useEffect(() => {
+        if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }, [focusedId]);
+      useEffect(() => {
+        if (!activeSpokenWord?.anchorId) return;
+        console.log("[LEFT_PANEL_WORD_SYNC]", {
+          thoughtUnitId: activeSpokenWord.anchorId,
+          wordIndex: activeSpokenWord.wordIndex,
+          word: activeSpokenWord.word,
+        });
+        if (activeSpokenWord.anchorId === focusedId) {
+          activeEntryRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }, [activeSpokenWord, focusedId]);
 
   // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
@@ -185,8 +198,9 @@ export default function ThoughtUnitNavigator({
     return (
       <div className="flex flex-col gap-2">
         {header}
-        <div className="px-2.5 py-3 text-[10.5px] text-white/35 leading-relaxed">
+        <div className="px-2.5 py-3 text-[10.5px] text-white/45 leading-relaxed">
           No thought units detected on this page yet.
+          {emptyReason ? <span className="mt-1 block text-amber-200/70">Diagnostic: {emptyReason}.</span> : null}
         </div>
       </div>
     );
@@ -278,14 +292,14 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <span
-                    className="text-[9px] font-semibold uppercase tracking-wide pr-6 truncate"
+                    className="text-[9px] font-semibold uppercase tracking-wide pr-6"
                     style={{ color: meta.color }}
                     data-testid="thought-unit-category"
                   >
                     {meta.label}
                   </span>
                   <span
-                    className="text-[10.5px] font-semibold leading-snug text-white/90 truncate"
+                    className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
                     data-testid="thought-unit-title"
                   >
                     {entry.title ?? deriveCardTitle(entry.text)}
@@ -294,7 +308,7 @@ export default function ThoughtUnitNavigator({
                     className="text-[10px] leading-snug text-white/70"
                     style={{
                       display: "-webkit-box",
-                      WebkitLineClamp: 2,
+                      WebkitLineClamp: focused ? 4 : 2,
                       WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}

@@ -139,6 +139,8 @@ interface PureReaderViewProps {
   onOpenThoughtUnitRecall?: (evidenceRefId: string) => void;
   /** Seeds a NoteLab note from a clicked thought-unit's evidenceRefId */
   onNoteThoughtUnit?: (evidenceRefId: string) => void;
+  /** Diagnostic reason shown when the canonical left-panel unit list is empty. */
+  emptyThoughtUnitReason?: string | null;
   /** Reports this panel's effective domain preset (auto-detected, or the user's manual
    *  override) upward so RightPanel/Guided speech can rank and read in the same order
    *  the left panel is actually grouping its thought units by. */
@@ -175,6 +177,7 @@ export default function PureReaderView({
   onExplainThoughtUnit,
   onOpenThoughtUnitRecall,
   onNoteThoughtUnit,
+  emptyThoughtUnitReason = null,
   onEffectivePresetChange,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
@@ -573,6 +576,7 @@ export default function PureReaderView({
             detectedPresetLabel={getDomainPreset(detectedPresetId).label}
             overridePresetId={domainPresetOverride}
             onPresetChange={setDomainPresetOverride}
+            emptyReason={emptyThoughtUnitReason}
           />
 
           {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}
