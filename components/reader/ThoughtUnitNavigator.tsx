@@ -306,7 +306,10 @@ export default function ThoughtUnitNavigator({
                   </span>
                   <span
                     className="text-[10px] leading-snug text-white/70"
-                    style={{
+                    style={focused ? {
+                      whiteSpace: "normal",
+                      overflowWrap: "anywhere",
+                    } : {
                       display: "-webkit-box",
                       WebkitLineClamp: focused ? 4 : 2,
                       WebkitBoxOrient: "vertical",

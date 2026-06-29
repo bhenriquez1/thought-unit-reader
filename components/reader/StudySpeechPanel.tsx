@@ -273,6 +273,9 @@ export interface StudySpeechPanelHandle {
   /** "Read From Click" — switch to Current Page mode and start reading from the
    *  sentence that best matches the clicked PDF text. */
   playFromSnippet: (snippet: string) => void;
+  /** Thought Unit Mode — speak exactly this canonical unit from word 1 and keep
+   *  LeftPanel/PDF/Expert Brain keyed to its evidence anchor. */
+  playThoughtUnitSegment: (text: string, anchorId?: string | null) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -1199,8 +1202,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
   }
 
-  function stop() {
-    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
+  function stop(clearEvidence = true) {
+    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState, clearEvidence });
     stopAudio();
     resolveContinue();
     setSegIdx(0);
@@ -1209,7 +1212,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
-    onEvidenceFocus?.(null);
+    if (clearEvidence) onEvidenceFocus?.(null);
   }
 
   // ── "Read From Click" ───────────────────────────────────────────────────────
@@ -1229,7 +1232,49 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setTimeout(() => playFullPageSequential(sents, idx, session), 80);
   }
 
-  useImperativeHandle(ref, () => ({ playFromSnippet }), [fpSentences, activePageText, pageNumber]);
+  function playThoughtUnitSegment(text: string, anchorId?: string | null) {
+    const unitText = text.trim();
+    if (unitText.length < 2) return;
+    setOpen(true);
+    setMode("highlights");
+    stop(false);
+    setSegIdx(0);
+    const session = beginSession();
+    const evidenceRefId = anchorId ?? null;
+    const spoken = computeSpeechText(unitText);
+    console.log("[THOUGHT_UNIT_SPEECH_START]", { page: pageNumber, evidenceRefId, wordIndex: 0, textPreview: unitText.slice(0, 120) });
+    onPlayStateChange?.(true);
+    setTimeout(async () => {
+      if (isStale(session)) return;
+      setPlayState("loading");
+      setEyeText(unitText);
+      setEyeRole("visualAnchor");
+      setEyeTier(null);
+      if (evidenceRefId) onEvidenceFocus?.(evidenceRefId);
+      onSnippetFocus?.(unitText);
+      beginKaraoke(unitText, spoken, evidenceRefId);
+      try {
+        const result = await fetchAndPlayAudio(spoken, session);
+        if (isStale(session)) return;
+        if (result === "browser") {
+          await new Promise<void>((resolve) => playBrowserSpeech(spoken, resolve, session));
+        }
+      } catch (err: unknown) {
+        if (isStale(session)) return;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[SPEECH_ERROR]", { source: "thought-unit", evidenceRefId, error: message });
+        await new Promise<void>((resolve) => playBrowserSpeech(spoken, resolve, session));
+      } finally {
+        if (!isStale(session)) {
+          notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
+          setPlayState("idle");
+          onPlayStateChange?.(false);
+        }
+      }
+    }, 80);
+  }
+
+  useImperativeHandle(ref, () => ({ playFromSnippet, playThoughtUnitSegment }), [fpSentences, activePageText, pageNumber, speed, voice]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1290,7 +1335,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {isLoading ? (
-              <button type="button" onClick={stop}
+              <button type="button" onClick={() => stop()}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >⟳ Loading…</button>
             ) : isPlaying ? (
@@ -1306,7 +1351,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
               >▶ Play</button>
             )}
-            <button type="button" onClick={stop}
+            <button type="button" onClick={() => stop()}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
             <button type="button"
