@@ -123,6 +123,14 @@ export function buildSpeechTimeline({
     const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
       ordered.filter(predicate).forEach((unit, index) => {
         addGuidedLoop(unit, name, index === 0 ? prefix : "");
+    const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
+      ordered.filter(predicate).forEach((unit, index) => {
+        pushUnit(unit, name, index === 0 ? prefix : "");
+        const last = segments[segments.length - 1];
+        if (last) {
+          last.pauseAfterMs = name === "Master This" || name === "Danger Zone" ? 700 : 250;
+          last.requiresConfirm = name === "Master This" || name === "Clinical Pearl" || name === "Danger Zone";
+        }
       });
     };
     stage("Master This", (u) => u.priorityTier >= 5 || u.category === "thesis" || u.category === "definition", "Most important on this page: ");
@@ -132,6 +140,20 @@ export function buildSpeechTimeline({
     ordered
       .filter((u) => !segments.some((s) => s.evidenceRefId === u.evidenceRefId))
       .forEach((u) => addGuidedLoop(u, u.importanceLabel));
+      .forEach((u) => pushUnit(u, u.importanceLabel));
+    const checkpointTarget = ordered[0];
+    if (checkpointTarget) {
+      segments.push({
+        id: `guided-question-${checkpointTarget.id}`,
+        role: "checkpoint",
+        label: "Check Your Understanding",
+        rawText: `Quick check: why does this matter — ${checkpointTarget.title}?`,
+        text: formulaToSpeech(`Quick check: why does this matter — ${checkpointTarget.title}?`),
+        rateModifier: 0.92,
+        pauseAfterMs: 900,
+        requiresConfirm: true,
+      });
+    }
   } else if (mode === "study") {
     ordered.forEach((unit) => {
       pushUnit(unit, unit.importanceLabel);
@@ -304,11 +326,15 @@ function flattenInLeftPanelOrder(anchors: VisualAnchor[], presetId: string): Vis
   return groupThoughtUnits<VisualAnchor>(anchors, presetId).flatMap((group) => group.items);
 }
 
-// Per-anchor importance tier (1-5, 5 = Master This) — falls back to the
-// medium tier when the AI didn't assign one, same default PdfEvidenceOverlay
-// and ThoughtUnitNavigator use for an anchor's own priorityTier.
+// Per-anchor importance tier (1-5, 5 = Master This) — falls back to the same
+// kind-aware default lib/insights/canonicalLeftPanel.ts uses (thesis/definition
+// = Master, trap/clinical/mechanism = Important) when the AI didn't assign an
+// explicit priorityTier, so Speech's tier filters agree with the LeftPanel's.
 function anchorTier(anchor: VisualAnchor): number {
-  return anchor.priorityTier ?? 3;
+  if (anchor.priorityTier != null) return anchor.priorityTier;
+  if (anchor.kind === "thesis" || anchor.kind === "definition") return 5;
+  if (anchor.kind === "trap" || anchor.kind === "clinical" || anchor.kind === "mechanism") return 4;
+  return 3;
 }
 
 // Full mode's "page order": locate each anchor's verbatim span in the raw
@@ -383,10 +409,17 @@ export function buildSpeechScript(
     });
   }
 
-  // ── Thesis — always first ──────────────────────────────────────────────────
-  push("thesis", "thesis", "Core Idea", model.pageThesis, 0.93);
+  // Note: no unconditional "Core Idea" push here. model.pageThesis is already
+  // folded into model.visualAnchors as a thesis-kind anchor (verbatim AI anchor,
+  // or the pageThesis fallback — see buildContractAnchorSeeds in
+  // currentPageStudyModel.ts), and anchorTier() defaults thesis-kind anchors to
+  // tier 5. Pushing pageThesis again here would (a) duplicate that anchor's
+  // content when the AI did surface a verbatim thesis anchor, and (b) leak the
+  // page thesis into "focus" (Master only) and "highlights" (painted anchors
+  // only) modes even when it isn't itself a Master/painted anchor — violating
+  // the canonical-units contract those two modes must follow.
 
-  // ── Focus: thesis + only the Master This (tier-5) anchors, LeftPanel order ──
+  // ── Focus: only the Master This (tier-5) anchors, LeftPanel order ──────────
   if (mode === "focus") {
     const masterAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId).filter((a) => anchorTier(a) === 5);
     masterAnchors.forEach((anchor) => {
@@ -421,12 +454,6 @@ export function buildSpeechScript(
   // 💬 Explain during the pause instead of Continue. Question is a synthetic
   // checkpoint segment (role "checkpoint"), not a verbatim source anchor.
   if (mode === "guided") {
-    if (segments[0]) {
-      segments[0].tier = getImportanceTier(0);
-      segments[0].pauseAfterMs = 600;
-      segments[0].requiresConfirm = true;
-    }
-
     const allAnchors = flattenInLeftPanelOrder(model.visualAnchors, presetId);
     const STAGE_KINDS: Record<string, string[]> = {
       master:    ["thesis", "definition"],

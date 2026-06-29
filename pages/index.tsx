@@ -354,8 +354,8 @@ const ANCHOR_TYPE_MAX: Record<string, number> = {
 };
 
 const BUDGET_TOTAL_MAX       = 6;
-const BUDGET_COVERAGE_TARGET = 0.20; // 20% of page text
-const BUDGET_COVERAGE_MAX    = 0.25; // hard cap 25%
+const BUDGET_COVERAGE_TARGET = 0.12; // 12% of page text — sparse expert/surgeon style
+const BUDGET_COVERAGE_MAX    = 0.15; // hard cap 15%
 
 type BudgetAnchor = { text: string; anchorType: string; reason: string; spanStart: string | null; spanEnd: string | null };
 
@@ -407,7 +407,10 @@ function applyHighlightBudget<T extends BudgetAnchor>(
       continue;
     }
     const spanLen = anchor.text.length;
-    if (pageLen > 0 && result.length >= 2 && (coverageChars + spanLen) / pageLen > BUDGET_COVERAGE_MAX) {
+    // Only the very first anchor is coverage-exempt (so a page is never left with
+    // zero highlights even when one long span alone exceeds the cap) — every
+    // anchor after that must keep cumulative coverage under BUDGET_COVERAGE_MAX.
+    if (pageLen > 0 && result.length >= 1 && (coverageChars + spanLen) / pageLen > BUDGET_COVERAGE_MAX) {
       dropped.push({ type, reason: "coverage-max", text: anchor.text.slice(0, 50) });
       continue;
     }
@@ -909,6 +912,10 @@ export default function ThoughtUnitReader() {
 
     // Canonical evidence: if the canonical LeftPanel produced units, this page is instructional.
     const aiConfirmsInstructional = visualAnchors.length > 0;
+    // Canonical evidence: only real model-backed anchors confirm instructional content —
+    // page_text_fallback/model_fallback units are locally generated and must not bypass
+    // the structural-page skip below (contents/glossary/chapter_opener, etc.).
+    const aiConfirmsInstructional = visualAnchors.some((a) => a.source === "canonical_left_panel");
 
     console.log("[CLASSIFIER_EVIDENCE]", {
       page:                currentPage,
@@ -951,7 +958,7 @@ export default function ThoughtUnitReader() {
         page:    currentPage,
         verdict: "instructional — AI anchors override stale local pageRole",
         pageRole,
-        anchorCount: visualAnchors.length,
+        anchorCount: visualAnchors.filter((a) => a.source === "canonical_left_panel").length,
         note:    "local pageRole may be stale from previous page or running-header false-positive",
       });
     }
