@@ -910,8 +910,6 @@ export default function ThoughtUnitReader() {
       "chapter_opener", "learning_objectives",
     ]);
 
-    // Canonical evidence: if the canonical LeftPanel produced units, this page is instructional.
-    const aiConfirmsInstructional = visualAnchors.length > 0;
     // Canonical evidence: only real model-backed anchors confirm instructional content —
     // page_text_fallback/model_fallback units are locally generated and must not bypass
     // the structural-page skip below (contents/glossary/chapter_opener, etc.).
