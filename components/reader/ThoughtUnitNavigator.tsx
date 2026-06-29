@@ -150,9 +150,20 @@ export default function ThoughtUnitNavigator({
   // pattern RightPanel.tsx already uses for its own Study Notes cards — without
   // this, a focused entry only changed its border color and could sit off-screen.
   const activeEntryRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [focusedId]);
+      useEffect(() => {
+        if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }, [focusedId]);
+      useEffect(() => {
+        if (!activeSpokenWord?.anchorId) return;
+        console.log("[LEFT_PANEL_WORD_SYNC]", {
+          thoughtUnitId: activeSpokenWord.anchorId,
+          wordIndex: activeSpokenWord.wordIndex,
+          word: activeSpokenWord.word,
+        });
+        if (activeSpokenWord.anchorId === focusedId) {
+          activeEntryRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }, [activeSpokenWord, focusedId]);
 
   // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
@@ -281,7 +292,7 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <span
-                    className="text-[9px] font-semibold uppercase tracking-wide pr-6 truncate"
+                    className="text-[9px] font-semibold uppercase tracking-wide pr-6"
                     style={{ color: meta.color }}
                     data-testid="thought-unit-category"
                   >
@@ -297,7 +308,7 @@ export default function ThoughtUnitNavigator({
                     className="text-[10px] leading-snug text-white/70"
                     style={{
                       display: "-webkit-box",
-                      WebkitLineClamp: 2,
+                      WebkitLineClamp: focused ? 4 : 2,
                       WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}

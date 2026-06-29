@@ -101,6 +101,28 @@ export function buildSpeechTimeline({
   };
 
   if (mode === "guided") {
+    const addGuidedLoop = (unit: ExpertAnchor, name: string, prefix = "") => {
+      pushUnit(unit, name, prefix);
+      const teaching = segments[segments.length - 1];
+      if (teaching) {
+        teaching.pauseAfterMs = 700;
+        teaching.requiresConfirm = true;
+      }
+      const question = `Question: why is “${unit.title}” a ${unit.importanceLabel.toLowerCase()}?`;
+      pushUnit(unit, "Question", "", question, "checkpoint");
+      const q = segments[segments.length - 1];
+      if (q) {
+        q.pauseAfterMs = 2500;
+        q.requiresConfirm = true;
+      }
+      const answer = unit.reason && unit.reason !== unit.importanceLabel
+        ? `Answer: ${unit.reason}. ${unit.exactText}`
+        : `Answer: because this source text is the high-value anchor: ${unit.exactText}`;
+      pushUnit(unit, "Answer", "", answer, "checkpoint");
+    };
+    const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
+      ordered.filter(predicate).forEach((unit, index) => {
+        addGuidedLoop(unit, name, index === 0 ? prefix : "");
     const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
       ordered.filter(predicate).forEach((unit, index) => {
         pushUnit(unit, name, index === 0 ? prefix : "");
@@ -117,6 +139,7 @@ export function buildSpeechTimeline({
     stage("Danger Zone", (u) => u.category === "trap");
     ordered
       .filter((u) => !segments.some((s) => s.evidenceRefId === u.evidenceRefId))
+      .forEach((u) => addGuidedLoop(u, u.importanceLabel));
       .forEach((u) => pushUnit(u, u.importanceLabel));
     const checkpointTarget = ordered[0];
     if (checkpointTarget) {

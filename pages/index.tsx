@@ -910,6 +910,8 @@ export default function ThoughtUnitReader() {
       "chapter_opener", "learning_objectives",
     ]);
 
+    // Canonical evidence: if the canonical LeftPanel produced units, this page is instructional.
+    const aiConfirmsInstructional = visualAnchors.length > 0;
     // Canonical evidence: only real model-backed anchors confirm instructional content —
     // page_text_fallback/model_fallback units are locally generated and must not bypass
     // the structural-page skip below (contents/glossary/chapter_opener, etc.).
@@ -1634,11 +1636,24 @@ export default function ThoughtUnitReader() {
   const onPdfHighlightFocus = useCallback((id: string) => {
     setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
-    if (anchor?.text) speechPanelRef.current?.playFromSnippet(anchor.text);
+    const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
+    console.log("[THOUGHT_UNIT_JUMP]", {
+      thoughtUnitId: id,
+      page: currentPage,
+      anchorFound: !!anchor,
+      scrolledToPdf: !!anchor,
+    });
+    if (anchor?.text) {
+      setFocusSnippet(anchor.text);
+      speechPanelRef.current?.playFromSnippet(anchor.text);
+    } else if (activeUnit?.exactText) {
+      setFocusSnippet(activeUnit.exactText);
+      speechPanelRef.current?.playFromSnippet(activeUnit.exactText);
+    }
     // playFromSnippet() calls stop() internally, which resets focus to null —
     // re-affirm it so the active style stays visible once playback starts.
     setFocusedEvidenceId(id);
-  }, [finalHighlightAnchors]);
+  }, [finalHighlightAnchors, canonicalLeftPanelUnits, currentPage]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;

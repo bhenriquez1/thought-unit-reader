@@ -590,6 +590,7 @@ export function RightPanel({
       sourceText: activeThoughtUnit.exactText.slice(0, 80),
       fallbackUsed: activeThoughtUnit.source !== "canonical_left_panel",
     });
+    console.log("[RIGHT_PANEL_ACTIVE_UNIT]", { thoughtUnitId: activeThoughtUnit.id });
   }, [activeThoughtUnit]);
 
   // [TRACE renderIdentity] — logs what document/page/text is being rendered.
@@ -1423,6 +1424,13 @@ export function RightPanel({
             </div>
             <h3 className="mt-2 whitespace-normal break-words text-sm font-semibold leading-snug text-white">{activeThoughtUnit.title}</h3>
             <p className="mt-2 whitespace-normal break-words rounded-xl border border-white/8 bg-black/15 p-2 leading-relaxed text-slate-200">
+              {renderTextWithActiveWord(activeThoughtUnit.exactText, activeSpokenWord, activeThoughtUnit.evidenceRefId)}
+            </p>
+            <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
+              {(() => {
+                const sections: Array<[string, string]> = [
+                  ["Why It Matters", activeThoughtUnit.reason],
+                  ["Common Trap", activeThoughtUnit.category === "trap" ? activeThoughtUnit.exactText : "Do not memorize this as isolated trivia; connect it to the surrounding expert anchors."],
               {activeThoughtUnit.exactText}
             </p>
             <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
@@ -1448,6 +1456,16 @@ export function RightPanel({
                     .join("\n") || "No linked canonical units yet."],
                   ["Checkpoint", `Which phrase proves this ${activeThoughtUnit.importanceLabel.toLowerCase()}?`],
                 ];
+                if (activeThoughtUnit.category === "mechanism" || activeThoughtUnit.category === "application" || activeThoughtUnit.category === "formula") {
+                  sections.splice(1, 0, ["Procedure Logic", activeThoughtUnit.exactText]);
+                }
+                if (activeThoughtUnit.category === "clinical") {
+                  sections.splice(2, 0, ["Clinical Link", activeThoughtUnit.exactText]);
+                }
+                if (activeThoughtUnit.category === "memoryAnchor") {
+                  sections.splice(2, 0, ["Memory", activeThoughtUnit.exactText]);
+                }
+                return sections.slice(0, 6).map(([label, body]) => (
                 return sections.map(([label, body]) => (
                   <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2">
                     <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
@@ -1455,6 +1473,11 @@ export function RightPanel({
                   </div>
                 ));
               })()}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="button" onClick={onOpenExplainStep} className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200">Explain</button>
+                <button type="button" onClick={onOpenWhiteboard} className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">Whiteboard</button>
+                <button type="button" onClick={openShadowRecall} className="rounded-lg border border-violet-300/20 bg-violet-300/10 px-2 py-1 text-[11px] font-semibold text-violet-200">Shadow Recall</button>
+              </div>
             </div>
           </div>
         )}
@@ -2065,6 +2088,29 @@ function UltraView({
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.coreIdea, view.pageThesis, hasSynth, selectedBlock?.conceptId]);
+
+  const exactArticles = resolvedResources.articles.filter((a) => a.score >= 70 && /^https?:\/\//i.test(a.url));
+  const exactVideos = resolvedResources.videos.filter((v) => v.score >= 70 && (v.isVerified || v.searchUrl.includes("youtube.com/watch?v=")));
+  useEffect(() => {
+    if (!resolvedResources.resolved) return;
+    const topic = (view.pageThesis ?? view.coreIdea ?? "").trim();
+    [...resolvedResources.articles.map((item) => ({ type: "article", item })), ...resolvedResources.videos.map((item) => ({ type: "video", item }))].forEach(({ type, item }) => {
+      const isVideo = type === "video";
+      const url = isVideo ? (item as ResolvedVideo).searchUrl : (item as ResolvedArticle).url;
+      const source = isVideo ? (item as ResolvedVideo).channel : (item as ResolvedArticle).source;
+      const timestamp = isVideo ? (item as ResolvedVideo).timestampLabel : null;
+      const exactMatch = isVideo
+        ? (item as ResolvedVideo).score >= 70 && ((item as ResolvedVideo).isVerified || url.includes("youtube.com/watch?v="))
+        : (item as ResolvedArticle).score >= 70 && /^https?:\/\//i.test(url);
+      console.log("[RELATED_RESOURCE_MATCH]", {
+        topic: topic.slice(0, 80),
+        source,
+        exactMatch,
+        url,
+        timestamp,
+      });
+    });
+  }, [resolvedResources, view.coreIdea, view.pageThesis]);
 
   // Interactive Mini Test items — structured questions from OpenAI
   const miniTestItems = synth?.miniTestItems ?? null;
@@ -2730,9 +2776,9 @@ function UltraView({
         <PanelSection title="📖 Related Reading">
           {!resolvedResources.resolved ? (
             <p className="text-[12px] text-slate-500 italic">Finding resources…</p>
-          ) : resolvedResources.articles.length > 0 ? (
+          ) : exactArticles.length > 0 ? (
             <ul className="space-y-2">
-              {resolvedResources.articles.map((a, i) => (
+              {exactArticles.map((a, i) => (
                 <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
                   <a
                     href={a.url}
@@ -2746,12 +2792,14 @@ function UltraView({
                       <span className="shrink-0 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">{a.score}%</span>
                     </div>
                     <span className="text-[10px] text-slate-400">{a.source}</span>
+                    <span className="text-[10px] text-emerald-300">Exact topic matched · fallback false</span>
                     <span className="text-[11px] text-slate-300 italic mt-0.5">{a.reason}</span>
                   </a>
                 </li>
               ))}
             </ul>
           ) : (
+            <p className="text-[12px] text-slate-500 italic">No exact reading match found for this page.</p>
             <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>
@@ -2762,9 +2810,9 @@ function UltraView({
         <PanelSection title="📺 Related Videos">
           {!resolvedResources.resolved ? (
             <p className="text-[12px] text-slate-500 italic">Finding videos…</p>
-          ) : resolvedResources.videos.length > 0 ? (
+          ) : exactVideos.length > 0 ? (
             <ul className="space-y-2">
-              {resolvedResources.videos.map((v, i) => {
+              {exactVideos.map((v, i) => {
                 const isDirectVideo = v.searchUrl.includes("youtube.com/watch?v=");
                 const hasTimestamp  = isDirectVideo && v.timestampSeconds != null && v.timestampSeconds > 0;
                 // Build timestamp deep-link URL (ensure t= param is present for direct links)
@@ -2796,6 +2844,7 @@ function UltraView({
                     </div>
                     {/* Why relevant */}
                     <p className="text-[11px] text-slate-400 italic leading-snug">{v.reason}</p>
+                    <p className="text-[10px] text-emerald-300">Exact topic matched · fallback false</p>
                     {/* Timestamp + Watch button */}
                     <div className="flex items-center gap-2 mt-0.5">
                       {hasTimestamp && (
@@ -2821,6 +2870,7 @@ function UltraView({
               })}
             </ul>
           ) : (
+            <p className="text-[12px] text-slate-500 italic">No exact video match found for this page.</p>
             <p className="text-[12px] text-slate-500 italic">No exact match found for this topic.</p>
           )}
         </PanelSection>

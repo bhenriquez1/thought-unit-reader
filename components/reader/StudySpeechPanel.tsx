@@ -890,6 +890,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Start from fromIdx directly — no secondary skip loop that would push index to "sentence 4".
     const effectiveFromIdx = fromIdx;
     console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
+    console.log("[CURRENT_PAGE_SPEECH_START]", {
+      page: pageNumber,
+      sentenceIndex: effectiveFromIdx,
+      wordIndex: 0,
+      textPreview: sentences[effectiveFromIdx]?.slice(0, 120) ?? null,
+    });
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (isStale(session)) break;
@@ -1054,7 +1060,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // degraded inline copy) if the mount-time effect hasn't populated it yet.
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
       if (!sents.length) { setErrorMsg("No page text available."); return; }
-      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
+      const startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
+      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", {
         mode: "fullPage",
         source: "activePageText, each sentence matched to nearest finalStudyModel.visualAnchors entry",
@@ -1065,7 +1072,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         canonicalUnitCount: thoughtUnits.length,
       });
       console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
-      playFullPageSequential(sents, fromIdx, session);
+      playFullPageSequential(sents, startIdx, session);
       return;
     }
 
@@ -1212,7 +1219,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
     if (!sents.length) return;
     const idx = findBestSentenceIndex(sents, snippet);
-    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60) });
+    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60), sentenceStart: sents[idx]?.slice(0, 120) ?? null });
+    console.log("[CURRENT_PAGE_SPEECH_START]", { page: pageNumber, sentenceIndex: idx, wordIndex: 0, textPreview: sents[idx]?.slice(0, 120) ?? null });
     setOpen(true);
     setMode("fullPage");
     stop();
