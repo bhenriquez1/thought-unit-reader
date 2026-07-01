@@ -36,6 +36,7 @@ export interface ExplainStepContext {
   relatedRecallCards?: ExplainStepRecallRef[];
   documentTitle?: string;
   pageNumber: number;
+  seedQuestion?: string;
 }
 
 interface ExplainStepChatProps {
@@ -129,6 +130,10 @@ export default function ExplainStepChat({
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [turns, loading]);
+
+  useEffect(() => {
+    if (context.seedQuestion) setInput(context.seedQuestion);
+  }, [context.seedQuestion]);
 
   // Stop any in-flight speech when the chat closes/unmounts — but only if WE
   // own the shared controller's active slot. Never force-stop a different
