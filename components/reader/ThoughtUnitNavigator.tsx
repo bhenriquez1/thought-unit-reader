@@ -179,6 +179,14 @@ export default function ThoughtUnitNavigator({
     });
   };
 
+  const TIER_ACTION_LABEL: Record<number, string> = {
+    5: "Understand first",
+    4: "Apply",
+    3: "Support",
+    2: "Avoid",
+    1: "Remember",
+  };
+
   const header = (
     <div className="flex items-center justify-between gap-2 px-1">
       <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
@@ -241,7 +249,8 @@ export default function ThoughtUnitNavigator({
         const defaultCollapsed = tier.stars <= DEFAULT_COLLAPSE_AT_OR_BELOW_STARS;
         const isCollapsed = defaultCollapsed !== userToggled;
         return (
-          <div key={id} className="flex flex-col gap-1">
+          <React.Fragment key={id}>
+          <div className="flex flex-col gap-1">
             <button
               type="button"
               onClick={() => toggleGroup(id)}
@@ -263,6 +272,11 @@ export default function ThoughtUnitNavigator({
                 {tierGlyph(tier.stars, representativeKind)}
               </span>
               <span className="text-[9px] text-white/30">{items.length}</span>
+              {tier.stars >= 4 && (
+                <span className="ml-1 text-[7.5px] italic text-white/25">
+                  {TIER_ACTION_LABEL[tier.stars] ?? ""}
+                </span>
+              )}
               <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
             </button>
             {!isCollapsed && items.map((entry) => {
@@ -368,6 +382,12 @@ export default function ThoughtUnitNavigator({
               );
             })}
           </div>
+          {groupIndex < grouped.length - 1 && (
+            <div className="flex justify-center py-0.5">
+              <span className="text-[9px] text-white/20">↓</span>
+            </div>
+          )}
+          </React.Fragment>
         );
       })}
     </div>

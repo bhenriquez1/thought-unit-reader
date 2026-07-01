@@ -57,6 +57,255 @@ function renderTextWithActiveWord(
   );
 }
 
+// ---------------------------------------------------------------------------
+// ExpertBrainCard — encapsulates all interactive Expert Brain state.
+// Must be defined after renderTextWithActiveWord so it can call that function.
+// ---------------------------------------------------------------------------
+
+function ExpertBrainCard({
+  unit,
+  allUnits,
+  activeSpokenWord,
+  onAskExpert,
+  onJumpToUnit,
+  onExplain,
+}: {
+  unit: ExpertAnchor;
+  allUnits: ExpertAnchor[];
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
+  onAskExpert?: (q: string) => void;
+  onJumpToUnit?: (id: string) => void;
+  onExplain?: () => void;
+}) {
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [quizAnswer, setQuizAnswer] = useState<number | null>(null);
+  const [askText, setAskText] = useState("");
+
+  const isSpeaking = activeSpokenWord?.anchorId === unit.evidenceRefId;
+  const isTrap = unit.category === "trap";
+  const pageTrap = isTrap ? unit : allUnits.find((u) => u.category === "trap");
+
+  // Connection map: sibling units excluding self
+  const connections = allUnits.filter((u) => u.id !== unit.id).slice(0, 5);
+
+  // Checkpoint quiz: correct = unit.exactText trimmed to ≤80 chars; 2 distractors from siblings
+  const quizChoices: string[] = [
+    unit.exactText.slice(0, 80) + (unit.exactText.length > 80 ? "…" : ""),
+    ...(connections
+      .filter((u) => u.exactText)
+      .slice(0, 2)
+      .map((u) => u.exactText.slice(0, 80) + (u.exactText.length > 80 ? "…" : ""))),
+  ];
+  // Shuffle so correct answer isn't always first — stable shuffle keyed on unit.id
+  const seedIdx = unit.id.charCodeAt(unit.id.length - 1) % 3;
+  const shuffled = [...quizChoices];
+  if (seedIdx > 0 && shuffled.length > seedIdx) {
+    [shuffled[0], shuffled[seedIdx]] = [shuffled[seedIdx], shuffled[0]];
+  }
+  const correctShuffledIdx = shuffled.indexOf(quizChoices[0]);
+
+  const toggleSection = (key: string) =>
+    setExpandedSection((prev) => (prev === key ? null : key));
+
+  const ask = (q: string) => {
+    onAskExpert?.(q);
+    onExplain?.();
+  };
+
+  const masteryPct = Math.min(98, Math.max(62, unit.priorityTier * 18));
+
+  return (
+    <div
+      className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs text-slate-200"
+      data-evidence-id={unit.evidenceRefId}
+    >
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
+        <span>🧠 Expert Brain</span>
+        {isSpeaking && (
+          <span className="rounded-full border border-emerald-300/30 bg-emerald-300/15 px-2 py-0.5 text-emerald-200 animate-pulse">
+            ▶ speaking
+          </span>
+        )}
+        <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5">
+          {unit.importanceLabel}
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">
+          Mastery {masteryPct}%
+        </span>
+      </div>
+
+      {/* Title — always fully visible, no truncation */}
+      <h3 className="mt-2 whitespace-normal break-words text-sm font-semibold leading-snug text-white">
+        {unit.title}
+      </h3>
+
+      {/* Master statement */}
+      <p className="mt-2 whitespace-normal break-words rounded-xl border border-white/8 bg-black/15 p-2 leading-relaxed text-slate-200">
+        {renderTextWithActiveWord(unit.exactText, activeSpokenWord, unit.evidenceRefId)}
+      </p>
+
+      {/* Interactive sections */}
+      <div className="mt-3 flex flex-col gap-1.5">
+
+        {/* Why It Matters */}
+        <div className="rounded-lg border border-white/8 bg-black/15">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-2.5 py-2 text-left"
+            onClick={() => toggleSection("why")}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">Why It Matters</span>
+            <span className="text-[9px] text-white/30">{expandedSection === "why" ? "▾" : "▸"}</span>
+          </button>
+          <div className="px-2.5 pb-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
+            {unit.reason}
+          </div>
+          {expandedSection === "why" && (
+            <div className="flex flex-wrap gap-1.5 px-2.5 pb-2.5">
+              {[
+                ["Give me an analogy", `Give me a real-world analogy for: ${unit.exactText.slice(0, 120)}`],
+                ["Show clinical example", `Show me a clinical example of: ${unit.exactText.slice(0, 120)}`],
+                ["Explain simpler", `Explain this in simpler terms: ${unit.exactText.slice(0, 120)}`],
+                ["Why is this tested?", `Why is this commonly tested on exams: ${unit.exactText.slice(0, 120)}`],
+              ].map(([label, q]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => ask(q)}
+                  className="rounded-md border border-emerald-300/20 bg-emerald-300/8 px-2 py-1 text-[10px] text-emerald-200 hover:bg-emerald-300/15 transition-colors"
+                >
+                  ▶ {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Common Trap */}
+        <div className="rounded-lg border border-red-400/15 bg-red-400/5">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-2.5 py-2 text-left"
+            onClick={() => toggleSection("trap")}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-widest text-red-300/60">⚠ Common Trap</span>
+            <span className="text-[9px] text-white/30">{expandedSection === "trap" ? "▾" : "▸"}</span>
+          </button>
+          <div className="px-2.5 pb-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
+            {pageTrap
+              ? (isTrap ? pageTrap.exactText : `Students often confuse this with: ${pageTrap.exactText.slice(0, 100)}…`)
+              : "No danger zone flagged for this page yet."}
+          </div>
+          {expandedSection === "trap" && (
+            <div className="flex flex-wrap gap-1.5 px-2.5 pb-2.5">
+              {[
+                ["Show Wrong Example", `Show me an example of incorrectly applying: ${unit.exactText.slice(0, 100)}`],
+                ["Compare Correct vs Wrong", `Compare the correct understanding vs the common mistake for: ${unit.exactText.slice(0, 100)}`],
+                ["Why is this wrong?", `Why do students get this wrong: ${pageTrap?.exactText?.slice(0, 100) ?? unit.exactText.slice(0, 100)}`],
+              ].map(([label, q]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => ask(q)}
+                  className="rounded-md border border-red-300/20 bg-red-300/8 px-2 py-1 text-[10px] text-red-200 hover:bg-red-300/15 transition-colors"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Connection Map */}
+        {connections.length > 0 && (
+          <div className="rounded-lg border border-white/8 bg-black/15 px-2.5 py-2">
+            <div className="text-[9px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Connection Map</div>
+            <div className="flex flex-col gap-1">
+              {connections.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => onJumpToUnit?.(u.id)}
+                  className="flex items-center gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors"
+                >
+                  <span className="shrink-0 text-[8px] text-white/30">→</span>
+                  <span className="truncate">{u.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Checkpoint quiz */}
+        <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-2">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-violet-300/60 mb-1.5">Checkpoint</div>
+          <div className="text-[10.5px] text-white/70 mb-2">Which phrase best supports this {unit.importanceLabel.toLowerCase()}?</div>
+          {shuffled.map((choice, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setQuizAnswer(i)}
+              className={`flex items-center gap-2 w-full text-left rounded-md px-2 py-1.5 mb-1 text-[10.5px] transition-colors ${
+                quizAnswer === null
+                  ? "border border-white/10 bg-white/3 text-slate-300 hover:bg-white/8"
+                  : i === correctShuffledIdx
+                  ? "border border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+                  : quizAnswer === i
+                  ? "border border-red-400/40 bg-red-400/10 text-red-200"
+                  : "border border-white/5 bg-white/2 text-slate-400 opacity-60"
+              }`}
+            >
+              <span className="shrink-0 text-[8px]">
+                {quizAnswer !== null
+                  ? i === correctShuffledIdx ? "✓" : quizAnswer === i ? "✗" : "○"
+                  : "○"}
+              </span>
+              <span className="leading-snug">{choice}</span>
+            </button>
+          ))}
+          {quizAnswer !== null && (
+            <button
+              type="button"
+              className="mt-1 text-[9px] text-white/30 hover:text-white/60"
+              onClick={() => setQuizAnswer(null)}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Ask the Expert */}
+        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-white/35 mb-1.5">Ask the Expert</div>
+          <textarea
+            value={askText}
+            onChange={(e) => setAskText(e.target.value)}
+            placeholder="Ask about this thought..."
+            className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] text-slate-200 placeholder-white/25 resize-none focus:outline-none focus:border-sky-400/40"
+            rows={2}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (askText.trim()) { ask(askText.trim()); setAskText(""); }
+              }
+            }}
+          />
+          <button
+            type="button"
+            disabled={!askText.trim()}
+            onClick={() => { if (askText.trim()) { ask(askText.trim()); setAskText(""); } }}
+            className="mt-1.5 w-full rounded-md border border-sky-400/25 bg-sky-400/10 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Ask
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
 // NOTE: does NOT call isCompleteThought() — synthesis output is professor-generated text,
@@ -314,6 +563,10 @@ interface RightPanelProps {
   onOpenExplainIt?: () => void;
   canonicalLeftPanelUnits?: ExpertAnchor[];
   activeThoughtUnit?: ExpertAnchor | null;
+  /** Seeded question sent directly to the ExplainStep tutor from an Expert Brain sub-action. */
+  onAskExpert?: (question: string) => void;
+  /** Jump to a thought unit by its evidenceRefId/id — used by Connection Map links. */
+  onJumpToUnit?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +816,8 @@ export function RightPanel({
   onOpenExplainIt,
   canonicalLeftPanelUnits = [],
   activeThoughtUnit = null,
+  onAskExpert,
+  onJumpToUnit,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1408,71 +1663,19 @@ export function RightPanel({
           </div>
         </div>
 
-        {activeThoughtUnit && (
-          <div
-            className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs text-slate-200"
-            data-evidence-id={activeThoughtUnit.evidenceRefId}
-          >
-            <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300/80">
-              <span>🧠 Expert Brain</span>
-              <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5">
-                {activeThoughtUnit.importanceLabel} ★★★★★
-              </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">
-                Confidence {Math.min(98, Math.max(68, activeThoughtUnit.priorityTier * 18))}%
-              </span>
-            </div>
-            <h3 className="mt-2 whitespace-normal break-words text-sm font-semibold leading-snug text-white">{activeThoughtUnit.title}</h3>
-            <p className="mt-2 whitespace-normal break-words rounded-xl border border-white/8 bg-black/15 p-2 leading-relaxed text-slate-200">
-              {renderTextWithActiveWord(activeThoughtUnit.exactText, activeSpokenWord, activeThoughtUnit.evidenceRefId)}
-            </p>
-            <div className="mt-3 grid gap-2" data-thought-unit-id={activeThoughtUnit.id}>
-              {(() => {
-                // Exactly the 4 sections the Expert Brain card owns beyond the
-                // Master statement (above) and Confidence/mastery (header badge):
-                // Why It Matters, Common Trap, Connection Map, Checkpoint. No
-                // category-conditional sections that just re-echo exactText —
-                // that duplicates the Master statement paragraph above.
-                const isTrap = activeThoughtUnit.category === "trap";
-                const pageTrap = isTrap
-                  ? activeThoughtUnit
-                  : canonicalLeftPanelUnits.find((u) => u.category === "trap");
-                const sections: Array<[string, string]> = [
-                  ["Why It Matters", activeThoughtUnit.reason],
-                  ["Common Trap", pageTrap
-                    ? (isTrap ? pageTrap.exactText : `Related danger zone on this page: ${pageTrap.exactText}`)
-                    : "No danger zone flagged for this page yet."],
-                  ["Connection Map", canonicalLeftPanelUnits
-                    .filter((u) => u.id !== activeThoughtUnit.id)
-                    .slice(0, 5)
-                    .map((u) => `✓ ${u.title}`)
-                    .join("\n") || "No linked canonical units yet."],
-                  ["Checkpoint", `Which phrase proves this ${activeThoughtUnit.importanceLabel.toLowerCase()}?`],
-                ];
-                if (activeThoughtUnit.category === "mechanism" || activeThoughtUnit.category === "application" || activeThoughtUnit.category === "formula") {
-                  sections.splice(1, 0, ["Procedure Logic", activeThoughtUnit.exactText]);
-                }
-                if (activeThoughtUnit.category === "clinical") {
-                  sections.splice(2, 0, ["Clinical Link", activeThoughtUnit.exactText]);
-                }
-                if (activeThoughtUnit.category === "memoryAnchor") {
-                  sections.splice(2, 0, ["Memory", activeThoughtUnit.exactText]);
-                }
-                return sections.slice(0, 6).map(([label, body]) => (
-                  <div key={label} className="rounded-lg border border-white/8 bg-black/15 p-2">
-                    <div className="text-[9px] font-bold uppercase tracking-widest text-white/40">{label}</div>
-                    <div className="mt-0.5 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">{body}</div>
-                  </div>
-                ));
-              })()}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" onClick={onOpenExplainStep} className="rounded-lg border border-sky-300/20 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200">Explain</button>
-                <button type="button" onClick={onOpenWhiteboard} className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">Whiteboard</button>
-                <button type="button" onClick={openShadowRecall} className="rounded-lg border border-violet-300/20 bg-violet-300/10 px-2 py-1 text-[11px] font-semibold text-violet-200">Shadow Recall</button>
-              </div>
-            </div>
-          </div>
-        )}
+        {activeThoughtUnit && (() => {
+          // local-state helpers are hoisted via an IIFE so the card has its own
+          // expanded-section, quiz-answer, and ask-input state without polluting
+          // RightPanel's flat scope. This is rendered inline, not a subcomponent.
+          return <ExpertBrainCard
+            unit={activeThoughtUnit}
+            allUnits={canonicalLeftPanelUnits}
+            activeSpokenWord={activeSpokenWord}
+            onAskExpert={onAskExpert}
+            onJumpToUnit={onJumpToUnit}
+            onExplain={onOpenExplainStep}
+          />;
+        })()}
 
         {/* ── WIRING CARD — dev only, never shown in production studying ── */}
         {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (

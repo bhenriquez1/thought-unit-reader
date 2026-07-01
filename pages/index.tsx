@@ -2017,6 +2017,31 @@ export default function ThoughtUnitReader() {
     sel.clearSelection();
   }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, resolveEvidenceId, focusedEvidenceId]);
 
+  const handleAskExpert = useCallback((question: string) => {
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    const relatedNotes = getNotesByBook(bookId)
+      .filter((n) => n.pageNumber === currentPage)
+      .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
+    const relatedRecallCards = getRecallSetsByBook(bookId)
+      .filter((r) => r.pageNumber === currentPage)
+      .flatMap((r) => r.cards.map((c) => ({ front: c.front, back: c.back })));
+    const activeUnit = activeCanonicalThoughtUnit;
+    setExplainStepContext({
+      selectedText: activeUnit?.exactText ?? "",
+      pageText,
+      surroundingParagraph: activeUnit?.exactText ?? pageText.slice(0, 800),
+      pageThesis: sm?.pageThesis ?? null,
+      studyNotes: sm?.studyNotes ?? null,
+      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      relatedNotes,
+      relatedRecallCards,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+      seedQuestion: question,
+    });
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, activeCanonicalThoughtUnit]);
+
   // Same "Explain This Step" tutor modal, seeded directly from a thought-unit's
   // verbatim sourceText instead of the live LeftPanel selection — used by the
   // "Open in Explain This Step" action in the Recall Lab v2 box layout.
@@ -4113,6 +4138,8 @@ export default function ThoughtUnitReader() {
                   grounded: safeHighlightAnchors.some((a) => (a as any).evidenceRefId === unit.evidenceRefId),
                 }))}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
+                onAskExpert={handleAskExpert}
+                onJumpToUnit={(id) => onPdfHighlightFocus(id)}
               />
             </div>
           </ErrorBoundary>
