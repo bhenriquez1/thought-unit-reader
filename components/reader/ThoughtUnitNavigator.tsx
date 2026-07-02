@@ -17,6 +17,7 @@ import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import DomainModeSelector from "./DomainModeSelector";
+import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/thoughtUnitProgress";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -57,17 +58,23 @@ function deriveCardTitle(text: string, maxLen = 60): string {
 // every time the detected/overridden preset changes. Exported so the Level 4
 // page roadmap (ThoughtRoadmap) renders the same groups in matching colors.
 export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
-  thesis:      { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
-  definition:  { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
-  mechanism:   { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
-  application: { color: "#c084fc", bg: "rgba(192,132,252,0.12)" },
-  trap:        { color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
-  clinical:    { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
-  formula:     { color: "#7dd3fc", bg: "rgba(125,211,252,0.12)" },
-  dat_fact:    { color: "#fed7aa", bg: "rgba(251,146,60,0.12)" },
-  keyDetail:   { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
-  memoryAnchor: { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
-  keyAnatomy:  { color: "#c4915c", bg: "rgba(196,145,92,0.12)" },
+  // MASTER — yellow
+  thesis:       { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
+  definition:   { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
+  // PROCEDURE — blue
+  mechanism:    { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  formula:      { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  // DECISION — orange
+  application:  { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+  comparison:   { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+  keyDetail:    { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+  keyAnatomy:   { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+  // TRAP — red
+  trap:         { color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
+  // PEARL — green
+  clinical:     { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  memoryAnchor: { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  dat_fact:     { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
@@ -123,6 +130,8 @@ export default function ThoughtUnitNavigator({
   onPresetChange,
   activeSpokenWord,
   emptyReason,
+  bookId,
+  pageNumber,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -143,6 +152,8 @@ export default function ThoughtUnitNavigator({
    *  card's snippet marks the matching word, Speechify-style. */
   activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   emptyReason?: string | null;
+  bookId?: string;
+  pageNumber?: number;
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -152,7 +163,12 @@ export default function ThoughtUnitNavigator({
   const activeEntryRef = useRef<HTMLDivElement | null>(null);
       useEffect(() => {
         if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }, [focusedId]);
+        if (focusedId && bookId && pageNumber) {
+          markProgress(bookId, pageNumber, focusedId, "read");
+          // Re-read progress after marking
+          setProgressMap(getPageProgress(bookId, pageNumber, entries.map((e) => e.id)));
+        }
+      }, [focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (!activeSpokenWord?.anchorId) return;
         console.log("[LEFT_PANEL_WORD_SYNC]", {
@@ -170,6 +186,13 @@ export default function ThoughtUnitNavigator({
   // Presets without kindGroups keep today's exact one-section-per-kind behavior.
   // Shared with ThoughtRoadmap (Level 4) so both views agree on sectioning.
   const grouped = useMemo(() => groupThoughtUnits(entries, presetId), [entries, presetId]);
+
+  const [progressMap, setProgressMap] = useState<Map<string, Set<ProgressStep>>>(new Map());
+
+  useEffect(() => {
+    if (!bookId || !pageNumber) return;
+    setProgressMap(getPageProgress(bookId, pageNumber, entries.map((e) => e.id)));
+  }, [bookId, pageNumber, entries, focusedId]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((prev) => {
@@ -344,6 +367,29 @@ export default function ThoughtUnitNavigator({
                       {entry.lineRange ? `Lines ${entry.lineRange}` : null}
                     </span>
                   )}
+                  {(() => {
+                    const progress = progressMap.get(entry.id);
+                    if (!progress || progress.size === 0) return null;
+                    const steps: { key: ProgressStep; label: string }[] = [
+                      { key: "read", label: "Read" },
+                      { key: "speech", label: "Speech" },
+                      { key: "explained", label: "Explained" },
+                      { key: "quiz", label: "Quiz" },
+                      { key: "mastered", label: "Mastered" },
+                    ];
+                    return (
+                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                        {steps.map(({ key, label }) => (
+                          <span
+                            key={key}
+                            className={`text-[8px] tracking-tight ${progress.has(key) ? "text-emerald-400" : "text-white/20"}`}
+                          >
+                            {progress.has(key) ? "✔" : "○"} {label}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {(onExplain || onOpenRecall || onOpenNote) && (
                     <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
                       {onOpenNote && (

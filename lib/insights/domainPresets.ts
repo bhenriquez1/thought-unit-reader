@@ -61,31 +61,25 @@ export const UNIVERSAL_PRESET: DomainPreset = {
   description: "Generic academic taxonomy — used when no domain preset is detected.",
   contentKeywords: [],
   kindLabels: {
-    thesis: "Master This",
-    definition: "Master This",
-    mechanism: "Procedure Step",
-    formula: "Procedure Step",
-    trap: "Danger Zone",
-    application: "Decision Point",
-    comparison: "Decision Point",
-    clinical: "Pearl",
+    thesis:      "MASTER",
+    definition:  "MASTER",
+    mechanism:   "PROCEDURE",
+    formula:     "PROCEDURE",
+    application: "DECISION",
+    comparison:  "DECISION",
+    keyDetail:   "DECISION",
+    keyAnatomy:  "DECISION",
+    trap:        "TRAP",
+    clinical:    "PEARL",
+    memoryAnchor:"PEARL",
+    dat_fact:    "PEARL",
   },
-  // Expert-priority order so star tier (getImportanceTier(groupIndex)) lines up
-  // with how a surgeon would triage a page: nail the must-master idea first,
-  // then the procedure logic, then danger/complication points, then applied
-  // judgment calls, then a clinical pearl, then everything else as supporting
-  // detail. The ★★★★★ "Master This" per-anchor badge is layered on top of
-  // whichever group an anchor lands in — any group can contain one.
   kindGroups: [
-    { id: "master_this", label: "Master This", kinds: ["thesis", "definition"] },
-    { id: "procedure_step", label: "Procedure Step", kinds: ["mechanism", "formula"] },
-    { id: "danger_zone", label: "Danger Zone", kinds: ["trap"] },
-    { id: "decision_point", label: "Decision Point", kinds: ["application", "comparison"] },
-    { id: "pearl", label: "Pearl", kinds: ["clinical"] },
-    { id: "key_detail", label: "Key Detail", kinds: ["keyDetail"] },
-    { id: "memory_hook", label: "Memory Hook", kinds: ["memoryAnchor"] },
-    { id: "key_anatomy", label: "Key Anatomy", kinds: ["keyAnatomy"] },
-    { id: "supporting_detail", label: "Supporting Detail", kinds: ["reference", "filler", "dat_fact", "unknown"] },
+    { id: "master",    label: "MASTER",    kinds: ["thesis", "definition"] },
+    { id: "procedure", label: "PROCEDURE", kinds: ["mechanism", "formula"] },
+    { id: "decision",  label: "DECISION",  kinds: ["application", "comparison", "keyDetail", "keyAnatomy"] },
+    { id: "trap",      label: "TRAP",      kinds: ["trap"] },
+    { id: "pearl",     label: "PEARL",     kinds: ["clinical", "memoryAnchor", "dat_fact", "reference", "filler", "unknown"] },
   ],
 };
 

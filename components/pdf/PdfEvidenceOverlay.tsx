@@ -38,24 +38,24 @@ type SemanticKind =
   | "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical"
   | "keyDetail" | "memoryAnchor" | "keyAnatomy" | "formula" | "comparison" | "reference" | "filler" | "unknown";
 
-type HighlightTier = "master" | "important" | "supporting" | "danger" | "pearl";
+type HighlightTier = "master" | "procedure" | "decision" | "danger" | "pearl";
 
 const KIND_TIER: Record<SemanticKind, HighlightTier> = {
-  thesis: "master",
-  definition: "master",
-  mechanism: "important",
-  application: "important",
-  keyDetail: "important",
-  keyAnatomy: "important",
-  memoryAnchor: "important",
-  formula: "important",
-  comparison: "important",
-  trap: "danger",
-  clinical: "pearl",
-  dat_fact: "supporting",
-  reference: "supporting",
-  filler: "supporting",
-  unknown: "supporting",
+  thesis:       "master",
+  definition:   "master",
+  mechanism:    "procedure",
+  formula:      "procedure",
+  application:  "decision",
+  comparison:   "decision",
+  keyDetail:    "decision",
+  keyAnatomy:   "decision",
+  trap:         "danger",
+  clinical:     "pearl",
+  memoryAnchor: "pearl",
+  dat_fact:     "pearl",
+  reference:    "pearl",
+  filler:       "pearl",
+  unknown:      "pearl",
 };
 
 interface KindConfig {
@@ -83,25 +83,25 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     badgeColor: "#fde047",
     glowColor:  "253,224,71",
   },
-  important: {
-    label:      "IMPORTANT",
-    bgNormal:   "rgba(134,239,172,0.26)",
-    bgFocused:  "rgba(134,239,172,0.56)",
-    restGlow:   "0 0 3px rgba(134,239,172,0.32)",
-    ringClass:  "ring-1 ring-green-300/70 shadow-[0_0_8px_rgba(134,239,172,0.55)]",
-    badgeBg:    "rgba(20,83,45,0.92)",
-    badgeColor: "#86efac",
-    glowColor:  "134,239,172",
-  },
-  supporting: {
-    label:      "SUPPORTING",
+  procedure: {
+    label:      "PROCEDURE",
     bgNormal:   "rgba(147,197,253,0.22)",
     bgFocused:  "rgba(147,197,253,0.50)",
     restGlow:   "0 0 3px rgba(147,197,253,0.30)",
-    ringClass:  "ring-1 ring-blue-300/70 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
+    ringClass:  "ring-2 ring-sky-300/70",
     badgeBg:    "rgba(29,78,216,0.92)",
-    badgeColor: "#bfdbfe",
+    badgeColor: "#93c5fd",
     glowColor:  "147,197,253",
+  },
+  decision: {
+    label:      "DECISION",
+    bgNormal:   "rgba(251,146,60,0.22)",
+    bgFocused:  "rgba(251,146,60,0.50)",
+    restGlow:   "0 0 3px rgba(251,146,60,0.30)",
+    ringClass:  "ring-2 ring-orange-400/70",
+    badgeBg:    "rgba(154,52,18,0.92)",
+    badgeColor: "#fb923c",
+    glowColor:  "251,146,60",
   },
   danger: {
     label:      "DANGER ZONE",
@@ -114,14 +114,14 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     glowColor:  "252,165,165",
   },
   pearl: {
-    label:      "CLINICAL PEARL",
-    bgNormal:   "rgba(103,232,249,0.22)",
-    bgFocused:  "rgba(103,232,249,0.50)",
-    restGlow:   "0 0 3px rgba(103,232,249,0.32)",
-    ringClass:  "ring-1 ring-cyan-300/70 shadow-[0_0_8px_rgba(103,232,249,0.55)]",
-    badgeBg:    "rgba(22,78,99,0.92)",
-    badgeColor: "#67e8f9",
-    glowColor:  "103,232,249",
+    label:      "PEARL",
+    bgNormal:   "rgba(134,239,172,0.22)",
+    bgFocused:  "rgba(134,239,172,0.50)",
+    restGlow:   "0 0 3px rgba(134,239,172,0.30)",
+    ringClass:  "ring-2 ring-emerald-400/70",
+    badgeBg:    "rgba(20,83,45,0.92)",
+    badgeColor: "#86efac",
+    glowColor:  "134,239,172",
   },
 };
 
@@ -130,8 +130,8 @@ function getConfig(rect: OverlayRect): KindConfig {
   const kind = rect.semanticKind as SemanticKind | undefined;
   if (kind && kind in KIND_TIER) return TIER_CONFIG[KIND_TIER[kind]];
   if (rect.level === "trap") return TIER_CONFIG.danger;
-  if (rect.level === "support") return TIER_CONFIG.supporting;
-  return TIER_CONFIG.important;
+  if (rect.level === "support") return TIER_CONFIG.procedure;
+  return TIER_CONFIG.decision;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
