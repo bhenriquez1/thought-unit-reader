@@ -577,6 +577,8 @@ export default function PureReaderView({
             overridePresetId={domainPresetOverride}
             onPresetChange={setDomainPresetOverride}
             emptyReason={emptyThoughtUnitReason}
+            bookId={docId}
+            pageNumber={currentPage}
           />
 
           {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}

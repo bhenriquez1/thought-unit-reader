@@ -1788,6 +1788,7 @@ export function RightPanel({
                 activeSpokenWord={activeSpokenWord}
                 onEvidenceClick={onEvidenceClick}
                 onOpenThoughtUnit={onOpenThoughtUnit}
+                activeThoughtUnit={activeThoughtUnit}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2164,6 +2165,7 @@ function UltraView({
   activeSpokenWord,
   onEvidenceClick,
   onOpenThoughtUnit,
+  activeThoughtUnit,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -2189,6 +2191,8 @@ function UltraView({
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   /** Called when the user wants to expand a thought-unit card into the Recall Lab v2 box layout */
   onOpenThoughtUnit?: (anchorId: string) => void;
+  /** Active thought unit — used to derive surgeon type label for related resources */
+  activeThoughtUnit?: ExpertAnchor | null;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
   const domain = view.domain ?? view._debug?.domain;
@@ -2223,6 +2227,17 @@ function UltraView({
     miniTestItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
+
+  const surgeonTypeLabel = (() => {
+    const cat = activeThoughtUnit?.category;
+    if (!cat) return null;
+    if (cat === "thesis" || cat === "definition") return "MASTER";
+    if (cat === "mechanism" || cat === "formula") return "PROCEDURE";
+    if (cat === "application" || cat === "comparison" || cat === "keyDetail" || cat === "keyAnatomy") return "DECISION";
+    if (cat === "trap") return "TRAP";
+    if (cat === "clinical" || cat === "memoryAnchor" || cat === "dat_fact") return "PEARL";
+    return null;
+  })();
 
   // ── Specific resource recommendations — AI-resolved exact articles + channel-targeted videos ──
   type ResolvedArticle = { title: string; url: string; source: string; reason: string; score: number };
@@ -2958,10 +2973,6 @@ function UltraView({
         )}
       </PanelSection>}
 
-      {/* Page Checkpoint — after-reading comprehension test (submit-then-reveal) */}
-      {miniTestItems?.length ? (
-        <MiniTestPanel items={miniTestItems} bookId={bookId ?? ""} pageNumber={pageNumber ?? 0} title="Page Checkpoint" />
-      ) : null}
 
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
@@ -2987,6 +2998,9 @@ function UltraView({
                       <span className="shrink-0 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">{a.score}%</span>
                     </div>
                     <span className="text-[10px] text-slate-400">{a.source}</span>
+                    {surgeonTypeLabel && (
+                      <span className="text-[9.5px] font-semibold text-emerald-400/80">Supports: {surgeonTypeLabel}</span>
+                    )}
                     <span className="text-[10px] text-emerald-300">Exact topic matched · fallback false</span>
                     <span className="text-[11px] text-slate-300 italic mt-0.5">{a.reason}</span>
                   </a>
@@ -3030,6 +3044,9 @@ function UltraView({
                     {/* Creator row */}
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-medium text-slate-300">{v.channel}</span>
+                      {surgeonTypeLabel && (
+                        <span className="text-[9.5px] font-semibold text-emerald-400/80">Supports: {surgeonTypeLabel}</span>
+                      )}
                       {isDirectVideo ? (
                         <span className="rounded bg-emerald-900/50 px-1 py-px text-[9px] font-semibold text-emerald-400">▶ verified</span>
                       ) : (
@@ -3258,8 +3275,6 @@ function ConceptBlocksView({
   view: ReaderPageView;
   onAnchorClick: (text: string) => void;
 }) {
-  const [miniTestOpen, setMiniTestOpen] = useState(false);
-
   return (
     <div className="space-y-4">
       {/* Core Idea */}
@@ -3283,28 +3298,6 @@ function ConceptBlocksView({
           />
         ))}
       </div>
-
-      {/* Mini Test */}
-      {view.miniTest.length > 0 && (
-        <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
-          <button
-            onClick={() => setMiniTestOpen((o) => !o)}
-            className="flex w-full items-center justify-between px-4 py-3 text-left"
-          >
-            <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-              Page Checkpoint
-            </span>
-            <span className="text-[10px] text-slate-500">{miniTestOpen ? "▲" : "▼"}</span>
-          </button>
-          {miniTestOpen && (
-            <div className="space-y-2 px-4 pb-4">
-              {view.miniTest.map((q, i) => (
-                <MiniTestItem key={i} question={q} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Compression */}
       {view.compression && (
