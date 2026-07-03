@@ -199,7 +199,7 @@ export default function ThoughtUnitNavigator({
           matched: !!matchedEntry,
         });
         if (matchedEntry) {
-          activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          activeEntryRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
         }
       }, [activeSpokenWord?.anchorId]); // scroll on anchor change only, not every word
 
@@ -235,7 +235,7 @@ export default function ThoughtUnitNavigator({
   const header = (
     <div className="flex items-center justify-between gap-2 px-1">
       <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
-        Thought Units
+        Page Guide
       </span>
       {detectedPresetLabel !== undefined && onPresetChange && (
         <DomainModeSelector

@@ -224,7 +224,7 @@ export interface SmartPDFViewerProps {
   onEvidenceFocus?: (evidenceId: string) => void;
   /** Live word-by-word Speech position within focusedEvidenceId's anchor — drives
    *  a secondary Speechify-style live word box on top of the anchor highlight. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -876,20 +876,21 @@ export default function SmartPDFViewer({
   // not the full overlayRects rebuild above. Falls back to null (whole-anchor highlight
   // only) when the anchor isn't currently rendered or word-level mapping fails.
   useEffect(() => {
-    if (!activeSpokenWord || !activeSpokenWord.anchorId) {
-      setActiveWordRect(null);
-      return;
-    }
+    if (!activeSpokenWord) { setActiveWordRect(null); return; }
     const container = viewerRef.current;
     const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-    const target = highlightTargets?.find((t) =>
-      t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
-    );
-    if (!textLayer || !target) {
-      setActiveWordRect(null);
-      return;
-    }
-    const rect = computeActiveWordRect(textLayer, target.normalizedText || target.text, activeSpokenWord.wordIndex);
+    if (!textLayer) { setActiveWordRect(null); return; }
+    // Prefer the exact sentence text being spoken — wordIndex counts within the sentence,
+    // so using the sentence text gives accurate per-word positions even mid-thought-unit.
+    // Fall back to the anchor's normalizedText for legacy callers without sentenceText.
+    const target = activeSpokenWord.anchorId
+      ? highlightTargets?.find((t) =>
+          t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
+        )
+      : undefined;
+    const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
+    if (!searchText) { setActiveWordRect(null); return; }
+    const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
     setActiveWordRect(rect);
   }, [activeSpokenWord, currentPage, overlayRects]); // eslint-disable-line react-hooks/exhaustive-deps
 

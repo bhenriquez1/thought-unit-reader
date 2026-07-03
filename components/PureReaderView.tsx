@@ -120,7 +120,7 @@ interface PureReaderViewProps {
   /** Live word-by-word Speech position — null when nothing is playing or the
    *  current segment has no evidenceRefId. Drives the marked word in the active
    *  ThoughtUnitNavigator card snippet and the live word box in the PDF. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
+  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
   /** Raw text of the current page — used to validate highlight anchors before rendering */
