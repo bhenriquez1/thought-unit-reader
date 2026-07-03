@@ -230,7 +230,7 @@ function ExpertBrainCard({
                   className="flex items-center gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors"
                 >
                   <span className="shrink-0 text-[8px] text-white/30">→</span>
-                  <span className="truncate">{u.title}</span>
+                  <span className="whitespace-normal break-words">{u.title}</span>
                 </button>
               ))}
             </div>
