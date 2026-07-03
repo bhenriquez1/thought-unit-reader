@@ -83,7 +83,11 @@ function buildQuickSentences(activePageText: string): string[] {
   const pipeStripped = activePageText.replace(/\s*\|\s*/g, " ");
   const rawLines = pipeStripped.split("\n").map(l => l.trim()).filter(Boolean);
   const bodyLines = rawLines.filter(line => !isHeaderOrFooter(line));
-  const quickCleaned = normalizeDropCaps(bodyLines.join(" "));
+  // Do NOT apply normalizeDropCaps here — the raw sentences must match the PDF text-layer
+  // span concatenation verbatim (e.g. "A common trap" must stay "A common" not "Acommon"),
+  // so computeActiveWordRect's indexOf search succeeds. naturalizeDropCaps is applied
+  // separately by computeSpeechText → naturalizeSpeech before the TTS call.
+  const quickCleaned = bodyLines.join(" ");
 
   const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
   const merged: string[] = [];
@@ -484,7 +488,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           bodyLines.push(line);
         }
       }
-      const quickCleaned = normalizeDropCaps(bodyLines.join(" "));
+      // Do NOT apply normalizeDropCaps here — raw sentences must match the PDF text-layer
+      // span concatenation so computeActiveWordRect's indexOf succeeds for karaoke.
+      // naturalizeSpeech (called by computeSpeechText) handles drop-cap merging for TTS.
+      const quickCleaned = bodyLines.join(" ");
 
       const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
       const merged: string[] = [];
