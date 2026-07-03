@@ -154,16 +154,16 @@ function ExpertBrainCard({
       </p>
 
       {/* Interactive sections */}
-      <div className="mt-3 flex flex-col gap-1.5">
+      <div className="mt-2 flex flex-col gap-1">
 
         {/* Why It Matters */}
         <div className="rounded-lg border border-white/8 bg-black/15">
           <button
             type="button"
-            className="flex w-full items-center justify-between px-2.5 py-2 text-left"
+            className="flex w-full items-center justify-between px-2.5 py-1.5 text-left"
             onClick={() => toggleSection("why")}
           >
-            <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">Why It Matters</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">Why</span>
             <span className="text-[9px] text-white/30">{expandedSection === "why" ? "▾" : "▸"}</span>
           </button>
           <div className="px-2.5 pb-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
@@ -194,10 +194,10 @@ function ExpertBrainCard({
         <div className="rounded-lg border border-red-400/15 bg-red-400/5">
           <button
             type="button"
-            className="flex w-full items-center justify-between px-2.5 py-2 text-left"
+            className="flex w-full items-center justify-between px-2.5 py-1.5 text-left"
             onClick={() => toggleSection("trap")}
           >
-            <span className="text-[9px] font-bold uppercase tracking-widest text-red-300/60">⚠ Common Trap</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-red-300/60">⚠ Trap</span>
             <span className="text-[9px] text-white/30">{expandedSection === "trap" ? "▾" : "▸"}</span>
           </button>
           <div className="px-2.5 pb-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
@@ -225,34 +225,46 @@ function ExpertBrainCard({
           )}
         </div>
 
-        {/* Connection Map */}
+        {/* Connection Map — tree visual */}
         {connections.length > 0 && (
           <div className="rounded-lg border border-white/8 bg-black/15 px-2.5 py-2">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Connection Map</div>
-            <div className="flex flex-col gap-1">
-              {connections.map((u) => {
-                const connTitle = (!u.title || hasEllipsis(u.title))
-                  ? firstSentence(u.exactText)
-                  : u.title;
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => onJumpToUnit?.(u.id)}
-                    className="flex items-center gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors"
-                  >
-                    <span className="shrink-0 text-[8px] text-white/30">→</span>
-                    <span className="whitespace-normal break-words">{connTitle}</span>
-                  </button>
-                );
-              })}
+            <div className="text-[9px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Connections</div>
+            {/* Root node */}
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="shrink-0 text-[9px] text-sky-300/50">●</span>
+              <span className="text-[10px] font-semibold text-white/60 truncate">{displayTitle.slice(0, 40)}</span>
+            </div>
+            {/* Branch nodes with tree lines */}
+            <div className="relative pl-3">
+              <div className="absolute left-[3px] top-0 bottom-0 w-px bg-white/10" />
+              <div className="flex flex-col gap-0.5">
+                {connections.map((u, idx) => {
+                  const connTitle = (!u.title || hasEllipsis(u.title))
+                    ? firstSentence(u.exactText)
+                    : u.title;
+                  const isLast = idx === connections.length - 1;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => onJumpToUnit?.(u.id)}
+                      className="flex items-start gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors relative"
+                    >
+                      <span className="shrink-0 font-mono text-[9px] text-white/25 mt-0.5 select-none">
+                        {isLast ? "└─" : "├─"}
+                      </span>
+                      <span className="whitespace-normal break-words leading-snug">{connTitle}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
 
         {/* Checkpoint quiz */}
-        <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-2">
-          <div className="text-[9px] font-bold uppercase tracking-widest text-violet-300/60 mb-1.5">Checkpoint</div>
+        <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 px-2.5 py-1.5">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-violet-300/60 mb-1">Checkpoint</div>
           <div className="text-[10.5px] text-white/70 mb-2">Which phrase best supports this {unit.importanceLabel.toLowerCase()}?</div>
           {shuffled.map((choice, i) => (
             <button
@@ -289,8 +301,8 @@ function ExpertBrainCard({
         </div>
 
         {/* Ask the Expert */}
-        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
-          <div className="text-[9px] font-bold uppercase tracking-widest text-white/35 mb-1.5">Ask the Expert</div>
+        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-white/35 mb-1">Ask the Expert</div>
           <textarea
             value={askText}
             onChange={(e) => setAskText(e.target.value)}
