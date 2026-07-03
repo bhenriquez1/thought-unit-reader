@@ -102,9 +102,9 @@ function buildQuickSentences(activePageText: string): string[] {
       merged.push(t);
     }
   }
-  // Drop short strings; short heading fragments (e.g. "CONCEPT 2.1") are read as
-  // standalone utterances or dropped by the 10-char floor — never prepended into body.
-  return merged.filter((s) => s.length >= 10);
+  // Drop short strings and any heading fragments that survived line-level filtering
+  // (e.g. "CONCEPT 2.1" inline in a long paragraph): apply isHeaderOrFooter post-split.
+  return merged.filter((s) => s.length >= 10 && !isHeaderOrFooter(s));
 }
 
 // ── "Read From Click" — find the sentence that best matches a clicked snippet ──
@@ -499,8 +499,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           merged.push(t);
         }
       }
-      // Drop short strings; heading fragments (e.g. "CONCEPT 2.1") are not merged into body.
-      const quickSents = merged.filter((s) => s.length >= 10);
+      // Drop short strings and any heading fragments that survived line-level filtering
+      // (e.g. "CONCEPT 2.1" inline in a paragraph): apply isHeaderOrFooter post-split.
+      const quickSents = merged.filter((s) => s.length >= 10 && !isHeaderOrFooter(s));
       const firstBodyIdx = quickSents.findIndex(s => !isHeaderOrFooter(s));
 
       console.log("[SPEECH_CLEANED_TEXT]", {

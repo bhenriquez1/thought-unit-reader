@@ -342,10 +342,16 @@ export default function ThoughtUnitNavigator({
                   tabIndex={0}
                   onClick={() => onJump(entry.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
-                  className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors"
+                  className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
                   style={{
-                    background: focused ? meta.bg.replace("0.12", "0.28") : meta.bg,
-                    border: `1px solid ${meta.color}${focused ? "88" : "33"}`,
+                    background: isSpeaking
+                      ? meta.bg.replace("0.12", "0.25")
+                      : focused ? meta.bg.replace("0.12", "0.28") : meta.bg,
+                    border: `1px solid ${meta.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
+                    boxShadow: isSpeaking
+                      ? `0 0 10px ${meta.color}44, inset 0 0 6px ${meta.color}10`
+                      : undefined,
+                    transition: "all 0.2s ease",
                   }}
                   data-testid="thought-unit-entry"
                 >
@@ -359,11 +365,14 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <span
-                    className="text-[9px] font-semibold uppercase tracking-wide pr-6"
+                    className="text-[9px] font-semibold uppercase tracking-wide pr-6 flex items-center gap-1"
                     style={{ color: meta.color }}
                     data-testid="thought-unit-category"
                   >
                     {meta.label}
+                    {isSpeaking && (
+                      <span className="animate-pulse text-emerald-300" style={{ fontSize: "8px" }}>◎ live</span>
+                    )}
                   </span>
                   <span
                     className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
