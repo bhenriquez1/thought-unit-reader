@@ -144,7 +144,14 @@ function computeActiveWordRect(
     const firstWords = baseText.split(" ").filter(Boolean).slice(0, 6).join(" ");
     startIdx = firstWords.length >= 8 ? concatText.indexOf(firstWords) : -1;
   }
-  if (startIdx === -1) return null;
+  if (startIdx === -1) {
+    console.warn("[KARAOKE_MISS] sentence not found in PDF text layer", {
+      search: baseText.slice(0, 80),
+      layerChars: concatText.length,
+      spansCount: spans.length,
+    });
+    return null;
+  }
   const endIdx = Math.min(startIdx + baseText.length, concatText.length);
 
   const words = concatText.slice(startIdx, endIdx).split(" ").filter(Boolean);
@@ -879,7 +886,10 @@ export default function SmartPDFViewer({
     if (!activeSpokenWord) { setActiveWordRect(null); return; }
     const container = viewerRef.current;
     const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-    if (!textLayer) { setActiveWordRect(null); return; }
+    if (!textLayer) {
+      console.warn("[KARAOKE_MISS] PDF text layer not found — page may still be rendering");
+      setActiveWordRect(null); return;
+    }
     // Prefer the exact sentence text being spoken — wordIndex counts within the sentence,
     // so using the sentence text gives accurate per-word positions even mid-thought-unit.
     // Fall back to the anchor's normalizedText for legacy callers without sentenceText.
