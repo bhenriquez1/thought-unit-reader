@@ -85,6 +85,14 @@ function ExpertBrainCard({
   const isTrap = unit.category === "trap";
   const pageTrap = isTrap ? unit : allUnits.find((u) => u.category === "trap");
 
+  // Avoid ellipsis-derived titles — if the title was truncated (contains … or ...),
+  // fall back to the first complete sentence of exactText.
+  const hasEllipsis = (s?: string) => !!(s && (s.includes('…') || s.includes('...')));
+  const firstSentence = (s: string) => s.split(/(?<=[.!?])\s+/)[0] ?? s;
+  const displayTitle = (!unit.title || hasEllipsis(unit.title))
+    ? firstSentence(unit.exactText)
+    : unit.title;
+
   // Connection map: sibling units excluding self
   const connections = allUnits.filter((u) => u.id !== unit.id).slice(0, 5);
 
@@ -135,9 +143,9 @@ function ExpertBrainCard({
         </span>
       </div>
 
-      {/* Title — always fully visible, no truncation */}
+      {/* Title — always fully visible, no truncation; falls back to first full sentence */}
       <h3 className="mt-2 whitespace-normal break-words text-sm font-semibold leading-snug text-white">
-        {unit.title}
+        {displayTitle}
       </h3>
 
       {/* Master statement */}
@@ -222,17 +230,22 @@ function ExpertBrainCard({
           <div className="rounded-lg border border-white/8 bg-black/15 px-2.5 py-2">
             <div className="text-[9px] font-bold uppercase tracking-widest text-white/40 mb-1.5">Connection Map</div>
             <div className="flex flex-col gap-1">
-              {connections.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => onJumpToUnit?.(u.id)}
-                  className="flex items-center gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors"
-                >
-                  <span className="shrink-0 text-[8px] text-white/30">→</span>
-                  <span className="whitespace-normal break-words">{u.title}</span>
-                </button>
-              ))}
+              {connections.map((u) => {
+                const connTitle = (!u.title || hasEllipsis(u.title))
+                  ? firstSentence(u.exactText)
+                  : u.title;
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => onJumpToUnit?.(u.id)}
+                    className="flex items-center gap-1.5 text-left text-[10.5px] text-sky-300/80 hover:text-sky-200 transition-colors"
+                  >
+                    <span className="shrink-0 text-[8px] text-white/30">→</span>
+                    <span className="whitespace-normal break-words">{connTitle}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -554,6 +567,10 @@ interface RightPanelProps {
    *  paint-budgeted effectiveHighlightTargets) — forwarded to the inline
    *  StudySpeechPanel so "Highlight Only" mode reads only what's visible. */
   highlightedAnchorTexts?: string[];
+  /** First visible paragraph text from the PDF viewport — forwarded to
+   *  StudySpeechPanel so Current Page playback starts at the sentence the
+   *  reader is currently looking at, not always at page top. */
+  activeParagraphText?: string | null;
   /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
@@ -810,6 +827,7 @@ export function RightPanel({
   onSpeechPlayStateChange,
   onSpeechActiveWordChange,
   highlightedAnchorTexts,
+  activeParagraphText,
   onSpeechExplainSegment,
   onOpenWhiteboard,
   onOpenExplainStep,
@@ -1628,6 +1646,7 @@ export function RightPanel({
             onActiveWordChange={onSpeechActiveWordChange}
             onExplainSegment={onSpeechExplainSegment}
             highlightedAnchorTexts={highlightedAnchorTexts}
+            currentViewportText={activeParagraphText}
             thoughtUnits={canonicalLeftPanelUnits}
             selectedUnitId={activeThoughtUnit?.id ?? focusedEvidenceId ?? null}
             primary
