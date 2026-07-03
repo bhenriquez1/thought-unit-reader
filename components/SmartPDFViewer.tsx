@@ -882,7 +882,9 @@ export default function SmartPDFViewer({
     }
     const container = viewerRef.current;
     const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-    const target = highlightTargets?.find((t) => t.evidenceRefId === activeSpokenWord.anchorId);
+    const target = highlightTargets?.find((t) =>
+      t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
+    );
     if (!textLayer || !target) {
       setActiveWordRect(null);
       return;

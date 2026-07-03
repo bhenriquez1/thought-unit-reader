@@ -906,7 +906,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeTier(null);
       const matchedUnit = matchSentenceToThoughtUnit(raw, thoughtUnits);
       const matchedAnchor = matchedUnit ? null : matchSentenceToAnchor(raw, studyModel?.visualAnchors ?? []);
-      const matchedId = matchedUnit?.evidenceRefId ?? matchedAnchor?.id ?? null;
+      // VisualAnchor.id is a synthetic positional key ("va-p3-thesis-0") that never
+      // matches HighlightTarget.evidenceRefId. When the sentence only matched a
+      // VisualAnchor, resolve the real evidenceRefId by finding the ExpertAnchor
+      // (thoughtUnits) whose verbatim text matches the VisualAnchor's text.
+      const matchedExpert = !matchedUnit && matchedAnchor
+        ? (thoughtUnits.find(u =>
+            u.exactText.slice(0, 50) === matchedAnchor.exactText.slice(0, 50)
+          ) ?? null)
+        : null;
+      const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
       beginKaraoke(text.slice(0, 160), text, matchedId);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });

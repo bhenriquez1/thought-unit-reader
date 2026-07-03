@@ -81,7 +81,8 @@ function ExpertBrainCard({
   const [quizAnswer, setQuizAnswer] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
 
-  const isSpeaking = activeSpokenWord?.anchorId === unit.evidenceRefId;
+  const isSpeaking = activeSpokenWord?.anchorId === unit.evidenceRefId
+    || activeSpokenWord?.anchorId === unit.id;
   const isTrap = unit.category === "trap";
   const pageTrap = isTrap ? unit : allUnits.find((u) => u.category === "trap");
 
