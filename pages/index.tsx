@@ -613,7 +613,7 @@ export default function ThoughtUnitReader() {
   // current segment has no evidenceRefId (e.g. Full Page mode's raw sentences).
   // Drives the Speechify-style live word box in the PDF and the marked word in the
   // active LeftPanel card snippet — RightPanel never reads this, only focusedEvidenceId.
-  const [activeSpokenWord, setActiveSpokenWord] = useState<{ anchorId: string | null; wordIndex: number; word: string } | null>(null);
+  const [activeSpokenWord, setActiveSpokenWord] = useState<{ anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null>(null);
   // True while Study Speech is actively reading a sentence aloud — keeps the
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
@@ -4132,7 +4132,7 @@ export default function ThoughtUnitReader() {
                 }}
                 onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
                 onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
-                onSpeechActiveWordChange={(anchorId, wordIndex, word) => setActiveSpokenWord(anchorId || word ? { anchorId, wordIndex, word } : null)}
+                onSpeechActiveWordChange={(anchorId, wordIndex, word, sentenceText) => setActiveSpokenWord(anchorId || word ? { anchorId, wordIndex, word, sentenceText } : null)}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}

@@ -575,7 +575,7 @@ interface RightPanelProps {
   onSpeechPlayStateChange?: (isReading: boolean) => void;
   /** Fires on every karaoke word-index change, for every speech mode — drives the
    *  live word box in the PDF and the marked word in the active LeftPanel card. */
-  onSpeechActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
+  onSpeechActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string, sentenceText?: string) => void;
   /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
    *  paint-budgeted effectiveHighlightTargets) — forwarded to the inline
    *  StudySpeechPanel so "Highlight Only" mode reads only what's visible. */

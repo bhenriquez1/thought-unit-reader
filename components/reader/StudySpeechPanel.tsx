@@ -247,7 +247,7 @@ interface Props {
    *  Speechify-style word box in the PDF and the active word mark in the LeftPanel
    *  card snippet. anchorId is null for segments with no evidenceRefId (e.g. Full
    *  Page mode's raw sentences) — consumers should just skip word-marking then. */
-  onActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
+  onActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string, sentenceText?: string) => void;
   /** Text of the first paragraph visible in the PDF viewport — used to find the
    *  right start sentence when the user presses Play in Current Page mode without
    *  an explicit clicked sentence. Comes from onActiveParagraphChange. */
@@ -309,6 +309,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Which LeftPanel/PDF anchor the currently-playing segment maps to — null for
   // segments with no evidenceRefId (e.g. Full Page mode's raw sentences).
   const activeAnchorIdRef     = useRef<string | null>(null);
+  const activeSentenceTextRef = useRef<string | null>(null);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -325,13 +326,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     displayWordsRef.current      = displayWords;
     displayWordCountRef.current  = displayWords.length;
     activeAnchorIdRef.current    = anchorId;
-    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "");
+    activeSentenceTextRef.current = spokenText;
+    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "", spokenText);
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
     setActiveWordIdx(scaled);
-    onActiveWordChange?.(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "");
+    onActiveWordChange?.(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
@@ -1413,7 +1415,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: ec.text, boxShadow: `0 0 6px ${ec.text}`, animation: "eyePulse 1.2s ease-in-out infinite" }} />
                   <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: ec.text, textTransform: "uppercase" }}>
-                    {eyeRole === "fullPage" ? "Full Page" : eyeRole ?? "Reading"}
+                    {eyeRole === "fullPage" ? "Full Page" : eyeRole === "visualAnchor" ? "Reading" : eyeRole ?? "Reading"}
                   </span>
                   {eyeTier && (
                     <span style={{ fontSize: 9, color: ec.text, letterSpacing: "-0.02em" }} title={`${eyeTier.label} priority`} data-testid="speech-eye-tier-stars">
