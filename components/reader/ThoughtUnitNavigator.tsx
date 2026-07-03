@@ -171,15 +171,18 @@ export default function ThoughtUnitNavigator({
       }, [focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (!activeSpokenWord?.anchorId) return;
-        console.log("[LEFT_PANEL_WORD_SYNC]", {
-          thoughtUnitId: activeSpokenWord.anchorId,
-          wordIndex: activeSpokenWord.wordIndex,
+        const matchedEntry = entries.find((e) => e.id === activeSpokenWord.anchorId);
+        console.log("[LEFT_PANEL_WORD_SYNC_VISIBLE]", {
+          activeAnchorId: activeSpokenWord.anchorId,
+          matchedEntryId: matchedEntry?.id ?? null,
           word: activeSpokenWord.word,
+          wordIndex: activeSpokenWord.wordIndex,
+          matched: !!matchedEntry,
         });
-        if (activeSpokenWord.anchorId === focusedId) {
-          activeEntryRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (matchedEntry) {
+          activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         }
-      }, [activeSpokenWord, focusedId]);
+      }, [activeSpokenWord?.anchorId]); // scroll on anchor change only, not every word
 
   // Level 3: when the preset defines kindGroups (e.g. DAT's Concepts/Mechanisms/
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
@@ -304,10 +307,12 @@ export default function ThoughtUnitNavigator({
             </button>
             {!isCollapsed && items.map((entry) => {
               const focused = entry.id === focusedId;
+              const isSpeaking = activeSpokenWord?.anchorId === entry.id;
+              const isActive = focused || isSpeaking;
               return (
                 <div
                   key={entry.id}
-                  ref={focused ? activeEntryRef : undefined}
+                  ref={isActive ? activeEntryRef : undefined}
                   role="button"
                   tabIndex={0}
                   onClick={() => onJump(entry.id)}
@@ -343,17 +348,17 @@ export default function ThoughtUnitNavigator({
                   </span>
                   <span
                     className="text-[10px] leading-snug text-white/70"
-                    style={focused ? {
+                    style={isActive ? {
                       whiteSpace: "normal",
                       overflowWrap: "anywhere",
                     } : {
                       display: "-webkit-box",
-                      WebkitLineClamp: focused ? 4 : 2,
+                      WebkitLineClamp: 2,
                       WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}
                   >
-                    {renderSnippetWithActiveWord(entry.text, focused ? activeSpokenWord : null, entry.id)}
+                    {renderSnippetWithActiveWord(entry.text, activeSpokenWord, entry.id)}
                   </span>
                   {entry.reason && (
                     <span className="text-[9px] italic leading-snug text-white/45" data-testid="thought-unit-explanation">
