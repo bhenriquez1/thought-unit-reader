@@ -316,7 +316,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // alongside every setEyeText(...) so word-sync always matches what's playing.
   // anchorId threads through to onActiveWordChange so every mode (not just the
   // local Eye Guide box) can track the live spoken word against its source anchor.
-  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null) {
+  // rawText is the pre-TTS sentence (matches the PDF text layer); spokenText may be
+  // TTS-processed (acronyms expanded, symbols replaced) and won't match PDF spans.
+  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null, rawText?: string) {
     const displayWords = tokenizeWords(displayText);
     const spokenWords  = tokenizeWords(spokenText);
     setKaraokeWords(displayWords);
@@ -326,8 +328,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     displayWordsRef.current      = displayWords;
     displayWordCountRef.current  = displayWords.length;
     activeAnchorIdRef.current    = anchorId;
-    activeSentenceTextRef.current = spokenText;
-    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "", spokenText);
+    activeSentenceTextRef.current = rawText ?? spokenText;
+    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
@@ -882,6 +884,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Sentences are already pre-filtered in the fpSentences builder (isHeaderOrFooter per line).
     // Start from fromIdx directly — no secondary skip loop that would push index to "sentence 4".
     const effectiveFromIdx = fromIdx;
+    // Tracks the most-recently matched thought unit so the left panel stays on the
+    // "current chapter" even for body-text sentences (Spotify lyrics behaviour).
+    let lastMatchedId: string | null = null;
     console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
     console.log("[CURRENT_PAGE_SPEECH_START]", {
       page: pageNumber,
@@ -918,17 +923,22 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           ) ?? null)
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
-      beginKaraoke(text.slice(0, 160), text, matchedId);
+      if (matchedId) lastMatchedId = matchedId;
+      // Pass raw (pre-TTS) as the PDF search string — TTS-processed text has acronym
+      // expansions and symbol replacements that break text-layer indexOf matching.
+      beginKaraoke(text.slice(0, 160), text, matchedId, raw);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
-      if (matchedId) {
-        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: matchedId, source: matchedUnit ? "current-page-canonical-unit-match" : "current-page-anchor-match" });
-        onEvidenceFocus?.(matchedId);
+      // Always emit the nearest matched thought unit so the left panel follows
+      // speech like Spotify lyrics — even body-text sentences keep a section active.
+      const focusId = matchedId ?? lastMatchedId;
+      if (focusId) {
+        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
+        onEvidenceFocus?.(focusId);
       }
-      // No match: leave the previous focus as-is, consistent with other modes' behavior between anchors.
 
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
