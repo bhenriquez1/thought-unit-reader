@@ -40,6 +40,25 @@ export interface ThoughtUnitNavigatorEntry {
    *  page text — PDF.js exposes no per-line geometry through this pipeline, so this is an
    *  approximation (assumes ~90 chars/line), not an exact line count. */
   lineRange?: string;
+  /** Alias IDs — the speech system may use any of these to reference this entry.
+   *  Checked alongside `id` by matchesAnchor() so word sync fires regardless of
+   *  which ID path the sentence-to-anchor matcher took. */
+  evidenceRefId?: string;
+  canonicalUnitId?: string;
+  sourceAnchorId?: string;
+}
+
+// Returns true if the given anchorId (from activeSpokenWord) refers to this entry,
+// checking all alias ID fields so the match is robust against different ID paths
+// (ExpertAnchor.evidenceRefId vs VisualAnchor.id vs HighlightTarget.id).
+function matchesAnchor(anchorId: string | null | undefined, entry: ThoughtUnitNavigatorEntry): boolean {
+  if (!anchorId) return false;
+  return (
+    anchorId === entry.id ||
+    (entry.evidenceRefId !== undefined && anchorId === entry.evidenceRefId) ||
+    (entry.canonicalUnitId !== undefined && anchorId === entry.canonicalUnitId) ||
+    (entry.sourceAnchorId !== undefined && anchorId === entry.sourceAnchorId)
+  );
 }
 
 // Best-effort short heading derived from a thought unit's verbatim text when no
@@ -171,7 +190,7 @@ export default function ThoughtUnitNavigator({
       }, [focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (!activeSpokenWord?.anchorId) return;
-        const matchedEntry = entries.find((e) => e.id === activeSpokenWord.anchorId);
+        const matchedEntry = entries.find((e) => matchesAnchor(activeSpokenWord.anchorId, e));
         console.log("[LEFT_PANEL_WORD_SYNC_VISIBLE]", {
           activeAnchorId: activeSpokenWord.anchorId,
           matchedEntryId: matchedEntry?.id ?? null,
@@ -307,8 +326,14 @@ export default function ThoughtUnitNavigator({
             </button>
             {!isCollapsed && items.map((entry) => {
               const focused = entry.id === focusedId;
-              const isSpeaking = activeSpokenWord?.anchorId === entry.id;
+              const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
               const isActive = focused || isSpeaking;
+              // Normalize anchorId to entry.id so renderSnippetWithActiveWord's internal
+              // guard (activeSpokenWord.anchorId !== entryId) matches correctly even when
+              // the speech system used an alias (evidenceRefId, canonicalUnitId, etc.).
+              const effectiveSpokenWord = isSpeaking && activeSpokenWord
+                ? { ...activeSpokenWord, anchorId: entry.id }
+                : activeSpokenWord;
               return (
                 <div
                   key={entry.id}
@@ -358,7 +383,7 @@ export default function ThoughtUnitNavigator({
                       overflow: "hidden",
                     }}
                   >
-                    {renderSnippetWithActiveWord(entry.text, activeSpokenWord, entry.id)}
+                    {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
                   </span>
                   {entry.reason && (
                     <span className="text-[9px] italic leading-snug text-white/45" data-testid="thought-unit-explanation">

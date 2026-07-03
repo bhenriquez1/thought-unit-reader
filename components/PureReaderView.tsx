@@ -558,6 +558,9 @@ export default function PureReaderView({
           <ThoughtUnitNavigator
             entries={allHighlightTargets.map((t) => ({
               id: t.evidenceRefId,
+              evidenceRefId: t.evidenceRefId,
+              canonicalUnitId: t.id,
+              sourceAnchorId: t.evidenceRefId,
               text: t.text,
               kind: t.kind,
               page: t.page,

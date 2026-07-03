@@ -102,17 +102,9 @@ function buildQuickSentences(activePageText: string): string[] {
       merged.push(t);
     }
   }
-  const withHeadings: string[] = [];
-  for (let i = 0; i < merged.length; i++) {
-    const s = merged[i];
-    const isShortHeading = s.length < 30 && !/[!?]$/.test(s);
-    if (isShortHeading && i + 1 < merged.length) {
-      merged[i + 1] = s + " " + merged[i + 1];
-    } else {
-      withHeadings.push(s);
-    }
-  }
-  return withHeadings.filter((s) => s.length >= 10);
+  // Drop short strings; short heading fragments (e.g. "CONCEPT 2.1") are read as
+  // standalone utterances or dropped by the 10-char floor — never prepended into body.
+  return merged.filter((s) => s.length >= 10);
 }
 
 // ── "Read From Click" — find the sentence that best matches a clicked snippet ──
@@ -256,6 +248,10 @@ interface Props {
    *  card snippet. anchorId is null for segments with no evidenceRefId (e.g. Full
    *  Page mode's raw sentences) — consumers should just skip word-marking then. */
   onActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string) => void;
+  /** Text of the first paragraph visible in the PDF viewport — used to find the
+   *  right start sentence when the user presses Play in Current Page mode without
+   *  an explicit clicked sentence. Comes from onActiveParagraphChange. */
+  currentViewportText?: string | null;
   /** Render as the promoted primary Study Tools action ("▶ Listen to this page"),
    *  open by default, instead of the compact collapsed header. */
   primary?: boolean;
@@ -281,7 +277,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -503,17 +499,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           merged.push(t);
         }
       }
-      const withHeadings: string[] = [];
-      for (let i = 0; i < merged.length; i++) {
-        const s = merged[i];
-        const isShortHeading = s.length < 30 && !/[!?]$/.test(s);
-        if (isShortHeading && i + 1 < merged.length) {
-          merged[i + 1] = s + " " + merged[i + 1];
-        } else {
-          withHeadings.push(s);
-        }
-      }
-      const quickSents = withHeadings.filter((s) => s.length >= 10);
+      // Drop short strings; heading fragments (e.g. "CONCEPT 2.1") are not merged into body.
+      const quickSents = merged.filter((s) => s.length >= 10);
       const firstBodyIdx = quickSents.findIndex(s => !isHeaderOrFooter(s));
 
       console.log("[SPEECH_CLEANED_TEXT]", {
@@ -1063,7 +1050,26 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // degraded inline copy) if the mount-time effect hasn't populated it yet.
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
       if (!sents.length) { setErrorMsg("No page text available."); return; }
-      const startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
+      // When Play is pressed with no explicit sentence chosen (fromIdx === 0),
+      // use the first visible viewport paragraph to find the best start sentence
+      // so playback begins where the reader is looking, not at page top.
+      let startIdx: number;
+      if (fromIdx === 0 && currentViewportText) {
+        const viewportIdx = findBestSentenceIndex(sents, currentViewportText);
+        startIdx = Math.max(0, Math.min(viewportIdx, sents.length - 1));
+        const matchedUnit = studyModel?.visualAnchors
+          ? matchSentenceToAnchor(sents[startIdx] ?? "", studyModel.visualAnchors)
+          : null;
+        console.log("[CURRENT_PAGE_START_POSITION]", {
+          page: pageNumber,
+          startMode: "viewport",
+          sentenceIndex: startIdx,
+          sentencePreview: sents[startIdx]?.slice(0, 80) ?? null,
+          matchedThoughtUnitId: matchedUnit?.id ?? null,
+        });
+      } else {
+        startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
+      }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", {
         mode: "fullPage",

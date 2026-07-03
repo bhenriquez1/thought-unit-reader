@@ -606,6 +606,7 @@ export default function ThoughtUnitReader() {
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
+  const [activeParagraphText, setActiveParagraphText] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   // Live word-by-word speech position — parallel to focusedEvidenceId (which anchor
   // is active) but tracks the specific word within it. anchorId is null when the
@@ -2738,6 +2739,8 @@ export default function ThoughtUnitReader() {
     // the new page so any viewport-center calculation would hit stale content.
     if (syncFrozenRef.current) return;
 
+    setActiveParagraphText(snippet);
+
     const store = insightsPanelStoreRef.current;
     store.setActiveVisibleText(snippet);
 
@@ -4121,6 +4124,7 @@ export default function ThoughtUnitReader() {
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
                 highlightedAnchorTexts={safeHighlightAnchors.map((a) => a.text)}
+                activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
                 onSpeechEvidenceFocus={(id) => {
                   if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
