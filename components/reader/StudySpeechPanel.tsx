@@ -306,6 +306,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // driven by whichever provider is actually speaking (see beginKaraoke below).
   const [karaokeWords, setKaraokeWords] = useState<SyncWord[]>([]);
   const [activeWordIdx, setActiveWordIdx] = useState(0);
+  const [showKaraokeBar, setShowKaraokeBar] = useState(true);
   const spokenWordsRef        = useRef<SyncWord[]>([]);      // tokenized from the SPOKEN text (post formula-normalization)
   const cumulativeWeightsRef  = useRef<number[]>([]);        // estimated start-fraction per spoken word (OpenAI/audio.currentTime path)
   const displayWordsRef       = useRef<SyncWord[]>([]);      // ref mirror of karaokeWords — avoids stale-closure reads from ontimeupdate/onboundary handlers
@@ -1390,6 +1391,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             <button type="button" onClick={() => stop(false)}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
+            <button type="button" onClick={() => setShowKaraokeBar(b => !b)}
+              title={showKaraokeBar ? "Hide bottom karaoke bar" : "Show bottom karaoke bar"}
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${showKaraokeBar ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.08)"}`, background: showKaraokeBar ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: showKaraokeBar ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+            >Bar</button>
             <button type="button"
               onClick={() => { const prev = Math.max(0, segIdx - 1); setSegIdx(prev); stop(); setTimeout(() => play(prev), 80); }}
               disabled={segIdx <= 0}
@@ -1546,6 +1551,46 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           )}
         </div>
       )}
+
+      {/* NaturalReader-style bottom karaoke bar — fixed to the viewport bottom */}
+      {showKaraokeBar && (isPlaying || isPaused) && eyeText && (() => {
+        const ec = eyeRole ? (ROLE_COLOR[eyeRole] ?? ROLE_COLOR.thesis) : ROLE_COLOR.thesis;
+        return (
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999,
+            background: "rgba(10,15,28,0.97)", backdropFilter: "blur(14px) saturate(1.2)",
+            borderTop: `2px solid ${ec.border}`,
+            padding: "10px 20px 14px",
+            display: "flex", alignItems: "center", gap: 14,
+            boxShadow: "0 -4px 24px rgba(0,0,0,0.5)",
+          }}>
+            <span style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+              color: ec.text, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0,
+            }}>
+              {eyeRole === "fullPage" ? "READING" : (eyeRole?.toUpperCase() ?? "READING")}
+            </span>
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
+              {karaokeWords.length > 0
+                ? karaokeWords.map((w, i) => (
+                    <span key={i} style={
+                      i === activeWordIdx
+                        ? { background: ec.text, color: "#0f172a", borderRadius: 4, padding: "2px 4px", fontWeight: 700, fontSize: 16 }
+                        : { color: i < activeWordIdx ? "#475569" : "#e2e8f0" }
+                    }>
+                      {w.word}{" "}
+                    </span>
+                  ))
+                : <span style={{ color: "#94a3b8" }}>{eyeText}</span>
+              }
+            </p>
+            <button type="button" onClick={() => setShowKaraokeBar(false)}
+              style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#475569", fontSize: 12, cursor: "pointer", lineHeight: 1 }}
+              title="Hide karaoke bar"
+            >✕</button>
+          </div>
+        );
+      })()}
     </div>
   );
 });
