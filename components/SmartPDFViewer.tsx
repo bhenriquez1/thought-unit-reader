@@ -1321,12 +1321,7 @@ export default function SmartPDFViewer({
 
               {overlayRects.length > 0 && (
                 <React.Fragment key={`overlay-${highlightKey ?? ""}-${overlayVersion}`}>
-                  {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
-                      Non-highlighted text recedes; decoded blocks jump forward. */}
-                  <div
-                    className="pointer-events-none absolute inset-0 z-[19] bg-slate-900/20"
-                    aria-hidden
-                  />
+                  {/* Dim veil removed — lighter opacity on highlights means veil no longer needed */}
                   <PdfEvidenceOverlay
                     rects={(() => {
                       // Hard render-time guard: suppress any rect not in the current authorized set.

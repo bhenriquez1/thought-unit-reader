@@ -1630,44 +1630,18 @@ export default function ThoughtUnitReader() {
     if (id) setFocusedEvidenceId(id);
   }, [focusEvidence, resolveEvidenceId]);
 
-  // Clicking a highlighted PDF overlay rect — "Read From Click": focuses the rect
-  // (existing glow behavior) AND starts speech from that thought unit's text.
+  // Clicking a highlighted PDF overlay rect (or a Thought Unit card) — focuses the rect,
+  // scrolls the left panel to that card, and seeds the Expert Brain context. Does NOT
+  // auto-start speech — the user must press Play or "Read This" to hear it.
   const onPdfHighlightFocus = useCallback((id: string) => {
     setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
-    const willCall = anchor?.text
-      ? "playFromSnippet(anchor.text)"
-      : activeUnit?.exactText
-        ? "playFromSnippet(exactText)"
-        : "nothing";
-    console.log("[THOUGHT_UNIT_INTERNAL_START]", {
-      thoughtUnitId: id,
-      evidenceRefId: (anchor as any)?.evidenceRefId ?? id,
-      sourceAnchorId: (anchor as any)?.id ?? null,
-      exactText: (anchor?.text ?? activeUnit?.exactText ?? "").slice(0, 80),
-      anchorFound: !!anchor,
-      activeUnitFound: !!activeUnit,
-      willCall,
-      note: "DIAGNOSIS: playFromSnippet routes through Current Page mode (not playThoughtUnitSegment). anchorId in beginKaraoke will come from heuristic matchSentenceToThoughtUnit, not from this id — LeftPanel/PDF sync may miss if heuristic fails.",
-    });
-    if (anchor?.text) {
-      setFocusSnippet(anchor.text);
-      speechPanelRef.current?.playFromSnippet(anchor.text);
-    } else if (activeUnit?.exactText) {
-      setFocusSnippet(activeUnit.exactText);
-      speechPanelRef.current?.playFromSnippet(activeUnit.exactText);
-    } else {
-      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
-        step: "THOUGHT_UNIT_INTERNAL_START",
-        reason: "no anchor.text and no activeUnit.exactText — speech not triggered",
-        id,
-      });
-    }
-    // playFromSnippet() calls stop() internally, which resets focus to null —
-    // re-affirm it so the active style stays visible once playback starts.
+    const text = anchor?.text ?? activeUnit?.exactText ?? null;
+    if (text) setFocusSnippet(text);
+    // Re-affirm focus so the active style stays visible if any internal reset fired.
     setFocusedEvidenceId(id);
-  }, [finalHighlightAnchors, canonicalLeftPanelUnits, currentPage]);
+  }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
