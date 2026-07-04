@@ -993,7 +993,7 @@ export default function ThoughtUnitReader() {
 
     // Filter: all VisualAnchorRole values reach the PDF overlay — including
     // "definition" and "keyDetail", which prove definitions/details on the page.
-    const OVERLAY_ROLES = new Set(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy"]);
+    const OVERLAY_ROLES = new Set(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy", "comparison", "reference", "filler", "unknown"]);
     const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
     console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "canonicalLeftPanelUnits" });
     const sanitized = sanitizeHighlightAnchors(roleFiltered);
