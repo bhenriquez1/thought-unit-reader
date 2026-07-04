@@ -884,6 +884,12 @@ export default function SmartPDFViewer({
   // only) when the anchor isn't currently rendered or word-level mapping fails.
   useEffect(() => {
     if (!activeSpokenWord) { setActiveWordRect(null); return; }
+    console.log("[PDF_WORD_SYNC_RECEIVED]", {
+      anchorId: activeSpokenWord.anchorId,
+      word: activeSpokenWord.word,
+      wordIndex: activeSpokenWord.wordIndex,
+      hasSentenceText: !!activeSpokenWord.sentenceText,
+    });
     const container = viewerRef.current;
     const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
     if (!textLayer) {
@@ -912,6 +918,12 @@ export default function SmartPDFViewer({
       });
       setActiveWordRect(null); return;
     }
+    console.log("[PDF_WORD_SYNC_TARGET_MATCH]", {
+      anchorId: activeSpokenWord.anchorId,
+      word: activeSpokenWord.word,
+      sentencePreview: searchText.slice(0, 60),
+      wordIndex: activeSpokenWord.wordIndex,
+    });
     const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
     if (!rect) {
       console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
@@ -920,6 +932,13 @@ export default function SmartPDFViewer({
         sentencePreview: searchText.slice(0, 80),
         wordIndex: activeSpokenWord.wordIndex,
         availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+      });
+    } else {
+      console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
+        anchorId: activeSpokenWord.anchorId,
+        word: activeSpokenWord.word,
+        wordIndex: activeSpokenWord.wordIndex,
+        rect,
       });
     }
     setActiveWordRect(rect);
