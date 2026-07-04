@@ -1617,18 +1617,12 @@ export default function ThoughtUnitReader() {
     window.setTimeout(() => setFocusSnippet(snippet), 0);
   }, [resolveEvidenceId]);
 
-  // RightPanel card click — "Read From Click": focuses/highlights the evidence
-  // in the PDF AND starts speech reading from that thought unit. Highlights
-  // themselves are always visible (driven by finalHighlightAnchors, not by
-  // clicks) — clicking only controls speech focus/playback.
+  // RightPanel card click — focus-only navigation: jumps to the PDF source,
+  // lights the highlight, seeds Expert Brain. Does NOT auto-start speech;
+  // the user presses Play/Read This to begin playback.
   const playThoughtUnit = useCallback((snippet: string, evidenceId?: string) => {
     focusEvidence(snippet, evidenceId);
-    speechPanelRef.current?.playFromSnippet(snippet);
-    // playFromSnippet() calls stop() internally, which resets focus to null —
-    // re-affirm it so the active style stays visible once playback starts.
-    const id = evidenceId || resolveEvidenceId(snippet) || null;
-    if (id) setFocusedEvidenceId(id);
-  }, [focusEvidence, resolveEvidenceId]);
+  }, [focusEvidence]);
 
   // Clicking a highlighted PDF overlay rect (or a Thought Unit card) — focuses the rect,
   // scrolls the left panel to that card, and seeds the Expert Brain context. Does NOT

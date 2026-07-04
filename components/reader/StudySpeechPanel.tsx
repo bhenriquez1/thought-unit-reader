@@ -1362,7 +1362,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Mode tabs */}
           <div style={{ display: "flex", gap: 4 }}>
             {STUDY_SPEECH_MODES.map(m => (
-              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(); }} title={m.description}
+              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(false); }} title={m.description}
                 style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
               >{m.label}</button>
             ))}
@@ -1371,7 +1371,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {isLoading ? (
-              <button type="button" onClick={() => stop()}
+              <button type="button" onClick={() => stop(false)}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >⟳ Loading…</button>
             ) : isPlaying ? (
@@ -1387,7 +1387,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
               >▶ Play</button>
             )}
-            <button type="button" onClick={() => stop()}
+            <button type="button" onClick={() => stop(false)}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
             <button type="button"

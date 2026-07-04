@@ -38,13 +38,16 @@ type SemanticKind =
   | "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact" | "clinical"
   | "keyDetail" | "memoryAnchor" | "keyAnatomy" | "formula" | "comparison" | "reference" | "filler" | "unknown";
 
-type HighlightTier = "master" | "procedure" | "decision" | "danger" | "pearl";
+// Avrrio Highlight Language — 5 named tiers every subject maps to.
+// MASTER = highest-value idea  STEP = process/procedure/action  DECISION = choose/diagnose/compare
+// DANGER = trap/complication/mistake  PEARL = expert insight
+type HighlightTier = "master" | "step" | "decision" | "danger" | "pearl";
 
 const KIND_TIER: Record<SemanticKind, HighlightTier> = {
   thesis:       "master",
   definition:   "master",
-  mechanism:    "procedure",
-  formula:      "procedure",
+  mechanism:    "step",
+  formula:      "step",
   application:  "decision",
   comparison:   "decision",
   keyDetail:    "decision",
@@ -72,9 +75,15 @@ interface KindConfig {
   glowColor:   string;
 }
 
+// Avrrio Highlight Language colors:
+//   MASTER   = gold    (highest-value idea — the governing thesis)
+//   STEP     = green   (process / procedure / action / mechanism)
+//   DECISION = blue    (choose / diagnose / compare / apply)
+//   DANGER   = red     (trap / complication / common mistake)
+//   PEARL    = cyan    (expert insight / clinical pearl / memory anchor)
 const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   master: {
-    label:      "MASTER THIS",
+    label:      "MASTER",
     bgNormal:   "rgba(253,224,71,0.09)",
     bgFocused:  "rgba(253,224,71,0.28)",
     restGlow:   "0 0 2px rgba(253,224,71,0.15)",
@@ -83,8 +92,18 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     badgeColor: "#fde047",
     glowColor:  "253,224,71",
   },
-  procedure: {
-    label:      "PROCEDURE",
+  step: {
+    label:      "STEP",
+    bgNormal:   "rgba(134,239,172,0.09)",
+    bgFocused:  "rgba(134,239,172,0.28)",
+    restGlow:   "0 0 2px rgba(134,239,172,0.14)",
+    ringClass:  "ring-2 ring-emerald-300/60",
+    badgeBg:    "rgba(20,83,45,0.92)",
+    badgeColor: "#86efac",
+    glowColor:  "134,239,172",
+  },
+  decision: {
+    label:      "DECISION",
     bgNormal:   "rgba(147,197,253,0.09)",
     bgFocused:  "rgba(147,197,253,0.28)",
     restGlow:   "0 0 2px rgba(147,197,253,0.14)",
@@ -93,18 +112,8 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     badgeColor: "#93c5fd",
     glowColor:  "147,197,253",
   },
-  decision: {
-    label:      "DECISION",
-    bgNormal:   "rgba(251,146,60,0.09)",
-    bgFocused:  "rgba(251,146,60,0.28)",
-    restGlow:   "0 0 2px rgba(251,146,60,0.14)",
-    ringClass:  "ring-2 ring-orange-400/60",
-    badgeBg:    "rgba(154,52,18,0.92)",
-    badgeColor: "#fb923c",
-    glowColor:  "251,146,60",
-  },
   danger: {
-    label:      "DANGER ZONE",
+    label:      "DANGER",
     bgNormal:   "rgba(252,165,165,0.10)",
     bgFocused:  "rgba(252,165,165,0.30)",
     restGlow:   "0 0 2px rgba(252,165,165,0.15)",
@@ -115,13 +124,13 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   },
   pearl: {
     label:      "PEARL",
-    bgNormal:   "rgba(134,239,172,0.09)",
-    bgFocused:  "rgba(134,239,172,0.28)",
-    restGlow:   "0 0 2px rgba(134,239,172,0.14)",
-    ringClass:  "ring-2 ring-emerald-400/60",
-    badgeBg:    "rgba(20,83,45,0.92)",
-    badgeColor: "#86efac",
-    glowColor:  "134,239,172",
+    bgNormal:   "rgba(103,232,249,0.08)",
+    bgFocused:  "rgba(103,232,249,0.26)",
+    restGlow:   "0 0 2px rgba(103,232,249,0.13)",
+    ringClass:  "ring-2 ring-cyan-300/60",
+    badgeBg:    "rgba(8,51,68,0.92)",
+    badgeColor: "#67e8f9",
+    glowColor:  "103,232,249",
   },
 };
 
@@ -130,7 +139,7 @@ function getConfig(rect: OverlayRect): KindConfig {
   const kind = rect.semanticKind as SemanticKind | undefined;
   if (kind && kind in KIND_TIER) return TIER_CONFIG[KIND_TIER[kind]];
   if (rect.level === "trap") return TIER_CONFIG.danger;
-  if (rect.level === "support") return TIER_CONFIG.procedure;
+  if (rect.level === "support") return TIER_CONFIG.step;
   return TIER_CONFIG.decision;
 }
 
