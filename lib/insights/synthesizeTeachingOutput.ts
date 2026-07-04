@@ -34,7 +34,7 @@ export type PageType = z.infer<typeof PageTypeSchema>;
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
   anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy"]),
-  reason: z.string(),       // ≤ 10 words: why a professor would underline this
+  reason: z.string(),       // 1–2 sentences: WHY this matters — why it prevents a trap, why it changes what a student does next, or why it is high-yield on exams
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.
   // When provided, the highlight covers the entire span from spanStart to spanEnd.
@@ -565,6 +565,13 @@ the enzyme mechanism is one supporting detail.
 VISUAL TRUST PRINCIPLE: When the student sees these highlights, they must immediately feel:
 "The AI understood this page." — not "random sentences were marked."
 Return null ONLY if the page has fewer than 3 real instructional sentences.
+
+reason field (required for every anchor): 1–2 sentences explaining the REAL WHY. Answer one of:
+  (a) "Without knowing this, a student would [specific mistake or trap]" — name the actual trap
+  (b) "This is high-yield because [specific exam pattern, clinical decision, or downstream consequence]"
+  (c) "Understanding this changes what you do next: [concrete action or recognition]"
+  NEVER output: "This is an important concept", "Key sentence on this page", "Important for the exam", or any generic label.
+  Always name the specific trap, the specific consequence, or the specific decision this knowledge unlocks.
 ${domainCategoryBlock}
 ══════════════════════════════════════════════════════════════════════════════
 SECTION 1 is now finalized. SECTION 1.5 below (noteCards) is generated FROM
@@ -856,7 +863,13 @@ highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never
   spanStart + spanEnd REQUIRED: first/last 8–10 verbatim words of each span.
   Minimum span: ≥8 words. Must end with a period. Return null if fewer than 3 real instructional sentences exist.
   priorityTier: 1–5 importance rating per anchor, 5 = "Master This", 1 = "Optional".
-  domainCategory: tag each anchor with its specific extraction category.${domainCategoryBlock}
+  domainCategory: tag each anchor with its specific extraction category.
+  reason: 1–2 sentences — write the REAL WHY for this specific span. Answer one of:
+    (a) "Without knowing this, a student would [specific mistake/trap]" — name the trap
+    (b) "This is high-yield because [specific exam pattern or clinical decision it drives]"
+    (c) "Understanding this changes what you do next: [concrete consequence]"
+    NEVER write: "This is an important concept", "Key sentence on this page", or any generic label.
+    ALWAYS name the specific trap, the specific consequence, or the specific decision this knowledge drives.${domainCategoryBlock}
 
 miniTestItems — 3 after-reading comprehension questions.
   Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism or logic). Q3: trap.

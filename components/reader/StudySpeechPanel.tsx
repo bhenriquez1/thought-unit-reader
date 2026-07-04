@@ -933,7 +933,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (matchedId) lastMatchedId = matchedId;
       // Pass raw (pre-TTS) as the PDF search string — TTS-processed text has acronym
       // expansions and symbol replacements that break text-layer indexOf matching.
-      beginKaraoke(text.slice(0, 160), text, matchedId, raw);
+      // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
+      beginKaraoke(text.slice(0, 160), text, matchedId ?? lastMatchedId, raw);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
