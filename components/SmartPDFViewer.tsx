@@ -369,6 +369,13 @@ export default function SmartPDFViewer({
   // pageRenderKey MUST be included: after zoom the key is unchanged but rect positions move.
   const prevRebuildRef = useRef<{ key: string | undefined; renderKey: number }>({ key: undefined, renderKey: -1 });
 
+  // Clear overlay rects when zoom changes — rects computed against pre-zoom DOM are wrong.
+  // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
+  useEffect(() => {
+    setOverlayRects([]);
+    setActiveWordRect(null);
+  }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Hard-clear all overlay state when highlightKey changes.
   // overlayVersion increment forces the keyed wrapper to unmount+remount, guaranteeing DOM cleanup.
   useEffect(() => {
@@ -875,9 +882,11 @@ export default function SmartPDFViewer({
     return () => { cancelled = true; };
   // highlightKey must be in deps so a pageTruthKey change forces a rebuild even when
   // highlightTargets reference is identical (e.g. both [] after clear + empty new page).
-  // pageRenderKey fires after every successful page render (including zoom changes) so
-  // overlay rects are recomputed at the correct scale. effectiveZoom is a safety net.
-  }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey, effectiveZoom, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // pageRenderKey fires after every successful page render (including zoom changes) — rects
+  // are computed against the live DOM at that point, so positions are always correct.
+  // effectiveZoom is intentionally NOT in deps: the zoom-clear effect above wipes rects
+  // immediately on zoom, and they recompute here only after the page re-renders.
+  }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Speechify-style live word box — recomputes only the active anchor's word position,
   // not the full overlayRects rebuild above. Falls back to null (whole-anchor highlight
