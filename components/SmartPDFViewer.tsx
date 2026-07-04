@@ -145,7 +145,7 @@ function computeActiveWordRect(
     startIdx = firstWords.length >= 8 ? concatText.indexOf(firstWords) : -1;
   }
   if (startIdx === -1) {
-    console.warn("[KARAOKE_MISS] sentence not found in PDF text layer", {
+    console.warn("[PDF_WORD_SYNC_MISS] sentence not found in PDF text layer", {
       search: baseText.slice(0, 80),
       layerChars: concatText.length,
       spansCount: spans.length,
@@ -887,7 +887,10 @@ export default function SmartPDFViewer({
     const container = viewerRef.current;
     const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
     if (!textLayer) {
-      console.warn("[KARAOKE_MISS] PDF text layer not found — page may still be rendering");
+      console.warn("[PDF_WORD_SYNC_MISS] text layer not yet in DOM — page may still be rendering", {
+        anchorId: activeSpokenWord.anchorId,
+        word: activeSpokenWord.word,
+      });
       setActiveWordRect(null); return;
     }
     // Prefer the exact sentence text being spoken — wordIndex counts within the sentence,
@@ -899,10 +902,28 @@ export default function SmartPDFViewer({
         )
       : undefined;
     const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
-    if (!searchText) { setActiveWordRect(null); return; }
+    if (!searchText) {
+      console.warn("[PDF_WORD_SYNC_MISS] no search text available", {
+        anchorId: activeSpokenWord.anchorId,
+        word: activeSpokenWord.word,
+        hasSentenceText: !!activeSpokenWord.sentenceText,
+        targetFound: !!target,
+        availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+      });
+      setActiveWordRect(null); return;
+    }
     const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
+    if (!rect) {
+      console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
+        anchorId: activeSpokenWord.anchorId,
+        word: activeSpokenWord.word,
+        sentencePreview: searchText.slice(0, 80),
+        wordIndex: activeSpokenWord.wordIndex,
+        availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+      });
+    }
     setActiveWordRect(rect);
-  }, [activeSpokenWord, currentPage, overlayRects]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
   const {
