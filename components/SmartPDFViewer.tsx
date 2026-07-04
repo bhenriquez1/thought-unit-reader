@@ -946,38 +946,44 @@ export default function SmartPDFViewer({
       sentencePreview: searchText.slice(0, 60),
       wordIndex: activeSpokenWord.wordIndex,
     });
-    const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
-    console.log("[THOUGHT_UNIT_PDF_WORD_RECT]", {
-      anchorId: activeSpokenWord.anchorId,
-      word: activeSpokenWord.word,
-      wordIndex: activeSpokenWord.wordIndex,
-      rectFound: !!rect,
-      rect: rect ?? null,
-      searchTextPreview: searchText.slice(0, 60),
+    // RAF defers the expensive getBoundingClientRect query to the next paint frame,
+    // eliminating the 2-render-cycle lag between the speech boundary event and the
+    // word box appearing on screen.
+    const raf = requestAnimationFrame(() => {
+      const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
+      console.log("[THOUGHT_UNIT_PDF_WORD_RECT]", {
+        anchorId: activeSpokenWord.anchorId,
+        word: activeSpokenWord.word,
+        wordIndex: activeSpokenWord.wordIndex,
+        rectFound: !!rect,
+        rect: rect ?? null,
+        searchTextPreview: searchText.slice(0, 60),
+      });
+      if (!rect) {
+        console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
+          anchorId: activeSpokenWord.anchorId,
+          word: activeSpokenWord.word,
+          sentencePreview: searchText.slice(0, 80),
+          wordIndex: activeSpokenWord.wordIndex,
+          availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+        });
+        console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+          step: "THOUGHT_UNIT_PDF_WORD_RECT",
+          reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
+          searchTextPreview: searchText.slice(0, 80),
+          wordIndex: activeSpokenWord.wordIndex,
+        });
+      } else {
+        console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
+          anchorId: activeSpokenWord.anchorId,
+          word: activeSpokenWord.word,
+          wordIndex: activeSpokenWord.wordIndex,
+          rect,
+        });
+      }
+      setActiveWordRect(rect);
     });
-    if (!rect) {
-      console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
-        anchorId: activeSpokenWord.anchorId,
-        word: activeSpokenWord.word,
-        sentencePreview: searchText.slice(0, 80),
-        wordIndex: activeSpokenWord.wordIndex,
-        availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
-      });
-      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
-        step: "THOUGHT_UNIT_PDF_WORD_RECT",
-        reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
-        searchTextPreview: searchText.slice(0, 80),
-        wordIndex: activeSpokenWord.wordIndex,
-      });
-    } else {
-      console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
-        anchorId: activeSpokenWord.anchorId,
-        word: activeSpokenWord.word,
-        wordIndex: activeSpokenWord.wordIndex,
-        rect,
-      });
-    }
-    setActiveWordRect(rect);
+    return () => cancelAnimationFrame(raf);
   }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
