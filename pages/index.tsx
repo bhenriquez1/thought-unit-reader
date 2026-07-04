@@ -1636,11 +1636,20 @@ export default function ThoughtUnitReader() {
     setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
-    console.log("[THOUGHT_UNIT_JUMP]", {
+    const willCall = anchor?.text
+      ? "playFromSnippet(anchor.text)"
+      : activeUnit?.exactText
+        ? "playFromSnippet(exactText)"
+        : "nothing";
+    console.log("[THOUGHT_UNIT_INTERNAL_START]", {
       thoughtUnitId: id,
-      page: currentPage,
+      evidenceRefId: (anchor as any)?.evidenceRefId ?? id,
+      sourceAnchorId: (anchor as any)?.id ?? null,
+      exactText: (anchor?.text ?? activeUnit?.exactText ?? "").slice(0, 80),
       anchorFound: !!anchor,
-      scrolledToPdf: !!anchor,
+      activeUnitFound: !!activeUnit,
+      willCall,
+      note: "DIAGNOSIS: playFromSnippet routes through Current Page mode (not playThoughtUnitSegment). anchorId in beginKaraoke will come from heuristic matchSentenceToThoughtUnit, not from this id — LeftPanel/PDF sync may miss if heuristic fails.",
     });
     if (anchor?.text) {
       setFocusSnippet(anchor.text);
@@ -1648,6 +1657,12 @@ export default function ThoughtUnitReader() {
     } else if (activeUnit?.exactText) {
       setFocusSnippet(activeUnit.exactText);
       speechPanelRef.current?.playFromSnippet(activeUnit.exactText);
+    } else {
+      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+        step: "THOUGHT_UNIT_INTERNAL_START",
+        reason: "no anchor.text and no activeUnit.exactText — speech not triggered",
+        id,
+      });
     }
     // playFromSnippet() calls stop() internally, which resets focus to null —
     // re-affirm it so the active style stays visible once playback starts.

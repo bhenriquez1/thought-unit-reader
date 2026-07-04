@@ -117,7 +117,23 @@ function renderSnippetWithActiveWord(
   if (!activeSpokenWord || activeSpokenWord.anchorId !== entryId) return text;
   const words = tokenizeWords(text);
   const target = words[activeSpokenWord.wordIndex];
-  if (!target) return text;
+  if (!target) {
+    console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+      step: "THOUGHT_UNIT_LEFTPANEL_WORD",
+      reason: "wordIndex out of range for entry text",
+      entryId,
+      wordIndex: activeSpokenWord.wordIndex,
+      wordCount: words.length,
+      textPreview: text.slice(0, 60),
+    });
+    return text;
+  }
+  console.log("[THOUGHT_UNIT_LEFTPANEL_WORD]", {
+    entryId,
+    wordIndex: activeSpokenWord.wordIndex,
+    word: activeSpokenWord.word,
+    matchedWord: text.slice(target.start, target.end),
+  });
   return (
     <>
       {text.slice(0, target.start)}
@@ -200,6 +216,14 @@ export default function ThoughtUnitNavigator({
         });
         if (matchedEntry) {
           activeEntryRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        } else {
+          console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+            step: "THOUGHT_UNIT_LEFTPANEL_TARGET",
+            reason: "anchorId not matched by any ThoughtUnitNavigator entry — card will not show isSpeaking",
+            anchorId: activeSpokenWord.anchorId,
+            entryIds: entries.slice(0, 5).map(e => e.id),
+            entryEvidenceRefIds: entries.slice(0, 5).map(e => e.evidenceRefId),
+          });
         }
       }, [activeSpokenWord?.anchorId]); // scroll on anchor change only, not every word
 
@@ -327,6 +351,17 @@ export default function ThoughtUnitNavigator({
             {!isCollapsed && items.map((entry) => {
               const focused = entry.id === focusedId;
               const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
+              if (isSpeaking) {
+                console.log("[THOUGHT_UNIT_LEFTPANEL_TARGET]", {
+                  entryId: entry.id,
+                  anchorId: activeSpokenWord?.anchorId,
+                  isSpeaking: true,
+                  matchedBy: activeSpokenWord?.anchorId === entry.id ? "id"
+                    : activeSpokenWord?.anchorId === entry.evidenceRefId ? "evidenceRefId"
+                    : activeSpokenWord?.anchorId === entry.canonicalUnitId ? "canonicalUnitId"
+                    : "sourceAnchorId",
+                });
+              }
               const isActive = focused || isSpeaking;
               // Normalize anchorId to entry.id so renderSnippetWithActiveWord's internal
               // guard (activeSpokenWord.anchorId !== entryId) matches correctly even when
