@@ -1004,7 +1004,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.text);
+      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1177,7 +1177,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.text);
+      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
