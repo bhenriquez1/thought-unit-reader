@@ -908,6 +908,14 @@ export default function SmartPDFViewer({
         )
       : undefined;
     const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
+    console.log("[THOUGHT_UNIT_PDF_TARGET]", {
+      anchorId: activeSpokenWord.anchorId,
+      targetFound: !!target,
+      hasSentenceText: !!activeSpokenWord.sentenceText,
+      searchTextPreview: searchText ? searchText.slice(0, 60) : null,
+      searchTextSource: activeSpokenWord.sentenceText ? "sentenceText" : target ? "target.text" : "null",
+      highlightTargetCount: highlightTargets?.length ?? 0,
+    });
     if (!searchText) {
       console.warn("[PDF_WORD_SYNC_MISS] no search text available", {
         anchorId: activeSpokenWord.anchorId,
@@ -915,6 +923,11 @@ export default function SmartPDFViewer({
         hasSentenceText: !!activeSpokenWord.sentenceText,
         targetFound: !!target,
         availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+      });
+      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+        step: "THOUGHT_UNIT_PDF_TARGET",
+        reason: "no searchText — anchorId not in highlightTargets and sentenceText is null",
+        anchorId: activeSpokenWord.anchorId,
       });
       setActiveWordRect(null); return;
     }
@@ -925,6 +938,14 @@ export default function SmartPDFViewer({
       wordIndex: activeSpokenWord.wordIndex,
     });
     const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
+    console.log("[THOUGHT_UNIT_PDF_WORD_RECT]", {
+      anchorId: activeSpokenWord.anchorId,
+      word: activeSpokenWord.word,
+      wordIndex: activeSpokenWord.wordIndex,
+      rectFound: !!rect,
+      rect: rect ?? null,
+      searchTextPreview: searchText.slice(0, 60),
+    });
     if (!rect) {
       console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
         anchorId: activeSpokenWord.anchorId,
@@ -932,6 +953,12 @@ export default function SmartPDFViewer({
         sentencePreview: searchText.slice(0, 80),
         wordIndex: activeSpokenWord.wordIndex,
         availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
+      });
+      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+        step: "THOUGHT_UNIT_PDF_WORD_RECT",
+        reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
+        searchTextPreview: searchText.slice(0, 80),
+        wordIndex: activeSpokenWord.wordIndex,
       });
     } else {
       console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
