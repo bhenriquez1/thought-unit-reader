@@ -13,10 +13,10 @@ export function tierGlowStyle(
   glowColor: string,
 ): { boxShadow: string; border: string } {
   const t = Math.min(5, Math.max(1, tier ?? 3));
-  const blur = 2 + t;             // 3px .. 7px
-  const alpha = 0.08 + t * 0.05;  // 0.13 .. 0.33
-  const borderWidth = t <= 1 ? 1 : t >= 5 ? 2 : 1.5;
-  const borderAlpha = t <= 1 ? 0.22 : 0.45;
+  const blur = 1 + t * 0.4;             // 1.4px .. 3px — surgical, not glowing
+  const alpha = 0.03 + t * 0.02;        // 0.05 .. 0.13
+  const borderWidth = 1;                 // always 1px — thin annotation line
+  const borderAlpha = 0.10 + t * 0.04;  // 0.14 .. 0.30
   return {
     boxShadow: `0 0 ${blur}px rgba(${glowColor},${alpha})`,
     border: `${borderWidth}px solid rgba(${glowColor},${borderAlpha})`,
