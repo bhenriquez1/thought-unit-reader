@@ -1561,6 +1561,19 @@ export default function ThoughtUnitReader() {
     console.log("[HIGHLIGHT_CLEARED]", { reason: "page-changed", pageTruthKey });
   }, [pageTruthKey]);
 
+  // Auto-select the first anchor when anchors first arrive on a page (speech not playing).
+  // This ensures the Expert Brain and LeftPanel card highlight appear automatically without
+  // the user needing to click anything.
+  useEffect(() => {
+    if (!finalHighlightAnchors.length) return;
+    const { playbackState, thoughtUnitId } = useReadingFocusStore.getState();
+    if (playbackState !== 'idle') return;
+    if (thoughtUnitId) return; // user already focused something on this page
+    const first = finalHighlightAnchors[0];
+    const id = (first as any).evidenceRefId ?? (first as any).id ?? null;
+    if (id) useReadingFocusStore.getState().setThoughtUnit(id);
+  }, [finalHighlightAnchors]);
+
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
   const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
@@ -2724,6 +2737,14 @@ export default function ThoughtUnitReader() {
     const store = insightsPanelStoreRef.current;
     store.setActiveVisibleText(snippet);
 
+    // Scroll → active anchor: resolve the viewport-center snippet to the closest
+    // thought-unit anchor and keep the Expert Brain / LeftPanel card in sync.
+    // Only runs when speech is not playing (speech owns the anchor during playback).
+    if (snippet && useReadingFocusStore.getState().playbackState === 'idle') {
+      const resolved = resolveEvidenceId(snippet);
+      if (resolved) setFocusedEvidenceId(resolved);
+    }
+
     if (!snippet || !store.syncInsightsToPdf) return;
 
     // Build paragraph blocks from current page text and try to find matching block
@@ -2735,7 +2756,7 @@ export default function ThoughtUnitReader() {
     if (matched) {
       store.setActiveParagraphId(matched.id);
     }
-  }, [thoughtUnits, currentThoughtUnit, currentPage, bookId]);
+  }, [thoughtUnits, currentThoughtUnit, currentPage, bookId, resolveEvidenceId, setFocusedEvidenceId]);
 
   useEffect(() => {
     setRightPanelState((prev) => {
