@@ -900,14 +900,8 @@ export default function SmartPDFViewer({
       hasSentenceText: !!activeSpokenWord.sentenceText,
     });
     const container = viewerRef.current;
-    const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-    if (!textLayer) {
-      console.warn("[PDF_WORD_SYNC_MISS] text layer not yet in DOM — page may still be rendering", {
-        anchorId: activeSpokenWord.anchorId,
-        word: activeSpokenWord.word,
-      });
-      setActiveWordRect(null); return;
-    }
+
+    // Compute search text before the text-layer check so it is available in retries.
     // Prefer the exact sentence text being spoken — wordIndex counts within the sentence,
     // so using the sentence text gives accurate per-word positions even mid-thought-unit.
     // Fall back to the anchor's normalizedText for legacy callers without sentenceText.
@@ -946,44 +940,70 @@ export default function SmartPDFViewer({
       sentencePreview: searchText.slice(0, 60),
       wordIndex: activeSpokenWord.wordIndex,
     });
-    // RAF defers the expensive getBoundingClientRect query to the next paint frame,
-    // eliminating the 2-render-cycle lag between the speech boundary event and the
-    // word box appearing on screen.
-    const raf = requestAnimationFrame(() => {
-      const rect = computeActiveWordRect(textLayer, searchText, activeSpokenWord.wordIndex);
-      console.log("[THOUGHT_UNIT_PDF_WORD_RECT]", {
-        anchorId: activeSpokenWord.anchorId,
-        word: activeSpokenWord.word,
-        wordIndex: activeSpokenWord.wordIndex,
-        rectFound: !!rect,
-        rect: rect ?? null,
-        searchTextPreview: searchText.slice(0, 60),
-      });
-      if (!rect) {
-        console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer", {
-          anchorId: activeSpokenWord.anchorId,
-          word: activeSpokenWord.word,
-          sentencePreview: searchText.slice(0, 80),
-          wordIndex: activeSpokenWord.wordIndex,
-          availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
-        });
-        console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
-          step: "THOUGHT_UNIT_PDF_WORD_RECT",
-          reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
-          searchTextPreview: searchText.slice(0, 80),
-          wordIndex: activeSpokenWord.wordIndex,
-        });
-      } else {
-        console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
-          anchorId: activeSpokenWord.anchorId,
-          word: activeSpokenWord.word,
-          wordIndex: activeSpokenWord.wordIndex,
-          rect,
-        });
+
+    // Capture into non-nullable locals so TypeScript's closure narrowing works.
+    const word = activeSpokenWord;
+    const text = searchText as string; // non-null: we returned above if !searchText
+
+    // Retry loop: text layer may not be in the DOM yet (page still rendering) or
+    // computeActiveWordRect may return null on the first frame while spans are painting.
+    // Retries: up to 3× (150ms apart) for missing text layer; 1× (200ms) for null rect.
+    let cancelled = false;
+    let retryTid: ReturnType<typeof setTimeout> | null = null;
+
+    function runCompute(retryCount: number) {
+      if (cancelled) return;
+      const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
+      if (!textLayer) {
+        if (retryCount < 3) {
+          retryTid = setTimeout(() => runCompute(retryCount + 1), 150);
+        } else {
+          console.warn("[PDF_WORD_SYNC_MISS] text layer not in DOM after retries", {
+            anchorId: word.anchorId,
+            word: word.word,
+          });
+          setActiveWordRect(null);
+        }
+        return;
       }
-      setActiveWordRect(rect);
-    });
-    return () => cancelAnimationFrame(raf);
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const rect = computeActiveWordRect(textLayer, text, word.wordIndex);
+        if (!rect && retryCount < 2) {
+          // Text layer present but spans may still be painting — retry once
+          retryTid = setTimeout(() => runCompute(retryCount + 1), 200);
+          return;
+        }
+        if (rect) {
+          console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
+            anchorId: word.anchorId,
+            word: word.word,
+            wordIndex: word.wordIndex,
+            rect,
+          });
+        } else {
+          console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer after retries", {
+            anchorId: word.anchorId,
+            word: word.word,
+            sentencePreview: text.slice(0, 80),
+            wordIndex: word.wordIndex,
+          });
+          console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
+            step: "THOUGHT_UNIT_PDF_WORD_RECT",
+            reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
+            searchTextPreview: text.slice(0, 80),
+            wordIndex: word.wordIndex,
+          });
+        }
+        setActiveWordRect(rect ?? null);
+      });
+    }
+
+    runCompute(0);
+    return () => {
+      cancelled = true;
+      if (retryTid) clearTimeout(retryTid);
+    };
   }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
