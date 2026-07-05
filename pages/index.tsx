@@ -56,6 +56,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, buildRecallSetFromNote, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
@@ -701,6 +702,15 @@ export default function ThoughtUnitReader() {
   // any manual override — shared with RightPanel/Guided speech so they rank and
   // read thought units in the same order the left panel is grouping/displaying them.
   const [sharedPresetId, setSharedPresetId] = useState<string>("universal");
+  // Seed the preset immediately from the uploaded filename so the correct expert
+  // mode is active before any page text is extracted. This prevents the brief
+  // "universal" flash when opening a domain-specific document (e.g. "DAT Prep.pdf"
+  // resolves to the dat preset the moment the file is selected).
+  useEffect(() => {
+    if (!uploadedFile) return;
+    const seed = detectDomainPreset("", undefined, uploadedFile.name);
+    if (seed !== "universal") setSharedPresetId(seed);
+  }, [uploadedFile]);
 
   // NoteLab left rail: the active note's raw thought units, mapped to the same
   // entry shape PureReaderView feeds the reader's own ThoughtUnitNavigator.
@@ -4069,6 +4079,7 @@ export default function ThoughtUnitReader() {
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}
+                  bookTitle={uploadedFile?.name}
                 />
               </div>
             )}

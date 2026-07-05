@@ -388,10 +388,22 @@ function escapeRegExp(s: string): string {
  * Designed to run on whatever text is already on hand (page text, visible
  * thought-unit text) — no new API calls.
  */
-export function detectDomainPreset(bodyText: string, titleText?: string): string {
+/**
+ * Scores each preset's keywords against the given text and returns the
+ * best-matching preset id, or "universal" if nothing clears the threshold.
+ *
+ * Signal weights (strongest → weakest):
+ *   filenameText   titleKeyword match  +10  (e.g. "DAT Prep.pdf" → dat preset immediately)
+ *   filenameText   contentKeyword match +8  (e.g. "chemistry_notes.pdf")
+ *   titleText      titleKeyword match   +5  (chapter heading)
+ *   bodyText       contentKeyword match  +1 per occurrence (page body — many weak hits)
+ */
+export function detectDomainPreset(bodyText: string, titleText?: string, filenameText?: string): string {
   const body = (bodyText || "").toLowerCase();
   const title = (titleText || "").toLowerCase();
-  if (!body && !title) return UNIVERSAL_PRESET.id;
+  // Normalise filename separators so "DAT-prep_notes.pdf" matches word boundaries
+  const filename = (filenameText || "").toLowerCase().replace(/[_\-\.]/g, " ");
+  if (!body && !title && !filename) return UNIVERSAL_PRESET.id;
 
   let bestId = UNIVERSAL_PRESET.id;
   let bestScore = 0;
@@ -400,10 +412,13 @@ export function detectDomainPreset(bodyText: string, titleText?: string): string
     for (const kw of preset.contentKeywords) {
       const re = new RegExp(`\\b${escapeRegExp(kw)}\\b`, "gi");
       score += body.match(re)?.length ?? 0;
+      // One-shot filename test (not count — filename is short)
+      if (filename && new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i").test(filename)) score += 8;
     }
     for (const kw of preset.titleKeywords ?? []) {
       const re = new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i");
       if (re.test(title)) score += 5;
+      if (filename && re.test(filename)) score += 10;
     }
     if (score > bestScore) {
       bestScore = score;

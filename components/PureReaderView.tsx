@@ -120,6 +120,9 @@ interface PureReaderViewProps {
   onPageTextExtracted?: (page: number, text: string) => void;
   /** Raw text of the current page — used to validate highlight anchors before rendering */
   pageText?: string;
+  /** Uploaded filename or book title — fed to domain preset detection as the strongest signal
+   *  so "DAT Prep.pdf" resolves to the dat preset before any page text is available. */
+  bookTitle?: string;
   /** Synthesis loading status — used to show "Reading page..." overlay until highlights arrive */
   synthStatus?: "loading" | "ready";
   /** pageTruthKey from pages/index.tsx — baked into highlightKey to force overlay clear on any synthesis change */
@@ -171,6 +174,7 @@ export default function PureReaderView({
   onNoteThoughtUnit,
   emptyThoughtUnitReason = null,
   onEffectivePresetChange,
+  bookTitle,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -437,8 +441,8 @@ export default function PureReaderView({
   // takes precedence when set.
   const detectedPresetId = useMemo(() => {
     const sample = [pageText ?? "", ...effectiveHighlightTargets.map((t) => t.text)].join(" ");
-    return detectDomainPreset(sample);
-  }, [pageText, effectiveHighlightTargets]);
+    return detectDomainPreset(sample, undefined, bookTitle);
+  }, [pageText, effectiveHighlightTargets, bookTitle]);
   const effectivePresetId = domainPresetOverride ?? detectedPresetId;
 
   // Report the resolved preset upward — RightPanel/Guided speech reads this
