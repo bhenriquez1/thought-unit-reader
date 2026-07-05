@@ -18,6 +18,7 @@ import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
 import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
+import { useReadingFocusStore, selectActiveSpokenWord } from '@/lib/readingFocus/readingFocusStore';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -114,13 +115,7 @@ interface PureReaderViewProps {
    *  applied — drives the Thought Unit Navigator so a dense-page budget that limits
    *  the PDF overlay doesn't also hide grounded anchors from the sidebar list. */
   allHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
-  focusedEvidenceId?: string | null;
-  onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
-  /** Live word-by-word Speech position — null when nothing is playing or the
-   *  current segment has no evidenceRefId. Drives the marked word in the active
-   *  ThoughtUnitNavigator card snippet and the live word box in the PDF. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
   /** Raw text of the current page — used to validate highlight anchors before rendering */
@@ -164,10 +159,7 @@ export default function PureReaderView({
   onTextClick,
   aiHighlightAnchors,
   allHighlightAnchors,
-  focusedEvidenceId,
-  onEvidenceFocus,
   onOpenFocusCycle,
-  activeSpokenWord,
   onPageTextExtracted,
   pageText,
   synthStatus,
@@ -191,6 +183,9 @@ export default function PureReaderView({
   });
   // Global zoom store
   const { zoom } = useZoomStore();
+  // Single source of truth for reading position — no prop-drilling needed.
+  const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
+  const activeSpokenWord   = useReadingFocusStore(selectActiveSpokenWord);
   const [isPageChanging, setIsPageChanging] = useState(false);
   // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
   // Navigator) below it — collapsed by default to keep the sidebar compact.
@@ -571,7 +566,7 @@ export default function PureReaderView({
             }))}
             focusedId={focusedEvidenceId}
             activeSpokenWord={activeSpokenWord}
-            onJump={(id) => onEvidenceFocus?.(id)}
+            onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
             onExplain={onExplainThoughtUnit}
             onOpenRecall={onOpenThoughtUnitRecall}
             onOpenNote={onNoteThoughtUnit}
@@ -592,7 +587,7 @@ export default function PureReaderView({
                 processSteps={decisionProcessMap.processSteps}
                 decisionRules={decisionProcessMap.decisionRules}
                 focusedId={focusedEvidenceId}
-                onJump={(id) => onEvidenceFocus?.(id)}
+                onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
               />
             </>
           )}
@@ -609,7 +604,7 @@ export default function PureReaderView({
               confidence: t.score,
             }))}
             focusedId={focusedEvidenceId}
-            onJump={(id) => onEvidenceFocus?.(id)}
+            onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
             presetId={effectivePresetId}
           />
         </div>
@@ -671,8 +666,7 @@ export default function PureReaderView({
               highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${allHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
               authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
               focusedEvidenceId={focusedEvidenceId}
-              onEvidenceFocus={onEvidenceFocus}
-              activeSpokenWord={activeSpokenWord}
+              onEvidenceFocus={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
               isPageChanging={isPageChanging}
               onPageRenderComplete={() => setIsPageChanging(false)}
               onPageTextExtracted={onPageTextExtracted}

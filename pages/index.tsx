@@ -142,6 +142,7 @@ import {
 import { type SmartTOCEntry } from "@/lib/tocParser";
 import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -607,13 +608,9 @@ export default function ThoughtUnitReader() {
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [activeParagraphText, setActiveParagraphText] = useState<string | null>(null);
-  const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
-  // Live word-by-word speech position — parallel to focusedEvidenceId (which anchor
-  // is active) but tracks the specific word within it. anchorId is null when the
-  // current segment has no evidenceRefId (e.g. Full Page mode's raw sentences).
-  // Drives the Speechify-style live word box in the PDF and the marked word in the
-  // active LeftPanel card snippet — RightPanel never reads this, only focusedEvidenceId.
-  const [activeSpokenWord, setActiveSpokenWord] = useState<{ anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null>(null);
+  // Reading position from the single ReadingFocusStore — no local state needed.
+  const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
+  const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
   // True while Study Speech is actively reading a sentence aloud — keeps the
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
@@ -4037,9 +4034,6 @@ export default function ThoughtUnitReader() {
                   allHighlightAnchors={finalHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
-                  focusedEvidenceId={focusedEvidenceId}
-                  activeSpokenWord={activeSpokenWord}
-                  onEvidenceFocus={onPdfHighlightFocus}
                   onExplainThoughtUnit={explainThoughtUnitById}
                   onOpenThoughtUnitRecall={openThoughtUnitInRecallLab}
                   onNoteThoughtUnit={noteThoughtUnitById}
@@ -4082,8 +4076,6 @@ export default function ThoughtUnitReader() {
                 guidedPath={guidedPath}
                 onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
-                focusedEvidenceId={focusedEvidenceId}
-                activeSpokenWord={activeSpokenWord}
                 onNoteSaved={() => {
                   // Called by GenerateNoteButton only after save is verified — navigate is safe.
                   console.log("[NAV_AFTER_SAVE]", { destination: "notelab", bookId, page: currentPage, storageKey: "ultraNotes_v1" });
@@ -4109,13 +4101,8 @@ export default function ThoughtUnitReader() {
                 highlightedAnchorTexts={safeHighlightAnchors.map((a) => a.text)}
                 activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
-                onSpeechEvidenceFocus={(id) => {
-                  if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
-                  setFocusedEvidenceId(id);
-                }}
                 onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
                 onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
-                onSpeechActiveWordChange={(anchorId, wordIndex, word, sentenceText) => setActiveSpokenWord(anchorId || word ? { anchorId, wordIndex, word, sentenceText } : null)}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}
