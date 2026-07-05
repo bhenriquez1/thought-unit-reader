@@ -26,6 +26,7 @@ import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPer
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 import { tokenizeWords } from "@/lib/speech/wordSync";
+import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
 
 // Marks the word at activeSpokenWord.wordIndex within this card's own text — same
 // approach as ThoughtUnitNavigator.tsx's renderSnippetWithActiveWord, kept local here
@@ -543,12 +544,7 @@ interface RightPanelProps {
   guidedPath?: RenderGuidedReadingPathResult | null;
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
-  focusedEvidenceId?: string | null;
   onRoleLabelMap?: (map: Map<string, string>) => void;
-  /** Word-level karaoke sync — the same shared state PureReaderView's PDF overlay and
-   *  ThoughtUnitNavigator already consume. RightPanel's own evidence cards mark the
-   *  active word when their anchor.id matches activeSpokenWord.anchorId. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   onNoteSaved?: () => void;
   onStudySetGenerated?: (setId: string) => void;
   /** Called when synthesis resolves with AI-selected highlight anchors for the left panel */
@@ -570,12 +566,8 @@ interface RightPanelProps {
   presetId?: string;
   /** Forwarded to the inline StudySpeechPanel so callers (e.g. PDF text-click) can trigger playback */
   speechPanelRef?: React.Ref<StudySpeechPanelHandle>;
-  onSpeechEvidenceFocus?: (id: string | null) => void;
   onSpeechSnippetFocus?: (snippet: string | null) => void;
   onSpeechPlayStateChange?: (isReading: boolean) => void;
-  /** Fires on every karaoke word-index change, for every speech mode — drives the
-   *  live word box in the PDF and the marked word in the active LeftPanel card. */
-  onSpeechActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string, sentenceText?: string) => void;
   /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
    *  paint-budgeted effectiveHighlightTargets) — forwarded to the inline
    *  StudySpeechPanel so "Highlight Only" mode reads only what's visible. */
@@ -822,9 +814,7 @@ export function RightPanel({
   guidedPath,
   onEvidenceClick,
   resolveEvidenceId,
-  focusedEvidenceId,
   onRoleLabelMap,
-  activeSpokenWord,
   onNoteSaved,
   onStudySetGenerated,
   onSynthHighlightsReady,
@@ -835,10 +825,8 @@ export function RightPanel({
   activePageText,
   presetId,
   speechPanelRef,
-  onSpeechEvidenceFocus,
   onSpeechSnippetFocus,
   onSpeechPlayStateChange,
-  onSpeechActiveWordChange,
   highlightedAnchorTexts,
   activeParagraphText,
   onSpeechExplainSegment,
@@ -850,6 +838,10 @@ export function RightPanel({
   onAskExpert,
   onJumpToUnit,
 }: RightPanelProps) {
+  // Reading position from the single source of truth — no prop-drilling.
+  const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
+  const activeSpokenWord   = useReadingFocusStore(selectActiveSpokenWord);
+
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
   const pageTruth = intelligence.pageTruth;
@@ -1653,10 +1645,8 @@ export function RightPanel({
             bookId={ctx?.documentId}
             activePageText={activePageText ?? ctx?.pageText ?? ""}
             presetId={effectivePresetId}
-            onEvidenceFocus={onSpeechEvidenceFocus}
             onSnippetFocus={onSpeechSnippetFocus}
             onPlayStateChange={onSpeechPlayStateChange}
-            onActiveWordChange={onSpeechActiveWordChange}
             onExplainSegment={onSpeechExplainSegment}
             highlightedAnchorTexts={highlightedAnchorTexts}
             currentViewportText={activeParagraphText}

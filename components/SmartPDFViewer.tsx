@@ -11,6 +11,7 @@ import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEviden
 import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
+import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -229,9 +230,6 @@ export interface SmartPDFViewerProps {
   highlightNeighborhoods?: HighlightNeighborhood[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (evidenceId: string) => void;
-  /** Live word-by-word Speech position within focusedEvidenceId's anchor — drives
-   *  a secondary Speechify-style live word box on top of the anchor highlight. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string; sentenceText?: string } | null;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -328,7 +326,6 @@ export default function SmartPDFViewer({
   highlightNeighborhoods,
   focusedEvidenceId,
   onEvidenceFocus,
-  activeSpokenWord,
   isPageChanging = false,
   onPageRenderComplete,
   onPageTextExtracted,
@@ -356,6 +353,9 @@ export default function SmartPDFViewer({
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const [overlayVersion, setOverlayVersion] = useState(0);
+  // Read word-level sync from the single ReadingFocusStore (no prop needed).
+  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+
   // Speechify-style live word box — a small rect within the currently-spoken anchor's
   // highlight, recomputed per word-index change (cheap single-anchor re-measure, not a
   // full overlayRects rebuild). Null whenever word-level mapping isn't available —

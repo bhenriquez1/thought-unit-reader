@@ -27,6 +27,7 @@ import {
   scaleIndex,
   type SyncWord,
 } from "@/lib/speech/wordSync";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import {
   claimSpeech,
   isSpeechStale,
@@ -237,8 +238,6 @@ interface Props {
   /** Effective domain preset id — same value LeftPanel (PureReaderView) is grouping/ordering
    *  its thought units by, so Guided mode's groupThoughtUnits() call agrees with it exactly. */
   presetId?: string;
-  /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
-  onEvidenceFocus?: (id: string | null) => void;
   /** Called when the reader clicks "💬 Explain" during a Guided teach-loop pause —
    *  opens Explain This Step seeded with that segment's evidence. */
   onExplainSegment?: (evidenceRefId: string) => void;
@@ -247,11 +246,6 @@ interface Props {
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
    *  reading highlight in the PDF (focusHighlightPersist). */
   onPlayStateChange?: (isReading: boolean) => void;
-  /** Fires on every karaoke word-index change, for every mode — drives the live
-   *  Speechify-style word box in the PDF and the active word mark in the LeftPanel
-   *  card snippet. anchorId is null for segments with no evidenceRefId (e.g. Full
-   *  Page mode's raw sentences) — consumers should just skip word-marking then. */
-  onActiveWordChange?: (anchorId: string | null, wordIndex: number, word: string, sentenceText?: string) => void;
   /** Text of the first paragraph visible in the PDF viewport — used to find the
    *  right start sentence when the user presses Play in Current Page mode without
    *  an explicit clicked sentence. Comes from onActiveParagraphChange. */
@@ -278,7 +272,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onEvidenceFocus, onExplainSegment, onSnippetFocus, onPlayStateChange, onActiveWordChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
+  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
   ref,
 ) {
   const [open, setOpen]       = useState(primary);
@@ -331,13 +325,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     displayWordCountRef.current  = displayWords.length;
     activeAnchorIdRef.current    = anchorId;
     activeSentenceTextRef.current = rawText ?? spokenText;
-    onActiveWordChange?.(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
+    useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
     setActiveWordIdx(scaled);
-    onActiveWordChange?.(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
+    useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
@@ -422,7 +416,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setKaraokeWords([]);
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
-    onActiveWordChange?.(null, 0, "");
+    useReadingFocusStore.getState().clearWord();
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -437,7 +431,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setKaraokeWords([]);
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
-    onActiveWordChange?.(null, 0, "");
+    useReadingFocusStore.getState().clearWord();
     stopAudio();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -452,7 +446,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setKaraokeWords([]);
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
-    onActiveWordChange?.(null, 0, "");
+    useReadingFocusStore.getState().clearWord();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -669,7 +663,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setKaraokeWords([]);
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
-    onActiveWordChange?.(null, 0, "");
+    useReadingFocusStore.getState().clearWord();
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -943,7 +937,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const focusId = matchedId ?? lastMatchedId;
       if (focusId) {
         console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
-        onEvidenceFocus?.(focusId);
+        useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
 
       // Prefetch the next sentence's audio while this one plays.
@@ -973,7 +967,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       onSnippetFocus?.(null);
       // Clear word-level sync so the yellow word-box disappears; preserve evidence
       // focus so the last-read TU stays highlighted in LeftPanel/PDF/Expert Brain.
-      onActiveWordChange?.(null, 0, "", undefined);
+      useReadingFocusStore.getState().clearWord();
     }
     onPlayStateChange?.(false);
   }
@@ -995,7 +989,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (seg.evidenceRefId) {
         console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
         console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
-        onEvidenceFocus?.(seg.evidenceRefId);
+        useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
       }
 
       const { hasMath: hMath, hasScience: hSci, transformations: hTx } = normalizeFormulasForSpeech(seg.text);
@@ -1034,7 +1028,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
-      onActiveWordChange?.(null, 0, "", undefined);
+      useReadingFocusStore.getState().clearWord();
     }
   }
 
@@ -1163,7 +1157,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeRole(seg.role ?? mode);
       setEyeTier(seg.tier ?? null);
       if (seg.evidenceRefId) {
-        onEvidenceFocus?.(seg.evidenceRefId);
+        useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
         console.log("[SPEECH_EYE_FOCUS]", {
           segIdx: i, mode, evidenceRefId: seg.evidenceRefId, role: seg.role,
         });
@@ -1210,7 +1204,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
-      onActiveWordChange?.(null, 0, "", undefined);
+      useReadingFocusStore.getState().clearWord();
     }
   }
 
@@ -1249,9 +1243,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setKaraokeWords([]);
     setActiveWordIdx(0);
     // Clear word-level sync so the PDF yellow word-box disappears on stop.
-    // Evidence focus (focusedEvidenceId) intentionally preserved — the TU card
-    // that was last active stays highlighted so the reader knows where they were.
-    onActiveWordChange?.(null, 0, "", undefined);
+    // Evidence focus (thoughtUnitId in ReadingFocusStore) intentionally preserved.
+    useReadingFocusStore.getState().clearWord();
   }
 
   // ── "Read From Click" ───────────────────────────────────────────────────────
