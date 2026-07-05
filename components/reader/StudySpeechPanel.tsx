@@ -971,7 +971,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
       onSnippetFocus?.(null);
-      onEvidenceFocus?.(null);
+      // Clear word-level sync so the yellow word-box disappears; preserve evidence
+      // focus so the last-read TU stays highlighted in LeftPanel/PDF/Expert Brain.
+      onActiveWordChange?.(null, 0, "", undefined);
     }
     onPlayStateChange?.(false);
   }
@@ -1032,7 +1034,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
-      onEvidenceFocus?.(null);
+      onActiveWordChange?.(null, 0, "", undefined);
     }
   }
 
@@ -1208,7 +1210,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       setPlayState("idle");
-      onEvidenceFocus?.(null);
+      onActiveWordChange?.(null, 0, "", undefined);
     }
   }
 
@@ -1236,8 +1238,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
   }
 
-  function stop(clearEvidence = true) {
-    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState, clearEvidence });
+  function stop() {
+    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     stopAudio();
     resolveContinue();
     setSegIdx(0);
@@ -1246,7 +1248,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setEyeTier(null);
     setKaraokeWords([]);
     setActiveWordIdx(0);
-    if (clearEvidence) onEvidenceFocus?.(null);
+    // Clear word-level sync so the PDF yellow word-box disappears on stop.
+    // Evidence focus (focusedEvidenceId) intentionally preserved — the TU card
+    // that was last active stays highlighted so the reader knows where they were.
+    onActiveWordChange?.(null, 0, "", undefined);
   }
 
   // ── "Read From Click" ───────────────────────────────────────────────────────
@@ -1318,7 +1323,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Mode tabs */}
           <div style={{ display: "flex", gap: 4 }}>
             {STUDY_SPEECH_MODES.map(m => (
-              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(false); }} title={m.description}
+              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(); }} title={m.description}
                 style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
               >{m.label}</button>
             ))}
@@ -1327,7 +1332,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {isLoading ? (
-              <button type="button" onClick={() => stop(false)}
+              <button type="button" onClick={() => stop()}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >⟳ Loading…</button>
             ) : isPlaying ? (
@@ -1343,7 +1348,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
               >▶ Play</button>
             )}
-            <button type="button" onClick={() => stop(false)}
+            <button type="button" onClick={() => stop()}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
             {/* Reading bar is display-only — word sync (onActiveWordChange → PDF/LeftPanel/ExpertBrain) fires unconditionally from the audio engine regardless of this toggle */}
