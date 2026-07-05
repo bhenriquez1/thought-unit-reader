@@ -128,7 +128,7 @@ function renderSnippetWithActiveWord(
     });
     return text;
   }
-  console.log("[THOUGHT_UNIT_LEFTPANEL_WORD]", {
+  console.log("[LEFT_PANEL_WORD_SYNC_RENDERED]", {
     entryId,
     wordIndex: activeSpokenWord.wordIndex,
     word: activeSpokenWord.word,
