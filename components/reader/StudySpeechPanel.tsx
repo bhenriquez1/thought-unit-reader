@@ -273,9 +273,6 @@ export interface StudySpeechPanelHandle {
   /** "Read From Click" — switch to Current Page mode and start reading from the
    *  sentence that best matches the clicked PDF text. */
   playFromSnippet: (snippet: string) => void;
-  /** Thought Unit Mode — speak exactly this canonical unit from word 1 and keep
-   *  LeftPanel/PDF/Expert Brain keyed to its evidence anchor. */
-  playThoughtUnitSegment: (text: string, anchorId?: string | null) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -1269,49 +1266,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setTimeout(() => playFullPageSequential(sents, idx, session), 80);
   }
 
-  function playThoughtUnitSegment(text: string, anchorId?: string | null) {
-    const unitText = text.trim();
-    if (unitText.length < 2) return;
-    setOpen(true);
-    setMode("highlights");
-    stop(false);
-    setSegIdx(0);
-    const session = beginSession();
-    const evidenceRefId = anchorId ?? null;
-    const spoken = computeSpeechText(unitText);
-    console.log("[THOUGHT_UNIT_SPEECH_START]", { page: pageNumber, evidenceRefId, wordIndex: 0, textPreview: unitText.slice(0, 120) });
-    onPlayStateChange?.(true);
-    setTimeout(async () => {
-      if (isStale(session)) return;
-      setPlayState("loading");
-      setEyeText(unitText);
-      setEyeRole("visualAnchor");
-      setEyeTier(null);
-      if (evidenceRefId) onEvidenceFocus?.(evidenceRefId);
-      onSnippetFocus?.(unitText);
-      beginKaraoke(unitText, spoken, evidenceRefId, unitText);
-      try {
-        const result = await fetchAndPlayAudio(spoken, session);
-        if (isStale(session)) return;
-        if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(spoken, resolve, session));
-        }
-      } catch (err: unknown) {
-        if (isStale(session)) return;
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn("[SPEECH_ERROR]", { source: "thought-unit", evidenceRefId, error: message });
-        await new Promise<void>((resolve) => playBrowserSpeech(spoken, resolve, session));
-      } finally {
-        if (!isStale(session)) {
-          notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
-          setPlayState("idle");
-          onPlayStateChange?.(false);
-        }
-      }
-    }, 80);
-  }
-
-  useImperativeHandle(ref, () => ({ playFromSnippet, playThoughtUnitSegment }), [fpSentences, activePageText, pageNumber, speed, voice]);
+  useImperativeHandle(ref, () => ({ playFromSnippet }), [fpSentences, activePageText, pageNumber, speed, voice]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1391,10 +1346,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             <button type="button" onClick={() => stop(false)}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
+            {/* Reading bar is display-only — word sync (onActiveWordChange → PDF/LeftPanel/ExpertBrain) fires unconditionally from the audio engine regardless of this toggle */}
             <button type="button" onClick={() => setShowKaraokeBar(b => !b)}
-              title={showKaraokeBar ? "Hide bottom karaoke bar" : "Show bottom karaoke bar"}
+              title={showKaraokeBar ? "Hide reading bar (word sync continues in PDF + LeftPanel)" : "Show reading bar"}
               style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${showKaraokeBar ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.08)"}`, background: showKaraokeBar ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: showKaraokeBar ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
-            >Bar</button>
+            >Reading Bar</button>
             <button type="button"
               onClick={() => { const prev = Math.max(0, segIdx - 1); setSegIdx(prev); stop(); setTimeout(() => play(prev), 80); }}
               disabled={segIdx <= 0}
