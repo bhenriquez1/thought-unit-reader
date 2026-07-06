@@ -2457,6 +2457,10 @@ export default function ThoughtUnitReader() {
     setDetectedThoughts(prev => [newThought, ...prev.slice(0, 9)]); // Keep max 10 thoughts
   };
 
+  // Stable setter — prevents SmartPDFViewer's [pageCount, onPageCount] effect from
+  // firing on every parent re-render due to a new inline arrow reference each time.
+  const handlePageCount = useCallback((count: number) => setPdfPageCount(count), []);
+
   /* =========================================================================
      🔹 Handle PDF Outline Extraction (memoized to prevent excessive re-renders)
   ========================================================================= */
@@ -4107,7 +4111,7 @@ export default function ThoughtUnitReader() {
                   currentPage={currentPage}
                   pdfPageCount={pdfPageCount}
                   onPageChange={(p) => syncToPage(p)}
-                  onPageCount={(count) => setPdfPageCount(count)}
+                  onPageCount={handlePageCount}
                   onTextSelect={(t) => sel.setSelectionText(t)}
                   onOutline={handleOutlineExtraction}
                   fontSize={fontSize}
