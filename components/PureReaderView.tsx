@@ -381,17 +381,26 @@ export default function PureReaderView({
   };
 
   // PDF overlay — must respect pages/index.tsx's paint budget (aiHighlightAnchors).
-  const effectiveHighlightTargets: HighlightTarget[] = buildHighlightTargets(
+  // Memoized: prevents detectedPresetId/decisionProcessMap from recomputing on every
+  // render (including per-word karaoke ticks that re-render PureReaderView).
+  const effectiveHighlightTargets = useMemo(() => buildHighlightTargets(
     aiHighlightAnchors,
     "aiHighlightAnchors (paint-budgeted, from index.tsx)",
-  );
+  ), [aiHighlightAnchors]);
 
   // Thought Unit Navigator — every anchor that grounded successfully, regardless of
   // the overlay's paint budget. Falls back to the budgeted set if the caller hasn't
   // wired allHighlightAnchors yet, so the Navigator never regresses to empty.
-  const allHighlightTargets: HighlightTarget[] = allHighlightAnchors
+  const allHighlightTargets = useMemo(() => allHighlightAnchors
     ? buildHighlightTargets(allHighlightAnchors, "allHighlightAnchors (unbudgeted, from index.tsx)")
-    : effectiveHighlightTargets;
+    : effectiveHighlightTargets,
+  [allHighlightAnchors, effectiveHighlightTargets]);
+
+  // Stable callback — uses getState() so it never needs deps and won't cause
+  // ThoughtUnitNavigator / ThoughtRoadmap / SmartPDFViewer to re-render on every word tick.
+  const handleThoughtUnitJump = useCallback((id: string) => {
+    useReadingFocusStore.getState().setThoughtUnit(id);
+  }, []);
 
   const navigateToPage = useCallback((page: number) => {
     if (isPageChanging || page === currentPage) return;
@@ -570,7 +579,7 @@ export default function PureReaderView({
             }))}
             focusedId={focusedEvidenceId}
             activeSpokenWord={activeSpokenWord}
-            onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
+            onJump={handleThoughtUnitJump}
             onExplain={onExplainThoughtUnit}
             onOpenRecall={onOpenThoughtUnitRecall}
             onOpenNote={onNoteThoughtUnit}
@@ -591,7 +600,7 @@ export default function PureReaderView({
                 processSteps={decisionProcessMap.processSteps}
                 decisionRules={decisionProcessMap.decisionRules}
                 focusedId={focusedEvidenceId}
-                onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
+                onJump={handleThoughtUnitJump}
               />
             </>
           )}
@@ -608,7 +617,7 @@ export default function PureReaderView({
               confidence: t.score,
             }))}
             focusedId={focusedEvidenceId}
-            onJump={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
+            onJump={handleThoughtUnitJump}
             presetId={effectivePresetId}
           />
         </div>
@@ -670,7 +679,7 @@ export default function PureReaderView({
               highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${allHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
               authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
               focusedEvidenceId={focusedEvidenceId}
-              onEvidenceFocus={(id) => useReadingFocusStore.getState().setThoughtUnit(id)}
+              onEvidenceFocus={handleThoughtUnitJump}
               isPageChanging={isPageChanging}
               onPageRenderComplete={() => setIsPageChanging(false)}
               onPageTextExtracted={onPageTextExtracted}

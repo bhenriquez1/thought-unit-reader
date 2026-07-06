@@ -1367,7 +1367,14 @@ export function RightPanel({
     return new Map(ultraPageViewWithSynthesis.steps.map((s) => [s.conceptId, s.roleLabel]));
   }, [ultraPageViewWithSynthesis]);
 
+  // Content-equality guard: only emit if the map content actually changed.
+  // Without this, a new Map() reference from every synthesis re-render calls
+  // onRoleLabelMap → setRoleLabelByConceptId in index.tsx → parent re-render loop.
+  const lastRoleLabelKeyRef = useRef<string>('');
   useEffect(() => {
+    const key = Array.from(roleLabelMap.entries()).map(([k, v]) => `${k}:${v}`).join('|');
+    if (key === lastRoleLabelKeyRef.current) return;
+    lastRoleLabelKeyRef.current = key;
     onRoleLabelMap?.(roleLabelMap);
   }, [roleLabelMap, onRoleLabelMap]);
 

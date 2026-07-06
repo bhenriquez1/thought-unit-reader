@@ -630,10 +630,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       return;
     }
     const next = thoughtUnits.length
-      ? buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId })
+      ? buildSpeechTimeline({ thoughtUnits, mode, activePageText })
       : buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits, selectedUnitId]);
+  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -1337,7 +1337,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.12)", color: "#a5b4fc", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >▶ Resume</button>
             ) : (
-              <button type="button" disabled={!hasContent} onClick={() => play(0)}
+              <button type="button" disabled={!hasContent} onClick={() => {
+                // Start from the selected anchor if one is focused, otherwise from the top.
+                if (selectedUnitId && segments.length > 0) {
+                  const idx = segments.findIndex(
+                    (s) => s.evidenceRefId === selectedUnitId || s.id === selectedUnitId
+                  );
+                  play(idx >= 0 ? idx : 0);
+                } else {
+                  play(0);
+                }
+              }}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
               >▶ Play</button>
             )}
