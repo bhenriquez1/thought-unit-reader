@@ -1276,7 +1276,16 @@ export default function ThoughtUnitReader() {
       pageText,
       studyModel: currentPageStudyModel,
     });
-    setCanonicalLeftPanelUnits(built.units);
+    // Content-equality guard: avoid cascading re-renders when unit IDs and text are unchanged.
+    // Without this, every studyModel rebuild (e.g. from a preset change) re-creates the array,
+    // causing resolveEvidenceId → handleActiveParagraphChange → SmartPDFViewer to all rebuild.
+    setCanonicalLeftPanelUnits((prev) => {
+      if (
+        prev.length === built.units.length &&
+        prev.every((u, i) => u.id === built.units[i]?.id && u.exactText === built.units[i]?.exactText)
+      ) return prev;
+      return built.units;
+    });
     setCanonicalLeftPanelDiagnostic(built.diagnosticReason);
     console.log("[LEFT_PANEL_CANONICAL_READY]", {
       thoughtUnitId: built.units[0]?.id ?? null,
@@ -1562,6 +1571,52 @@ export default function ThoughtUnitReader() {
   // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
+
+  // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
+  // synthesis data without needing real API keys. Removed before any production build.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const MOCK_PAGE_TEXT = 'Digestive system processes food through mechanical and chemical digestion. Enzymes break down macromolecules into absorbable nutrients. The small intestine absorbs nutrients through villi and microvilli. Peristalsis moves food through the digestive tract. The liver produces bile which emulsifies fats.';
+    const MOCK_ANCHORS = [
+      { text: 'Digestive system processes food through mechanical and chemical digestion.', anchorType: 'thesis' as const, reason: 'core concept', evidenceRefId: 'anchor-1', spanStart: 0, spanEnd: 74 },
+      { text: 'Enzymes break down macromolecules into absorbable nutrients.', anchorType: 'mechanism' as const, reason: 'mechanism', evidenceRefId: 'anchor-2', spanStart: 76, spanEnd: 135 },
+      { text: 'The small intestine absorbs nutrients through villi and microvilli.', anchorType: 'application' as const, reason: 'application', evidenceRefId: 'anchor-3', spanStart: 137, spanEnd: 204 },
+    ];
+    (window as any).__debugTriggerSynthesis = () => {
+      const key = pageTruthKeyRef.current;
+      if (!key) { console.warn('[DEBUG] pageTruthKey not ready yet'); return; }
+      // 1. Inject page text so grounding can find anchor spans
+      setPageTextByPage((prev) => {
+        const k = `default-book:1`;
+        if (prev.get(k) === MOCK_PAGE_TEXT) return prev;
+        const next = new Map(prev);
+        next.set(k, MOCK_PAGE_TEXT);
+        return next;
+      });
+      // 2. Inject study model so canonical units are built
+      const mockModel = {
+        page: 1, pageTruthKey: key,
+        pageThesis: 'Digestive system overview',
+        visualAnchors: [
+          { id: 'anchor-1', evidenceRefId: 'anchor-1', role: 'thesis', kind: 'thesis', exactText: MOCK_ANCHORS[0].text, score: 0.9 },
+          { id: 'anchor-2', evidenceRefId: 'anchor-2', role: 'mechanism', kind: 'mechanism', exactText: MOCK_ANCHORS[1].text, score: 0.8 },
+          { id: 'anchor-3', evidenceRefId: 'anchor-3', role: 'application', kind: 'application', exactText: MOCK_ANCHORS[2].text, score: 0.75 },
+        ],
+        highlightAnchors: MOCK_ANCHORS,
+        miniTestItems: [], preReadRecallItems: [],
+      };
+      console.log('[DEBUG] injecting page text + studyModel, key:', key);
+      handleStudyModelReady(mockModel as any, key);
+    };
+    (window as any).__debugGetReadingFocusStore = () => {
+      const { useReadingFocusStore: s } = require('@/lib/readingFocus/readingFocusStore');
+      return s ? s.getState() : null;
+    };
+    return () => {
+      delete (window as any).__debugTriggerSynthesis;
+      delete (window as any).__debugGetReadingFocusStore;
+    };
+  }, [handleStudyModelReady]);
   // Clear stale synthesis state immediately when pageTruthKey changes (not just currentPage).
   // CRITICAL: also clear finalHighlightAnchors — otherwise stale anchors persist on left panel
   // until the new studyModel arrives, which can take 2–4 seconds.

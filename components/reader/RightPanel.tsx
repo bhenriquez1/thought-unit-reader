@@ -1371,6 +1371,12 @@ export function RightPanel({
     onRoleLabelMap?.(roleLabelMap);
   }, [roleLabelMap, onRoleLabelMap]);
 
+  // Tracks the last fingerprint emitted to onStudyModelReady so we don't re-fire when only
+  // effectivePresetId changed (which rebuilds studyModel without changing anchor content).
+  // Resets when pageTruthKey changes so navigating back to a page always allows synthesis to fire.
+  const lastEmittedFingerprintRef = useRef<string | null>(null);
+  const lastEmittedPageKeyRef = useRef<string | null>(null);
+
   // Notify parent with AI-selected highlight anchors and the full study model when synthesis resolves.
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
@@ -1411,6 +1417,18 @@ export function RightPanel({
     // a study model for chapter openers, learning objectives, or review checkpoint pages.
     const blockEmit = isStructuralPage || openAIConfirmsNonInstructional;
     if (studyModel && onStudyModelReady && !blockEmit) {
+      // Dedup: skip if only effectivePresetId changed but anchor content is identical.
+      // A preset change rebuilds studyModel without new synthesis data, causing a 4-5x
+      // cascade via handleStudyModelReady → setCanonicalLeftPanelUnits → re-renders.
+      // Reset when pageTruthKey changes so navigating back to a page always fires.
+      if (pageTruthKey !== lastEmittedPageKeyRef.current) {
+        lastEmittedFingerprintRef.current = null;
+        lastEmittedPageKeyRef.current = pageTruthKey;
+      }
+      const anchorFingerprint = studyModel.highlightAnchors?.map((a: any) => a.id ?? a.text).join(',') ?? '';
+      const fingerprint = `${pageTruthKey}:${anchorFingerprint}`;
+      if (fingerprint === lastEmittedFingerprintRef.current) return;
+      lastEmittedFingerprintRef.current = fingerprint;
       console.log("[WIRE] studyModel accepted", {
         pageTruthKey,
         page: studyModel.page,
