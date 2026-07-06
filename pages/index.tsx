@@ -56,6 +56,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, buildRecallSetFromNote, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
@@ -701,6 +702,15 @@ export default function ThoughtUnitReader() {
   // any manual override — shared with RightPanel/Guided speech so they rank and
   // read thought units in the same order the left panel is grouping/displaying them.
   const [sharedPresetId, setSharedPresetId] = useState<string>("universal");
+  // Seed the preset immediately from the uploaded filename so the correct expert
+  // mode is active before any page text is extracted. This prevents the brief
+  // "universal" flash when opening a domain-specific document (e.g. "DAT Prep.pdf"
+  // resolves to the dat preset the moment the file is selected).
+  useEffect(() => {
+    if (!uploadedFile) return;
+    const seed = detectDomainPreset("", undefined, uploadedFile.name);
+    if (seed !== "universal") setSharedPresetId(seed);
+  }, [uploadedFile]);
 
   // NoteLab left rail: the active note's raw thought units, mapped to the same
   // entry shape PureReaderView feeds the reader's own ThoughtUnitNavigator.
@@ -1560,6 +1570,19 @@ export default function ThoughtUnitReader() {
     setFinalHighlightAnchors([]);
     console.log("[HIGHLIGHT_CLEARED]", { reason: "page-changed", pageTruthKey });
   }, [pageTruthKey]);
+
+  // Auto-select the first anchor when anchors first arrive on a page (speech not playing).
+  // This ensures the Expert Brain and LeftPanel card highlight appear automatically without
+  // the user needing to click anything.
+  useEffect(() => {
+    if (!finalHighlightAnchors.length) return;
+    const { playbackState, thoughtUnitId } = useReadingFocusStore.getState();
+    if (playbackState !== 'idle') return;
+    if (thoughtUnitId) return; // user already focused something on this page
+    const first = finalHighlightAnchors[0];
+    const id = (first as any).evidenceRefId ?? (first as any).id ?? null;
+    if (id) useReadingFocusStore.getState().setThoughtUnit(id);
+  }, [finalHighlightAnchors]);
 
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
@@ -2724,6 +2747,14 @@ export default function ThoughtUnitReader() {
     const store = insightsPanelStoreRef.current;
     store.setActiveVisibleText(snippet);
 
+    // Scroll → active anchor: resolve the viewport-center snippet to the closest
+    // thought-unit anchor and keep the Expert Brain / LeftPanel card in sync.
+    // Only runs when speech is not playing (speech owns the anchor during playback).
+    if (snippet && useReadingFocusStore.getState().playbackState === 'idle') {
+      const resolved = resolveEvidenceId(snippet);
+      if (resolved) setFocusedEvidenceId(resolved);
+    }
+
     if (!snippet || !store.syncInsightsToPdf) return;
 
     // Build paragraph blocks from current page text and try to find matching block
@@ -2735,7 +2766,7 @@ export default function ThoughtUnitReader() {
     if (matched) {
       store.setActiveParagraphId(matched.id);
     }
-  }, [thoughtUnits, currentThoughtUnit, currentPage, bookId]);
+  }, [thoughtUnits, currentThoughtUnit, currentPage, bookId, resolveEvidenceId, setFocusedEvidenceId]);
 
   useEffect(() => {
     setRightPanelState((prev) => {
@@ -4048,6 +4079,7 @@ export default function ThoughtUnitReader() {
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}
+                  bookTitle={uploadedFile?.name}
                 />
               </div>
             )}
