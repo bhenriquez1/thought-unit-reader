@@ -275,6 +275,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
   ref,
 ) {
+  // Render counter — temporary diagnostic for React #185 investigation.
+  const spRenderCountRef = useRef(0);
+  spRenderCountRef.current++;
+  console.log("[SPEECH_RENDER]", spRenderCountRef.current);
+
   const [open, setOpen]       = useState(primary);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -439,6 +444,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // Reset on mode switch so playback always starts at the first segment of the new mode.
   useEffect(() => {
+    console.log("[SPEECH_MODE_CHANGE]", mode);
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
@@ -622,6 +628,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
+    console.log("[SPEECH_EFFECT_C_RUN]", {
+      mode,
+      pageNumber,
+      hasStudyModel: !!studyModel,
+      thoughtUnitsLen: thoughtUnits.length,
+      highlightedAnchorTextsLen: highlightedAnchorTexts.length,
+      activePageTextLen: activePageText?.length ?? 0,
+    });
     if (mode === "fullPage" || !studyModel) {
       // fullPage reads sentences directly, no pre-built segments needed.
       // Other modes with no studyModel yet (RightPanel/OpenAI synthesis still
@@ -632,6 +646,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const next = thoughtUnits.length
       ? buildSpeechTimeline({ thoughtUnits, mode, activePageText })
       : buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
+    console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
   }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits]);
 

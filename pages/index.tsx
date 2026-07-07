@@ -609,6 +609,11 @@ export default function ThoughtUnitReader() {
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [activeParagraphText, setActiveParagraphText] = useState<string | null>(null);
+  // Render counter — temporary diagnostic for React #185 investigation.
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
+  console.log("[INDEX_RENDER]", renderCountRef.current);
+
   // Reading position from the single ReadingFocusStore — no local state needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
   const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
