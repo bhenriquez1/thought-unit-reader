@@ -44,15 +44,20 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
   word: null,
   playbackState: 'idle',
 
-  setThoughtUnit: (id) => set({ thoughtUnitId: id }),
+  setThoughtUnit: (id) => {
+    console.log("[FOCUS_STORE_WRITE] setThoughtUnit", id);
+    set({ thoughtUnitId: id });
+  },
 
-  setWord: (anchorId, wordIndex, word, sentenceText) =>
+  setWord: (anchorId, wordIndex, word, sentenceText) => {
+    if (anchorId) console.log("[FOCUS_STORE_WRITE] setWord anchorId", anchorId, "wordIdx", wordIndex);
     set((s) => ({
       thoughtUnitId: anchorId ?? s.thoughtUnitId,
       wordIndex,
       word,
       sentenceText: sentenceText ?? s.sentenceText,
-    })),
+    }));
+  },
 
   setPlaybackState: (state) => set({ playbackState: state }),
 
