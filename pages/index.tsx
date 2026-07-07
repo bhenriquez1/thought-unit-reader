@@ -617,7 +617,6 @@ export default function ThoughtUnitReader() {
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
   const speechPanelRef = useRef<StudySpeechPanelHandle>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
-  const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
@@ -663,6 +662,14 @@ export default function ThoughtUnitReader() {
     setCurrentPageStudyModel({ ...model, pageTruthKey: key });
     console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
   }, []);
+
+  // Stable wrapper so RightPanel's onPlayStateChange prop identity never changes.
+  // Without this, every index.tsx re-render (including per-word Zustand writes during TTS)
+  // creates a new inline arrow, which forces Effect C in StudySpeechPanel to re-run.
+  const handleSpeechPlayStateChange = useCallback(
+    (isReading: boolean) => setSpeechReadingActive(isReading),
+    []
+  );
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
@@ -1297,6 +1304,54 @@ export default function ThoughtUnitReader() {
       diagnosticReason: built.diagnosticReason,
     });
   }, [bookId, currentPage, currentPageStudyModel, pageTextByPage]);
+
+  // ── Stable derived arrays for RightPanel / StudySpeechPanel ─────────────────
+  // These three values all land in StudySpeechPanel's segment-rebuild effect deps.
+  // Without memoization, every index.tsx re-render (driven by per-word Zustand
+  // writes at 4-30 Hz during TTS) creates new array references → Effect C fires
+  // on every word tick → setSegments every tick → React #185 on tab click.
+  const safeHighlightAnchors = useMemo(() => {
+    if (!finalHighlightAnchors.length) return [] as typeof finalHighlightAnchors;
+    const pageTextForBudget = pageTextByPage.get(`${bookId}:${currentPage}`) ?? "";
+    const isMathPage = finalHighlightAnchors.some(
+      (a) => a.anchorType === "formula" || a.anchorType === "example_step" || a.anchorType === "conclusion"
+    );
+    return applyHighlightBudget(finalHighlightAnchors, pageTextForBudget, isMathPage, currentPage);
+  }, [finalHighlightAnchors, pageTextByPage, bookId, currentPage]);
+
+  const highlightedAnchorTexts = useMemo(
+    () => safeHighlightAnchors.map((a) => a.text),
+    [safeHighlightAnchors]
+  );
+
+  const enrichedCanonicalUnits = useMemo(
+    () =>
+      canonicalLeftPanelUnits.map((unit) => ({
+        ...unit,
+        grounded: safeHighlightAnchors.some((a) => (a as any).evidenceRefId === unit.evidenceRefId),
+      })),
+    [canonicalLeftPanelUnits, safeHighlightAnchors]
+  );
+
+  // Log when the budgeted anchor set actually changes (not on every render).
+  useEffect(() => {
+    if (!safeHighlightAnchors.length) {
+      console.log("[HIGHLIGHT_RENDERED]", {
+        page:     currentPage,
+        count:    0,
+        reason:   "no-grounded-anchors",
+        hasModel: !!currentPageStudyModel,
+      });
+      return;
+    }
+    console.log("[HIGHLIGHT_RENDERED]", {
+      page:       currentPage,
+      count:      safeHighlightAnchors.length,
+      ids:        (safeHighlightAnchors as any[]).map((a) => (a as any).evidenceRefId),
+      source:     "canonicalLeftPanelUnits",
+      firstTexts: safeHighlightAnchors.slice(0, 3).map((a) => a.text?.slice(0, 60)),
+    });
+  }, [safeHighlightAnchors, currentPage, currentPageStudyModel]);
 
   // Record this page as visited — the durable signal Syllabus's chapter-level
   // "Read %" is computed from (see lib/syllabus/chapterProgress.ts). Without this,
@@ -4045,33 +4100,8 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
-      // Left Panel source: canonicalLeftPanelUnits only.
-      // Non-instructional filtering is handled in the grounding effect.
-      // Render-time rule: if we have grounded anchors, show them — no extra gating.
-      const safeHighlightAnchors = (() => {
-        if (!finalHighlightAnchors.length) {
-          console.log("[HIGHLIGHT_RENDERED]", {
-            page:        currentPage,
-            count:       0,
-            reason:      "no-grounded-anchors",
-            hasModel:    !!currentPageStudyModel,
-          });
-          return [];
-        }
-        const pageTextForBudget = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
-        const isMathPage = finalHighlightAnchors.some(
-          a => a.anchorType === "formula" || a.anchorType === "example_step" || a.anchorType === "conclusion"
-        );
-        const budgeted = applyHighlightBudget(finalHighlightAnchors, pageTextForBudget, isMathPage, currentPage);
-        console.log("[HIGHLIGHT_RENDERED]", {
-          page:       currentPage,
-          count:      budgeted.length,
-          ids:        (budgeted as any[]).map(a => (a as any).evidenceRefId),
-          source:     "canonicalLeftPanelUnits",
-          firstTexts: budgeted.slice(0, 3).map(a => a.text?.slice(0, 60)),
-        });
-        return budgeted;
-      })();
+      // safeHighlightAnchors / highlightedAnchorTexts / enrichedCanonicalUnits are
+      // memoized at the component top level — accessible here via closure.
 
       console.log("[LEFT_PANEL_SOURCE]", {
         source:     "canonicalLeftPanelUnits",
@@ -4165,7 +4195,6 @@ export default function ThoughtUnitReader() {
                   pageRole: currentPageRole,
                 }}
                 guidedPath={guidedPath}
-                onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 onNoteSaved={() => {
                   // Called by GenerateNoteButton only after save is verified — navigate is safe.
@@ -4189,19 +4218,16 @@ export default function ThoughtUnitReader() {
                 tocItems={tocItemsForSearch}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
-                highlightedAnchorTexts={safeHighlightAnchors.map((a) => a.text)}
+                highlightedAnchorTexts={highlightedAnchorTexts}
                 activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
                 onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
-                onSpeechPlayStateChange={(isReading) => setSpeechReadingActive(isReading)}
+                onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
                 onOpenExplainStep={handleOpenExplainStep}
                 onOpenExplainIt={() => handleOpenExplainIt()}
-                canonicalLeftPanelUnits={canonicalLeftPanelUnits.map((unit) => ({
-                  ...unit,
-                  grounded: safeHighlightAnchors.some((a) => (a as any).evidenceRefId === unit.evidenceRefId),
-                }))}
+                canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
                 onJumpToUnit={(id) => onPdfHighlightFocus(id)}
