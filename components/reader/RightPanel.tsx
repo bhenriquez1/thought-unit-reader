@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { deriveRecallItems, type SynthesisForRecall } from "@/lib/insights/deriveRecallItems";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
@@ -946,7 +946,10 @@ export function RightPanel({
     });
   }, [pageTruth?.canRenderRightPanel, isCurrentPageModel, pageModel, intelligence.story, intelligence.pageClass]);
 
-  const resolveFromAnchor = (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text);
+  const resolveFromAnchor = useCallback(
+    (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text),
+    [resolveEvidenceId]
+  );
   const { selectedStepId, selectStep, clearSelection } = useGuidedHighlightSync({
     steps: guidedView?.steps || [],
     onEvidenceClick,
@@ -1676,7 +1679,7 @@ export function RightPanel({
             highlightedAnchorTexts={highlightedAnchorTexts}
             currentViewportText={activeParagraphText}
             thoughtUnits={canonicalLeftPanelUnits}
-            selectedUnitId={activeThoughtUnit?.id ?? focusedEvidenceId ?? null}
+            selectedUnitId={focusedEvidenceId ?? null}
             primary
           />
           <div className="grid grid-cols-2 gap-2">
