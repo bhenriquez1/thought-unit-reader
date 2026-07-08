@@ -375,8 +375,8 @@ export default function ThoughtUnitNavigator({
                   ref={isActive ? activeEntryRef : undefined}
                   role="button"
                   tabIndex={0}
-                  onClick={() => onJump(entry.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
+                  onClick={() => { console.log("[PARENT_WRITE:ThoughtUnitNavigator] onJump", entry.id); onJump(entry.id); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { console.log("[PARENT_WRITE:ThoughtUnitNavigator] onJump (key)", entry.id); onJump(entry.id); } }}
                   className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
                   style={{
                     background: isSpeaking

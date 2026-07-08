@@ -1287,6 +1287,7 @@ export default function ThoughtUnitReader() {
       page: currentPage,
       pageText,
       studyModel: currentPageStudyModel,
+      presetId: sharedPresetId,
     });
     // Content-equality guard: avoid cascading re-renders when unit IDs and text are unchanged.
     // Without this, every studyModel rebuild (e.g. from a preset change) re-creates the array,
@@ -1308,7 +1309,7 @@ export default function ThoughtUnitReader() {
       count: built.units.length,
       diagnosticReason: built.diagnosticReason,
     });
-  }, [bookId, currentPage, currentPageStudyModel, pageTextByPage]);
+  }, [bookId, currentPage, currentPageStudyModel, pageTextByPage, sharedPresetId]);
 
   // ── Stable derived arrays for RightPanel / StudySpeechPanel ─────────────────
   // These three values all land in StudySpeechPanel's segment-rebuild effect deps.

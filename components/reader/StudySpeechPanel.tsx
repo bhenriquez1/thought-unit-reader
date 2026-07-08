@@ -679,6 +679,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
+    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (stop)");
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -878,6 +879,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   async function playFullPageSequential(sentences: string[], fromIdx: number, session: number) {
     setPlayState("loading");
+    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange true (fullPage start)");
     onPlayStateChange?.(true);
 
     // [DIAGNOSIS] State at play start — reveals stale segIdx and sentence zero issue
@@ -984,6 +986,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // focus so the last-read TU stays highlighted in LeftPanel/PDF/Expert Brain.
       useReadingFocusStore.getState().clearWord();
     }
+    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (fullPage end)");
     onPlayStateChange?.(false);
   }
 
