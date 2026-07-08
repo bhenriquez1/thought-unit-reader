@@ -1577,4 +1577,4 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   );
 });
 
-export default StudySpeechPanel;
+export default React.memo(StudySpeechPanel);

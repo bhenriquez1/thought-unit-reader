@@ -4059,6 +4059,23 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
+  const intelligenceSnapshot = useMemo(() => ({
+    status: pageIntelligenceStatus,
+    pageTruthKey,
+    isCurrentPage: isCurrentIntelligencePage,
+    pageClass: currentPageClass,
+    pageTruth: currentPageTruth,
+    pageModel: currentPageModel,
+    story: currentPageStory,
+    storyV2: currentPageStoryV2,
+    storyV3: currentPageStoryV3,
+    priorityHighlights: currentPriorityHighlights,
+    normResult: currentNormResult,
+    pageRole: currentPageRole,
+  }), [pageIntelligenceStatus, pageTruthKey, isCurrentIntelligencePage, currentPageClass,
+      currentPageTruth, currentPageModel, currentPageStory, currentPageStoryV2, currentPageStoryV3,
+      currentPriorityHighlights, currentNormResult, currentPageRole]);
+
   const renderContent = () => {
     // 🔐 Gate the app: must be signed in before doing anything
     if (!user) {
@@ -4186,20 +4203,7 @@ export default function ThoughtUnitReader() {
                 ctx={activePageContext}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
-                intelligence={{
-                  status: pageIntelligenceStatus,
-                  pageTruthKey,
-                  isCurrentPage: isCurrentIntelligencePage,
-                  pageClass: currentPageClass,
-                  pageTruth: currentPageTruth,
-                  pageModel: currentPageModel,
-                  story: currentPageStory,
-                  storyV2: currentPageStoryV2,
-                  storyV3: currentPageStoryV3,
-                  priorityHighlights: currentPriorityHighlights,
-                  normResult: currentNormResult,
-                  pageRole: currentPageRole,
-                }}
+                intelligence={intelligenceSnapshot}
                 guidedPath={guidedPath}
                 resolveEvidenceId={resolveEvidenceId}
                 onNoteSaved={() => {

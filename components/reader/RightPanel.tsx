@@ -66,14 +66,12 @@ function renderTextWithActiveWord(
 function ExpertBrainCard({
   unit,
   allUnits,
-  activeSpokenWord,
   onAskExpert,
   onJumpToUnit,
   onExplain,
 }: {
   unit: ExpertAnchor;
   allUnits: ExpertAnchor[];
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   onAskExpert?: (q: string) => void;
   onJumpToUnit?: (id: string) => void;
   onExplain?: () => void;
@@ -81,6 +79,7 @@ function ExpertBrainCard({
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [quizAnswer, setQuizAnswer] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
+  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
 
   const isSpeaking = activeSpokenWord?.anchorId === unit.evidenceRefId
     || activeSpokenWord?.anchorId === unit.id;
@@ -845,7 +844,6 @@ export function RightPanel({
 
   // Reading position from the single source of truth — no prop-drilling.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
-  const activeSpokenWord   = useReadingFocusStore(selectActiveSpokenWord);
 
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1726,7 +1724,6 @@ export function RightPanel({
           return <ExpertBrainCard
             unit={activeThoughtUnit}
             allUnits={canonicalLeftPanelUnits}
-            activeSpokenWord={activeSpokenWord}
             onAskExpert={onAskExpert}
             onJumpToUnit={onJumpToUnit}
             onExplain={onOpenExplainStep}
@@ -1841,7 +1838,6 @@ export function RightPanel({
                 retrySynthesis={retrySynthesis}
                 studyModel={studyModel}
                 focusedEvidenceId={focusedEvidenceId}
-                activeSpokenWord={activeSpokenWord}
                 onEvidenceClick={onEvidenceClick}
                 onOpenThoughtUnit={onOpenThoughtUnit}
                 activeThoughtUnit={activeThoughtUnit}
@@ -2218,7 +2214,6 @@ function UltraView({
   retrySynthesis,
   studyModel,
   focusedEvidenceId,
-  activeSpokenWord,
   onEvidenceClick,
   onOpenThoughtUnit,
   activeThoughtUnit,
@@ -2241,8 +2236,6 @@ function UltraView({
   studyModel?: CurrentPageStudyModel | null;
   /** Currently focused anchor ID — highlights the matching study card */
   focusedEvidenceId?: string | null;
-  /** Word-level karaoke sync — marks the active word within the focused card's text */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   /** Called when a study card is clicked — focuses the matching left-panel highlight */
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   /** Called when the user wants to expand a thought-unit card into the Recall Lab v2 box layout */
@@ -2251,6 +2244,7 @@ function UltraView({
   activeThoughtUnit?: ExpertAnchor | null;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
+  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
   const isMathDomain = domain === "math";
