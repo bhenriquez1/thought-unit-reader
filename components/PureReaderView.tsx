@@ -18,7 +18,7 @@ import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
 import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
-import { useReadingFocusStore, selectActiveSpokenWord } from '@/lib/readingFocus/readingFocusStore';
+import { useReadingFocusStore } from '@/lib/readingFocus/readingFocusStore';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -189,7 +189,6 @@ export default function PureReaderView({
   const { zoom } = useZoomStore();
   // Single source of truth for reading position — no prop-drilling needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
-  const activeSpokenWord   = useReadingFocusStore(selectActiveSpokenWord);
   const [isPageChanging, setIsPageChanging] = useState(false);
   // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
   // Navigator) below it — collapsed by default to keep the sidebar compact.
@@ -578,7 +577,6 @@ export default function PureReaderView({
               lineRange: t.lineRange,
             }))}
             focusedId={focusedEvidenceId}
-            activeSpokenWord={activeSpokenWord}
             onJump={handleThoughtUnitJump}
             onExplain={onExplainThoughtUnit}
             onOpenRecall={onOpenThoughtUnitRecall}

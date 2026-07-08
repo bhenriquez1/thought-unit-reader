@@ -12,6 +12,7 @@
 // hook, wired to pages/index.tsx's openExplainStepForThoughtUnit.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
@@ -163,7 +164,6 @@ export default function ThoughtUnitNavigator({
   detectedPresetLabel,
   overridePresetId,
   onPresetChange,
-  activeSpokenWord,
   emptyReason,
   bookId,
   pageNumber,
@@ -183,13 +183,11 @@ export default function ThoughtUnitNavigator({
   detectedPresetLabel?: string;
   overridePresetId?: string | null;
   onPresetChange?: (presetId: string | null) => void;
-  /** Live Speech word position — when its anchorId matches a card's id, that
-   *  card's snippet marks the matching word, Speechify-style. */
-  activeSpokenWord?: { anchorId: string | null; wordIndex: number; word: string } | null;
   emptyReason?: string | null;
   bookId?: string;
   pageNumber?: number;
 }) {
+  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   // Guided teach-loop / PDF-click focus: scroll the active card into view, same
@@ -231,7 +229,17 @@ export default function ThoughtUnitNavigator({
   // Traps/High-Yield Facts), several raw kinds merge into one navigator section.
   // Presets without kindGroups keep today's exact one-section-per-kind behavior.
   // Shared with ThoughtRoadmap (Level 4) so both views agree on sectioning.
-  const grouped = useMemo(() => groupThoughtUnits(entries, presetId), [entries, presetId]);
+  const grouped = useMemo(() => {
+    const groups = groupThoughtUnits(entries, presetId);
+    return groups.map((g) => ({
+      ...g,
+      items: [...g.items].sort((a, b) => {
+        const aLine = parseInt(a.lineRange ?? "999", 10);
+        const bLine = parseInt(b.lineRange ?? "999", 10);
+        return aLine - bLine;
+      }),
+    }));
+  }, [entries, presetId]);
 
   const [progressMap, setProgressMap] = useState<Map<string, Set<ProgressStep>>>(new Map());
 
