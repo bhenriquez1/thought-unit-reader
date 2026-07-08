@@ -1031,6 +1031,7 @@ export default function SmartPDFViewer({
   useEffect(() => {
     if (pageCount !== null && pageCount > 0) {
       console.log(`✅ SmartPDFViewer: Page count available: ${pageCount}`);
+      console.log("[PARENT_WRITE:SmartPDFViewer] onPageCount", pageCount);
       onPageCount?.(pageCount);
     }
   }, [pageCount, onPageCount]);
@@ -1339,7 +1340,10 @@ export default function SmartPDFViewer({
                   // y-coordinates) rather than flattening to a single space-joined
                   // string — see lib/pdf/structuredPageText for why this matters.
                   const text = buildStructuredPageText(textContent?.items ?? []);
-                  if (text.length > 20) onPageTextExtracted(currentPage, text);
+                  if (text.length > 20) {
+                    console.log("[PARENT_WRITE:SmartPDFViewer] onPageTextExtracted page=" + currentPage + " chars=" + text.length);
+                    onPageTextExtracted(currentPage, text);
+                  }
                 }}
               />
 

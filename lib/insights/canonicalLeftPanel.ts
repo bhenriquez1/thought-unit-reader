@@ -1,5 +1,6 @@
 import type { ParagraphKind } from "@/lib/readerContracts";
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
+import { getKindLabel } from "@/lib/insights/domainPresets";
 
 export type CanonicalLeftPanelSource =
   | "canonical_left_panel"
@@ -24,30 +25,12 @@ export interface ExpertAnchor {
   grounded?: boolean;
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  thesis: "Master This",
-  definition: "Master This",
-  mechanism: "Procedure Step",
-  application: "Procedure Step",
-  formula: "Procedure Step",
-  comparison: "Decision Point",
-  trap: "Danger Zone",
-  clinical: "Clinical Pearl",
-  dat_fact: "Key Detail",
-  keyDetail: "Key Detail",
-  keyAnatomy: "Key Detail",
-  memoryAnchor: "Memory Anchor",
-  reference: "Supporting Detail",
-  filler: "Supporting Detail",
-  unknown: "Supporting Detail",
-};
-
-export function importanceLabelForTier(priorityTier: number, category?: string): string {
-  if (category && CATEGORY_LABEL[category]) return CATEGORY_LABEL[category];
-  if (priorityTier >= 5) return "Master This";
-  if (priorityTier >= 4) return "Key Detail";
-  if (priorityTier >= 3) return "Supporting Detail";
-  return "Supporting Detail";
+/** Returns the display label for a thought unit's kind, using the active domain preset's vocabulary. */
+export function importanceLabelForTier(priorityTier: number, category?: string, presetId = "universal"): string {
+  if (category) return getKindLabel(presetId, category as ParagraphKind);
+  if (priorityTier >= 5) return getKindLabel(presetId, "thesis");
+  if (priorityTier >= 4) return getKindLabel(presetId, "keyDetail");
+  return getKindLabel(presetId, "filler");
 }
 
 function titleFromText(text: string, fallback: string): string {
@@ -67,17 +50,18 @@ function lineRangeForText(pageText: string, text: string): string | undefined {
   return start === end ? `${start}` : `${start}–${end}`;
 }
 
-function unitFromVisualAnchor(anchor: VisualAnchor, page: number, pageText: string): ExpertAnchor {
+function unitFromVisualAnchor(anchor: VisualAnchor, page: number, pageText: string, presetId: string): ExpertAnchor {
   const priorityTier = anchor.priorityTier ?? (anchor.kind === "thesis" || anchor.kind === "definition" ? 5 : anchor.kind === "trap" || anchor.kind === "clinical" || anchor.kind === "mechanism" ? 4 : 3);
+  const label = importanceLabelForTier(priorityTier, anchor.kind, presetId);
   return {
     id: anchor.id,
     page,
-    title: titleFromText(anchor.exactText, importanceLabelForTier(priorityTier, anchor.kind)),
+    title: titleFromText(anchor.exactText, label),
     exactText: anchor.exactText,
-    reason: anchor.reason || importanceLabelForTier(priorityTier, anchor.kind),
+    reason: anchor.reason || label,
     category: anchor.kind,
     priorityTier,
-    importanceLabel: importanceLabelForTier(priorityTier, anchor.kind),
+    importanceLabel: label,
     lineRange: lineRangeForText(pageText, anchor.exactText),
     source: "canonical_left_panel",
     evidenceRefId: anchor.id,
@@ -109,7 +93,7 @@ function scoreText(text: string): number {
   return score;
 }
 
-function extractPageTextFallbackUnits(pageText: string, page: number): ExpertAnchor[] {
+function extractPageTextFallbackUnits(pageText: string, page: number, presetId: string): ExpertAnchor[] {
   const chunks = pageText
     .replace(/\s*\|\s*/g, " ")
     .split(/(?<=[.!?])\s+|\n+/)
@@ -125,15 +109,16 @@ function extractPageTextFallbackUnits(pageText: string, page: number): ExpertAnc
     .map((x, i) => {
       const priorityTier = Math.max(3, Math.min(5, x.score));
       const id = `clp-p${page}-text-${i + 1}`;
+      const label = importanceLabelForTier(priorityTier, x.category, presetId);
       return {
         id,
         page,
-        title: titleFromText(x.text, importanceLabelForTier(priorityTier, x.category)),
+        title: titleFromText(x.text, label),
         exactText: x.text,
         reason: "Selected from the page text by local expert-ranking signals.",
         category: x.category,
         priorityTier,
-        importanceLabel: importanceLabelForTier(priorityTier, x.category),
+        importanceLabel: label,
         lineRange: lineRangeForText(pageText, x.text),
         source: "page_text_fallback",
         evidenceRefId: id,
@@ -145,12 +130,13 @@ export function buildCanonicalLeftPanelUnits(args: {
   page: number;
   pageText: string;
   studyModel?: CurrentPageStudyModel | null;
+  presetId?: string;
 }): { units: ExpertAnchor[]; diagnosticReason: string | null; fallbackUsed: boolean } {
-  const { page, pageText, studyModel } = args;
+  const { page, pageText, studyModel, presetId = "universal" } = args;
   const visualAnchors = studyModel?.visualAnchors ?? [];
   if (visualAnchors.length > 0) {
     return {
-      units: visualAnchors.map((anchor) => unitFromVisualAnchor(anchor, page, pageText)),
+      units: visualAnchors.map((anchor) => unitFromVisualAnchor(anchor, page, pageText, presetId)),
       diagnosticReason: null,
       fallbackUsed: false,
     };
@@ -160,7 +146,7 @@ export function buildCanonicalLeftPanelUnits(args: {
     return { units: [], diagnosticReason: "no extractable text", fallbackUsed: true };
   }
 
-  const fallbackUnits = extractPageTextFallbackUnits(pageText, page);
+  const fallbackUnits = extractPageTextFallbackUnits(pageText, page, presetId);
   return {
     units: fallbackUnits,
     diagnosticReason: fallbackUnits.length ? "model returned no anchors; using local page-text expert ranking" : "canonical unit build failed",
