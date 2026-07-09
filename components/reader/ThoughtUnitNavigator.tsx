@@ -12,7 +12,7 @@
 // hook, wired to pages/index.tsx's openExplainStepForThoughtUnit.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import { getKindLabel, getKindGroups, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
@@ -187,7 +187,21 @@ export default function ThoughtUnitNavigator({
   bookId?: string;
   pageNumber?: number;
 }) {
-  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+  // Primitive subscriptions — each selector returns a primitive so Zustand's
+  // Object.is check succeeds when the value is unchanged, preventing this component
+  // from re-rendering on every Zustand tick where the values haven't actually changed.
+  const activeAnchorId  = useReadingFocusStore(s => s.thoughtUnitId);
+  const activeWordIndex = useReadingFocusStore(s => s.wordIndex);
+  const activeWord      = useReadingFocusStore(s => s.word);
+  const activeSentText  = useReadingFocusStore(s => s.sentenceText);
+  // Reconstitute the shape that renderSnippetWithActiveWord and matchesAnchor expect,
+  // but only create a new object when at least one primitive actually changed.
+  const activeSpokenWord = React.useMemo(
+    () => (activeWord || activeSentText)
+      ? { anchorId: activeAnchorId, wordIndex: activeWordIndex, word: activeWord ?? "", sentenceText: activeSentText ?? undefined }
+      : null,
+    [activeAnchorId, activeWordIndex, activeWord, activeSentText],
+  );
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   // Guided teach-loop / PDF-click focus: scroll the active card into view, same
@@ -292,23 +306,23 @@ export default function ThoughtUnitNavigator({
               const tier = getImportanceTier(i);
               return (
                 <div key={g.id} className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 px-1 py-0.5">
-                    <span
-                      className="shrink-0 rounded-full opacity-40"
-                      style={{ width: 7, height: 7, background: colors.color }}
-                    />
-                    <span
-                      className="text-[9.5px] font-bold uppercase tracking-wide truncate opacity-40"
-                      style={{ color: colors.color }}
-                    >
+                  {/* Skeleton uses the same chapter-header style as populated state, dimmed */}
+                  <div
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-md opacity-40"
+                    style={{
+                      background: `linear-gradient(90deg, ${colors.color}22 0%, transparent 100%)`,
+                      borderLeft: `3px solid ${colors.color}`,
+                    }}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-widest truncate" style={{ color: colors.color }}>
                       {g.label}
                     </span>
-                    <span className="text-[8px] opacity-25" style={{ color: colors.color }}>
+                    <span className="text-[9px] shrink-0" style={{ color: colors.color }}>
                       {tierGlyph(tier.stars, representativeKind)}
                     </span>
                   </div>
                   <div
-                    className="mx-1 rounded-md px-2 py-2"
+                    className="mx-1 rounded-md px-2 py-2 opacity-30"
                     style={{ background: colors.bg, border: `1px solid ${colors.color}22` }}
                   >
                     <div className="h-1.5 rounded bg-white/10 w-3/4 mb-1.5" />
@@ -369,33 +383,42 @@ export default function ThoughtUnitNavigator({
         return (
           <React.Fragment key={id}>
           <div className="flex flex-col gap-1">
+            {/* Full-width colored chapter header — replaces old small-dot layout */}
             <button
               type="button"
               onClick={() => toggleGroup(id)}
-              className="flex items-center gap-1.5 px-1 py-0.5 text-left hover:opacity-80 transition-opacity"
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-opacity hover:opacity-90"
+              style={{
+                background: `linear-gradient(90deg, ${meta.color}22 0%, transparent 100%)`,
+                borderLeft: `3px solid ${meta.color}`,
+              }}
             >
               <span
-                className="shrink-0 rounded-full"
-                style={{ width: 7, height: 7, background: meta.color }}
-              />
-              <span className="text-[9.5px] font-bold uppercase tracking-wide text-white/55 truncate">
+                className="text-[10px] font-black uppercase tracking-widest truncate"
+                style={{ color: meta.color }}
+              >
                 {meta.label}
               </span>
               <span
-                className="text-[8px] tracking-tighter shrink-0"
+                className="text-[9px] shrink-0"
                 style={{ color: meta.color }}
                 title={`${tier.label} priority`}
                 data-testid="importance-stars"
               >
                 {tierGlyph(tier.stars, representativeKind)}
               </span>
-              <span className="text-[9px] text-white/30">{items.length}</span>
+              <span
+                className="text-[8.5px] rounded-full px-1.5 py-0.5 font-semibold shrink-0"
+                style={{ background: `${meta.color}25`, color: meta.color }}
+              >
+                {items.length}
+              </span>
               {tier.stars >= 4 && (
-                <span className="ml-1 text-[7.5px] italic text-white/25">
+                <span className="text-[7.5px] italic shrink-0" style={{ color: `${meta.color}99` }}>
                   {TIER_ACTION_LABEL[tier.stars] ?? ""}
                 </span>
               )}
-              <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
+              <span className="ml-auto text-[9px] text-white/35">{isCollapsed ? "▸" : "▾"}</span>
             </button>
             {!isCollapsed && items.map((entry) => {
               const focused = entry.id === focusedId;
