@@ -2197,7 +2197,7 @@ function ReadingMap({ model, domain }: { model: SRIModel; domain?: string }) {
   );
 }
 
-function UltraView({
+function UltraViewBase({
   view,
   selectedBlockIndex,
   onSelectBlock,
@@ -3211,6 +3211,9 @@ function UltraView({
     </div>
   );
 }
+
+// Memoised — prevents parent re-renders from doubling with Zustand subscription re-renders.
+const UltraView = React.memo(UltraViewBase);
 
 // ---------------------------------------------------------------------------
 // Concept Blocks View — universal reader primary view
