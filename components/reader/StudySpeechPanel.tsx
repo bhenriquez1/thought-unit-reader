@@ -633,7 +633,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       pageNumber,
       hasStudyModel: !!studyModel,
       thoughtUnitsLen: thoughtUnits.length,
-      highlightedAnchorTextsLen: highlightedAnchorTexts.length,
+      highlightedAnchorTextsLen: highlightedAnchorTexts?.length ?? 0,
       activePageTextLen: activePageText?.length ?? 0,
     });
     if (mode === "fullPage" || !studyModel) {
