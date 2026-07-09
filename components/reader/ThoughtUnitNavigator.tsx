@@ -14,7 +14,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
 import type { ParagraphKind } from "@/lib/readerContracts";
-import { getKindLabel, groupThoughtUnits } from "@/lib/insights/domainPresets";
+import { getKindLabel, getKindGroups, groupThoughtUnits } from "@/lib/insights/domainPresets";
 import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from "@/lib/insights/importanceTiers";
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import DomainModeSelector from "./DomainModeSelector";
@@ -280,13 +280,54 @@ export default function ThoughtUnitNavigator({
   );
 
   if (entries.length === 0) {
+    const skeletonGroups = getKindGroups(presetId);
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
         {header}
-        <div className="px-2.5 py-3 text-[10.5px] text-white/45 leading-relaxed">
-          No thought units detected on this page yet.
-          {emptyReason ? <span className="mt-1 block text-amber-200/70">Diagnostic: {emptyReason}.</span> : null}
-        </div>
+        {skeletonGroups ? (
+          <div className="flex flex-col gap-1.5">
+            {skeletonGroups.map((g, i) => {
+              const representativeKind = g.kinds[0];
+              const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
+              const tier = getImportanceTier(i);
+              return (
+                <div key={g.id} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 px-1 py-0.5">
+                    <span
+                      className="shrink-0 rounded-full opacity-40"
+                      style={{ width: 7, height: 7, background: colors.color }}
+                    />
+                    <span
+                      className="text-[9.5px] font-bold uppercase tracking-wide truncate opacity-40"
+                      style={{ color: colors.color }}
+                    >
+                      {g.label}
+                    </span>
+                    <span className="text-[8px] opacity-25" style={{ color: colors.color }}>
+                      {tierGlyph(tier.stars, representativeKind)}
+                    </span>
+                  </div>
+                  <div
+                    className="mx-1 rounded-md px-2 py-2"
+                    style={{ background: colors.bg, border: `1px solid ${colors.color}22` }}
+                  >
+                    <div className="h-1.5 rounded bg-white/10 w-3/4 mb-1.5" />
+                    <div className="h-1.5 rounded bg-white/10 w-1/2" />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="px-2 pt-1 text-[9px] text-white/25 italic leading-relaxed">
+              Analyzing page…
+              {emptyReason ? <span className="mt-1 block text-amber-200/40">({emptyReason})</span> : null}
+            </div>
+          </div>
+        ) : (
+          <div className="px-2.5 py-3 text-[10.5px] text-white/45 leading-relaxed">
+            Analyzing page…
+            {emptyReason ? <span className="mt-1 block text-amber-200/70">({emptyReason})</span> : null}
+          </div>
+        )}
       </div>
     );
   }
@@ -479,7 +520,7 @@ export default function ThoughtUnitNavigator({
                           type="button"
                           onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
                           className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Save a note on this thought unit"
+                          title="Save a note on this anchor"
                         >
                           📝 Note
                         </button>
@@ -489,7 +530,7 @@ export default function ThoughtUnitNavigator({
                           type="button"
                           onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
                           className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Open this thought unit in Recall Lab"
+                          title="Open in Recall Lab"
                         >
                           🧠 Recall
                         </button>
@@ -499,7 +540,7 @@ export default function ThoughtUnitNavigator({
                           type="button"
                           onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
                           className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Explain this thought unit"
+                          title="Explain this"
                         >
                           💬 Explain
                         </button>
