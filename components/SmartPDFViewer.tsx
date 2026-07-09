@@ -309,6 +309,103 @@ async function resolveOutline(
 }
 
 
+// ---------------------------------------------------------------------------
+// WordRectOverlay — isolated Zustand subscriber for word-level karaoke box.
+// Moves the 4-30 Hz selectActiveSpokenWord subscription out of SmartPDFViewer
+// so the PDF canvas and overlays don't re-render per word tick.
+// ---------------------------------------------------------------------------
+
+type WordRectState = { top: number; left: number; width: number; height: number } | null;
+
+function WordRectOverlay({
+  viewerRef,
+  highlightTargets,
+  currentPage,
+  overlayRects,
+  pageRenderKey,
+}: {
+  viewerRef: React.RefObject<HTMLDivElement | null>;
+  highlightTargets?: HighlightTarget[];
+  currentPage: number;
+  overlayRects: OverlayRect[];
+  pageRenderKey: number;
+}) {
+  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+  const [wordRect, setWordRect] = useState<WordRectState>(null);
+
+  useEffect(() => {
+    if (!activeSpokenWord) { setWordRect(null); return; }
+    console.log("[PDF_WORD_SYNC_RECEIVED]", {
+      anchorId: activeSpokenWord.anchorId,
+      word: activeSpokenWord.word,
+      wordIndex: activeSpokenWord.wordIndex,
+      hasSentenceText: !!activeSpokenWord.sentenceText,
+    });
+    const container = viewerRef.current;
+    const target = activeSpokenWord.anchorId
+      ? highlightTargets?.find((t) =>
+          t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
+        )
+      : undefined;
+    const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
+    console.log("[THOUGHT_UNIT_PDF_TARGET]", {
+      anchorId: activeSpokenWord.anchorId,
+      targetFound: !!target,
+      hasSentenceText: !!activeSpokenWord.sentenceText,
+      searchTextPreview: searchText ? searchText.slice(0, 60) : null,
+      searchTextSource: activeSpokenWord.sentenceText ? "sentenceText" : target ? "target.text" : "null",
+      highlightTargetCount: highlightTargets?.length ?? 0,
+    });
+    if (!searchText) {
+      console.warn("[PDF_WORD_SYNC_MISS] no search text", { anchorId: activeSpokenWord.anchorId });
+      setWordRect(null); return;
+    }
+    const word = activeSpokenWord;
+    const text = searchText as string;
+    let cancelled = false;
+    let retryTid: ReturnType<typeof setTimeout> | null = null;
+    function runCompute(retryCount: number) {
+      if (cancelled) return;
+      const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
+      if (!textLayer) {
+        if (retryCount < 3) { retryTid = setTimeout(() => runCompute(retryCount + 1), 150); }
+        else { console.warn("[PDF_WORD_SYNC_MISS] text layer not in DOM after retries"); setWordRect(null); }
+        return;
+      }
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const r = computeActiveWordRect(textLayer, text, word.wordIndex);
+        if (!r && retryCount < 2) { retryTid = setTimeout(() => runCompute(retryCount + 1), 200); return; }
+        if (r) {
+          console.log("[PDF_WORD_SYNC_RECT_RENDERED]", { anchorId: word.anchorId, word: word.word, wordIndex: word.wordIndex, rect: r });
+        } else {
+          console.warn("[PDF_WORD_SYNC_MISS] word not found after retries", { anchorId: word.anchorId, word: word.word });
+        }
+        setWordRect(r ?? null);
+      });
+    }
+    runCompute(0);
+    return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
+  }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!wordRect) return null;
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute z-30 transition-all duration-100"
+      style={{
+        top: wordRect.top,
+        left: wordRect.left,
+        width: wordRect.width,
+        height: wordRect.height,
+        borderRadius: "3px",
+        background: "rgba(253,224,71,0.85)",
+        boxShadow: "0 0 6px rgba(253,224,71,0.6)",
+      }}
+    />
+  );
+}
+
 export default function SmartPDFViewer({
   fileUrl,
   docId,
@@ -353,14 +450,7 @@ export default function SmartPDFViewer({
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const [overlayVersion, setOverlayVersion] = useState(0);
-  // Read word-level sync from the single ReadingFocusStore (no prop needed).
-  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
 
-  // Speechify-style live word box — a small rect within the currently-spoken anchor's
-  // highlight, recomputed per word-index change (cheap single-anchor re-measure, not a
-  // full overlayRects rebuild). Null whenever word-level mapping isn't available —
-  // callers fall back to the whole-anchor highlight already rendered via overlayRects.
-  const [activeWordRect, setActiveWordRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   // Increments after every successful page render (including zoom-triggered re-renders).
   // Adding it to the rebuild effect deps ensures overlay rects recompute at the new scale.
   const [pageRenderKey, setPageRenderKey] = useState(0);
@@ -373,7 +463,6 @@ export default function SmartPDFViewer({
   // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
   useEffect(() => {
     setOverlayRects([]);
-    setActiveWordRect(null);
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hard-clear all overlay state when highlightKey changes.
@@ -888,123 +977,6 @@ export default function SmartPDFViewer({
   // immediately on zoom, and they recompute here only after the page re-renders.
   }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Speechify-style live word box — recomputes only the active anchor's word position,
-  // not the full overlayRects rebuild above. Falls back to null (whole-anchor highlight
-  // only) when the anchor isn't currently rendered or word-level mapping fails.
-  useEffect(() => {
-    if (!activeSpokenWord) { setActiveWordRect(null); return; }
-    console.log("[PDF_WORD_SYNC_RECEIVED]", {
-      anchorId: activeSpokenWord.anchorId,
-      word: activeSpokenWord.word,
-      wordIndex: activeSpokenWord.wordIndex,
-      hasSentenceText: !!activeSpokenWord.sentenceText,
-    });
-    const container = viewerRef.current;
-
-    // Compute search text before the text-layer check so it is available in retries.
-    // Prefer the exact sentence text being spoken — wordIndex counts within the sentence,
-    // so using the sentence text gives accurate per-word positions even mid-thought-unit.
-    // Fall back to the anchor's normalizedText for legacy callers without sentenceText.
-    const target = activeSpokenWord.anchorId
-      ? highlightTargets?.find((t) =>
-          t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
-        )
-      : undefined;
-    const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
-    console.log("[THOUGHT_UNIT_PDF_TARGET]", {
-      anchorId: activeSpokenWord.anchorId,
-      targetFound: !!target,
-      hasSentenceText: !!activeSpokenWord.sentenceText,
-      searchTextPreview: searchText ? searchText.slice(0, 60) : null,
-      searchTextSource: activeSpokenWord.sentenceText ? "sentenceText" : target ? "target.text" : "null",
-      highlightTargetCount: highlightTargets?.length ?? 0,
-    });
-    if (!searchText) {
-      console.warn("[PDF_WORD_SYNC_MISS] no search text available", {
-        anchorId: activeSpokenWord.anchorId,
-        word: activeSpokenWord.word,
-        hasSentenceText: !!activeSpokenWord.sentenceText,
-        targetFound: !!target,
-        availableTargetIds: highlightTargets?.slice(0, 5).map(t => t.id) ?? [],
-      });
-      console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
-        step: "THOUGHT_UNIT_PDF_TARGET",
-        reason: "no searchText — anchorId not in highlightTargets and sentenceText is null",
-        anchorId: activeSpokenWord.anchorId,
-      });
-      setActiveWordRect(null); return;
-    }
-    console.log("[PDF_WORD_SYNC_TARGET_MATCH]", {
-      anchorId: activeSpokenWord.anchorId,
-      word: activeSpokenWord.word,
-      sentencePreview: searchText.slice(0, 60),
-      wordIndex: activeSpokenWord.wordIndex,
-    });
-
-    // Capture into non-nullable locals so TypeScript's closure narrowing works.
-    const word = activeSpokenWord;
-    const text = searchText as string; // non-null: we returned above if !searchText
-
-    // Retry loop: text layer may not be in the DOM yet (page still rendering) or
-    // computeActiveWordRect may return null on the first frame while spans are painting.
-    // Retries: up to 3× (150ms apart) for missing text layer; 1× (200ms) for null rect.
-    let cancelled = false;
-    let retryTid: ReturnType<typeof setTimeout> | null = null;
-
-    function runCompute(retryCount: number) {
-      if (cancelled) return;
-      const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-      if (!textLayer) {
-        if (retryCount < 3) {
-          retryTid = setTimeout(() => runCompute(retryCount + 1), 150);
-        } else {
-          console.warn("[PDF_WORD_SYNC_MISS] text layer not in DOM after retries", {
-            anchorId: word.anchorId,
-            word: word.word,
-          });
-          setActiveWordRect(null);
-        }
-        return;
-      }
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const rect = computeActiveWordRect(textLayer, text, word.wordIndex);
-        if (!rect && retryCount < 2) {
-          // Text layer present but spans may still be painting — retry once
-          retryTid = setTimeout(() => runCompute(retryCount + 1), 200);
-          return;
-        }
-        if (rect) {
-          console.log("[PDF_WORD_SYNC_RECT_RENDERED]", {
-            anchorId: word.anchorId,
-            word: word.word,
-            wordIndex: word.wordIndex,
-            rect,
-          });
-        } else {
-          console.warn("[PDF_WORD_SYNC_MISS] word not found in text layer after retries", {
-            anchorId: word.anchorId,
-            word: word.word,
-            sentencePreview: text.slice(0, 80),
-            wordIndex: word.wordIndex,
-          });
-          console.warn("[THOUGHT_UNIT_SYNC_MISS]", {
-            step: "THOUGHT_UNIT_PDF_WORD_RECT",
-            reason: "computeActiveWordRect returned null — sentence not found in text layer or word index out of range",
-            searchTextPreview: text.slice(0, 80),
-            wordIndex: word.wordIndex,
-          });
-        }
-        setActiveWordRect(rect ?? null);
-      });
-    }
-
-    runCompute(0);
-    return () => {
-      cancelled = true;
-      if (retryTid) clearTimeout(retryTid);
-    };
-  }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -1393,22 +1365,14 @@ export default function SmartPDFViewer({
                 </React.Fragment>
               )}
 
-              {/* Speechify-style live word box — solid, on top of the soft anchor highlight */}
-              {activeWordRect && (
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute z-30 transition-all duration-100"
-                  style={{
-                    top: activeWordRect.top,
-                    left: activeWordRect.left,
-                    width: activeWordRect.width,
-                    height: activeWordRect.height,
-                    borderRadius: "3px",
-                    background: "rgba(253,224,71,0.85)",
-                    boxShadow: "0 0 6px rgba(253,224,71,0.6)",
-                  }}
-                />
-              )}
+              {/* Speechify-style live word box — isolated leaf subscriber keeps PDF canvas cold */}
+              <WordRectOverlay
+                viewerRef={viewerRef}
+                highlightTargets={highlightTargets}
+                currentPage={currentPage}
+                overlayRects={overlayRects}
+                pageRenderKey={pageRenderKey}
+              />
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}
               {prefetchPage !== null && (
