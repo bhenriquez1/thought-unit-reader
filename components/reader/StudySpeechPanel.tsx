@@ -280,6 +280,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   spRenderCountRef.current++;
   console.log("[SPEECH_RENDER]", spRenderCountRef.current);
 
+  // Rapid-fire detection for onPlayStateChange — fires [PARENT_WRITE:RAPID] if called
+  // more than once within a single 16ms frame (sign of a state-update loop).
+  const lastPlayStateWriteRef = useRef(0);
+
   const [open, setOpen]       = useState(primary);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -679,6 +683,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
+    const _nowStop = Date.now();
+    if (_nowStop - lastPlayStateWriteRef.current < 16) {
+      console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowStop - lastPlayStateWriteRef.current });
+    }
+    lastPlayStateWriteRef.current = _nowStop;
     console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (stop)");
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
@@ -879,6 +888,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   async function playFullPageSequential(sentences: string[], fromIdx: number, session: number) {
     setPlayState("loading");
+    const _nowPlay = Date.now();
+    if (_nowPlay - lastPlayStateWriteRef.current < 16) {
+      console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowPlay - lastPlayStateWriteRef.current });
+    }
+    lastPlayStateWriteRef.current = _nowPlay;
     console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange true (fullPage start)");
     onPlayStateChange?.(true);
 

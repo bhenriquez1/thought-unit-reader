@@ -8,7 +8,7 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
@@ -176,6 +176,11 @@ export default function PureReaderView({
   onEffectivePresetChange,
   bookTitle,
 }: PureReaderViewProps) {
+  // Render counter — diagnostic for React #185 investigation.
+  const prRenderCountRef = useRef(0);
+  prRenderCountRef.current++;
+  console.log("[LEFTPANEL_RENDER]", prRenderCountRef.current);
+
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
     page: currentPage,
@@ -395,6 +400,37 @@ export default function PureReaderView({
     : effectiveHighlightTargets,
   [allHighlightAnchors, effectiveHighlightTargets]);
 
+  // Memoized entry arrays for ThoughtUnitNavigator and ThoughtRoadmap so they don't
+  // receive a new array reference on every PureReaderView render (even when allHighlightTargets
+  // is stable, the inline .map() would always produce a new array).
+  const navigatorEntries = useMemo(
+    () => allHighlightTargets.map((t) => ({
+      id: t.evidenceRefId,
+      evidenceRefId: t.evidenceRefId,
+      canonicalUnitId: t.id,
+      sourceAnchorId: t.evidenceRefId,
+      text: t.text,
+      kind: t.kind,
+      page: t.page,
+      confidence: t.score,
+      priorityTier: t.priorityTier,
+      reason: t.reason,
+      lineRange: t.lineRange,
+    })),
+    [allHighlightTargets]
+  );
+
+  const roadmapEntries = useMemo(
+    () => allHighlightTargets.map((t) => ({
+      id: t.evidenceRefId,
+      text: t.text,
+      kind: t.kind,
+      page: t.page,
+      confidence: t.score,
+    })),
+    [allHighlightTargets]
+  );
+
   // Stable callback — uses getState() so it never needs deps and won't cause
   // ThoughtUnitNavigator / ThoughtRoadmap / SmartPDFViewer to re-render on every word tick.
   const handleThoughtUnitJump = useCallback((id: string) => {
@@ -563,19 +599,7 @@ export default function PureReaderView({
 
           {/* Level 2/4 — Thought Unit Navigator: click a unit to jump + focus + speak. MODE picker lives in its header. */}
           <ThoughtUnitNavigator
-            entries={allHighlightTargets.map((t) => ({
-              id: t.evidenceRefId,
-              evidenceRefId: t.evidenceRefId,
-              canonicalUnitId: t.id,
-              sourceAnchorId: t.evidenceRefId,
-              text: t.text,
-              kind: t.kind,
-              page: t.page,
-              confidence: t.score,
-              priorityTier: t.priorityTier,
-              reason: t.reason,
-              lineRange: t.lineRange,
-            }))}
+            entries={navigatorEntries}
             focusedId={focusedEvidenceId}
             onJump={handleThoughtUnitJump}
             onExplain={onExplainThoughtUnit}
@@ -607,13 +631,7 @@ export default function PureReaderView({
 
           {/* Level 4 — Page Roadmap: one node per Level 3 group, in expert order. Anchored at the bottom of the panel. */}
           <ThoughtRoadmap
-            entries={allHighlightTargets.map((t) => ({
-              id: t.evidenceRefId,
-              text: t.text,
-              kind: t.kind,
-              page: t.page,
-              confidence: t.score,
-            }))}
+            entries={roadmapEntries}
             focusedId={focusedEvidenceId}
             onJump={handleThoughtUnitJump}
             presetId={effectivePresetId}
