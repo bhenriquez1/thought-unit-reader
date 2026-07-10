@@ -640,19 +640,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       highlightedAnchorTextsLen: highlightedAnchorTexts?.length ?? 0,
       activePageTextLen: activePageText?.length ?? 0,
     });
-    if (mode === "fullPage" || !studyModel) {
-      // fullPage reads sentences directly, no pre-built segments needed.
-      // Other modes with no studyModel yet (RightPanel/OpenAI synthesis still
-      // running) also have nothing to build from — play() falls back to page text.
+    if (mode === "fullPage") {
+      // fullPage reads sentences directly from page text — no pre-built segments.
       setSegments([]);
       return;
     }
-    const next = thoughtUnits.length
-      ? buildSpeechTimeline({ thoughtUnits, mode, activePageText })
-      : buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
+    // Canonical units are the single source of truth. If not yet available
+    // (synthesis still running), segments stay empty and play() shows loading state.
+    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits]);
+  }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -1143,7 +1141,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId, activePageText, highlightedAnchorTexts) : []));
+      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId });
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1164,7 +1162,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts) : []));
+    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId });
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;
