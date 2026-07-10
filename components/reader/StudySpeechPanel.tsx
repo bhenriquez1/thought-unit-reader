@@ -1537,11 +1537,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             </p>
           )}
 
-          {segments.length === 0 && mode !== "fullPage" && activePageText.length < 20 && (
-            <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>No content available yet — synthesis in progress.</p>
+          {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length === 0 && (
+            <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>Preparing expert reading map…</p>
           )}
-          {segments.length === 0 && mode !== "fullPage" && activePageText.length >= 20 && (
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Reading active page text ({activePageText.length} chars).</p>
+          {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length > 0 && (
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Building speech timeline…</p>
           )}
         </div>
       )}
