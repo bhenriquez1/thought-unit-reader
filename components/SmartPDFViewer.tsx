@@ -140,10 +140,32 @@ function computeActiveWordRect(
   if (baseText.length < 4) return null;
   let startIdx = concatText.indexOf(baseText);
   if (startIdx === -1) {
-    // Fallback: pin by the anchor's first few words only — handles cases where
-    // the full anchor text runs slightly past what matched on this render pass.
+    // Fallback 1: first 6 words — handles cases where the full anchor text
+    // runs slightly past what matched on this render pass.
     const firstWords = baseText.split(" ").filter(Boolean).slice(0, 6).join(" ");
     startIdx = firstWords.length >= 8 ? concatText.indexOf(firstWords) : -1;
+  }
+  if (startIdx === -1) {
+    // Fallback 2: drop-cap demerge — some PDFs render the initial capital as a
+    // separate span, so buildStructuredPageText produces "athe word" (merged)
+    // while spanNorm.join(" ") produces "a the word" (space-separated). Strip
+    // the merged prefix by inserting a space after the first char when it looks
+    // like a single-letter prefix fused onto the next word.
+    const demerged = baseText.replace(/^([a-z])([a-z]{3,})/, "$1 $2");
+    if (demerged !== baseText) startIdx = concatText.indexOf(demerged);
+  }
+  if (startIdx === -1) {
+    // Fallback 3: skip first token — finds sentence even when the drop cap
+    // was a separate word that doesn't appear in baseText at all.
+    const innerWords = baseText.split(" ").filter(Boolean).slice(1, 5).join(" ");
+    if (innerWords.length >= 10) {
+      const innerIdx = concatText.indexOf(innerWords);
+      if (innerIdx !== -1) {
+        // Walk back to the previous word boundary to approximate sentence start.
+        const before = concatText.lastIndexOf(" ", innerIdx - 2);
+        startIdx = before >= 0 ? before + 1 : innerIdx;
+      }
+    }
   }
   if (startIdx === -1) {
     console.warn("[PDF_WORD_SYNC_MISS] sentence not found in PDF text layer", {

@@ -60,6 +60,16 @@ export type VisualAnchor = {
   priorityTier?: number;
   /** Domain-specific extraction category (e.g. "mechanism", "clinical pearl"). */
   domainCategory?: string;
+  /** Semantic relevance to the page thesis (0–1). Used as a bounded tie-breaker in anchor sorting. */
+  thesisRelevance?: number;
+  /** Misconception risk score (0–1) — 1.0 for confusionTrap, 0.5 for datFact. */
+  misconceptionRisk?: number;
+  /** Procedural/mechanical importance (0–1) — 1.0 for mechanism, 0.7 for keyDetail. */
+  proceduralImportance?: number;
+  /** Conceptual connection strength to the rest of the page (0–1). */
+  connectionStrength?: number;
+  /** Combined speech priority — lower values surface earlier in all 6 speech modes. */
+  speechPriority?: number;
 };
 
 // Role priority — determines render order and budget arbitration.
@@ -181,6 +191,9 @@ export type CurrentPageStudyModel = {
   noteCards: NoteCard[];
   /** Free-form topic tags for this page, when the AI synthesis resolved them. */
   tags?: string[];
+  /** Pre-resolved canonical anchor IDs for each Study Note field.
+   * Computed at model-build time — do not rediscover via sourceField matching at runtime. */
+  studyNoteAnchorIds?: Record<string, string | null>;
 };
 
 type AnchorCandidate = {
@@ -302,6 +315,103 @@ function buildContractAnchorSeeds(
   return seeds;
 }
 
+/** Word-overlap relevance between anchor text and the page thesis (0–1). */
+function computeThesisRelevance(text: string, thesis: string): number {
+  if (!thesis || thesis.length < 5) return 0;
+  const thesisWords = new Set(thesis.toLowerCase().split(/\W+/).filter(w => w.length > 3));
+  if (!thesisWords.size) return 0;
+  const anchorWords = text.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+  if (!anchorWords.length) return 0;
+  const overlap = anchorWords.filter(w => thesisWords.has(w)).length;
+  return Math.min(1, overlap / Math.max(thesisWords.size, anchorWords.length));
+}
+
+function computeMisconceptionRisk(role: VisualAnchorRole): number {
+  return role === "confusionTrap" ? 1.0 : role === "datFact" ? 0.5 : 0;
+}
+
+function computeProceduralImportance(role: VisualAnchorRole): number {
+  return role === "mechanism" ? 1.0 : role === "keyDetail" ? 0.7 : role === "keyAnatomy" ? 0.5 : 0;
+}
+
+function computeConnectionStrength(role: VisualAnchorRole): number {
+  const strengths: Partial<Record<VisualAnchorRole, number>> = {
+    coreIdea: 1.0, mechanism: 0.9, confusionTrap: 0.8, definition: 0.7, datFact: 0.6,
+  };
+  return strengths[role] ?? 0.4;
+}
+
+/**
+ * Pre-resolve the canonical anchor ID for each Study Note field at model-build time.
+ *
+ * Rules:
+ * - Direct sourceField match: trusted by construction (AI sourced the same field). Return immediately.
+ * - Role-based fallback: only linked when there is ≥12% word overlap between the note text
+ *   and the candidate anchor text. Role equality alone is not enough — a confusionTrap anchor
+ *   about a different topic must not be falsely grounded to a commonConfusion study note.
+ * - Returns null when no candidate passes the similarity threshold, so the Study Note card
+ *   renders as unlinked rather than pointing to the wrong PDF passage.
+ */
+function resolveStudyNoteAnchorId(
+  field: string,
+  visualAnchors: VisualAnchor[],
+  noteText: string | null,
+): string | null {
+  if (!visualAnchors.length) return null;
+  type SearchRule = { byField?: string; byRole?: VisualAnchorRole };
+  const FIELD_SEARCHES: Record<string, SearchRule[]> = {
+    whyThisMatters:    [{ byField: "whyThisMatters" }, { byRole: "exampleEvidence" }, { byRole: "coreIdea" }],
+    keyMechanism:      [{ byField: "keyMechanism" }, { byRole: "mechanism" }, { byRole: "definition" }],
+    commonConfusion:   [{ byField: "commonConfusion" }, { byRole: "confusionTrap" }],
+    quickMemory:       [{ byField: "quickMemory" }, { byRole: "memoryHook" }, { byRole: "datFact" }],
+    clinicalPearl:     [{ byField: "clinicalPearl" }, { byRole: "clinicalPearl" }],
+    reasoningFlow:     [{ byRole: "mechanism" }, { byRole: "coreIdea" }],
+    examSignal:        [{ byRole: "datFact" }, { byRole: "confusionTrap" }],
+    clinicalReasoning: [{ byRole: "clinicalPearl" }, { byRole: "mechanism" }],
+    commonMistake:     [{ byRole: "confusionTrap" }, { byField: "commonConfusion" }],
+    examStrategy:      [{ byRole: "datFact" }, { byRole: "coreIdea" }],
+    connectionMap:     [{ byRole: "coreIdea" }, { byRole: "mechanism" }],
+  };
+  const searches = FIELD_SEARCHES[field] ?? [{ byRole: "coreIdea" }];
+
+  // Stop words stripped before overlap calculation — generic connectors inflate similarity
+  // scores and can cause semantically different notes to falsely match.
+  const STOP_WORDS = new Set([
+    "the", "and", "that", "this", "with", "from", "have", "been", "are", "was",
+    "its", "for", "not", "but", "they", "which", "when", "than", "more", "also",
+    "into", "such", "each", "after", "then", "most", "some", "what", "will",
+    "can", "may", "often", "these", "those", "their", "about", "there", "both",
+  ]);
+  const meaningful = (word: string) => word.length > 3 && !STOP_WORDS.has(word);
+
+  const noteWords = noteText
+    ? new Set(noteText.toLowerCase().split(/\W+/).filter(meaningful))
+    : new Set<string>();
+
+  const hasSimilarity = (anchor: VisualAnchor): boolean => {
+    if (noteWords.size === 0) return false;
+    const anchorWords = anchor.exactText.toLowerCase().split(/\W+/).filter(meaningful);
+    if (!anchorWords.length) return false;
+    const overlapWords = anchorWords.filter(w => noteWords.has(w));
+    // Require ≥2 meaningful shared terms AND ≥15% overlap ratio.
+    // A single generic shared word is insufficient.
+    if (overlapWords.length < 2) return false;
+    return overlapWords.length / Math.max(noteWords.size, anchorWords.length) >= 0.15;
+  };
+
+  for (const rule of searches) {
+    const found = rule.byField
+      ? visualAnchors.find(a => a.sourceField === rule.byField)
+      : visualAnchors.find(a => a.role === rule.byRole);
+    if (!found) continue;
+    // Direct sourceField match: trusted by construction.
+    if (rule.byField) return found.id;
+    // Role-based fallback: require semantic overlap to avoid false grounding.
+    if (hasSimilarity(found)) return found.id;
+  }
+  return null;
+}
+
 export function buildStudyModel(
   view: {
     title?: string;
@@ -355,27 +465,92 @@ export function buildStudyModel(
   });
 
   const fieldCounters = new Map<string, number>();
-  const visualAnchors: VisualAnchor[] = dedupedSeeds
-    .map((s) => ({
-      id:          "" as string, // assigned after sort
-      sourceField: s.sourceField,
-      exactText:   s.text,
-      role:        s.role,
-      kind:        VISUAL_ROLE_TO_KIND[s.role],
-      reason:      s.reason,
-      priority:    rolePriority(s.role, presetId),
-      spanStart:   s.spanStart ?? undefined,
-      spanEnd:     s.spanEnd   ?? undefined,
-      priorityTier: s.priorityTier ?? undefined,
-      domainCategory: s.domainCategory ?? undefined,
-    }))
-    .sort((a, b) => a.priority - b.priority)
+
+  // Compute per-seed metadata before sorting so thesis relevance can act as a
+  // bounded tie-breaker (Item B). The 0.5 cap ensures it never overrides role-level
+  // differences (role priorities differ by ≥1), so domain-critical roles — confusionTrap,
+  // mechanism, datFact, keyDetail — always maintain their relative precedence.
+  const seededWithMeta = dedupedSeeds.map((s) => {
+    const thesisRelevance      = computeThesisRelevance(s.text, cleanThesis);
+    const basePriority         = rolePriority(s.role, presetId);
+    const adjustedPriority     = basePriority - thesisRelevance * 0.5;
+    return {
+      seed: s,
+      thesisRelevance,
+      basePriority,
+      adjustedPriority,
+      misconceptionRisk:    computeMisconceptionRisk(s.role),
+      proceduralImportance: computeProceduralImportance(s.role),
+      connectionStrength:   computeConnectionStrength(s.role),
+    };
+  });
+
+  const visualAnchors: VisualAnchor[] = seededWithMeta
+    .sort((a, b) => a.adjustedPriority - b.adjustedPriority)
     .slice(0, 6)
-    .map((anchor) => {
-      const n = (fieldCounters.get(anchor.sourceField) ?? 0) + 1;
-      fieldCounters.set(anchor.sourceField, n);
-      return { ...anchor, id: `va-p${page}-${anchor.sourceField}-${n}` };
+    .map(({ seed: s, thesisRelevance, basePriority, adjustedPriority, misconceptionRisk, proceduralImportance, connectionStrength }) => {
+      const n = (fieldCounters.get(s.sourceField) ?? 0) + 1;
+      fieldCounters.set(s.sourceField, n);
+      return {
+        id:          `va-p${page}-${s.sourceField}-${n}`,
+        sourceField: s.sourceField,
+        exactText:   s.text,
+        role:        s.role,
+        kind:        VISUAL_ROLE_TO_KIND[s.role],
+        reason:      s.reason,
+        priority:    basePriority,
+        spanStart:   s.spanStart ?? undefined,
+        spanEnd:     s.spanEnd   ?? undefined,
+        priorityTier:         s.priorityTier ?? undefined,
+        domainCategory:       s.domainCategory ?? undefined,
+        thesisRelevance,
+        misconceptionRisk,
+        proceduralImportance,
+        connectionStrength,
+        speechPriority: adjustedPriority,
+      };
     });
+
+  // Item A — pre-resolve canonical anchor IDs for each Study Note field so RightPanel
+  // never needs to rediscover them via sourceField matching at runtime.
+  // noteText is passed so role-based fallbacks require semantic similarity (≥12% word overlap),
+  // preventing false grounding when role matches but content diverges.
+  const STUDY_NOTE_FIELD_TEXTS: Array<[string, string | null]> = [
+    ["whyThisMatters",    (synth.whyItMatters      as string | null) ?? null],
+    ["keyMechanism",      (synth.keyMechanism      as string | null) ?? null],
+    ["commonConfusion",   (synth.commonConfusion   as string | null) ?? null],
+    ["quickMemory",       (synth.memoryAnchor      as string | null) ?? null],
+    ["clinicalPearl",     (synth.clinicalPearl     as string | null) ?? null],
+    ["reasoningFlow",     (synth.reasoningFlow     as string | null) ?? null],
+    ["examSignal",        (synth.examSignal        as string | null) ?? null],
+    ["clinicalReasoning", (synth.clinicalReasoning as string | null) ?? null],
+    ["commonMistake",     (synth.commonMistake     as string | null) ?? null],
+    ["examStrategy",      (synth.examStrategy      as string | null) ?? null],
+    ["connectionMap",     (synth.connectionMap     as string | null) ?? null],
+  ];
+  const studyNoteAnchorIds: Record<string, string | null> = {};
+  for (const [field, noteText] of STUDY_NOTE_FIELD_TEXTS) {
+    studyNoteAnchorIds[field] = resolveStudyNoteAnchorId(field, visualAnchors, noteText);
+  }
+
+  // One-to-one integrity log — verifiable at runtime from the browser console.
+  const noteLinks = Object.entries(studyNoteAnchorIds).filter(([, id]) => id !== null);
+  console.log("[CANONICAL_SYNC_TABLE]", {
+    page,
+    anchors: visualAnchors.map(a => ({
+      id:                  a.id,
+      role:                a.role,
+      thesisRelevance:     a.thesisRelevance !== undefined ? +a.thesisRelevance.toFixed(2) : undefined,
+      misconceptionRisk:   a.misconceptionRisk,
+      proceduralImportance: a.proceduralImportance,
+      connectionStrength:  a.connectionStrength,
+      speechPriority:      a.speechPriority !== undefined ? +a.speechPriority.toFixed(2) : undefined,
+      linkedNoteFields:    noteLinks.filter(([, id]) => id === a.id).map(([f]) => f),
+    })),
+    unlinkedNotes: STUDY_NOTE_FIELD_TEXTS
+      .filter(([f, text]) => text !== null && studyNoteAnchorIds[f] === null)
+      .map(([f]) => f),
+  });
 
   const pageType = (synth.pageType as string | null) ?? undefined;
 
@@ -408,6 +583,7 @@ export function buildStudyModel(
     bookId,
     pageType,
     pageThesis: cleanThesis,
+    studyNoteAnchorIds,
     studyNotes: {
       whyThisMatters:  (synth.whyItMatters   as string | null) ?? null,
       keyMechanism:    (synth.keyMechanism   as string | null) ?? null,

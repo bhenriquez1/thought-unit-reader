@@ -50,6 +50,13 @@ export interface SpeechSegment {
   /** Guided mode only: stop and wait for the reader to click Continue (or Explain)
    *  instead of auto-advancing after pauseAfterMs — the teach-loop checkpoints. */
   requiresConfirm?: boolean;
+  /**
+   * Number of spoken-text prefix words that are NOT present in rawText / the PDF.
+   * When > 0, the TTS says a narration prefix (e.g. "Most important on this page: ")
+   * before the anchor text. The PDF word-rect index must subtract this offset so the
+   * yellow word box tracks the anchor text, not the narration prefix.
+   */
+  sourceTextWordOffset?: number;
 }
 
 export function buildSpeechTimeline({
@@ -65,19 +72,55 @@ export function buildSpeechTimeline({
 }): SpeechSegment[] {
   if (mode === "fullPage") return [];
   const units = thoughtUnits.slice();
+
+  // byPageOrder: document reading order (text position in PDF).
+  // Used for "full" mode and within guided-mode stages — preserves the author's narrative flow.
+  const haystack = activePageText.toLowerCase();
+  const pageOffset = (u: ExpertAnchor): number => {
+    const idx = haystack.indexOf(u.exactText.toLowerCase().slice(0, 60));
+    return idx < 0 ? Number.POSITIVE_INFINITY : idx;
+  };
   const byPageOrder = (items: ExpertAnchor[]) =>
+    items.slice().sort((a, b) => pageOffset(a) - pageOffset(b));
+
+  // toSortScore: unified priority score (lower = higher value) for speech ordering.
+  // speechPriority (when set) is the canonical role-priority adjusted for thesis relevance
+  // (scale ≈ 0.5–6, lower = more important).  When it's null (fallback/non-AI anchors),
+  // convert priorityTier (1–5, 5 = Master This) to the same scale so the direction matches:
+  //   tier 5 → score 1 (highest priority), tier 1 → score 5 (lowest priority).
+  const toSortScore = (u: ExpertAnchor): number =>
+    u.speechPriority != null ? u.speechPriority : 6 - (u.priorityTier ?? 3);
+
+  // bySpeechPriority: priority-first (lower score = first).
+  // Used for focus (only tier-5 anchors need no tiebreaker) and as a named utility.
+  const bySpeechPriority = (items: ExpertAnchor[]) =>
+    items.slice().sort((a, b) => toSortScore(a) - toSortScore(b));
+
+  // byPriorityThenPageOrder: priority-tier first; within the same tier, reading order.
+  // Used for Study mode — gives "priority-aware but source-stable" sequence:
+  // you hear tier-5 anchors (in page order), then tier-4 (in page order), etc.
+  const byPriorityThenPageOrder = (items: ExpertAnchor[]) =>
     items.slice().sort((a, b) => {
-      const ai = activePageText.toLowerCase().indexOf(a.exactText.toLowerCase().slice(0, 60));
-      const bi = activePageText.toLowerCase().indexOf(b.exactText.toLowerCase().slice(0, 60));
-      return (ai < 0 ? Number.POSITIVE_INFINITY : ai) - (bi < 0 ? Number.POSITIVE_INFINITY : bi);
+      const diff = toSortScore(a) - toSortScore(b);
+      if (Math.abs(diff) > 0.05) return diff;
+      return pageOffset(a) - pageOffset(b);
     });
+
   const essential = (u: ExpertAnchor) => u.priorityTier >= 4 || u.category === "definition" || u.category === "application";
   const selected = selectedUnitId ? units.find((u) => u.id === selectedUnitId || u.evidenceRefId === selectedUnitId) : null;
+
+  // Ordering per mode — each is explicit, not inherited from input array order:
+  //   focus      → priority-first: highest-value canonical anchors (tier ≥5) lead
+  //   study      → priority-tier first, source-stable within tier: logical learning order
+  //   highlights → arrival/painted order: matches the visual left-panel layout
+  //   full       → exact page text order: preserves author's document reading order
+  //   guided     → page order pre-sort; stages (Master→Procedure→Pearl→Trap) provide
+  //                pedagogical priority; within each stage, source order is more coherent
   const chosen =
-    mode === "focus" ? units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This") :
-    mode === "study" ? units.filter(essential) :
+    mode === "focus"      ? bySpeechPriority(units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This")) :
+    mode === "study"      ? byPriorityThenPageOrder(units.filter(essential)) :
     mode === "highlights" ? units.filter((u) => u.grounded !== false) :
-    mode === "guided" ? units :
+    mode === "guided"     ? byPageOrder(units) :
     byPageOrder(units);
 
   const ordered = selected && mode !== "full"
@@ -86,17 +129,25 @@ export function buildSpeechTimeline({
 
   const segments: SpeechSegment[] = [];
   const pushUnit = (unit: ExpertAnchor, label = unit.importanceLabel, prefix = "", overrideText?: string, role: SpeechSegmentRole = "visualAnchor") => {
-    const raw = (overrideText ?? `${prefix}${unit.exactText}`).trim();
-    if (raw.length < 8) return;
+    // sourceText is the verbatim anchor text — must match the PDF text layer for word sync.
+    // spokenText prepends the guided-mode narration prefix for TTS only.
+    const sourceText = (overrideText ?? unit.exactText).trim();
+    const spokenText = prefix ? `${prefix}${sourceText}`.trim() : sourceText;
+    if (sourceText.length < 8) return;
+    // Count how many words the spoken prefix adds so the PDF word-rect index can
+    // subtract them — the PDF doesn't contain narration phrases like
+    // "Most important on this page:".
+    const prefixWordCount = prefix ? prefix.trim().split(/\s+/).filter(Boolean).length : 0;
     segments.push({
       id: role === "checkpoint" ? `${unit.id}-${label.toLowerCase().replace(/\W+/g, "-")}` : unit.id,
       role,
       label,
-      rawText: raw,
-      text: formulaToSpeech(raw),
+      rawText: sourceText,                // PDF text-layer search: exact anchor text, no prefix
+      text: formulaToSpeech(spokenText),  // TTS: includes narration prefix when present
       rateModifier: unit.priorityTier >= 5 ? 0.88 : unit.priorityTier >= 4 ? 0.92 : 0.98,
       evidenceRefId: unit.evidenceRefId,
       tier: { key: unit.priorityTier >= 5 ? "critical" : unit.priorityTier >= 4 ? "important" : "medium", stars: Math.min(5, Math.max(1, unit.priorityTier)), label: unit.importanceLabel },
+      sourceTextWordOffset: prefixWordCount,
     });
   };
 
@@ -152,6 +203,23 @@ export function buildSpeechTimeline({
     fallbackUsed: ordered.some((u) => u.source !== "canonical_left_panel"),
     itemCount: segments.length,
   });
+
+  // Integrity log: which canonical IDs appear in this mode's speech segments.
+  // Compare against [CANONICAL_INTEGRITY] in pages/index.tsx to verify 1:1 coverage.
+  const speechAnchorIds = [...new Set(segments.map(s => s.evidenceRefId).filter(Boolean))];
+  console.log("[SPEECH_INTEGRITY]", {
+    mode,
+    segmentCount:          segments.length,
+    uniqueCanonicalIds:    speechAnchorIds.length,
+    canonicalIds:          speechAnchorIds,
+    ordering:              mode === "full"       ? "page-text-order"
+                         : mode === "highlights" ? "painted-arrival-order"
+                         : mode === "study"      ? "priority-tier-first-then-page-order"
+                         : mode === "guided"     ? "stage-sequence(master→procedure→pearl→trap)_within-stage-page-order"
+                         : mode === "focus"      ? "speechPriority-order"
+                         : "speechPriority-order",
+  });
+
   return segments;
 }
 

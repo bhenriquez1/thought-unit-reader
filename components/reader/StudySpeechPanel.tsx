@@ -313,8 +313,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const displayWordCountRef   = useRef(0);
   // Which LeftPanel/PDF anchor the currently-playing segment maps to — null for
   // segments with no evidenceRefId (e.g. Full Page mode's raw sentences).
-  const activeAnchorIdRef     = useRef<string | null>(null);
-  const activeSentenceTextRef = useRef<string | null>(null);
+  const activeAnchorIdRef       = useRef<string | null>(null);
+  const activeSentenceTextRef   = useRef<string | null>(null);
+  // Number of spoken-text prefix words NOT present in rawText/PDF (guided narration phrases).
+  // Subtracted from the TTS word index before passing to the PDF word-rect overlay.
+  const sourceTextWordOffsetRef = useRef(0);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -323,24 +326,31 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // local Eye Guide box) can track the live spoken word against its source anchor.
   // rawText is the pre-TTS sentence (matches the PDF text layer); spokenText may be
   // TTS-processed (acronyms expanded, symbols replaced) and won't match PDF spans.
-  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null, rawText?: string) {
+  // wordOffset: how many prefix words in the TTS text are absent from rawText/PDF.
+  // Non-zero only in Guided mode segments that have narration prefixes. The PDF
+  // word-rect index must subtract this so the yellow box tracks the anchor text,
+  // not the narration prefix.
+  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null, rawText?: string, wordOffset = 0) {
     const displayWords = tokenizeWords(displayText);
     const spokenWords  = tokenizeWords(spokenText);
     setKaraokeWords(displayWords);
     setActiveWordIdx(0);
-    spokenWordsRef.current       = spokenWords;
-    cumulativeWeightsRef.current = estimateWordWeights(spokenWords);
-    displayWordsRef.current      = displayWords;
-    displayWordCountRef.current  = displayWords.length;
-    activeAnchorIdRef.current    = anchorId;
-    activeSentenceTextRef.current = rawText ?? spokenText;
+    spokenWordsRef.current          = spokenWords;
+    cumulativeWeightsRef.current    = estimateWordWeights(spokenWords);
+    displayWordsRef.current         = displayWords;
+    displayWordCountRef.current     = displayWords.length;
+    activeAnchorIdRef.current       = anchorId;
+    activeSentenceTextRef.current   = rawText ?? spokenText;
+    sourceTextWordOffsetRef.current = wordOffset;
     useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
-    setActiveWordIdx(scaled);
-    useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, scaled, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
+    setActiveWordIdx(scaled); // Eye Guide always uses the full scaled index (includes any prefix words)
+    // PDF word-rect index skips prefix words that aren't present in the source text.
+    const pdfWordIdx = Math.max(0, scaled - sourceTextWordOffsetRef.current);
+    useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
@@ -411,6 +421,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Guards against a second play() firing before the first has finished its
   // synchronous claim/dispatch (e.g. a fast double-click on ▶ Play).
   const isStartingRef = useRef(false);
+
+  // Pending play intent for fullPage mode: set when Play is pressed before page text
+  // has been extracted. Cleared and auto-played once fpSentences populates.
+  const pendingFullPagePlayRef = useRef<number | null>(null);
+  // Always-current reference to play() — lets effects call it without stale closures.
+  const playRef = useRef<(fromIdx?: number) => void>(() => {});
 
   // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
   // segment's audio start fetching while the current segment is still playing.
@@ -566,6 +582,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // Set immediately with quick-cleaned result so playback can start
       setFpSentences(quickSents);
       console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
+
+      // Auto-resume if Play was pressed before this page's text was extracted.
+      if (pendingFullPagePlayRef.current !== null && quickSents.length > 0) {
+        const idx = pendingFullPagePlayRef.current;
+        pendingFullPagePlayRef.current = null;
+        setErrorMsg(null);
+        // Use setTimeout so setFpSentences commits before play() reads fpSentences state.
+        // playRef always holds the current render's play closure so activePageText is fresh.
+        setTimeout(() => playRef.current(idx), 16);
+      }
 
       // ── Step 2: background OCR repair if corruption is detected ──────────
       // Score = ratio of suspiciously short all-caps tokens (not common words)
@@ -1027,7 +1053,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText);
+      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1103,7 +1129,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // filtering); fall back to the same canonical quick-splitter (not a
       // degraded inline copy) if the mount-time effect hasn't populated it yet.
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
-      if (!sents.length) { setErrorMsg("No page text available."); return; }
+      if (!sents.length) {
+        if (!activePageText) {
+          // PDF text extraction is async — text not yet available for this page.
+          // Store the play intent; fpSentences effect will auto-resume once text arrives.
+          setErrorMsg("Loading page text…");
+          pendingFullPagePlayRef.current = fromIdx;
+        } else {
+          setErrorMsg("No page text available.");
+        }
+        setPlayState("idle");
+        return;
+      }
       // When Play is pressed with no explicit sentence chosen (fromIdx === 0),
       // use the first visible viewport paragraph to find the best start sentence
       // so playback begins where the reader is looking, not at page top.
@@ -1200,7 +1237,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText);
+      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
@@ -1237,6 +1274,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       useReadingFocusStore.getState().clearWord();
     }
   }
+
+  // Keep playRef current on every render so effects can call play() without
+  // stale-closure reads of activePageText / fpSentences.
+  playRef.current = play;
 
   // Pause without aborting the sequential playback loop — the in-flight
   // fetchAndPlayAudio()/playBrowserSpeech() promise stays pending until resume()
