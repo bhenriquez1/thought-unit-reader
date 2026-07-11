@@ -17,7 +17,7 @@ import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
 import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
-import { detectDomainPreset, getDomainPreset } from '@/lib/insights/domainPresets';
+import { detectDomainPreset, getDomainPreset, getKindGroups } from '@/lib/insights/domainPresets';
 import { useReadingFocusStore } from '@/lib/readingFocus/readingFocusStore';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
@@ -144,6 +144,16 @@ interface PureReaderViewProps {
    *  the left panel is actually grouping its thought units by. */
   onEffectivePresetChange?: (presetId: string) => void;
 }
+
+// Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
+// Used by the domain-adaptive legend to assign colors by group rank, not by kind name.
+const LEGEND_TIER_STYLES = [
+  { color: "#fde047", bg: "rgba(253,224,71,0.15)",  abbr: "★★★★★" },
+  { color: "#86efac", bg: "rgba(134,239,172,0.15)", abbr: "★★★★"  },
+  { color: "#93c5fd", bg: "rgba(147,197,253,0.15)", abbr: "★★★"   },
+  { color: "#fca5a5", bg: "rgba(252,165,165,0.15)", abbr: "⚠"     },
+  { color: "#67e8f9", bg: "rgba(103,232,249,0.15)", abbr: "💎"    },
+] as const;
 
 export default function PureReaderView({
   fileUrl,
@@ -495,15 +505,27 @@ export default function PureReaderView({
     onEffectivePresetChange?.(effectivePresetId);
   }, [effectivePresetId, onEffectivePresetChange]);
 
-  // 5 named layered-importance colors (spec) — every semantic kind folds into
-  // one of these tiers so the page reads as a textbook, not a marker explosion.
-  const HIGHLIGHT_KEY_ENTRIES: Array<{ tier: string; kinds: string[]; color: string; bg: string; label: string; abbr: string }> = [
-    { tier: "master",     kinds: ["thesis", "definition"],                                                            color: "#fde047", bg: "rgba(253,224,71,0.15)",  label: "Master This",     abbr: "★★★★★" },
-    { tier: "important",  kinds: ["mechanism", "application", "keyDetail", "keyAnatomy", "memoryAnchor", "formula", "comparison"], color: "#86efac", bg: "rgba(134,239,172,0.15)", label: "Important",       abbr: "★★★★"  },
-    { tier: "supporting", kinds: ["dat_fact", "reference", "filler", "unknown"],                                       color: "#93c5fd", bg: "rgba(147,197,253,0.15)", label: "Supporting Detail", abbr: "★★★"   },
-    { tier: "danger",     kinds: ["trap"],                                                                             color: "#fca5a5", bg: "rgba(252,165,165,0.15)", label: "Danger Zone",      abbr: "⚠"     },
-    { tier: "pearl",      kinds: ["clinical"],                                                                         color: "#67e8f9", bg: "rgba(103,232,249,0.15)", label: "Clinical Pearl",  abbr: "💎"    },
-  ];
+  // Legend entries derived from the active domain preset's kindGroups —
+  // so the legend labels match the ThoughtUnitNavigator section headers.
+  const legendEntries = useMemo(() => {
+    const groups = getKindGroups(effectivePresetId);
+    if (!groups) {
+      // Universal fallback: static 5-tier legend
+      return [
+        { tier: "master",     kinds: ["thesis", "definition"],                                                             ...LEGEND_TIER_STYLES[0], label: "Master This"      },
+        { tier: "important",  kinds: ["mechanism", "application", "keyDetail", "keyAnatomy", "memoryAnchor", "formula", "comparison"], ...LEGEND_TIER_STYLES[1], label: "Important"        },
+        { tier: "supporting", kinds: ["dat_fact", "reference", "filler", "unknown"],                                        ...LEGEND_TIER_STYLES[2], label: "Supporting Detail" },
+        { tier: "danger",     kinds: ["trap"],                                                                              ...LEGEND_TIER_STYLES[3], label: "Danger Zone"       },
+        { tier: "pearl",      kinds: ["clinical"],                                                                          ...LEGEND_TIER_STYLES[4], label: "Clinical Pearl"    },
+      ];
+    }
+    return groups.map((g, i) => ({
+      tier: g.id,
+      kinds: g.kinds as string[],
+      ...LEGEND_TIER_STYLES[Math.min(i, LEGEND_TIER_STYLES.length - 1)],
+      label: g.label,
+    }));
+  }, [effectivePresetId]);
 
   console.log("[SINGLE_LEGEND_RENDER]", {
     page: currentPage,
@@ -565,7 +587,7 @@ export default function PureReaderView({
             </button>
             {!legendCollapsed && (
               <div className="flex flex-col gap-1.5 mt-2">
-                {HIGHLIGHT_KEY_ENTRIES.map(entry => {
+                {legendEntries.map(entry => {
                   const active = !hasHighlights || entry.kinds.some((k) => usedKinds.has(k));
                   return (
                     <div
