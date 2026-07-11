@@ -74,37 +74,53 @@ export function buildSpeechTimeline({
   const units = thoughtUnits.slice();
 
   // byPageOrder: document reading order (text position in PDF).
-  // Used for "full" mode — preserves the author's narrative flow.
+  // Used for "full" mode and within guided-mode stages — preserves the author's narrative flow.
+  const haystack = activePageText.toLowerCase();
+  const pageOffset = (u: ExpertAnchor): number => {
+    const idx = haystack.indexOf(u.exactText.toLowerCase().slice(0, 60));
+    return idx < 0 ? Number.POSITIVE_INFINITY : idx;
+  };
   const byPageOrder = (items: ExpertAnchor[]) =>
-    items.slice().sort((a, b) => {
-      const ai = activePageText.toLowerCase().indexOf(a.exactText.toLowerCase().slice(0, 60));
-      const bi = activePageText.toLowerCase().indexOf(b.exactText.toLowerCase().slice(0, 60));
-      return (ai < 0 ? Number.POSITIVE_INFINITY : ai) - (bi < 0 ? Number.POSITIVE_INFINITY : bi);
-    });
+    items.slice().sort((a, b) => pageOffset(a) - pageOffset(b));
 
-  // bySpeechPriority: canonical metadata priority order (lower speechPriority = higher value).
-  // Used for focus/study/guided — ensures domain-critical anchors surface first regardless
-  // of their position in the input array. canonicalLeftPanelUnits is already sorted this
-  // way, but we sort explicitly here so any intermediate filter/map cannot break the order.
+  // toSortScore: unified priority score (lower = higher value) for speech ordering.
+  // speechPriority (when set) is the canonical role-priority adjusted for thesis relevance
+  // (scale ≈ 0.5–6, lower = more important).  When it's null (fallback/non-AI anchors),
+  // convert priorityTier (1–5, 5 = Master This) to the same scale so the direction matches:
+  //   tier 5 → score 1 (highest priority), tier 1 → score 5 (lowest priority).
+  const toSortScore = (u: ExpertAnchor): number =>
+    u.speechPriority != null ? u.speechPriority : 6 - (u.priorityTier ?? 3);
+
+  // bySpeechPriority: priority-first (lower score = first).
+  // Used for focus (only tier-5 anchors need no tiebreaker) and as a named utility.
   const bySpeechPriority = (items: ExpertAnchor[]) =>
-    items.slice().sort((a, b) =>
-      (a.speechPriority ?? a.priorityTier ?? 5) - (b.speechPriority ?? b.priorityTier ?? 5)
-    );
+    items.slice().sort((a, b) => toSortScore(a) - toSortScore(b));
+
+  // byPriorityThenPageOrder: priority-tier first; within the same tier, reading order.
+  // Used for Study mode — gives "priority-aware but source-stable" sequence:
+  // you hear tier-5 anchors (in page order), then tier-4 (in page order), etc.
+  const byPriorityThenPageOrder = (items: ExpertAnchor[]) =>
+    items.slice().sort((a, b) => {
+      const diff = toSortScore(a) - toSortScore(b);
+      if (Math.abs(diff) > 0.05) return diff;
+      return pageOffset(a) - pageOffset(b);
+    });
 
   const essential = (u: ExpertAnchor) => u.priorityTier >= 4 || u.category === "definition" || u.category === "application";
   const selected = selectedUnitId ? units.find((u) => u.id === selectedUnitId || u.evidenceRefId === selectedUnitId) : null;
 
   // Ordering per mode — each is explicit, not inherited from input array order:
-  //   focus    → speechPriority order: highest-value canonical anchors first
-  //   study    → speechPriority order: balanced priority among essential anchors
+  //   focus      → priority-first: highest-value canonical anchors (tier ≥5) lead
+  //   study      → priority-tier first, source-stable within tier: logical learning order
   //   highlights → arrival/painted order: matches the visual left-panel layout
-  //   full     → page text order: preserves author's document reading order
-  //   guided   → speechPriority order: domain-critical concepts lead the teaching sequence
+  //   full       → exact page text order: preserves author's document reading order
+  //   guided     → page order pre-sort; stages (Master→Procedure→Pearl→Trap) provide
+  //                pedagogical priority; within each stage, source order is more coherent
   const chosen =
     mode === "focus"      ? bySpeechPriority(units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This")) :
-    mode === "study"      ? bySpeechPriority(units.filter(essential)) :
+    mode === "study"      ? byPriorityThenPageOrder(units.filter(essential)) :
     mode === "highlights" ? units.filter((u) => u.grounded !== false) :
-    mode === "guided"     ? bySpeechPriority(units) :
+    mode === "guided"     ? byPageOrder(units) :
     byPageOrder(units);
 
   const ordered = selected && mode !== "full"
@@ -196,8 +212,11 @@ export function buildSpeechTimeline({
     segmentCount:          segments.length,
     uniqueCanonicalIds:    speechAnchorIds.length,
     canonicalIds:          speechAnchorIds,
-    ordering:              mode === "full" ? "page-text-order"
+    ordering:              mode === "full"       ? "page-text-order"
                          : mode === "highlights" ? "painted-arrival-order"
+                         : mode === "study"      ? "priority-tier-first-then-page-order"
+                         : mode === "guided"     ? "stage-sequence(master→procedure→pearl→trap)_within-stage-page-order"
+                         : mode === "focus"      ? "speechPriority-order"
                          : "speechPriority-order",
   });
 
