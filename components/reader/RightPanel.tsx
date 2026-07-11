@@ -104,8 +104,11 @@ function ExpertBrainCard({
     ? firstSentence(unit.exactText)
     : unit.title;
 
-  // Connection map: sibling units excluding self
-  const connections = allUnits.filter((u) => u.id !== unit.id).slice(0, 5);
+  // Connection map: sibling units sorted by connectionStrength descending, then arrival order
+  const connections = allUnits
+    .filter((u) => u.id !== unit.id)
+    .sort((a, b) => (b.connectionStrength ?? 0) - (a.connectionStrength ?? 0))
+    .slice(0, 5);
 
   // Checkpoint quiz: correct = unit.exactText trimmed to ≤80 chars; 2 distractors from siblings
   const quizChoices: string[] = [
@@ -149,6 +152,11 @@ function ExpertBrainCard({
         <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5">
           {unit.importanceLabel}
         </span>
+        {(unit.misconceptionRisk ?? 0) >= 0.8 && (
+          <span className="rounded-full border border-red-400/40 bg-red-400/15 px-2 py-0.5 text-red-300" title="High misconception risk — common exam trap">
+            ⚠ High Risk
+          </span>
+        )}
         <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/55">
           Mastery {masteryPct}%
         </span>

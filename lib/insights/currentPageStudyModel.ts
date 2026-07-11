@@ -343,11 +343,19 @@ function computeConnectionStrength(role: VisualAnchorRole): number {
 
 /**
  * Pre-resolve the canonical anchor ID for each Study Note field at model-build time.
- * Uses sourceField as primary, then role-based fallbacks. Null when no anchor fits.
+ *
+ * Rules:
+ * - Direct sourceField match: trusted by construction (AI sourced the same field). Return immediately.
+ * - Role-based fallback: only linked when there is ≥12% word overlap between the note text
+ *   and the candidate anchor text. Role equality alone is not enough — a confusionTrap anchor
+ *   about a different topic must not be falsely grounded to a commonConfusion study note.
+ * - Returns null when no candidate passes the similarity threshold, so the Study Note card
+ *   renders as unlinked rather than pointing to the wrong PDF passage.
  */
 function resolveStudyNoteAnchorId(
   field: string,
   visualAnchors: VisualAnchor[],
+  noteText: string | null,
 ): string | null {
   if (!visualAnchors.length) return null;
   type SearchRule = { byField?: string; byRole?: VisualAnchorRole };
@@ -365,11 +373,29 @@ function resolveStudyNoteAnchorId(
     connectionMap:     [{ byRole: "coreIdea" }, { byRole: "mechanism" }],
   };
   const searches = FIELD_SEARCHES[field] ?? [{ byRole: "coreIdea" }];
+
+  // Pre-compute note word set for similarity checking in role-based fallbacks.
+  const noteWords = noteText
+    ? new Set(noteText.toLowerCase().split(/\W+/).filter(w => w.length > 3))
+    : new Set<string>();
+
+  const hasSimilarity = (anchor: VisualAnchor): boolean => {
+    if (noteWords.size === 0) return false;
+    const anchorWords = anchor.exactText.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    if (!anchorWords.length) return false;
+    const overlap = anchorWords.filter(w => noteWords.has(w)).length;
+    return overlap / Math.max(noteWords.size, anchorWords.length) >= 0.12;
+  };
+
   for (const rule of searches) {
     const found = rule.byField
       ? visualAnchors.find(a => a.sourceField === rule.byField)
       : visualAnchors.find(a => a.role === rule.byRole);
-    if (found) return found.id;
+    if (!found) continue;
+    // Direct sourceField match: trusted by construction.
+    if (rule.byField) return found.id;
+    // Role-based fallback: require semantic overlap to avoid false grounding.
+    if (hasSimilarity(found)) return found.id;
   }
   return null;
 }
@@ -475,15 +501,44 @@ export function buildStudyModel(
 
   // Item A — pre-resolve canonical anchor IDs for each Study Note field so RightPanel
   // never needs to rediscover them via sourceField matching at runtime.
-  const STUDY_NOTE_FIELDS = [
-    "whyThisMatters", "keyMechanism", "commonConfusion", "quickMemory",
-    "clinicalPearl", "reasoningFlow", "examSignal", "clinicalReasoning",
-    "commonMistake", "examStrategy", "connectionMap",
+  // noteText is passed so role-based fallbacks require semantic similarity (≥12% word overlap),
+  // preventing false grounding when role matches but content diverges.
+  const STUDY_NOTE_FIELD_TEXTS: Array<[string, string | null]> = [
+    ["whyThisMatters",    (synth.whyItMatters      as string | null) ?? null],
+    ["keyMechanism",      (synth.keyMechanism      as string | null) ?? null],
+    ["commonConfusion",   (synth.commonConfusion   as string | null) ?? null],
+    ["quickMemory",       (synth.memoryAnchor      as string | null) ?? null],
+    ["clinicalPearl",     (synth.clinicalPearl     as string | null) ?? null],
+    ["reasoningFlow",     (synth.reasoningFlow     as string | null) ?? null],
+    ["examSignal",        (synth.examSignal        as string | null) ?? null],
+    ["clinicalReasoning", (synth.clinicalReasoning as string | null) ?? null],
+    ["commonMistake",     (synth.commonMistake     as string | null) ?? null],
+    ["examStrategy",      (synth.examStrategy      as string | null) ?? null],
+    ["connectionMap",     (synth.connectionMap     as string | null) ?? null],
   ];
   const studyNoteAnchorIds: Record<string, string | null> = {};
-  for (const field of STUDY_NOTE_FIELDS) {
-    studyNoteAnchorIds[field] = resolveStudyNoteAnchorId(field, visualAnchors);
+  for (const [field, noteText] of STUDY_NOTE_FIELD_TEXTS) {
+    studyNoteAnchorIds[field] = resolveStudyNoteAnchorId(field, visualAnchors, noteText);
   }
+
+  // One-to-one integrity log — verifiable at runtime from the browser console.
+  const noteLinks = Object.entries(studyNoteAnchorIds).filter(([, id]) => id !== null);
+  console.log("[CANONICAL_SYNC_TABLE]", {
+    page,
+    anchors: visualAnchors.map(a => ({
+      id:                  a.id,
+      role:                a.role,
+      thesisRelevance:     a.thesisRelevance !== undefined ? +a.thesisRelevance.toFixed(2) : undefined,
+      misconceptionRisk:   a.misconceptionRisk,
+      proceduralImportance: a.proceduralImportance,
+      connectionStrength:  a.connectionStrength,
+      speechPriority:      a.speechPriority !== undefined ? +a.speechPriority.toFixed(2) : undefined,
+      linkedNoteFields:    noteLinks.filter(([, id]) => id === a.id).map(([f]) => f),
+    })),
+    unlinkedNotes: STUDY_NOTE_FIELD_TEXTS
+      .filter(([f, text]) => text !== null && studyNoteAnchorIds[f] === null)
+      .map(([f]) => f),
+  });
 
   const pageType = (synth.pageType as string | null) ?? undefined;
 
