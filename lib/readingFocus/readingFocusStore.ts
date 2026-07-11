@@ -74,6 +74,12 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
 
 // ── Compatibility selector ────────────────────────────────────────────────────
 
+// Dev-only: expose store on window so Playwright stress tests can drive setWord()
+// at word-tick rate without needing live TTS. Stripped in production by dead-code elimination.
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as any).__devReadingFocusStore = useReadingFocusStore;
+}
+
 /** Returns the active spoken-word object in the shape that SmartPDFViewer and
  *  ThoughtUnitNavigator expect. Returns null when nothing is playing. */
 export function selectActiveSpokenWord(s: ReadingFocusState) {
