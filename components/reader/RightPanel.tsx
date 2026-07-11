@@ -2503,16 +2503,20 @@ function UltraViewBase({
       {/* Understand — the four questions a reader needs before concept detail */}
       {/* Study Notes — 5-section teaching layout (synthesis-driven) */}
       {hasSynth && synth && (() => {
-        // Helper: find the first visualAnchor for a given sourceField, used for card click-to-focus.
-        const cardAnchor = (field: string) =>
-          studyModel?.visualAnchors.find(a => a.sourceField === field) ?? null;
+        // Helper: resolve the canonical anchor for a Study Note field using pre-stored IDs
+        // (Item A — no sourceField rediscovery at runtime).
+        const studyNoteAnchor = (field: string) => {
+          const anchorId = studyModel?.studyNoteAnchorIds?.[field] ?? null;
+          if (!anchorId || !studyModel) return null;
+          return studyModel.visualAnchors.find(a => a.id === anchorId) ?? null;
+        };
 
         return (
         <PanelSection title="Study Notes">
           <div className={d.space}>
             {/* WHY THIS MATTERS — synthesis application */}
             {synth.whyItMatters && (() => {
-              const anchor = cardAnchor("whyThisMatters");
+              const anchor = studyNoteAnchor("whyThisMatters");
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
@@ -2540,7 +2544,7 @@ function UltraViewBase({
             })()}
             {/* KEY MECHANISM — synthesis mechanism */}
             {synth.keyMechanism && (() => {
-              const anchor = cardAnchor("keyMechanism");
+              const anchor = studyNoteAnchor("keyMechanism");
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
@@ -2568,7 +2572,7 @@ function UltraViewBase({
             })()}
             {/* COMMON CONFUSION — synthesis misconceptionAlert */}
             {synth.commonConfusion && (() => {
-              const anchor = cardAnchor("commonConfusion");
+              const anchor = studyNoteAnchor("commonConfusion");
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div
@@ -2596,7 +2600,7 @@ function UltraViewBase({
             })()}
             {/* QUICK MEMORY — synthesis memoryAnchor */}
             {synth.memoryAnchor && (() => {
-              const anchor = cardAnchor("quickMemory");
+              const anchor = studyNoteAnchor("quickMemory");
               const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
               return (
               <div

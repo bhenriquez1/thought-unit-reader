@@ -23,6 +23,12 @@ export interface ExpertAnchor {
   spanEnd?: string;
   domainCategory?: string;
   grounded?: boolean;
+  /** Shared canonical expert metadata — populated when anchor comes from a VisualAnchor. */
+  thesisRelevance?: number;
+  misconceptionRisk?: number;
+  proceduralImportance?: number;
+  connectionStrength?: number;
+  speechPriority?: number;
 }
 
 /** Returns the display label for a thought unit's kind, using the active domain preset's vocabulary. */
@@ -68,6 +74,11 @@ function unitFromVisualAnchor(anchor: VisualAnchor, page: number, pageText: stri
     spanStart: anchor.spanStart,
     spanEnd: anchor.spanEnd,
     domainCategory: anchor.domainCategory,
+    thesisRelevance:      anchor.thesisRelevance,
+    misconceptionRisk:    anchor.misconceptionRisk,
+    proceduralImportance: anchor.proceduralImportance,
+    connectionStrength:   anchor.connectionStrength,
+    speechPriority:       anchor.speechPriority,
   };
 }
 
