@@ -50,6 +50,13 @@ export interface SpeechSegment {
   /** Guided mode only: stop and wait for the reader to click Continue (or Explain)
    *  instead of auto-advancing after pauseAfterMs — the teach-loop checkpoints. */
   requiresConfirm?: boolean;
+  /**
+   * Number of spoken-text prefix words that are NOT present in rawText / the PDF.
+   * When > 0, the TTS says a narration prefix (e.g. "Most important on this page: ")
+   * before the anchor text. The PDF word-rect index must subtract this offset so the
+   * yellow word box tracks the anchor text, not the narration prefix.
+   */
+  sourceTextWordOffset?: number;
 }
 
 export function buildSpeechTimeline({
@@ -86,17 +93,25 @@ export function buildSpeechTimeline({
 
   const segments: SpeechSegment[] = [];
   const pushUnit = (unit: ExpertAnchor, label = unit.importanceLabel, prefix = "", overrideText?: string, role: SpeechSegmentRole = "visualAnchor") => {
-    const raw = (overrideText ?? `${prefix}${unit.exactText}`).trim();
-    if (raw.length < 8) return;
+    // sourceText is the verbatim anchor text — must match the PDF text layer for word sync.
+    // spokenText prepends the guided-mode narration prefix for TTS only.
+    const sourceText = (overrideText ?? unit.exactText).trim();
+    const spokenText = prefix ? `${prefix}${sourceText}`.trim() : sourceText;
+    if (sourceText.length < 8) return;
+    // Count how many words the spoken prefix adds so the PDF word-rect index can
+    // subtract them — the PDF doesn't contain narration phrases like
+    // "Most important on this page:".
+    const prefixWordCount = prefix ? prefix.trim().split(/\s+/).filter(Boolean).length : 0;
     segments.push({
       id: role === "checkpoint" ? `${unit.id}-${label.toLowerCase().replace(/\W+/g, "-")}` : unit.id,
       role,
       label,
-      rawText: raw,
-      text: formulaToSpeech(raw),
+      rawText: sourceText,                // PDF text-layer search: exact anchor text, no prefix
+      text: formulaToSpeech(spokenText),  // TTS: includes narration prefix when present
       rateModifier: unit.priorityTier >= 5 ? 0.88 : unit.priorityTier >= 4 ? 0.92 : 0.98,
       evidenceRefId: unit.evidenceRefId,
       tier: { key: unit.priorityTier >= 5 ? "critical" : unit.priorityTier >= 4 ? "important" : "medium", stars: Math.min(5, Math.max(1, unit.priorityTier)), label: unit.importanceLabel },
+      sourceTextWordOffset: prefixWordCount,
     });
   };
 
