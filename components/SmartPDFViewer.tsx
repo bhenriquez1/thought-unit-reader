@@ -11,7 +11,7 @@ import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEviden
 import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -330,7 +330,16 @@ function WordRectOverlay({
   overlayRects: OverlayRect[];
   pageRenderKey: number;
 }) {
-  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+  const activeAnchorId  = useReadingFocusStore(s => s.thoughtUnitId);
+  const activeWordIndex = useReadingFocusStore(s => s.wordIndex);
+  const activeWord      = useReadingFocusStore(s => s.word);
+  const activeSentText  = useReadingFocusStore(s => s.sentenceText);
+  const activeSpokenWord = React.useMemo(
+    () => (activeWord || activeSentText)
+      ? { anchorId: activeAnchorId, wordIndex: activeWordIndex, word: activeWord ?? "", sentenceText: activeSentText ?? undefined }
+      : null,
+    [activeAnchorId, activeWordIndex, activeWord, activeSentText],
+  );
   const [wordRect, setWordRect] = useState<WordRectState>(null);
 
   useEffect(() => {

@@ -21,9 +21,10 @@ export default function DomainModeSelector({
 }) {
   const [open, setOpen] = useState(false);
   const options = listDomainPresetOptions();
+  const isGeneric = !detectedPresetLabel || detectedPresetLabel === "Universal (generic)";
   const effectiveLabel = overridePresetId
     ? options.find((o) => o.id === overridePresetId)?.label ?? detectedPresetLabel
-    : `Auto (${detectedPresetLabel})`;
+    : isGeneric ? "Auto-detect" : detectedPresetLabel;
 
   return (
     <div className="relative px-1" data-testid="domain-mode-selector">
@@ -45,7 +46,7 @@ export default function DomainModeSelector({
             style={{ color: overridePresetId === null ? "#fde047" : "rgba(255,255,255,0.7)" }}
             data-testid="domain-mode-option-auto"
           >
-            Auto (currently {detectedPresetLabel})
+            Auto-detect{!isGeneric ? ` (${detectedPresetLabel})` : ""}
           </button>
           {options.map((opt) => (
             <button

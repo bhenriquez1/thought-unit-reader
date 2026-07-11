@@ -280,6 +280,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   spRenderCountRef.current++;
   console.log("[SPEECH_RENDER]", spRenderCountRef.current);
 
+  // Rapid-fire detection for onPlayStateChange — fires [PARENT_WRITE:RAPID] if called
+  // more than once within a single 16ms frame (sign of a state-update loop).
+  const lastPlayStateWriteRef = useRef(0);
+
   const [open, setOpen]       = useState(primary);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -636,19 +640,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       highlightedAnchorTextsLen: highlightedAnchorTexts?.length ?? 0,
       activePageTextLen: activePageText?.length ?? 0,
     });
-    if (mode === "fullPage" || !studyModel) {
-      // fullPage reads sentences directly, no pre-built segments needed.
-      // Other modes with no studyModel yet (RightPanel/OpenAI synthesis still
-      // running) also have nothing to build from — play() falls back to page text.
+    if (mode === "fullPage") {
+      // fullPage reads sentences directly from page text — no pre-built segments.
       setSegments([]);
       return;
     }
-    const next = thoughtUnits.length
-      ? buildSpeechTimeline({ thoughtUnits, mode, activePageText })
-      : buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts);
+    // Canonical units are the single source of truth. If not yet available
+    // (synthesis still running), segments stay empty and play() shows loading state.
+    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
-  }, [studyModel, mode, pageNumber, presetId, activePageText, highlightedAnchorTexts, thoughtUnits]);
+  }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
@@ -679,6 +681,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setActiveWordIdx(0);
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
+    const _nowStop = Date.now();
+    if (_nowStop - lastPlayStateWriteRef.current < 16) {
+      console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowStop - lastPlayStateWriteRef.current });
+    }
+    lastPlayStateWriteRef.current = _nowStop;
     console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (stop)");
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
@@ -879,6 +886,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   async function playFullPageSequential(sentences: string[], fromIdx: number, session: number) {
     setPlayState("loading");
+    const _nowPlay = Date.now();
+    if (_nowPlay - lastPlayStateWriteRef.current < 16) {
+      console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowPlay - lastPlayStateWriteRef.current });
+    }
+    lastPlayStateWriteRef.current = _nowPlay;
     console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange true (fullPage start)");
     onPlayStateChange?.(true);
 
@@ -1129,7 +1141,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, "highlights", presetId, activePageText, highlightedAnchorTexts) : []));
+      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId });
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1150,7 +1162,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : (thoughtUnits.length ? buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId }) : (studyModel ? buildSpeechScript(studyModel, mode, presetId, activePageText, highlightedAnchorTexts) : []));
+    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId });
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;
@@ -1525,11 +1537,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             </p>
           )}
 
-          {segments.length === 0 && mode !== "fullPage" && activePageText.length < 20 && (
-            <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>No content available yet — synthesis in progress.</p>
+          {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length === 0 && (
+            <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>Preparing expert reading map…</p>
           )}
-          {segments.length === 0 && mode !== "fullPage" && activePageText.length >= 20 && (
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Reading active page text ({activePageText.length} chars).</p>
+          {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length > 0 && (
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Building speech timeline…</p>
           )}
         </div>
       )}

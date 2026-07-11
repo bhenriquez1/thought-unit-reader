@@ -343,7 +343,9 @@ function anchorTextKey(text: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main builder
+// Legacy builder — kept for reference only
+// @deprecated Use buildSpeechTimeline() with canonical ExpertAnchor[] instead.
+// StudySpeechPanel no longer calls this function.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildSpeechScript(

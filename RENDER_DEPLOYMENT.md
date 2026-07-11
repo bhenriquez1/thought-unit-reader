@@ -23,22 +23,23 @@ You're getting "Google Sign-In failed (auth/api-key-not-valid)" error on your Re
 2. Click **Deploy Latest Commit** or wait for auto-deploy
 3. Wait for deployment to complete
 
-## Alternative: Set All Required Environment Variables
+## Required Environment Variables
 
-If you haven't set up your environment variables on Render yet, add all of these:
+Set all of these in the Render Dashboard **Environment** tab — never commit their values to the repository:
 
-```
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyAnMPtQh8-eOL3NBNMMa-izbfIcnijYK5w
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=thought-unit-reader.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=thought-unit-reader
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=thought-unit-reader.firebasestorage.app
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=808239475880
-NEXT_PUBLIC_FIREBASE_APP_ID=1:808239475880:web:c66b9bf6c553477f78269d
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-5DF8KCFLFG
-PREVIEW_LOCK_ENABLED=1
-APP_PREVIEW_PASSWORD=El3n@&AmmayahH3nriqu3z2026
-NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1
-```
+| Variable | Where to find the value |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase Console → Project Settings → Your apps |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Console → Project Settings → Your apps |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase Console → Project Settings |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase Console → Project Settings → Your apps |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase Console → Project Settings → Your apps |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Console → Project Settings → Your apps |
+| `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Firebase Console → Project Settings → Your apps |
+| `OPENAI_API_KEY` | OpenAI Dashboard → API keys |
+| `PREVIEW_LOCK_ENABLED` | Set to `1` to enable the password gate |
+| `APP_PREVIEW_PASSWORD` | Choose a strong password; store only in Render |
+| `NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN` | Set to `1` to bypass Google Sign-In |
 
 ## What This Does
 - **Disables Google Sign-In**: Prevents the authentication error
@@ -48,7 +49,7 @@ NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1
 
 ## After Deployment
 1. Visit `https://thought-unit-reader.onrender.com`
-2. Enter your password: `El3n@&AmmayahH3nriqu3z2026`
+2. Enter your password (set via `APP_PREVIEW_PASSWORD` in Render)
 3. App should work without Google Sign-In errors
 
 ## To Re-enable Google Sign-In Later

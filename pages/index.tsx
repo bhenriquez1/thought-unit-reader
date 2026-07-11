@@ -1300,6 +1300,15 @@ export default function ThoughtUnitReader() {
       return built.units;
     });
     setCanonicalLeftPanelDiagnostic(built.diagnosticReason);
+    // Secondary domain seed: if the filename didn't yield a domain match but the
+    // anchor texts do, promote to the detected domain now. Guards against the
+    // "generic filename, domain-specific content" case. Runs at most once per
+    // page because the second run finds sharedPresetId !== "universal".
+    if (sharedPresetId === "universal" && built.units.length > 0) {
+      const anchorSample = built.units.map((u) => u.exactText).join(" ");
+      const contentSeed = detectDomainPreset(anchorSample, undefined, uploadedFile?.name);
+      if (contentSeed !== "universal") setSharedPresetId(contentSeed);
+    }
     console.log("[LEFT_PANEL_CANONICAL_READY]", {
       thoughtUnitId: built.units[0]?.id ?? null,
       source: built.units[0]?.source ?? "none",

@@ -26,7 +26,7 @@ import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPer
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 import { tokenizeWords } from "@/lib/speech/wordSync";
-import { useReadingFocusStore, selectActiveSpokenWord } from "@/lib/readingFocus/readingFocusStore";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 
 // Marks the word at activeSpokenWord.wordIndex within this card's own text — same
 // approach as ThoughtUnitNavigator.tsx's renderSnippetWithActiveWord, kept local here
@@ -79,7 +79,17 @@ function ExpertBrainCard({
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [quizAnswer, setQuizAnswer] = useState<number | null>(null);
   const [askText, setAskText] = useState("");
-  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+  // Primitive selectors — stable references, no new-object-every-tick instability
+  const activeAnchorId  = useReadingFocusStore(s => s.thoughtUnitId);
+  const activeWordIndex = useReadingFocusStore(s => s.wordIndex);
+  const activeWord      = useReadingFocusStore(s => s.word);
+  const activeSentText  = useReadingFocusStore(s => s.sentenceText);
+  const activeSpokenWord = React.useMemo(
+    () => (activeWord || activeSentText)
+      ? { anchorId: activeAnchorId, wordIndex: activeWordIndex, word: activeWord ?? "", sentenceText: activeSentText ?? undefined }
+      : null,
+    [activeAnchorId, activeWordIndex, activeWord, activeSentText],
+  );
 
   const isSpeaking = activeSpokenWord?.anchorId === unit.evidenceRefId
     || activeSpokenWord?.anchorId === unit.id;
@@ -2244,7 +2254,17 @@ function UltraViewBase({
   activeThoughtUnit?: ExpertAnchor | null;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
-  const activeSpokenWord = useReadingFocusStore(selectActiveSpokenWord);
+  // Primitive selectors — avoids new-object-every-tick instability with useSyncExternalStore
+  const _activeAnchorId  = useReadingFocusStore(s => s.thoughtUnitId);
+  const _activeWordIndex = useReadingFocusStore(s => s.wordIndex);
+  const _activeWord      = useReadingFocusStore(s => s.word);
+  const _activeSentText  = useReadingFocusStore(s => s.sentenceText);
+  const activeSpokenWord = React.useMemo(
+    () => (_activeWord || _activeSentText)
+      ? { anchorId: _activeAnchorId, wordIndex: _activeWordIndex, word: _activeWord ?? "", sentenceText: _activeSentText ?? undefined }
+      : null,
+    [_activeAnchorId, _activeWordIndex, _activeWord, _activeSentText],
+  );
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
   const isMathDomain = domain === "math";
