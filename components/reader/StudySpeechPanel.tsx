@@ -412,6 +412,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // synchronous claim/dispatch (e.g. a fast double-click on ▶ Play).
   const isStartingRef = useRef(false);
 
+  // Pending play intent for fullPage mode: set when Play is pressed before page text
+  // has been extracted. Cleared and auto-played once fpSentences populates.
+  const pendingFullPagePlayRef = useRef<number | null>(null);
+  // Always-current reference to play() — lets effects call it without stale closures.
+  const playRef = useRef<(fromIdx?: number) => void>(() => {});
+
   // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
   // segment's audio start fetching while the current segment is still playing.
   const audioCacheRef = useRef<Map<string, Promise<{ blob: Blob; mimeType: string } | "browser">>>(new Map());
@@ -566,6 +572,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // Set immediately with quick-cleaned result so playback can start
       setFpSentences(quickSents);
       console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
+
+      // Auto-resume if Play was pressed before this page's text was extracted.
+      if (pendingFullPagePlayRef.current !== null && quickSents.length > 0) {
+        const idx = pendingFullPagePlayRef.current;
+        pendingFullPagePlayRef.current = null;
+        setErrorMsg(null);
+        // Use setTimeout so setFpSentences commits before play() reads fpSentences state.
+        // playRef always holds the current render's play closure so activePageText is fresh.
+        setTimeout(() => playRef.current(idx), 16);
+      }
 
       // ── Step 2: background OCR repair if corruption is detected ──────────
       // Score = ratio of suspiciously short all-caps tokens (not common words)
@@ -1103,7 +1119,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // filtering); fall back to the same canonical quick-splitter (not a
       // degraded inline copy) if the mount-time effect hasn't populated it yet.
       const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
-      if (!sents.length) { setErrorMsg("No page text available."); return; }
+      if (!sents.length) {
+        if (!activePageText) {
+          // PDF text extraction is async — text not yet available for this page.
+          // Store the play intent; fpSentences effect will auto-resume once text arrives.
+          setErrorMsg("Loading page text…");
+          pendingFullPagePlayRef.current = fromIdx;
+        } else {
+          setErrorMsg("No page text available.");
+        }
+        setPlayState("idle");
+        return;
+      }
       // When Play is pressed with no explicit sentence chosen (fromIdx === 0),
       // use the first visible viewport paragraph to find the best start sentence
       // so playback begins where the reader is looking, not at page top.
@@ -1237,6 +1264,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       useReadingFocusStore.getState().clearWord();
     }
   }
+
+  // Keep playRef current on every render so effects can call play() without
+  // stale-closure reads of activePageText / fpSentences.
+  playRef.current = play;
 
   // Pause without aborting the sequential playback loop — the in-flight
   // fetchAndPlayAudio()/playBrowserSpeech() promise stays pending until resume()
