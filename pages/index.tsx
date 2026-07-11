@@ -380,7 +380,11 @@ function applyHighlightBudget<T extends BudgetAnchor>(
   });
 
   // For math pages, prioritize definition > conclusion > trap > example_step > mechanism
-  // (don't highlight every formula line — only the rule, one step, the conclusion, and traps)
+  // (don't highlight every formula line — only the rule, one step, the conclusion, and traps).
+  // For non-math pages, sort by _highlightScore (lower = higher priority) so that
+  // proceduralImportance, misconceptionRisk, thesisRelevance, and connectionStrength
+  // influence which anchors get the limited budget slots. Domain-critical roles always
+  // lead because their base speechPriority (1–10) dominates the ≤0.95 metadata bonus.
   const mathPriority = ["definition", "formula", "conclusion", "thesis", "trap", "example_step", "mechanism", "application"];
   const candidates = isMathPage
     ? [...anchors].sort((a, b) => {
@@ -388,7 +392,10 @@ function applyHighlightBudget<T extends BudgetAnchor>(
         const bi = mathPriority.indexOf(b.anchorType);
         return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
       })
-    : anchors;
+    : [...anchors].sort((a, b) =>
+        ((a as any)._highlightScore ?? (a as any).priorityTier ?? 5)
+        - ((b as any)._highlightScore ?? (b as any).priorityTier ?? 5)
+      );
 
   const typeCounts: Record<string, number> = {};
   const result: T[] = [];
@@ -999,6 +1006,27 @@ export default function ThoughtUnitReader() {
     // Blocked: /api/score-anchors, universalSpecificityScore, all legacy fallbacks.
     // Pass ExpertAnchor.id through as evidenceRefId so left-panel overlay, speech, and
     // focusedEvidenceId all share the same stable ID (e.g. "va-0", "va-1").
+    // Build a metadata map keyed by evidenceRefId so we can thread highlight scores and
+    // effective priority tiers through the grounding pipeline without modifying its type.
+    const metaByRefId = new Map(
+      visualAnchors.map((a) => [a.evidenceRefId, {
+        // highlightScore: lower = higher priority in the budget queue.
+        // Role-level priority (speechPriority, 1–10) dominates; metadata bonuses are capped
+        // at 0.95 total so domain-critical anchors never lose to metadata-inflated lesser ones.
+        highlightScore: (a.speechPriority ?? a.priorityTier ?? 5)
+          - (a.misconceptionRisk      ?? 0) * 0.4
+          - (a.proceduralImportance   ?? 0) * 0.3
+          - (a.thesisRelevance        ?? 0) * 0.15
+          - (a.connectionStrength     ?? 0) * 0.1,
+        // effectivePriorityTier: boost by 1 for confusionTrap/high-procedural anchors so the
+        // PDF glow (scaled by priorityTier in PdfEvidenceOverlay) is visually stronger.
+        effectivePriorityTier: Math.min(5,
+          (a.priorityTier ?? 3)
+          + ((a.misconceptionRisk ?? 0) >= 0.8 || (a.proceduralImportance ?? 0) >= 1.0 ? 1 : 0)
+        ),
+      }])
+    );
+
     const rawForGrounding = visualAnchors.map((a) => ({
       text:          a.exactText,
       anchorType:    a.category === "clinical" ? "clinical_pearl" : a.category === "memoryAnchor" ? "memory_hook" : a.category === "keyAnatomy" ? "anatomy" : a.category === "keyDetail" ? "dat_fact" : a.category === "unknown" ? "dat_fact" : a.category,
@@ -1037,16 +1065,24 @@ export default function ThoughtUnitReader() {
       });
     }
 
-    const groundedAnchors = grounded.map((a) => ({
-      text:          a.groundedText,
-      anchorType:    a.anchorType as SynthHighlightAnchor["anchorType"],
-      reason:        a.reason,
-      spanStart:     a.spanStart ?? null,
-      spanEnd:       a.spanEnd   ?? null,
-      priorityTier:  a.priorityTier ?? null,
-      domainCategory: a.domainCategory ?? null,
-      evidenceRefId: (a as any).evidenceRefId as string | undefined,
-    }));
+    const groundedAnchors = grounded.map((a) => {
+      const refId = (a as any).evidenceRefId as string | undefined;
+      const meta  = refId ? metaByRefId.get(refId) : undefined;
+      return {
+        text:          a.groundedText,
+        anchorType:    a.anchorType as SynthHighlightAnchor["anchorType"],
+        reason:        a.reason,
+        spanStart:     a.spanStart ?? null,
+        spanEnd:       a.spanEnd   ?? null,
+        // Use effectivePriorityTier so PdfEvidenceOverlay gives a stronger glow to
+        // high-misconceptionRisk and high-proceduralImportance anchors.
+        priorityTier:  meta?.effectivePriorityTier ?? a.priorityTier ?? null,
+        domainCategory: a.domainCategory ?? null,
+        evidenceRefId: refId,
+        // _highlightScore threads through to applyHighlightBudget for pre-sort.
+        _highlightScore: meta?.highlightScore ?? (a.priorityTier ?? 5),
+      };
+    });
 
     // Dev-mode diagnostics snapshot — same grounded/confidence/groundMethod data
     // already computed above, just retained instead of discarded after the logs.
@@ -1083,6 +1119,25 @@ export default function ThoughtUnitReader() {
       inputAnchors:  visualAnchors.length,
       groundedCount: grounded.length,
       finalCount:    groundedAnchors.length,
+    });
+
+    // One-to-one canonical integrity snapshot — every surface should map to the same IDs.
+    // Cross-reference with [SPEECH_INTEGRITY] (speech engine) to verify full coverage.
+    const groundedIdSet = new Set(groundedAnchors.map(a => a.evidenceRefId).filter(Boolean));
+    const studyNoteAnchorIds = currentPageStudyModel?.studyNoteAnchorIds ?? {};
+    console.log("[CANONICAL_INTEGRITY]", {
+      page: currentPage,
+      canonicalIds:     visualAnchors.map(a => a.evidenceRefId),
+      pdfTargetCount:   groundedAnchors.length,   // PDF highlight targets
+      leftPanelCards:   groundedAnchors.length,   // 1:1 with grounded anchors
+      studyNoteLinks:   Object.entries(studyNoteAnchorIds)
+        .filter(([, id]) => id !== null)
+        .map(([field, id]) => ({ field, id, resolved: groundedIdSet.has(id!) })),
+      unlinkedNoteFields: Object.entries(studyNoteAnchorIds)
+        .filter(([, id]) => id === null).map(([f]) => f),
+      danglingNoteIds:  Object.values(studyNoteAnchorIds)
+        .filter(id => id !== null && !groundedIdSet.has(id!)),
+      // speechSegmentCount: see [SPEECH_INTEGRITY] log from buildSpeechTimeline
     });
 
     // ── Merge in saved highlights from RightPanel "Save to NoteLab" / "Save to Recall" ──

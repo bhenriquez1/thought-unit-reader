@@ -72,19 +72,39 @@ export function buildSpeechTimeline({
 }): SpeechSegment[] {
   if (mode === "fullPage") return [];
   const units = thoughtUnits.slice();
+
+  // byPageOrder: document reading order (text position in PDF).
+  // Used for "full" mode — preserves the author's narrative flow.
   const byPageOrder = (items: ExpertAnchor[]) =>
     items.slice().sort((a, b) => {
       const ai = activePageText.toLowerCase().indexOf(a.exactText.toLowerCase().slice(0, 60));
       const bi = activePageText.toLowerCase().indexOf(b.exactText.toLowerCase().slice(0, 60));
       return (ai < 0 ? Number.POSITIVE_INFINITY : ai) - (bi < 0 ? Number.POSITIVE_INFINITY : bi);
     });
+
+  // bySpeechPriority: canonical metadata priority order (lower speechPriority = higher value).
+  // Used for focus/study/guided — ensures domain-critical anchors surface first regardless
+  // of their position in the input array. canonicalLeftPanelUnits is already sorted this
+  // way, but we sort explicitly here so any intermediate filter/map cannot break the order.
+  const bySpeechPriority = (items: ExpertAnchor[]) =>
+    items.slice().sort((a, b) =>
+      (a.speechPriority ?? a.priorityTier ?? 5) - (b.speechPriority ?? b.priorityTier ?? 5)
+    );
+
   const essential = (u: ExpertAnchor) => u.priorityTier >= 4 || u.category === "definition" || u.category === "application";
   const selected = selectedUnitId ? units.find((u) => u.id === selectedUnitId || u.evidenceRefId === selectedUnitId) : null;
+
+  // Ordering per mode — each is explicit, not inherited from input array order:
+  //   focus    → speechPriority order: highest-value canonical anchors first
+  //   study    → speechPriority order: balanced priority among essential anchors
+  //   highlights → arrival/painted order: matches the visual left-panel layout
+  //   full     → page text order: preserves author's document reading order
+  //   guided   → speechPriority order: domain-critical concepts lead the teaching sequence
   const chosen =
-    mode === "focus" ? units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This") :
-    mode === "study" ? units.filter(essential) :
+    mode === "focus"      ? bySpeechPriority(units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This")) :
+    mode === "study"      ? bySpeechPriority(units.filter(essential)) :
     mode === "highlights" ? units.filter((u) => u.grounded !== false) :
-    mode === "guided" ? units :
+    mode === "guided"     ? bySpeechPriority(units) :
     byPageOrder(units);
 
   const ordered = selected && mode !== "full"
@@ -167,6 +187,20 @@ export function buildSpeechTimeline({
     fallbackUsed: ordered.some((u) => u.source !== "canonical_left_panel"),
     itemCount: segments.length,
   });
+
+  // Integrity log: which canonical IDs appear in this mode's speech segments.
+  // Compare against [CANONICAL_INTEGRITY] in pages/index.tsx to verify 1:1 coverage.
+  const speechAnchorIds = [...new Set(segments.map(s => s.evidenceRefId).filter(Boolean))];
+  console.log("[SPEECH_INTEGRITY]", {
+    mode,
+    segmentCount:          segments.length,
+    uniqueCanonicalIds:    speechAnchorIds.length,
+    canonicalIds:          speechAnchorIds,
+    ordering:              mode === "full" ? "page-text-order"
+                         : mode === "highlights" ? "painted-arrival-order"
+                         : "speechPriority-order",
+  });
+
   return segments;
 }
 

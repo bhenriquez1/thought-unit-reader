@@ -374,17 +374,29 @@ function resolveStudyNoteAnchorId(
   };
   const searches = FIELD_SEARCHES[field] ?? [{ byRole: "coreIdea" }];
 
-  // Pre-compute note word set for similarity checking in role-based fallbacks.
+  // Stop words stripped before overlap calculation — generic connectors inflate similarity
+  // scores and can cause semantically different notes to falsely match.
+  const STOP_WORDS = new Set([
+    "the", "and", "that", "this", "with", "from", "have", "been", "are", "was",
+    "its", "for", "not", "but", "they", "which", "when", "than", "more", "also",
+    "into", "such", "each", "after", "then", "most", "some", "what", "will",
+    "can", "may", "often", "these", "those", "their", "about", "there", "both",
+  ]);
+  const meaningful = (word: string) => word.length > 3 && !STOP_WORDS.has(word);
+
   const noteWords = noteText
-    ? new Set(noteText.toLowerCase().split(/\W+/).filter(w => w.length > 3))
+    ? new Set(noteText.toLowerCase().split(/\W+/).filter(meaningful))
     : new Set<string>();
 
   const hasSimilarity = (anchor: VisualAnchor): boolean => {
     if (noteWords.size === 0) return false;
-    const anchorWords = anchor.exactText.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    const anchorWords = anchor.exactText.toLowerCase().split(/\W+/).filter(meaningful);
     if (!anchorWords.length) return false;
-    const overlap = anchorWords.filter(w => noteWords.has(w)).length;
-    return overlap / Math.max(noteWords.size, anchorWords.length) >= 0.12;
+    const overlapWords = anchorWords.filter(w => noteWords.has(w));
+    // Require ≥2 meaningful shared terms AND ≥15% overlap ratio.
+    // A single generic shared word is insufficient.
+    if (overlapWords.length < 2) return false;
+    return overlapWords.length / Math.max(noteWords.size, anchorWords.length) >= 0.15;
   };
 
   for (const rule of searches) {
