@@ -318,6 +318,19 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Number of spoken-text prefix words NOT present in rawText/PDF (guided narration phrases).
   // Subtracted from the TTS word index before passing to the PDF word-rect overlay.
   const sourceTextWordOffsetRef = useRef(0);
+  // Phase 11 — speech mode continuity refs.
+  // Anchor to resume from when the user switches modes mid-playback.
+  const resumeAnchorIdRef  = useRef<string | null>(null);
+  // Segment index to resume from in the new mode's timeline (resolved from resumeAnchorIdRef).
+  const resumeSegIdxRef    = useRef(0);
+  // Persists lastMatchedId out of the fullPage loop so mode-switch can read it.
+  const lastMatchedIdRef   = useRef<string | null>(null);
+  // Previous mode — used in the SPEECH_CURSOR_REMAP log.
+  const prevModeRef        = useRef<string>(mode);
+  // Resume source context captured alongside the anchor so the rebuild effect
+  // can run multi-level resolution: exact ID → sourceText → nearest-following → restart.
+  const resumeSourceTextRef = useRef<string | null>(null);
+  const resumeWordIndexRef  = useRef(0);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -351,6 +364,81 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // PDF word-rect index skips prefix words that aren't present in the source text.
     const pdfWordIdx = Math.max(0, scaled - sourceTextWordOffsetRef.current);
     useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
+  }
+
+  // Builds the [CANONICAL_SYNC] payload from actual runtime consumer state.
+  // Each field is derived from a real observable, not assumed from canonicalId being non-null.
+  function buildCanonicalSyncState(canonicalId: string | null, segMode: string, sourceWordIndex = 0) {
+    const anchorUnit = canonicalId
+      ? thoughtUnits.find((u) => u.evidenceRefId === canonicalId)
+      : null;
+    const store = useReadingFocusStore.getState();
+
+    // PDF: written by SmartPDFViewer after overlay paints; written by WordRectOverlay after word box paints.
+    const pdfAnchorRendered = !!(canonicalId && store.pdfRenderedAnchorIds.includes(canonicalId));
+    const pdfWordRendered   = store.pdfRenderedWordAnchorId === canonicalId && canonicalId !== null;
+
+    // LeftPanel: card existence → store selection → word-sync box showing.
+    const leftPanelExists       = thoughtUnits.some((u) => u.evidenceRefId === canonicalId);
+    const leftPanelActive       = store.thoughtUnitId === canonicalId && canonicalId !== null;
+    const leftPanelWordRendered = store.word !== null && store.thoughtUnitId === canonicalId && canonicalId !== null;
+
+    // Expert Brain: store selection (set above) → index.tsx → RightPanel → ExpertBrainCard prop.
+    // "rendered" approximates as selected + unit in panel (the chain is deterministic once selected).
+    const expertBrainSelected = store.thoughtUnitId === canonicalId && canonicalId !== null;
+    const expertBrainRendered = expertBrainSelected && leftPanelExists;
+
+    // Study notes: evidenceRefId === VisualAnchor.id (canonicalLeftPanel.ts sets evidenceRefId: anchor.id).
+    // Primary: count studyNoteAnchorIds values that match canonicalId directly — no text bridge needed.
+    // Fallback: for legacy study models that predate studyNoteAnchorIds, bridge via exactText prefix.
+    const studyNoteReferenceCount = (() => {
+      if (!canonicalId) return 0;
+      if (studyModel?.studyNoteAnchorIds) {
+        return Object.values(studyModel.studyNoteAnchorIds).filter((id) => id === canonicalId).length;
+      }
+      // Legacy fallback: text-prefix match to find the VisualAnchor.id, then can't count — return 1 if matched.
+      if (anchorUnit && studyModel?.visualAnchors) {
+        const matched = studyModel.visualAnchors.find(
+          (va) => va.exactText.slice(0, 50) === anchorUnit.exactText.slice(0, 50)
+        );
+        return matched ? 1 : 0;
+      }
+      return 0;
+    })();
+
+    // Connections: reuses studyNoteAnchorIds as the per-anchor connection index
+    // (no separate connection store; the note-anchor links are the connection record).
+    const connectionReferenceCount = studyNoteReferenceCount;
+
+    // Transcript: canonicalMapping = anchor resolved; null === null does NOT imply success.
+    const canonicalMapping        = canonicalId !== null;
+    const transcriptVisible       = true; // we are in the play loop, eyeText was just set
+    const transcriptAnchorMatches = activeAnchorIdRef.current === canonicalId;
+
+    // Reading bar: toggle state vs whether this anchor's segment is showing.
+    const readingBarEnabled      = showKaraokeBar;
+    const readingBarAnchorMatches = showKaraokeBar && activeAnchorIdRef.current === canonicalId;
+
+    return {
+      canonicalAnchorId: canonicalId,
+      canonicalMapping,
+      pdfAnchorRendered,
+      pdfWordRendered,
+      leftPanelExists,
+      leftPanelActive,
+      leftPanelWordRendered,
+      expertBrainSelected,
+      expertBrainRendered,
+      studyNoteReferenceCount,
+      connectionReferenceCount,
+      transcriptVisible,
+      transcriptAnchorMatches,
+      readingBarEnabled,
+      readingBarAnchorMatches,
+      page: pageNumber,
+      mode: segMode,
+      sourceWordIndex,
+    };
   }
 
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
@@ -673,9 +761,65 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
     // Canonical units are the single source of truth. If not yet available
     // (synthesis still running), segments stay empty and play() shows loading state.
-    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText });
+    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
+
+    // Resolve resume position using a 4-level cascade so the canonical reading
+    // context is never lost simply because the mode changed:
+    //   1. Exact evidenceRefId / segment ID match
+    //   2. rawText prefix overlap (handles cross-mode text variants)
+    //   3. Nearest following anchor by thoughtUnit reading order
+    //   4. Restart (index 0)
+    const anchorToResume = resumeAnchorIdRef.current;
+    if (next.length > 0) {
+      let remapIdx = -1;
+      let remapStrategy = "restart";
+
+      if (anchorToResume) {
+        // Level 1: exact ID
+        remapIdx = next.findIndex(
+          (s) => s.evidenceRefId === anchorToResume || s.id === anchorToResume
+        );
+        if (remapIdx >= 0) remapStrategy = "exact-id";
+      }
+
+      if (remapIdx < 0 && resumeSourceTextRef.current) {
+        // Level 2: rawText 40-char prefix overlap
+        const needle = resumeSourceTextRef.current.slice(0, 60).toLowerCase();
+        remapIdx = next.findIndex((s) => {
+          const hay = s.rawText.slice(0, 60).toLowerCase();
+          return hay.startsWith(needle.slice(0, 40)) || needle.startsWith(hay.slice(0, 40));
+        });
+        if (remapIdx >= 0) remapStrategy = "source-text";
+      }
+
+      if (remapIdx < 0 && anchorToResume) {
+        // Level 3: nearest segment whose anchor follows the resume anchor in page order
+        const orderIdx = thoughtUnits.findIndex((u) => u.evidenceRefId === anchorToResume);
+        if (orderIdx >= 0) {
+          const followingIds = new Set(
+            thoughtUnits.slice(orderIdx + 1).map((u) => u.evidenceRefId).filter(Boolean) as string[]
+          );
+          remapIdx = next.findIndex((s) => s.evidenceRefId && followingIds.has(s.evidenceRefId));
+          if (remapIdx >= 0) remapStrategy = "nearest-following";
+        }
+      }
+
+      const resolvedIdx = remapIdx >= 0 ? remapIdx : 0;
+      resumeSegIdxRef.current = resolvedIdx;
+      console.log("[SPEECH_CURSOR_REMAP]", {
+        fromMode: prevModeRef.current,
+        toMode: mode,
+        anchorId: anchorToResume,
+        strategy: remapStrategy,
+        remappedIdx: resolvedIdx,
+        totalSegments: next.length,
+      });
+    } else {
+      resumeSegIdxRef.current = 0;
+    }
+    prevModeRef.current = mode;
   }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
@@ -977,7 +1121,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           ) ?? null)
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
-      if (matchedId) lastMatchedId = matchedId;
+      if (matchedId) { lastMatchedId = matchedId; lastMatchedIdRef.current = matchedId; }
       // Pass raw (pre-TTS) as the PDF search string — TTS-processed text has acronym
       // expansions and symbol replacements that break text-layer indexOf matching.
       // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
@@ -994,6 +1138,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
         useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
 
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
@@ -1054,6 +1199,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1178,7 +1324,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId });
+      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId, presetId });
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1199,7 +1345,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId });
+    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId, presetId });
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;
@@ -1238,6 +1384,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
@@ -1387,7 +1534,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Mode tabs */}
           <div style={{ display: "flex", gap: 4 }}>
             {STUDY_SPEECH_MODES.map(m => (
-              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(); }} title={m.description}
+              <button key={m.id} type="button" onClick={() => {
+                // Capture the current playback position before stopping so the new
+                // mode's play button can resume from the nearest matching segment.
+                resumeAnchorIdRef.current  = activeAnchorIdRef.current ?? lastMatchedIdRef.current;
+                resumeSourceTextRef.current = activeSentenceTextRef.current;
+                resumeWordIndexRef.current  = activeWordIdx;
+                setMode(m.id);
+                stop();
+              }} title={m.description}
                 style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
               >{m.label}</button>
             ))}
@@ -1409,8 +1564,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
               >▶ Resume</button>
             ) : (
               <button type="button" disabled={!hasContent} onClick={() => {
-                // Start from the selected anchor if one is focused, otherwise from the top.
-                if (selectedUnitId && segments.length > 0) {
+                // Priority: resume anchor from mode-switch → focused anchor → start.
+                const resumeIdx = resumeSegIdxRef.current;
+                if (resumeIdx > 0) {
+                  resumeSegIdxRef.current = 0; // consume so next press starts fresh
+                  play(resumeIdx);
+                } else if (selectedUnitId && segments.length > 0) {
                   const idx = segments.findIndex(
                     (s) => s.evidenceRefId === selectedUnitId || s.id === selectedUnitId
                   );

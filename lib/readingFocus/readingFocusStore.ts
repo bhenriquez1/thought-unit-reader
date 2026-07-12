@@ -18,6 +18,12 @@ export interface ReadingFocusState {
   word: string | null;
   /** Current speech playback state. */
   playbackState: 'idle' | 'playing' | 'paused' | 'loading';
+  /** evidenceRefIds of anchors for which SmartPDFViewer has finished painting overlay rects.
+   *  Written after setOverlayRects completes — an ID here means a rect is visible on screen. */
+  pdfRenderedAnchorIds: string[];
+  /** evidenceRefId of the anchor whose word-level rect (yellow box) is currently painted.
+   *  Null when no word rect is visible (between segments, zooming, or after stop). */
+  pdfRenderedWordAnchorId: string | null;
 }
 
 interface ReadingFocusActions {
@@ -31,6 +37,10 @@ interface ReadingFocusActions {
   clearWord: () => void;
   /** Clear all focus state (e.g. on page/book change). */
   clearFocus: () => void;
+  /** Written by SmartPDFViewer after overlay rects finish painting. */
+  setPdfRenderedAnchors: (ids: string[]) => void;
+  /** Written by WordRectOverlay after the word-level rect is painted (or cleared). */
+  setPdfRenderedWordAnchor: (id: string | null) => void;
 }
 
 type ReadingFocusStore = ReadingFocusState & ReadingFocusActions;
@@ -43,6 +53,8 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
   wordIndex: 0,
   word: null,
   playbackState: 'idle',
+  pdfRenderedAnchorIds: [],
+  pdfRenderedWordAnchorId: null,
 
   setThoughtUnit: (id) => {
     console.log("[FOCUS_STORE_WRITE] setThoughtUnit", id);
@@ -70,6 +82,10 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
     word: null,
     playbackState: 'idle',
   }),
+
+  setPdfRenderedAnchors: (ids) => set({ pdfRenderedAnchorIds: ids }),
+
+  setPdfRenderedWordAnchor: (id) => set({ pdfRenderedWordAnchorId: id }),
 }));
 
 // ── Compatibility selector ────────────────────────────────────────────────────

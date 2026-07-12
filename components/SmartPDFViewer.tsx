@@ -413,8 +413,15 @@ function WordRectOverlay({
           console.warn("[PDF_WORD_SYNC_MISS] word not found after retries", { anchorId: word.anchorId, word: word.word });
         }
         setWordRect(r ?? null);
+        // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
+        // can report pdfWordRendered from observed state, not assumption.
+        useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
       });
     }
+    // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
+    // flicker at the wrong position for the duration of the recompute.
+    setWordRect(null);
+    useReadingFocusStore.getState().setPdfRenderedWordAnchor(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
   }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -489,11 +496,16 @@ export default function SmartPDFViewer({
   // Prevents redundant RAF fires when neither content nor scale has changed.
   // pageRenderKey MUST be included: after zoom the key is unchanged but rect positions move.
   const prevRebuildRef = useRef<{ key: string | undefined; renderKey: number }>({ key: undefined, renderKey: -1 });
+  // Monotonically-increasing generation counter for overlay rebuilds.
+  // Each effect invocation claims a new generation; stale rAF/timeout completions
+  // compare against the current value and drop their results if superseded.
+  const rebuildGenerationRef = useRef(0);
 
   // Clear overlay rects when zoom changes — rects computed against pre-zoom DOM are wrong.
   // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
   useEffect(() => {
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hard-clear all overlay state when highlightKey changes.
@@ -502,6 +514,7 @@ export default function SmartPDFViewer({
     if (highlightKey === undefined) return;
     console.log("[OVERLAY_CLEAR] highlightKey changed", { highlightKey });
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
     setOverlayVersion(v => v + 1);
 
     // [TEXT_LAYER_CLEANUP] — verify no lingering CSS highlight marks on text layer spans.
@@ -691,12 +704,16 @@ export default function SmartPDFViewer({
       return;
     }
     prevRebuildRef.current = { key: highlightKey, renderKey: pageRenderKey };
+    const myGen = ++rebuildGenerationRef.current;
 
     // Clear stale rects immediately before starting async matching.
     // Without this, old highlight rectangles persist in state for the entire
     // retry window (~10 attempts × 140ms) whenever new anchors fail to match
     // on the first try (e.g. text layer not yet painted).
+    // Also clear pdfRenderedAnchorIds atomically — the store must not report stale
+    // anchors as rendered while the rect set is transiently empty during rebuild.
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
 
     let attempts = 0;
     let cancelled = false;
@@ -993,8 +1010,24 @@ export default function SmartPDFViewer({
         window.setTimeout(renderRects, 140 + attempts * 40);
         return;
       }
-      console.log("[PDF] rendered rect count", rects.length, "from", highlightTargets?.length ?? 0, "anchors");
-      setOverlayRects(applyMinimumGap(rects));
+      const staleBuildCancelled = rebuildGenerationRef.current !== myGen;
+      const afterDedup = applyMinimumGap(rects);
+      console.log("[PDF_OVERLAY_REBUILD]", {
+        page: currentPage,
+        zoom: effectiveZoom,
+        generation: myGen,
+        canonicalTargetCount: highlightTargets?.length ?? 0,
+        rectCountBeforeDedup: rects.length,
+        rectCountAfterDedup: afterDedup.length,
+        staleBuildCancelled,
+      });
+      if (staleBuildCancelled) return;
+      setOverlayRects(afterDedup);
+      // Write the set of actually-rendered evidenceRefIds to the focus store so
+      // [CANONICAL_SYNC] can report pdfAnchorRendered from observed state, not assumption.
+      useReadingFocusStore.getState().setPdfRenderedAnchors(
+        [...new Set(afterDedup.map(r => r.id).filter(Boolean))]
+      );
     };
 
     console.log("[OVERLAY_SOURCE_USED]", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey, overlayVersion });
