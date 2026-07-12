@@ -710,7 +710,10 @@ export default function SmartPDFViewer({
     // Without this, old highlight rectangles persist in state for the entire
     // retry window (~10 attempts × 140ms) whenever new anchors fail to match
     // on the first try (e.g. text layer not yet painted).
+    // Also clear pdfRenderedAnchorIds atomically — the store must not report stale
+    // anchors as rendered while the rect set is transiently empty during rebuild.
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
 
     let attempts = 0;
     let cancelled = false;

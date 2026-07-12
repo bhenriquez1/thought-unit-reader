@@ -388,16 +388,23 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const expertBrainSelected = store.thoughtUnitId === canonicalId && canonicalId !== null;
     const expertBrainRendered = expertBrainSelected && leftPanelExists;
 
-    // Study notes: studyNoteAnchorIds maps field names → VisualAnchor.id.
-    // Bridge canonicalId (evidenceRefId space) → VisualAnchor.id via exactText.
-    const vaId = anchorUnit
-      ? (studyModel?.visualAnchors?.find(
+    // Study notes: evidenceRefId === VisualAnchor.id (canonicalLeftPanel.ts sets evidenceRefId: anchor.id).
+    // Primary: count studyNoteAnchorIds values that match canonicalId directly — no text bridge needed.
+    // Fallback: for legacy study models that predate studyNoteAnchorIds, bridge via exactText prefix.
+    const studyNoteReferenceCount = (() => {
+      if (!canonicalId) return 0;
+      if (studyModel?.studyNoteAnchorIds) {
+        return Object.values(studyModel.studyNoteAnchorIds).filter((id) => id === canonicalId).length;
+      }
+      // Legacy fallback: text-prefix match to find the VisualAnchor.id, then can't count — return 1 if matched.
+      if (anchorUnit && studyModel?.visualAnchors) {
+        const matched = studyModel.visualAnchors.find(
           (va) => va.exactText.slice(0, 50) === anchorUnit.exactText.slice(0, 50)
-        )?.id ?? null)
-      : null;
-    const studyNoteReferenceCount = vaId && studyModel?.studyNoteAnchorIds
-      ? Object.values(studyModel.studyNoteAnchorIds).filter((id) => id === vaId).length
-      : 0;
+        );
+        return matched ? 1 : 0;
+      }
+      return 0;
+    })();
 
     // Connections: reuses studyNoteAnchorIds as the per-anchor connection index
     // (no separate connection store; the note-anchor links are the connection record).
