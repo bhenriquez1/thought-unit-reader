@@ -413,11 +413,15 @@ function WordRectOverlay({
           console.warn("[PDF_WORD_SYNC_MISS] word not found after retries", { anchorId: word.anchorId, word: word.word });
         }
         setWordRect(r ?? null);
+        // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
+        // can report pdfWordRendered from observed state, not assumption.
+        useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
       });
     }
     // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
     // flicker at the wrong position for the duration of the recompute.
     setWordRect(null);
+    useReadingFocusStore.getState().setPdfRenderedWordAnchor(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
   }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -501,6 +505,7 @@ export default function SmartPDFViewer({
   // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
   useEffect(() => {
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hard-clear all overlay state when highlightKey changes.
@@ -509,6 +514,7 @@ export default function SmartPDFViewer({
     if (highlightKey === undefined) return;
     console.log("[OVERLAY_CLEAR] highlightKey changed", { highlightKey });
     setOverlayRects([]);
+    useReadingFocusStore.getState().setPdfRenderedAnchors([]);
     setOverlayVersion(v => v + 1);
 
     // [TEXT_LAYER_CLEANUP] — verify no lingering CSS highlight marks on text layer spans.
@@ -1014,6 +1020,11 @@ export default function SmartPDFViewer({
       });
       if (staleBuildCancelled) return;
       setOverlayRects(afterDedup);
+      // Write the set of actually-rendered evidenceRefIds to the focus store so
+      // [CANONICAL_SYNC] can report pdfAnchorRendered from observed state, not assumption.
+      useReadingFocusStore.getState().setPdfRenderedAnchors(
+        [...new Set(afterDedup.map(r => r.id).filter(Boolean))]
+      );
     };
 
     console.log("[OVERLAY_SOURCE_USED]", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey, overlayVersion });

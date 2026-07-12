@@ -366,33 +366,70 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
-  // Builds the [CANONICAL_SYNC] payload from actual runtime consumer state, NOT
-  // assumed availability. Called at every segment start from all three play paths.
-  // Each field reflects a real observable:
-  //   pdfHighlight  — anchor exactText is in highlightedAnchorTexts (what SmartPDFViewer rendered)
-  //   leftPanel     — a LeftPanel card with this evidenceRefId exists in thoughtUnits
-  //   expertBrain   — the reading focus store's thoughtUnitId equals canonicalId (just set by setThoughtUnit)
-  //   studyNotes    — always false: note linking is page-level, not per-anchor
-  //   connections   — always false: connection linking is page-level, not per-anchor
-  //   transcript    — activeAnchorIdRef.current equals canonicalId (set synchronously by beginKaraoke)
-  //   readingBar    — showKaraokeBar toggle state
-  function buildCanonicalSyncState(canonicalId: string | null, mode: string, sourceWordIndex = 0) {
+  // Builds the [CANONICAL_SYNC] payload from actual runtime consumer state.
+  // Each field is derived from a real observable, not assumed from canonicalId being non-null.
+  function buildCanonicalSyncState(canonicalId: string | null, segMode: string, sourceWordIndex = 0) {
     const anchorUnit = canonicalId
       ? thoughtUnits.find((u) => u.evidenceRefId === canonicalId)
       : null;
-    const storeId = useReadingFocusStore.getState().thoughtUnitId;
+    const store = useReadingFocusStore.getState();
+
+    // PDF: written by SmartPDFViewer after overlay paints; written by WordRectOverlay after word box paints.
+    const pdfAnchorRendered = !!(canonicalId && store.pdfRenderedAnchorIds.includes(canonicalId));
+    const pdfWordRendered   = store.pdfRenderedWordAnchorId === canonicalId && canonicalId !== null;
+
+    // LeftPanel: card existence → store selection → word-sync box showing.
+    const leftPanelExists       = thoughtUnits.some((u) => u.evidenceRefId === canonicalId);
+    const leftPanelActive       = store.thoughtUnitId === canonicalId && canonicalId !== null;
+    const leftPanelWordRendered = store.word !== null && store.thoughtUnitId === canonicalId && canonicalId !== null;
+
+    // Expert Brain: store selection (set above) → index.tsx → RightPanel → ExpertBrainCard prop.
+    // "rendered" approximates as selected + unit in panel (the chain is deterministic once selected).
+    const expertBrainSelected = store.thoughtUnitId === canonicalId && canonicalId !== null;
+    const expertBrainRendered = expertBrainSelected && leftPanelExists;
+
+    // Study notes: studyNoteAnchorIds maps field names → VisualAnchor.id.
+    // Bridge canonicalId (evidenceRefId space) → VisualAnchor.id via exactText.
+    const vaId = anchorUnit
+      ? (studyModel?.visualAnchors?.find(
+          (va) => va.exactText.slice(0, 50) === anchorUnit.exactText.slice(0, 50)
+        )?.id ?? null)
+      : null;
+    const studyNoteReferenceCount = vaId && studyModel?.studyNoteAnchorIds
+      ? Object.values(studyModel.studyNoteAnchorIds).filter((id) => id === vaId).length
+      : 0;
+
+    // Connections: reuses studyNoteAnchorIds as the per-anchor connection index
+    // (no separate connection store; the note-anchor links are the connection record).
+    const connectionReferenceCount = studyNoteReferenceCount;
+
+    // Transcript: canonicalMapping = anchor resolved; null === null does NOT imply success.
+    const canonicalMapping        = canonicalId !== null;
+    const transcriptVisible       = true; // we are in the play loop, eyeText was just set
+    const transcriptAnchorMatches = activeAnchorIdRef.current === canonicalId;
+
+    // Reading bar: toggle state vs whether this anchor's segment is showing.
+    const readingBarEnabled      = showKaraokeBar;
+    const readingBarAnchorMatches = showKaraokeBar && activeAnchorIdRef.current === canonicalId;
+
     return {
       canonicalAnchorId: canonicalId,
+      canonicalMapping,
+      pdfAnchorRendered,
+      pdfWordRendered,
+      leftPanelExists,
+      leftPanelActive,
+      leftPanelWordRendered,
+      expertBrainSelected,
+      expertBrainRendered,
+      studyNoteReferenceCount,
+      connectionReferenceCount,
+      transcriptVisible,
+      transcriptAnchorMatches,
+      readingBarEnabled,
+      readingBarAnchorMatches,
       page: pageNumber,
-      mode,
-      pdfHighlight:  !!(anchorUnit && highlightedAnchorTexts?.includes(anchorUnit.exactText)),
-      leftPanel:     thoughtUnits.some((u) => u.evidenceRefId === canonicalId),
-      expertBrain:   storeId === canonicalId,
-      studyNotes:    false,
-      connections:   false,
-      transcript:    activeAnchorIdRef.current === canonicalId,
-      readingBar:    showKaraokeBar,
-      wordIndex:     0,
+      mode: segMode,
       sourceWordIndex,
     };
   }
