@@ -489,7 +489,7 @@ function WordRectOverlay({
     useReadingFocusStore.getState().setPdfRenderedWordAnchor(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
-  }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSpokenWord, currentPage, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!wordRect) return null;
   return (

@@ -338,6 +338,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // can run multi-level resolution: exact ID → sourceText → nearest-following → restart.
   const resumeSourceTextRef = useRef<string | null>(null);
   const resumeWordIndexRef  = useRef(0);
+  // Atomic seek cursor — set by seekToCursor(), consumed on the first resumed segment.
+  const pendingSeekCursorRef = useRef<{
+    segmentIndex: number;
+    canonicalAnchorId: string | null;
+    sourceText: string;
+    sourceWordIndex: number;
+    sourceCharOffset: number;
+  } | null>(null);
+  // PDF word-rect offset applied in onSpokenWordIndex for the first resumed segment only.
+  // Reset to 0 before every subsequent segment so normal tracking resumes from word 0.
+  const seekWordStartRef = useRef(0);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -369,7 +380,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
     setActiveWordIdx(scaled); // Eye Guide always uses the full scaled index (includes any prefix words)
     // PDF word-rect index skips prefix words that aren't present in the source text.
-    const pdfWordIdx = Math.max(0, scaled - sourceTextWordOffsetRef.current);
+    const pdfWordIdx = Math.max(0, scaled - sourceTextWordOffsetRef.current) + seekWordStartRef.current;
     useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
@@ -1110,11 +1121,34 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
       if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
       const text = computeSpeechText(raw);
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "fullPage", charCount: text.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
-      console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: text.slice(0, 200) });
+      // Consume the pending click cursor on the first sentence — slice TTS from the clicked
+      // word so speech starts at "organism" not "Trace elements are required by an organism".
+      // seekWordStartRef offsets onSpokenWordIndex so the PDF yellow box tracks the right word.
+      // rawText is always the FULL sentence so the overlay can match the PDF span correctly.
+      seekWordStartRef.current = 0;
+      let ttsText = text;
+      let eyeText = text.slice(0, 160);
+      if (i === effectiveFromIdx) {
+        const seekCursor = pendingSeekCursorRef.current;
+        if (seekCursor) {
+          const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
+          if (raw.toLowerCase().includes(needle)) {
+            pendingSeekCursorRef.current = null;
+            const rawWords = tokenizeWords(raw);
+            const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
+            seekWordStartRef.current = wordIdx;
+            const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
+            ttsText = computeSpeechText(slicedRaw || raw);
+            eyeText = slicedRaw.slice(0, 160) || eyeText;
+            console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "fullPage", sentenceIdx: i, wordIdx, ttsPreview: ttsText.slice(0, 80) });
+          }
+        }
+      }
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "fullPage", charCount: ttsText.length });
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsText.length, preview: ttsText.slice(0, 60) });
+      console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: ttsText.slice(0, 200) });
       setSegIdx(i);
-      setEyeText(text.slice(0, 160));
+      setEyeText(eyeText);
       setEyeRole("fullPage");
       setEyeTier(null);
       const matchedUnit = matchSentenceToThoughtUnit(raw, thoughtUnits);
@@ -1130,13 +1164,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
       if (matchedId) { lastMatchedId = matchedId; lastMatchedIdRef.current = matchedId; }
-      // Pass raw (pre-TTS) as the PDF search string — TTS-processed text has acronym
-      // expansions and symbol replacements that break text-layer indexOf matching.
+      // Pass raw (pre-TTS, full sentence) as the PDF search string — TTS-processed text has
+      // acronym expansions and symbol replacements that break text-layer indexOf matching.
       // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
-      beginKaraoke(text.slice(0, 160), text, matchedId ?? lastMatchedId, raw);
+      beginKaraoke(eyeText, ttsText, matchedId ?? lastMatchedId, raw);
 
-      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
+      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: ttsText.length, totalSentences: sentences.length });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsText.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
       // Always emit the nearest matched thought unit so the left panel follows
@@ -1152,10 +1186,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
 
       try {
-        const result = await fetchAndPlayAudio(text, session);
+        const result = await fetchAndPlayAudio(ttsText, session);
         if (isStale(session)) break;
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(ttsText, resolve, session));
         }
         if (!isStale(session) && i < sentences.length - 1) {
           await new Promise((r) => setTimeout(r, 150));
@@ -1165,7 +1199,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode: "fullPage" });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "fullPage", error: message });
-        await new Promise<void>((resolve) => playBrowserSpeech(text, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsText, resolve, session));
       }
     }
 
@@ -1206,20 +1240,40 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      seekWordStartRef.current = 0;
+      let ttsHText = hText;
+      let eyeHText = seg.text.slice(0, 160);
+      if (i === fromIdx) {
+        const seekCursor = pendingSeekCursorRef.current;
+        if (seekCursor) {
+          const srcText = seg.rawText ?? seg.text;
+          const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
+          if (srcText.toLowerCase().includes(needle)) {
+            pendingSeekCursorRef.current = null;
+            const rawWords = tokenizeWords(srcText);
+            const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
+            seekWordStartRef.current = wordIdx;
+            const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
+            ttsHText = computeSpeechText(slicedRaw || hText);
+            eyeHText = slicedRaw.slice(0, 160) || eyeHText;
+            console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "highlights", segIdx: i, wordIdx, ttsPreview: ttsHText.slice(0, 80) });
+          }
+        }
+      }
+      beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsHText.length, preview: ttsHText.slice(0, 60) });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsHText.length, voice, evidenceRefId: seg.evidenceRefId });
 
       // Prefetch the next segment's audio while this one plays.
       if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text));
 
       try {
-        const result = await fetchAndPlayAudio(hText, session);
+        const result = await fetchAndPlayAudio(ttsHText, session);
         if (isStale(session)) break; // user stopped, or a newer play() superseded this loop
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session));
         }
         // Small pause between segments
         if (!isStale(session) && i < segs.length - 1) {
@@ -1231,7 +1285,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "highlights", error: message });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session));
       }
     }
 
@@ -1391,20 +1445,40 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
-      beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      seekWordStartRef.current = 0;
+      let ttsSegText = segText;
+      let eyeSegText = seg.text.slice(0, 160);
+      if (i === fromIdx) {
+        const seekCursor = pendingSeekCursorRef.current;
+        if (seekCursor) {
+          const srcText = seg.rawText ?? seg.text;
+          const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
+          if (srcText.toLowerCase().includes(needle)) {
+            pendingSeekCursorRef.current = null;
+            const rawWords = tokenizeWords(srcText);
+            const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
+            seekWordStartRef.current = wordIdx;
+            const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
+            ttsSegText = computeSpeechText(slicedRaw || segText);
+            eyeSegText = slicedRaw.slice(0, 160) || eyeSegText;
+            console.log("[SPEECH_CURSOR_CONSUMED]", { mode, segIdx: i, wordIdx, ttsPreview: ttsSegText.slice(0, 80) });
+          }
+        }
+      }
+      beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
+      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsSegText.length, mode, preview: ttsSegText.slice(0, 60) });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsSegText.length, voice });
 
       // Prefetch the next segment's audio while this one plays.
       if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text));
 
       try {
-        const result = await fetchAndPlayAudio(segText, session);
+        const result = await fetchAndPlayAudio(ttsSegText, session);
         if (isStale(session)) break;
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
           if (mode === "guided" && seg.requiresConfirm) {
@@ -1419,7 +1493,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode, error: message });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session));
       }
     }
 
@@ -1540,8 +1614,24 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     resumeSegIdxRef.current     = resolvedIdx;
     resumeWordIndexRef.current  = cursor.sourceWordIndex;
 
+    pendingSeekCursorRef.current = {
+      segmentIndex:      resolvedIdx,
+      canonicalAnchorId: anchor,
+      sourceText:        cursor.sourceText,
+      sourceWordIndex:   cursor.sourceWordIndex,
+      sourceCharOffset:  cursor.sourceCharOffset,
+    };
+
     // Open the panel if it's collapsed so the user can see the mode controls.
     setOpen(true);
+    console.log("[PDF_CLICK_CURSOR_PREPARED]", {
+      mode,
+      canonicalAnchorId: anchor,
+      resolvedSegmentIndex: resolvedIdx,
+      wordIndex: cursor.sourceWordIndex,
+      charOffset: cursor.sourceCharOffset,
+      strategy,
+    });
     console.log("[SPEECH_SEEK_TO_CURSOR]", {
       mode,
       canonicalAnchorId: anchor,
@@ -1556,12 +1646,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Start playback from the primed resume cursor — called by the Play chip after seekToCursor.
   function triggerPlay() {
     const resumeIdx = resumeSegIdxRef.current;
-    if (resumeIdx > 0) {
-      resumeSegIdxRef.current = 0;
-      play(resumeIdx);
-    } else {
-      play(0);
-    }
+    resumeSegIdxRef.current = 0;
+    play(resumeIdx);
   }
 
   useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments]);
