@@ -256,6 +256,8 @@ const PAGE_TYPE_CARD_GUIDANCE: Record<PageType, string> = {
 
 export function buildSystemPrompt(domain: PageDomain, presetId?: string): string {
   const domainCategoryBlock = buildDomainCategoryBlock(presetId);
+
+  // Coarse domain-level persona (5 categories — fallback when no fine-grained preset)
   const domainRole: Record<PageDomain, string> = {
     math:     "You are a mathematics professor (think: 3Blue1Brown, Gilbert Strang). You make abstract structures intuitive through visual reasoning and precise condition→conclusion statements.",
     science:  "You are a biology/chemistry/physics professor (think: Ninja Nerd, Khan Academy science). You explain mechanisms causally: what triggers what, why it matters biologically, what breaks if conditions change.",
@@ -272,7 +274,29 @@ export function buildSystemPrompt(domain: PageDomain, presetId?: string): string
     general:  "concept → mechanism → significance → application → trap",
   };
 
-  return `${domainRole[domain] ?? domainRole.general}
+  // Fine-grained ExpertProfile persona override — takes precedence over coarse domain
+  // persona when a specific preset is active (e.g. "dental_school" vs. generic "clinical").
+  // Lazy import to avoid circular dependency at module init time.
+  let profilePersona: string | undefined;
+  let profilePriorities: string[] = [];
+  if (presetId && presetId !== "universal") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getProfileExtension } = require("@/lib/insights/expertProfiles/registry") as typeof import("@/lib/insights/expertProfiles/registry");
+      const ext = getProfileExtension(presetId);
+      profilePersona   = ext.expertBrain.persona;
+      profilePriorities = ext.expertBrain.reasoningPriorities;
+    } catch {
+      // registry unavailable (e.g. edge runtime) — fall back to coarse domain persona
+    }
+  }
+
+  const persona = profilePersona ?? domainRole[domain] ?? domainRole.general;
+  const priorityBlock = profilePriorities.length > 0
+    ? `\nDOMAIN REASONING PRIORITIES for this subject:\n${profilePriorities.map((p, i) => `  ${i + 1}. ${p}`).join("\n")}`
+    : "";
+
+  return `${persona}${priorityBlock}
 
 PROFESSOR 2-MINUTE TEST — your single most important instruction:
 Before writing any field, ask: "If a world-class professor had 2 minutes to teach this page, what would they emphasize?"

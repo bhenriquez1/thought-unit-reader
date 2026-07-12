@@ -673,7 +673,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
     // Canonical units are the single source of truth. If not yet available
     // (synthesis still running), segments stay empty and play() shows loading state.
-    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText });
+    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
   }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
@@ -1178,7 +1178,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
-      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId });
+      const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId, presetId });
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
       console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
@@ -1199,7 +1199,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
     // This gives the same Left Panel eye guidance as highlights mode.
-    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId });
+    const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode, activePageText, selectedUnitId, presetId });
     if (!segsToPlay.length) {
       fallbackToPageText(fromIdx, session, "page-brain-not-ready");
       return;

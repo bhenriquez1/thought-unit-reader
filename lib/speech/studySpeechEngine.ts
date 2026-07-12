@@ -5,7 +5,9 @@
 import type { CurrentPageStudyModel, VisualAnchor, VisualAnchorRole } from "@/lib/insights/currentPageStudyModel";
 import { getImportanceTier, type ImportanceTier } from "@/lib/insights/importanceTiers";
 import { groupThoughtUnits } from "@/lib/insights/domainPresets";
+import type { ParagraphKind } from "@/lib/readerContracts";
 import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
+import { getExpertProfile } from "@/lib/insights/expertProfiles/registry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -64,11 +66,13 @@ export function buildSpeechTimeline({
   mode,
   activePageText = "",
   selectedUnitId,
+  presetId = "universal",
 }: {
   thoughtUnits: ExpertAnchor[];
   mode: StudySpeechMode;
   activePageText?: string;
   selectedUnitId?: string | null;
+  presetId?: string;
 }): SpeechSegment[] {
   if (mode === "fullPage") return [];
   const units = thoughtUnits.slice();
@@ -106,7 +110,12 @@ export function buildSpeechTimeline({
       return pageOffset(a) - pageOffset(b);
     });
 
-  const essential = (u: ExpertAnchor) => u.priorityTier >= 4 || u.category === "definition" || u.category === "application";
+  const profile = getExpertProfile(presetId);
+  const focusKinds = new Set<string>(profile.speech.focusKinds);
+  const essentialKinds = new Set<string>(profile.speech.essentialKinds);
+
+  const essential = (u: ExpertAnchor) =>
+    essentialKinds.has(u.category as string) || u.priorityTier >= 4;
   const selected = selectedUnitId ? units.find((u) => u.id === selectedUnitId || u.evidenceRefId === selectedUnitId) : null;
 
   // Ordering per mode — each is explicit, not inherited from input array order:
@@ -114,10 +123,10 @@ export function buildSpeechTimeline({
   //   study      → priority-tier first, source-stable within tier: logical learning order
   //   highlights → arrival/painted order: matches the visual left-panel layout
   //   full       → exact page text order: preserves author's document reading order
-  //   guided     → page order pre-sort; stages (Master→Procedure→Pearl→Trap) provide
+  //   guided     → page order pre-sort; stages (per kindGroups) provide
   //                pedagogical priority; within each stage, source order is more coherent
   const chosen =
-    mode === "focus"      ? bySpeechPriority(units.filter((u) => u.priorityTier >= 5 || u.importanceLabel === "Master This")) :
+    mode === "focus"      ? bySpeechPriority(units.filter((u) => focusKinds.has(u.category as string) || u.priorityTier >= 5)) :
     mode === "study"      ? byPriorityThenPageOrder(units.filter(essential)) :
     mode === "highlights" ? units.filter((u) => u.grounded !== false) :
     mode === "guided"     ? byPageOrder(units) :
@@ -152,22 +161,32 @@ export function buildSpeechTimeline({
   };
 
   if (mode === "guided") {
-    const stage = (name: string, predicate: (u: ExpertAnchor) => boolean, prefix = "") => {
-      ordered.filter(predicate).forEach((unit, index) => {
-        pushUnit(unit, name, index === 0 ? prefix : "");
+    // Profile-driven guided stages: each kindGroup becomes a stage.
+    // guidedPrefixByKind supplies the spoken intro for the first unit of each kind.
+    const guidedPrefixes = profile.speech.guidedPrefixByKind;
+    const addedIds = new Set<string>();
+
+    (profile.kindGroups ?? []).forEach((group) => {
+      const groupKinds = new Set(group.kinds);
+      const groupUnits = ordered.filter((u) => groupKinds.has(u.category) && !addedIds.has(u.id));
+      if (groupUnits.length === 0) return;
+
+      const isHighPriority = group.kinds.some((k) => focusKinds.has(k));
+      groupUnits.forEach((unit, index) => {
+        const kindPrefix = index === 0 ? (guidedPrefixes[unit.category as string] ?? "") : "";
+        pushUnit(unit, group.label, kindPrefix);
+        addedIds.add(unit.id);
         const last = segments[segments.length - 1];
         if (last) {
-          last.pauseAfterMs = name === "Master This" || name === "Danger Zone" ? 700 : 250;
-          last.requiresConfirm = name === "Master This" || name === "Clinical Pearl" || name === "Danger Zone";
+          last.pauseAfterMs = isHighPriority ? 700 : 250;
+          last.requiresConfirm = isHighPriority;
         }
       });
-    };
-    stage("Master This", (u) => u.priorityTier >= 5 || u.category === "thesis" || u.category === "definition", "Most important on this page: ");
-    stage("Procedure Step", (u) => u.category === "mechanism" || u.category === "application" || u.category === "formula");
-    stage("Clinical Pearl", (u) => u.category === "clinical");
-    stage("Danger Zone", (u) => u.category === "trap");
+    });
+
+    // Leftover units not covered by any kindGroup
     ordered
-      .filter((u) => !segments.some((s) => s.evidenceRefId === u.evidenceRefId))
+      .filter((u) => !addedIds.has(u.id))
       .forEach((u) => pushUnit(u, u.importanceLabel));
     const checkpointTarget = ordered[0];
     if (checkpointTarget) {
@@ -209,13 +228,14 @@ export function buildSpeechTimeline({
   const speechAnchorIds = [...new Set(segments.map(s => s.evidenceRefId).filter(Boolean))];
   console.log("[SPEECH_INTEGRITY]", {
     mode,
+    presetId,
     segmentCount:          segments.length,
     uniqueCanonicalIds:    speechAnchorIds.length,
     canonicalIds:          speechAnchorIds,
     ordering:              mode === "full"       ? "page-text-order"
                          : mode === "highlights" ? "painted-arrival-order"
                          : mode === "study"      ? "priority-tier-first-then-page-order"
-                         : mode === "guided"     ? "stage-sequence(master→procedure→pearl→trap)_within-stage-page-order"
+                         : mode === "guided"     ? `profile-kindGroups(${(profile.kindGroups ?? []).map(g => g.label).join("→")})`
                          : mode === "focus"      ? "speechPriority-order"
                          : "speechPriority-order",
   });
