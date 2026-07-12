@@ -270,6 +270,8 @@ export interface StudySpeechPanelHandle {
   /** Semantic click navigation — prime the resume cursor so the next Play press
    *  starts from the given word position. Does NOT auto-start playback. */
   seekToCursor: (cursor: ReadingCursor) => void;
+  /** Start playback from the already-primed cursor (called by Play chip after seekToCursor). */
+  triggerPlay: () => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -1538,6 +1540,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     resumeSegIdxRef.current     = resolvedIdx;
     resumeWordIndexRef.current  = cursor.sourceWordIndex;
 
+    // Open the panel if it's collapsed so the user can see the mode controls.
+    setOpen(true);
     console.log("[SPEECH_SEEK_TO_CURSOR]", {
       mode,
       canonicalAnchorId: anchor,
@@ -1549,7 +1553,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     });
   }
 
-  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments]);
+  // Start playback from the primed resume cursor — called by the Play chip after seekToCursor.
+  function triggerPlay() {
+    const resumeIdx = resumeSegIdxRef.current;
+    if (resumeIdx > 0) {
+      resumeSegIdxRef.current = 0;
+      play(resumeIdx);
+    } else {
+      play(0);
+    }
+  }
+
+  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 

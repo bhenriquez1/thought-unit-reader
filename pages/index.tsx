@@ -4244,6 +4244,11 @@ export default function ThoughtUnitReader() {
                     // Speech does NOT start until the user presses the Play chip.
                     speechPanelRef.current?.seekToCursor(cursor);
                   }}
+                  onPdfChipPlay={(cursor) => {
+                    // Play chip pressed: re-prime cursor then start playback.
+                    speechPanelRef.current?.seekToCursor(cursor);
+                    speechPanelRef.current?.triggerPlay();
+                  }}
                   aiHighlightAnchors={safeHighlightAnchors}
                   allHighlightAnchors={finalHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}

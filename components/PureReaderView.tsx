@@ -146,6 +146,8 @@ interface PureReaderViewProps {
   onEffectivePresetChange?: (presetId: string) => void;
   /** Fired on every resolved PDF word click — used to prime speech seek refs. */
   onPdfWordClick?: (cursor: ReadingCursor) => void;
+  /** Fired when the user presses the Play chip — should call seekToCursor + triggerPlay. */
+  onPdfChipPlay?: (cursor: ReadingCursor) => void;
 }
 
 // Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
@@ -189,6 +191,7 @@ export default function PureReaderView({
   onEffectivePresetChange,
   bookTitle,
   onPdfWordClick,
+  onPdfChipPlay,
 }: PureReaderViewProps) {
   // Render counter — diagnostic for React #185 investigation.
   const prRenderCountRef = useRef(0);
@@ -728,6 +731,7 @@ export default function PureReaderView({
               onReadingPath={onReadingPath}
               roleLabelByConceptId={roleLabelByConceptId}
               onPdfWordClick={onPdfWordClick}
+              onPdfChipPlay={onPdfChipPlay}
             />
           </div>
         </div>

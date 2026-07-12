@@ -338,6 +338,12 @@ export interface SmartPDFViewerProps {
    * Does NOT start playback — the user must click the Play chip for that.
    */
   onPdfWordClick?: (cursor: ReadingCursor) => void;
+  /**
+   * Fires when the user presses the Play chip that appears after a PDF word click.
+   * By this point seekToCursor has already been called (at click time); this callback
+   * should call triggerPlay() on the speech panel to start playback from the primed cursor.
+   */
+  onPdfChipPlay?: (cursor: ReadingCursor) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -528,6 +534,7 @@ export default function SmartPDFViewer({
   highlightKey,
   authorizedHighlightIds,
   onPdfWordClick,
+  onPdfChipPlay,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -576,6 +583,27 @@ export default function SmartPDFViewer({
     useReadingFocusStore.getState().setPdfRenderedAnchors([]);
     dismissChip();
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dismiss chip on document change (fileUrl or docId).
+  useEffect(() => { dismissChip(); }, [fileUrl, docId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dismiss chip on any scroll anywhere in the document (capture phase catches child scrolls).
+  useEffect(() => {
+    if (!chipCursor) return;
+    const onScroll = () => dismissChip();
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', onScroll, { capture: true });
+  }, [chipCursor, dismissChip]);
+
+  // Dismiss chip when TTS playback starts (so a stale chip never sits over an active reading session).
+  useEffect(() => {
+    if (!chipCursor) return;
+    return useReadingFocusStore.subscribe((state) => {
+      if (state.playbackState === 'playing' || state.playbackState === 'loading') {
+        dismissChip();
+      }
+    });
+  }, [chipCursor, dismissChip]);
 
   // Hard-clear all overlay state when highlightKey changes.
   // overlayVersion increment forces the keyed wrapper to unmount+remount, guaranteeing DOM cleanup.
@@ -1352,19 +1380,40 @@ export default function SmartPDFViewer({
       }
     }
 
-    // D. Nearest painted anchor rect (within 300 px).
+    // D. Nearest painted anchor rect — column-aware to avoid cross-column false matches.
+    // Pass 1: same visual line (click Y within rect's vertical span ±4px).
+    // Pass 2: same column (|Δx| ≤ 150px) and close vertically (|Δy| ≤ 200px).
+    // If neither pass finds a candidate, remain unanchored (null).
     if (!resolvedAnchorId && overlayRects.length > 0) {
-      let minDist = Infinity;
-      let nearest: string | null = null;
-      for (const rect of overlayRects) {
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const dist = Math.hypot(cx - relX, cy - relY);
-        if (dist < minDist) { minDist = dist; nearest = rect.id; }
-      }
-      if (minDist <= 300 && nearest) {
-        resolvedAnchorId = nearest;
-        resolutionStrategy = 'nearest-anchor';
+      const sameLine = overlayRects.filter(
+        r => relY >= r.top - 4 && relY <= r.top + r.height + 4
+      );
+      if (sameLine.length > 0) {
+        let minDx = Infinity, nearest: string | null = null;
+        for (const r of sameLine) {
+          const dx = Math.abs(r.left + r.width / 2 - relX);
+          if (dx < minDx) { minDx = dx; nearest = r.id; }
+        }
+        if (minDx <= 300 && nearest) {
+          resolvedAnchorId = nearest;
+          resolutionStrategy = 'nearest-anchor';
+        }
+      } else {
+        // Column-aware: only consider rects whose horizontal center is within 150px
+        // (same column) and vertically within 200px — avoids crossing into adjacent columns.
+        let minDist = Infinity, nearest: string | null = null;
+        for (const r of overlayRects) {
+          const dx = Math.abs(r.left + r.width / 2 - relX);
+          const dy = Math.abs(r.top + r.height / 2 - relY);
+          if (dx <= 150 && dy <= 200) {
+            const dist = Math.hypot(dx, dy);
+            if (dist < minDist) { minDist = dist; nearest = r.id; }
+          }
+        }
+        if (nearest) {
+          resolvedAnchorId = nearest;
+          resolutionStrategy = 'nearest-anchor';
+        }
       }
     }
 
@@ -1420,7 +1469,9 @@ export default function SmartPDFViewer({
           onDismiss={dismissChip}
           onPlay={(c) => {
             dismissChip();
-            onPdfWordClick?.(c);
+            // seekToCursor was already called at click time via onPdfWordClick.
+            // This callback must start the actual playback.
+            onPdfChipPlay?.(c);
           }}
         />,
         document.body
