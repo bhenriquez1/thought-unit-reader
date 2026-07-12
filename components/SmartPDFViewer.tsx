@@ -415,6 +415,9 @@ function WordRectOverlay({
         setWordRect(r ?? null);
       });
     }
+    // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
+    // flicker at the wrong position for the duration of the recompute.
+    setWordRect(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
   }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -489,6 +492,10 @@ export default function SmartPDFViewer({
   // Prevents redundant RAF fires when neither content nor scale has changed.
   // pageRenderKey MUST be included: after zoom the key is unchanged but rect positions move.
   const prevRebuildRef = useRef<{ key: string | undefined; renderKey: number }>({ key: undefined, renderKey: -1 });
+  // Monotonically-increasing generation counter for overlay rebuilds.
+  // Each effect invocation claims a new generation; stale rAF/timeout completions
+  // compare against the current value and drop their results if superseded.
+  const rebuildGenerationRef = useRef(0);
 
   // Clear overlay rects when zoom changes — rects computed against pre-zoom DOM are wrong.
   // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
@@ -691,6 +698,7 @@ export default function SmartPDFViewer({
       return;
     }
     prevRebuildRef.current = { key: highlightKey, renderKey: pageRenderKey };
+    const myGen = ++rebuildGenerationRef.current;
 
     // Clear stale rects immediately before starting async matching.
     // Without this, old highlight rectangles persist in state for the entire
@@ -993,8 +1001,19 @@ export default function SmartPDFViewer({
         window.setTimeout(renderRects, 140 + attempts * 40);
         return;
       }
-      console.log("[PDF] rendered rect count", rects.length, "from", highlightTargets?.length ?? 0, "anchors");
-      setOverlayRects(applyMinimumGap(rects));
+      const staleBuildCancelled = rebuildGenerationRef.current !== myGen;
+      const afterDedup = applyMinimumGap(rects);
+      console.log("[PDF_OVERLAY_REBUILD]", {
+        page: currentPage,
+        zoom: effectiveZoom,
+        generation: myGen,
+        canonicalTargetCount: highlightTargets?.length ?? 0,
+        rectCountBeforeDedup: rects.length,
+        rectCountAfterDedup: afterDedup.length,
+        staleBuildCancelled,
+      });
+      if (staleBuildCancelled) return;
+      setOverlayRects(afterDedup);
     };
 
     console.log("[OVERLAY_SOURCE_USED]", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey, overlayVersion });

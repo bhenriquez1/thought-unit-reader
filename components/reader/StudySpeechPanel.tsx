@@ -318,6 +318,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Number of spoken-text prefix words NOT present in rawText/PDF (guided narration phrases).
   // Subtracted from the TTS word index before passing to the PDF word-rect overlay.
   const sourceTextWordOffsetRef = useRef(0);
+  // Phase 11 — speech mode continuity refs.
+  // Anchor to resume from when the user switches modes mid-playback.
+  const resumeAnchorIdRef  = useRef<string | null>(null);
+  // Segment index to resume from in the new mode's timeline (resolved from resumeAnchorIdRef).
+  const resumeSegIdxRef    = useRef(0);
+  // Persists lastMatchedId out of the fullPage loop so mode-switch can read it.
+  const lastMatchedIdRef   = useRef<string | null>(null);
+  // Previous mode — used in the SPEECH_CURSOR_REMAP log.
+  const prevModeRef        = useRef<string>(mode);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -676,6 +685,28 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
+
+    // Resolve resume position: find the segment in the new mode's timeline whose
+    // evidenceRefId matches the anchor the user was listening to before the mode switch.
+    const anchorToResume = resumeAnchorIdRef.current;
+    if (anchorToResume && next.length > 0) {
+      const remapIdx = next.findIndex(
+        (s) => s.evidenceRefId === anchorToResume || s.id === anchorToResume
+      );
+      const resolvedIdx = remapIdx >= 0 ? remapIdx : 0;
+      resumeSegIdxRef.current = resolvedIdx;
+      console.log("[SPEECH_CURSOR_REMAP]", {
+        fromMode: prevModeRef.current,
+        toMode: mode,
+        anchorId: anchorToResume,
+        remappedIdx: resolvedIdx,
+        found: remapIdx >= 0,
+        totalSegments: next.length,
+      });
+    } else {
+      resumeSegIdxRef.current = 0;
+    }
+    prevModeRef.current = mode;
   }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
@@ -977,7 +1008,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           ) ?? null)
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
-      if (matchedId) lastMatchedId = matchedId;
+      if (matchedId) { lastMatchedId = matchedId; lastMatchedIdRef.current = matchedId; }
       // Pass raw (pre-TTS) as the PDF search string — TTS-processed text has acronym
       // expansions and symbol replacements that break text-layer indexOf matching.
       // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
@@ -1387,7 +1418,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {/* Mode tabs */}
           <div style={{ display: "flex", gap: 4 }}>
             {STUDY_SPEECH_MODES.map(m => (
-              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(); }} title={m.description}
+              <button key={m.id} type="button" onClick={() => {
+                // Capture the current playback position before stopping so the new
+                // mode's play button can resume from the nearest matching segment.
+                resumeAnchorIdRef.current = activeAnchorIdRef.current ?? lastMatchedIdRef.current;
+                setMode(m.id);
+                stop();
+              }} title={m.description}
                 style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
               >{m.label}</button>
             ))}
@@ -1409,8 +1446,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
               >▶ Resume</button>
             ) : (
               <button type="button" disabled={!hasContent} onClick={() => {
-                // Start from the selected anchor if one is focused, otherwise from the top.
-                if (selectedUnitId && segments.length > 0) {
+                // Priority: resume anchor from mode-switch → focused anchor → start.
+                const resumeIdx = resumeSegIdxRef.current;
+                if (resumeIdx > 0) {
+                  resumeSegIdxRef.current = 0; // consume so next press starts fresh
+                  play(resumeIdx);
+                } else if (selectedUnitId && segments.length > 0) {
                   const idx = segments.findIndex(
                     (s) => s.evidenceRefId === selectedUnitId || s.id === selectedUnitId
                   );
