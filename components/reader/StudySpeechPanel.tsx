@@ -366,6 +366,37 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
   }
 
+  // Builds the [CANONICAL_SYNC] payload from actual runtime consumer state, NOT
+  // assumed availability. Called at every segment start from all three play paths.
+  // Each field reflects a real observable:
+  //   pdfHighlight  — anchor exactText is in highlightedAnchorTexts (what SmartPDFViewer rendered)
+  //   leftPanel     — a LeftPanel card with this evidenceRefId exists in thoughtUnits
+  //   expertBrain   — the reading focus store's thoughtUnitId equals canonicalId (just set by setThoughtUnit)
+  //   studyNotes    — always false: note linking is page-level, not per-anchor
+  //   connections   — always false: connection linking is page-level, not per-anchor
+  //   transcript    — activeAnchorIdRef.current equals canonicalId (set synchronously by beginKaraoke)
+  //   readingBar    — showKaraokeBar toggle state
+  function buildCanonicalSyncState(canonicalId: string | null, mode: string, sourceWordIndex = 0) {
+    const anchorUnit = canonicalId
+      ? thoughtUnits.find((u) => u.evidenceRefId === canonicalId)
+      : null;
+    const storeId = useReadingFocusStore.getState().thoughtUnitId;
+    return {
+      canonicalAnchorId: canonicalId,
+      page: pageNumber,
+      mode,
+      pdfHighlight:  !!(anchorUnit && highlightedAnchorTexts?.includes(anchorUnit.exactText)),
+      leftPanel:     thoughtUnits.some((u) => u.evidenceRefId === canonicalId),
+      expertBrain:   storeId === canonicalId,
+      studyNotes:    false,
+      connections:   false,
+      transcript:    activeAnchorIdRef.current === canonicalId,
+      readingBar:    showKaraokeBar,
+      wordIndex:     0,
+      sourceWordIndex,
+    };
+  }
+
   // Auto-scroll so the active karaoke word always stays in view — "eyes never lose place".
   const karaokeBoxRef = useRef<HTMLParagraphElement | null>(null);
   const activeWordRef = useRef<HTMLSpanElement | null>(null);
@@ -1063,20 +1094,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
         useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
-      console.log("[CANONICAL_SYNC]", {
-        canonicalAnchorId: focusId ?? null,
-        page: pageNumber,
-        mode: "fullPage",
-        pdfHighlight:  !!focusId,
-        leftPanel:     !!focusId,
-        expertBrain:   !!focusId,
-        studyNotes:    !!focusId,
-        connections:   !!focusId,
-        transcript:    true,
-        readingBar:    true,
-        wordIndex:     0,
-        sourceWordIndex: 0,
-      });
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
 
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
@@ -1137,20 +1155,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
-      console.log("[CANONICAL_SYNC]", {
-        canonicalAnchorId: seg.evidenceRefId ?? null,
-        page: pageNumber,
-        mode: "highlights",
-        pdfHighlight:  !!seg.evidenceRefId,
-        leftPanel:     !!seg.evidenceRefId,
-        expertBrain:   !!seg.evidenceRefId,
-        studyNotes:    !!seg.evidenceRefId,
-        connections:   !!seg.evidenceRefId,
-        transcript:    true,
-        readingBar:    true,
-        wordIndex:     0,
-        sourceWordIndex: seg.sourceTextWordOffset ?? 0,
-      });
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1335,20 +1340,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
-      console.log("[CANONICAL_SYNC]", {
-        canonicalAnchorId: seg.evidenceRefId ?? null,
-        page: pageNumber,
-        mode,
-        pdfHighlight:  !!seg.evidenceRefId,
-        leftPanel:     !!seg.evidenceRefId,
-        expertBrain:   !!seg.evidenceRefId,
-        studyNotes:    !!seg.evidenceRefId,
-        connections:   !!seg.evidenceRefId,
-        transcript:    true,
-        readingBar:    true,
-        wordIndex:     0,
-        sourceWordIndex: seg.sourceTextWordOffset ?? 0,
-      });
+      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
