@@ -13,6 +13,7 @@ import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
+import type { ReadingCursor } from '@/lib/readingFocus/readingFocusStore';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
 import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
@@ -143,6 +144,10 @@ interface PureReaderViewProps {
    *  override) upward so RightPanel/Guided speech can rank and read in the same order
    *  the left panel is actually grouping its thought units by. */
   onEffectivePresetChange?: (presetId: string) => void;
+  /** Fired on every resolved PDF word click — used to prime speech seek refs. */
+  onPdfWordClick?: (cursor: ReadingCursor) => void;
+  /** Fired when the user presses the Play chip — should call seekToCursor + triggerPlay. */
+  onPdfChipPlay?: (cursor: ReadingCursor) => void;
 }
 
 // Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
@@ -185,6 +190,8 @@ export default function PureReaderView({
   emptyThoughtUnitReason = null,
   onEffectivePresetChange,
   bookTitle,
+  onPdfWordClick,
+  onPdfChipPlay,
 }: PureReaderViewProps) {
   // Render counter — diagnostic for React #185 investigation.
   const prRenderCountRef = useRef(0);
@@ -723,6 +730,8 @@ export default function PureReaderView({
               onPageTextExtracted={onPageTextExtracted}
               onReadingPath={onReadingPath}
               roleLabelByConceptId={roleLabelByConceptId}
+              onPdfWordClick={onPdfWordClick}
+              onPdfChipPlay={onPdfChipPlay}
             />
           </div>
         </div>

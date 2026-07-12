@@ -4237,6 +4237,18 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   focusHighlightPersist={speechReadingActive}
                   onTextClick={(snippet) => speechPanelRef.current?.playFromSnippet(snippet)}
+                  onPdfWordClick={(cursor) => {
+                    // Prime speech resume refs for the clicked word.
+                    // Store's setThoughtUnit is already called inside SmartPDFViewer
+                    // handleMouseUp — no duplicate call needed here.
+                    // Speech does NOT start until the user presses the Play chip.
+                    speechPanelRef.current?.seekToCursor(cursor);
+                  }}
+                  onPdfChipPlay={(cursor) => {
+                    // Play chip pressed: re-prime cursor then start playback.
+                    speechPanelRef.current?.seekToCursor(cursor);
+                    speechPanelRef.current?.triggerPlay();
+                  }}
                   aiHighlightAnchors={safeHighlightAnchors}
                   allHighlightAnchors={finalHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
