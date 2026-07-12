@@ -327,6 +327,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const lastMatchedIdRef   = useRef<string | null>(null);
   // Previous mode — used in the SPEECH_CURSOR_REMAP log.
   const prevModeRef        = useRef<string>(mode);
+  // Resume source context captured alongside the anchor so the rebuild effect
+  // can run multi-level resolution: exact ID → sourceText → nearest-following → restart.
+  const resumeSourceTextRef = useRef<string | null>(null);
+  const resumeWordIndexRef  = useRef(0);
 
   // Tokenizes both the displayed and spoken text variants for the segment about
   // to be read, and resets the karaoke cursor to the first word. Call this
@@ -686,21 +690,55 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
 
-    // Resolve resume position: find the segment in the new mode's timeline whose
-    // evidenceRefId matches the anchor the user was listening to before the mode switch.
+    // Resolve resume position using a 4-level cascade so the canonical reading
+    // context is never lost simply because the mode changed:
+    //   1. Exact evidenceRefId / segment ID match
+    //   2. rawText prefix overlap (handles cross-mode text variants)
+    //   3. Nearest following anchor by thoughtUnit reading order
+    //   4. Restart (index 0)
     const anchorToResume = resumeAnchorIdRef.current;
-    if (anchorToResume && next.length > 0) {
-      const remapIdx = next.findIndex(
-        (s) => s.evidenceRefId === anchorToResume || s.id === anchorToResume
-      );
+    if (next.length > 0) {
+      let remapIdx = -1;
+      let remapStrategy = "restart";
+
+      if (anchorToResume) {
+        // Level 1: exact ID
+        remapIdx = next.findIndex(
+          (s) => s.evidenceRefId === anchorToResume || s.id === anchorToResume
+        );
+        if (remapIdx >= 0) remapStrategy = "exact-id";
+      }
+
+      if (remapIdx < 0 && resumeSourceTextRef.current) {
+        // Level 2: rawText 40-char prefix overlap
+        const needle = resumeSourceTextRef.current.slice(0, 60).toLowerCase();
+        remapIdx = next.findIndex((s) => {
+          const hay = s.rawText.slice(0, 60).toLowerCase();
+          return hay.startsWith(needle.slice(0, 40)) || needle.startsWith(hay.slice(0, 40));
+        });
+        if (remapIdx >= 0) remapStrategy = "source-text";
+      }
+
+      if (remapIdx < 0 && anchorToResume) {
+        // Level 3: nearest segment whose anchor follows the resume anchor in page order
+        const orderIdx = thoughtUnits.findIndex((u) => u.evidenceRefId === anchorToResume);
+        if (orderIdx >= 0) {
+          const followingIds = new Set(
+            thoughtUnits.slice(orderIdx + 1).map((u) => u.evidenceRefId).filter(Boolean) as string[]
+          );
+          remapIdx = next.findIndex((s) => s.evidenceRefId && followingIds.has(s.evidenceRefId));
+          if (remapIdx >= 0) remapStrategy = "nearest-following";
+        }
+      }
+
       const resolvedIdx = remapIdx >= 0 ? remapIdx : 0;
       resumeSegIdxRef.current = resolvedIdx;
       console.log("[SPEECH_CURSOR_REMAP]", {
         fromMode: prevModeRef.current,
         toMode: mode,
         anchorId: anchorToResume,
+        strategy: remapStrategy,
         remappedIdx: resolvedIdx,
-        found: remapIdx >= 0,
         totalSegments: next.length,
       });
     } else {
@@ -1025,6 +1063,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
         useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
+      console.log("[CANONICAL_SYNC]", {
+        canonicalAnchorId: focusId ?? null,
+        page: pageNumber,
+        mode: "fullPage",
+        pdfHighlight:  !!focusId,
+        leftPanel:     !!focusId,
+        expertBrain:   !!focusId,
+        studyNotes:    !!focusId,
+        connections:   !!focusId,
+        transcript:    true,
+        readingBar:    true,
+        wordIndex:     0,
+        sourceWordIndex: 0,
+      });
 
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
@@ -1085,6 +1137,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), hText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      console.log("[CANONICAL_SYNC]", {
+        canonicalAnchorId: seg.evidenceRefId ?? null,
+        page: pageNumber,
+        mode: "highlights",
+        pdfHighlight:  !!seg.evidenceRefId,
+        leftPanel:     !!seg.evidenceRefId,
+        expertBrain:   !!seg.evidenceRefId,
+        studyNotes:    !!seg.evidenceRefId,
+        connections:   !!seg.evidenceRefId,
+        transcript:    true,
+        readingBar:    true,
+        wordIndex:     0,
+        sourceWordIndex: seg.sourceTextWordOffset ?? 0,
+      });
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: hText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
@@ -1269,6 +1335,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
       beginKaraoke(seg.text.slice(0, 160), segText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      console.log("[CANONICAL_SYNC]", {
+        canonicalAnchorId: seg.evidenceRefId ?? null,
+        page: pageNumber,
+        mode,
+        pdfHighlight:  !!seg.evidenceRefId,
+        leftPanel:     !!seg.evidenceRefId,
+        expertBrain:   !!seg.evidenceRefId,
+        studyNotes:    !!seg.evidenceRefId,
+        connections:   !!seg.evidenceRefId,
+        transcript:    true,
+        readingBar:    true,
+        wordIndex:     0,
+        sourceWordIndex: seg.sourceTextWordOffset ?? 0,
+      });
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: segText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
@@ -1421,7 +1501,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
               <button key={m.id} type="button" onClick={() => {
                 // Capture the current playback position before stopping so the new
                 // mode's play button can resume from the nearest matching segment.
-                resumeAnchorIdRef.current = activeAnchorIdRef.current ?? lastMatchedIdRef.current;
+                resumeAnchorIdRef.current  = activeAnchorIdRef.current ?? lastMatchedIdRef.current;
+                resumeSourceTextRef.current = activeSentenceTextRef.current;
+                resumeWordIndexRef.current  = activeWordIdx;
                 setMode(m.id);
                 stop();
               }} title={m.description}
