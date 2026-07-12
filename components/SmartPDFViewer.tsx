@@ -1,7 +1,8 @@
 // components/SmartPDFViewer.tsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
 import { useReaderSync } from "@/lib/readerSync";
@@ -11,7 +12,7 @@ import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEviden
 import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -219,6 +220,57 @@ export type TocItem = {
   items?: TocItem[];
 };
 
+// ── PdfPlayChipInner ─────────────────────────────────────────────────────────
+// Rendered via portal into document.body to escape overflow:hidden on the PDF
+// container. Positioned with position:fixed at the click viewport coordinates,
+// shifted upward so it sits just above the clicked word.
+
+interface PdfPlayChipInnerProps {
+  pos: { x: number; y: number };
+  cursor: ReadingCursor;
+  onDismiss: () => void;
+  onPlay: (cursor: ReadingCursor) => void;
+}
+
+function PdfPlayChipInner({ pos, cursor, onDismiss, onPlay }: PdfPlayChipInnerProps) {
+  // Keyboard: Enter → play, Escape → dismiss.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onDismiss(); }
+      else if (e.key === 'Enter') { onPlay(cursor); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [cursor, onDismiss, onPlay]);
+
+  // Outside click — delay by one tick so the same mouseup that opened the chip
+  // doesn't immediately close it again.
+  useEffect(() => {
+    const tid = window.setTimeout(() => {
+      const handler = () => onDismiss();
+      window.addEventListener('click', handler, { once: true });
+    }, 0);
+    return () => window.clearTimeout(tid);
+  }, [onDismiss]);
+
+  // Clamp inside viewport: chip is 160px wide, 34px tall.
+  const left = Math.max(8, Math.min(pos.x - 80, window.innerWidth - 168));
+  const top  = Math.max(8, pos.y - 50);
+
+  return (
+    <button
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onPlay(cursor); }}
+      style={{ position: 'fixed', left, top, zIndex: 9999 }}
+      className="flex items-center gap-1.5 rounded-full border border-yellow-400/60 bg-gray-900/95 px-3 py-1.5 text-xs font-medium text-yellow-300 shadow-lg backdrop-blur-sm transition-opacity hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+      aria-label="Read from here"
+    >
+      <span>▶</span>
+      <span>Read from here</span>
+    </button>
+  );
+}
+
 export interface SmartPDFViewerProps {
   fileUrl: string;
   /** Stable document ID used to key the <Page> for reliable re-mounts. Falls back to fileUrl. */
@@ -279,6 +331,13 @@ export interface SmartPDFViewerProps {
    * Pass the evidenceRefIds from the current effectiveHighlightTargets.
    */
   authorizedHighlightIds?: string[];
+  /**
+   * Fires on every resolved PDF word click (single-click on body text or a highlight).
+   * Carries a ReadingCursor with the canonical anchor ID and source word position.
+   * Caller should call seekToCursor on StudySpeechPanel and setThoughtUnit on the store.
+   * Does NOT start playback — the user must click the Play chip for that.
+   */
+  onPdfWordClick?: (cursor: ReadingCursor) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -468,6 +527,7 @@ export default function SmartPDFViewer({
   roleLabelByConceptId,
   highlightKey,
   authorizedHighlightIds,
+  onPdfWordClick,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -489,6 +549,13 @@ export default function SmartPDFViewer({
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const [overlayVersion, setOverlayVersion] = useState(0);
 
+  // ── PDF Play Chip ──────────────────────────────────────────────────────────
+  // Tooltip-style chip that appears near a clicked word and lets the user start
+  // speech from that exact position. Dismissed on scroll, zoom, page change, Escape.
+  const [chipCursor, setChipCursor] = useState<ReadingCursor | null>(null);
+  const [chipPos, setChipPos]       = useState<{ x: number; y: number } | null>(null);
+  const dismissChip = useCallback(() => { setChipCursor(null); setChipPos(null); }, []);
+
   // Increments after every successful page render (including zoom-triggered re-renders).
   // Adding it to the rebuild effect deps ensures overlay rects recompute at the new scale.
   const [pageRenderKey, setPageRenderKey] = useState(0);
@@ -503,9 +570,11 @@ export default function SmartPDFViewer({
 
   // Clear overlay rects when zoom changes — rects computed against pre-zoom DOM are wrong.
   // Correct rects reappear once pageRenderKey increments (page re-renders at new scale).
+  // Also dismiss the Play chip — its fixed position is meaningless at the new scale.
   useEffect(() => {
     setOverlayRects([]);
     useReadingFocusStore.getState().setPdfRenderedAnchors([]);
+    dismissChip();
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hard-clear all overlay state when highlightKey changes.
@@ -1100,7 +1169,8 @@ export default function SmartPDFViewer({
 
   useEffect(() => {
     setPageInput(String(currentPage));
-  }, [currentPage]);
+    dismissChip(); // stale chip position is meaningless on page change
+  }, [currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced page change handler with sync integration and fallback
   const handlePageChangeWithSync = (newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
@@ -1221,14 +1291,23 @@ export default function SmartPDFViewer({
       return;
     }
 
-    // No drag-selection — treat as a click on body text for "Read From Click".
-    if (!onTextClick) return;
+    // No drag-selection — resolve the clicked word to a ReadingCursor.
     const target = e.target as HTMLElement;
     const span = target.closest('.react-pdf__Page__textContent span, .textLayer span') as HTMLElement | null;
     if (!span) return;
 
-    // Gather nearby spans on the same line (±6px) to form a sentence-ish snippet,
-    // mirroring the paragraph-detection logic used for scroll sync.
+    // Estimate character offset within the span using caretRangeFromPoint.
+    const range = (document as any).caretRangeFromPoint?.(e.clientX, e.clientY) as Range | null;
+    const charOffset = (range?.startContainer?.parentElement?.closest('.react-pdf__Page__textContent span, .textLayer span') === span)
+      ? (range?.startOffset ?? 0)
+      : 0;
+
+    // Derive the word index from charOffset within the span text.
+    const spanText = span.textContent ?? '';
+    const wordsBeforeOffset = spanText.slice(0, charOffset).trim().split(/\s+/).filter(Boolean);
+    const sourceWordIndex = wordsBeforeOffset.length;
+
+    // Build the line-level snippet (mirrors existing onTextClick logic).
     const spans = Array.from(
       (span.closest('.react-pdf__Page__textContent, .textLayer') ?? viewerRef.current)?.querySelectorAll('span') ?? []
     ) as HTMLElement[];
@@ -1242,8 +1321,111 @@ export default function SmartPDFViewer({
       }
     }
     snippet = snippet.trim();
-    if (snippet.length >= 8) onTextClick(snippet);
+
+    // ── Cursor resolution — 5-level cascade ─────────────────────────────────
+    // A. Direct overlay-rect hit (click lands inside a painted anchor rect).
+    const viewerRect = viewerRef.current?.getBoundingClientRect();
+    const relX = e.clientX - (viewerRect?.left ?? 0);
+    const relY = e.clientY - (viewerRect?.top ?? 0);
+    let resolvedAnchorId: string | null = null;
+    let resolutionStrategy: 'overlay-hit' | 'text-range-match' | 'nearest-anchor' | 'unanchored-page' = 'unanchored-page';
+
+    for (const rect of overlayRects) {
+      if (relX >= rect.left && relX <= rect.left + rect.width &&
+          relY >= rect.top && relY <= rect.top + rect.height) {
+        resolvedAnchorId = rect.id;
+        resolutionStrategy = 'overlay-hit';
+        break;
+      }
+    }
+
+    // B+C. Text-range match against highlightTargets.
+    if (!resolvedAnchorId && snippet.length >= 8 && highlightTargets?.length) {
+      const needle = snippet.slice(0, 60).toLowerCase();
+      const hit = highlightTargets.find(t => {
+        const hay = t.normalizedText.slice(0, 80).toLowerCase();
+        return hay.includes(needle.slice(0, 40)) || needle.includes(hay.slice(0, 40));
+      });
+      if (hit) {
+        resolvedAnchorId = hit.evidenceRefId;
+        resolutionStrategy = 'text-range-match';
+      }
+    }
+
+    // D. Nearest painted anchor rect (within 300 px).
+    if (!resolvedAnchorId && overlayRects.length > 0) {
+      let minDist = Infinity;
+      let nearest: string | null = null;
+      for (const rect of overlayRects) {
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dist = Math.hypot(cx - relX, cy - relY);
+        if (dist < minDist) { minDist = dist; nearest = rect.id; }
+      }
+      if (minDist <= 300 && nearest) {
+        resolvedAnchorId = nearest;
+        resolutionStrategy = 'nearest-anchor';
+      }
+    }
+
+    // E. Unanchored page cursor — canonicalAnchorId stays null.
+
+    const confidence = resolutionStrategy === 'overlay-hit'    ? 1.0
+                     : resolutionStrategy === 'text-range-match' ? 0.8
+                     : resolutionStrategy === 'nearest-anchor'  ? 0.4
+                     : 0.1;
+
+    console.log("[PDF_SEMANTIC_CLICK]", {
+      page: currentPage,
+      clickedText: spanText.slice(0, 60),
+      sourceWordIndex,
+      sourceCharOffset: charOffset,
+      resolvedAnchorId,
+      resolutionStrategy,
+      confidence,
+    });
+
+    const cursor: ReadingCursor = {
+      canonicalAnchorId: resolvedAnchorId,
+      sourcePage: currentPage,
+      sourceText: snippet.length >= 8 ? snippet : spanText,
+      sourceWordIndex,
+      sourceCharOffset: charOffset,
+    };
+
+    // Show the Play chip at click position (fixed viewport coords for portal rendering).
+    setChipCursor(cursor);
+    setChipPos({ x: e.clientX, y: e.clientY });
+
+    // Sync LeftPanel + Expert Brain without starting speech.
+    if (resolvedAnchorId) {
+      useReadingFocusStore.getState().setThoughtUnit(resolvedAnchorId);
+    }
+    useReadingFocusStore.getState().setPdfClickCursor(cursor);
+    onPdfWordClick?.(cursor);
+
+    // Legacy onTextClick still fires so existing playFromSnippet flow works.
+    if (onTextClick && snippet.length >= 8) onTextClick(snippet);
   };
+
+  // ── PdfPlayChip — portaled tooltip near the clicked word ──────────────────
+  // Rendered via createPortal so it escapes the PDF container's overflow:hidden.
+  // Position: fixed at the click viewport coords, shifted above the word.
+  // Dismisses on: outside click, scroll, zoom, page change, Escape, or playback start.
+  const PdfPlayChip = chipCursor && chipPos && typeof document !== 'undefined'
+    ? createPortal(
+        <PdfPlayChipInner
+          pos={chipPos}
+          cursor={chipCursor}
+          onDismiss={dismissChip}
+          onPlay={(c) => {
+            dismissChip();
+            onPdfWordClick?.(c);
+          }}
+        />,
+        document.body
+      )
+    : null;
 
   return (
     <div
@@ -1251,6 +1433,7 @@ export default function SmartPDFViewer({
       ref={viewerRef}
       onMouseUp={handleMouseUp}
     >
+      {PdfPlayChip}
       {/* Loading State */}
       {isLoading && (
         <div className="absolute inset-0 bg-gray-900/95 flex items-center justify-center z-50">

@@ -7,6 +7,20 @@ import { create } from 'zustand';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Shared cursor built on every PDF click and updated during playback.
+ *  Drives seekToCursor in StudySpeechPanel and syncs LeftPanel/ExpertBrain. */
+export interface ReadingCursor {
+  /** Nearest resolved canonical anchor, or null for unanchored page text. */
+  canonicalAnchorId: string | null;
+  sourcePage: number;
+  /** Verbatim text of the clicked span / sentence (used for text-range matching). */
+  sourceText: string;
+  /** Word index within sourceText (0-based). */
+  sourceWordIndex: number;
+  /** Character offset within the PDF span at click point. */
+  sourceCharOffset: number;
+}
+
 export interface ReadingFocusState {
   /** Active thought-unit anchor ID — drives LeftPanel card highlight, PDF glow, Expert Brain. */
   thoughtUnitId: string | null;
@@ -24,6 +38,8 @@ export interface ReadingFocusState {
   /** evidenceRefId of the anchor whose word-level rect (yellow box) is currently painted.
    *  Null when no word rect is visible (between segments, zooming, or after stop). */
   pdfRenderedWordAnchorId: string | null;
+  /** Most recent cursor built from a PDF word click. Null until the user clicks. */
+  pdfClickCursor: ReadingCursor | null;
 }
 
 interface ReadingFocusActions {
@@ -41,6 +57,8 @@ interface ReadingFocusActions {
   setPdfRenderedAnchors: (ids: string[]) => void;
   /** Written by WordRectOverlay after the word-level rect is painted (or cleared). */
   setPdfRenderedWordAnchor: (id: string | null) => void;
+  /** Written by SmartPDFViewer on every resolved PDF word click. */
+  setPdfClickCursor: (cursor: ReadingCursor | null) => void;
 }
 
 type ReadingFocusStore = ReadingFocusState & ReadingFocusActions;
@@ -55,6 +73,7 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
   playbackState: 'idle',
   pdfRenderedAnchorIds: [],
   pdfRenderedWordAnchorId: null,
+  pdfClickCursor: null,
 
   setThoughtUnit: (id) => {
     console.log("[FOCUS_STORE_WRITE] setThoughtUnit", id);
@@ -81,11 +100,14 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
     wordIndex: 0,
     word: null,
     playbackState: 'idle',
+    pdfClickCursor: null,
   }),
 
   setPdfRenderedAnchors: (ids) => set({ pdfRenderedAnchorIds: ids }),
 
   setPdfRenderedWordAnchor: (id) => set({ pdfRenderedWordAnchorId: id }),
+
+  setPdfClickCursor: (cursor) => set({ pdfClickCursor: cursor }),
 }));
 
 // ── Compatibility selector ────────────────────────────────────────────────────

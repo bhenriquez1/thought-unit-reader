@@ -27,7 +27,7 @@ import {
   scaleIndex,
   type SyncWord,
 } from "@/lib/speech/wordSync";
-import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 import {
   claimSpeech,
   isSpeechStale,
@@ -267,6 +267,9 @@ export interface StudySpeechPanelHandle {
   /** "Read From Click" — switch to Current Page mode and start reading from the
    *  sentence that best matches the clicked PDF text. */
   playFromSnippet: (snippet: string) => void;
+  /** Semantic click navigation — prime the resume cursor so the next Play press
+   *  starts from the given word position. Does NOT auto-start playback. */
+  seekToCursor: (cursor: ReadingCursor) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -289,6 +292,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
   const [speed, setSpeed]     = useState(1.0);
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
+  // Mirror of segments state kept in a ref for imperative handle access (seekToCursor).
+  const segmentsRef = useRef<SpeechSegment[]>([]);
   const [segIdx, setSegIdx]   = useState(0);
 
   type PlayState = "idle" | "loading" | "playing" | "paused" | "error";
@@ -764,6 +769,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
     console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
+    segmentsRef.current = next;
 
     // Resolve resume position using a 4-level cascade so the canonical reading
     // context is never lost simply because the mode changed:
@@ -1482,7 +1488,68 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setTimeout(() => playFullPageSequential(sents, idx, session), 80);
   }
 
-  useImperativeHandle(ref, () => ({ playFromSnippet }), [fpSentences, activePageText, pageNumber, speed, voice]);
+  // ── seekToCursor — prime resume refs from a PDF click cursor ─────────────────
+  // Does NOT start playback. Sets resumeAnchorIdRef / resumeSegIdxRef / resumeWordIndexRef
+  // so the next Play press starts from the clicked word. Uses the same 4-level cascade
+  // as the mode-switch remap, but applies to the current mode's segment list.
+  function seekToCursor(cursor: ReadingCursor) {
+    const segs = segmentsRef.current;
+    const anchor = cursor.canonicalAnchorId;
+    let resolvedIdx = 0;
+    let strategy = "restart";
+
+    // Level 1: exact canonical ID match
+    if (anchor) {
+      const idx = segs.findIndex(s => s.evidenceRefId === anchor || s.id === anchor);
+      if (idx >= 0) { resolvedIdx = idx; strategy = "exact-id"; }
+    }
+
+    // Level 2: source-text 40-char prefix overlap (never matches Guided narration prefixes)
+    if (strategy === "restart" && cursor.sourceText) {
+      const needle = cursor.sourceText.slice(0, 60).toLowerCase();
+      const idx = segs.findIndex(s => {
+        const hay = (s.rawText ?? s.text).slice(0, 60).toLowerCase();
+        return hay.startsWith(needle.slice(0, 40)) || needle.startsWith(hay.slice(0, 40));
+      });
+      if (idx >= 0) { resolvedIdx = idx; strategy = "source-text"; }
+    }
+
+    // Level 3: nearest following anchor in thoughtUnits reading order
+    if (strategy === "restart" && anchor) {
+      const orderIdx = thoughtUnits.findIndex(u => u.evidenceRefId === anchor);
+      if (orderIdx >= 0) {
+        const followingIds = new Set(
+          thoughtUnits.slice(orderIdx + 1).map(u => u.evidenceRefId).filter(Boolean) as string[]
+        );
+        const idx = segs.findIndex(s => s.evidenceRefId && followingIds.has(s.evidenceRefId));
+        if (idx >= 0) { resolvedIdx = idx; strategy = "nearest-following"; }
+      }
+    }
+
+    // Level 4: Current Page text match by source text (canonicalAnchorId may be null)
+    if (strategy === "restart" && cursor.sourceText && mode === "fullPage") {
+      const needle = cursor.sourceText.slice(0, 40).toLowerCase();
+      const idx = segs.findIndex(s => s.text.toLowerCase().includes(needle));
+      if (idx >= 0) { resolvedIdx = idx; strategy = "current-page-text"; }
+    }
+
+    resumeAnchorIdRef.current   = anchor;
+    resumeSourceTextRef.current = cursor.sourceText;
+    resumeSegIdxRef.current     = resolvedIdx;
+    resumeWordIndexRef.current  = cursor.sourceWordIndex;
+
+    console.log("[SPEECH_SEEK_TO_CURSOR]", {
+      mode,
+      canonicalAnchorId: anchor,
+      sourcePage: cursor.sourcePage,
+      requestedWordIndex: cursor.sourceWordIndex,
+      resolvedSegmentIndex: resolvedIdx,
+      resolvedWordIndex: cursor.sourceWordIndex,
+      strategy,
+    });
+  }
+
+  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
