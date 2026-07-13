@@ -374,19 +374,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeSentenceTextRef.current   = rawText ?? spokenText;
     sourceTextWordOffsetRef.current = wordOffset;
     useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
-    // Cross-system synchronization diagnostic: one entry per segment, at word 0.
-    // pdfTargetMatched uses pdfRenderedAnchorIds (written by SmartPDFViewer after the
-    // anchor highlight rect paints) — if true, a HighlightTarget exists and the PDF rect
-    // has been rendered at least once. pdfWordRectRendered confirms the moving word box.
+    // Request-time snapshot: emitted before PDF has painted. pdfTargetMatched and
+    // pdfWordRectRendered are NOT included here — they are false at this point even
+    // when the overlay will render correctly milliseconds later. Confirmation comes from
+    // [THOUGHT_UNIT_WORD_SYNC_RENDERED] emitted by WordRectOverlay after the rect paints.
     const _s = buildCanonicalSyncState(anchorId, mode, 0);
-    console.log("[THOUGHT_UNIT_WORD_SYNC]", {
+    console.log("[THOUGHT_UNIT_WORD_SYNC_REQUESTED]", {
       canonicalAnchorId:        anchorId,
       mode,
       sourceText:               (rawText ?? spokenText)?.slice(0, 80) ?? null,
       sourceWordIndex:          0,
-      pdfTargetMatched:         _s.pdfAnchorRendered,
-      pdfWordRectRendered:      _s.pdfWordRendered,
-      leftPanelActiveId:        _s.leftPanelActive  ? anchorId : null,
+      leftPanelActiveId:        _s.leftPanelActive     ? anchorId : null,
       expertBrainActiveId:      _s.expertBrainSelected ? anchorId : null,
       studyNoteReferenceCount:  _s.studyNoteReferenceCount,
       connectionReferenceCount: _s.connectionReferenceCount,
@@ -1181,6 +1179,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
       if (matchedId) { lastMatchedId = matchedId; lastMatchedIdRef.current = matchedId; }
+      console.log("[SPEECH_SEEK_OFFSET]", {
+        segIdx: i, canonicalAnchorId: matchedId ?? lastMatchedId,
+        cursorConsumed: seekWordStartRef.current > 0,
+        clickedWordStart: seekWordStartRef.current,
+        narrationPrefixOffset: 0, effectivePrefixOffset: 0,
+        resultingPdfStartIndex: seekWordStartRef.current,
+      });
       // Pass raw (pre-TTS, full sentence) as the PDF search string — TTS-processed text has
       // acronym expansions and symbol replacements that break text-layer indexOf matching.
       // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
@@ -1281,6 +1286,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           }
         }
       }
+      console.log("[SPEECH_SEEK_OFFSET]", {
+        segIdx: i, canonicalAnchorId: seg.evidenceRefId ?? null,
+        cursorConsumed: seekWordStartRef.current > 0,
+        clickedWordStart: seekWordStartRef.current,
+        narrationPrefixOffset: seg.sourceTextWordOffset ?? 0,
+        effectivePrefixOffset: hWordOffset,
+        resultingPdfStartIndex: seekWordStartRef.current,
+      });
       beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, hWordOffset);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
@@ -1491,6 +1504,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           }
         }
       }
+      console.log("[SPEECH_SEEK_OFFSET]", {
+        segIdx: i, canonicalAnchorId: seg.evidenceRefId ?? null,
+        cursorConsumed: seekWordStartRef.current > 0,
+        clickedWordStart: seekWordStartRef.current,
+        narrationPrefixOffset: seg.sourceTextWordOffset ?? 0,
+        effectivePrefixOffset: segWordOffset,
+        resultingPdfStartIndex: seekWordStartRef.current,
+      });
       beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, segWordOffset);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });

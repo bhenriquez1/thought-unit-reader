@@ -487,6 +487,22 @@ function WordRectOverlay({
         // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
         // can report pdfWordRendered from observed state, not assumption.
         useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
+        if (r) {
+          // Render-time confirmation — emitted after the rect actually paints, not at
+          // segment start. pdfAnchorRendered reads from the store written by the overlay
+          // paint that precedes word-tick. Correlate with [THOUGHT_UNIT_WORD_SYNC_REQUESTED]
+          // by canonicalAnchorId + sourceWordIndex.
+          const _rs = useReadingFocusStore.getState();
+          console.log("[THOUGHT_UNIT_WORD_SYNC_RENDERED]", {
+            canonicalAnchorId:  word.anchorId,
+            page:               currentPage,
+            sourceWordIndex:    word.wordIndex,
+            pdfAnchorRendered:  !!(word.anchorId && _rs.pdfRenderedAnchorIds.includes(word.anchorId)),
+            pdfWordRectRendered: true,
+            rect:               r,
+            renderGeneration:   pageRenderKey,
+          });
+        }
       });
     }
     // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
