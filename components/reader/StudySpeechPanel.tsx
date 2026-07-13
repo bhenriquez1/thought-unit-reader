@@ -1243,6 +1243,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       seekWordStartRef.current = 0;
       let ttsHText = hText;
       let eyeHText = seg.text.slice(0, 160);
+      let hWordOffset = seg.sourceTextWordOffset ?? 0;
       if (i === fromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
@@ -1256,11 +1257,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
             ttsHText = computeSpeechText(slicedRaw || hText);
             eyeHText = slicedRaw.slice(0, 160) || eyeHText;
+            // Narration prefix was stripped from the sliced TTS — don't subtract it again.
+            hWordOffset = 0;
             console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "highlights", segIdx: i, wordIdx, ttsPreview: ttsHText.slice(0, 80) });
           }
         }
       }
-      beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, hWordOffset);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsHText.length, preview: ttsHText.slice(0, 60) });
@@ -1448,6 +1451,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       seekWordStartRef.current = 0;
       let ttsSegText = segText;
       let eyeSegText = seg.text.slice(0, 160);
+      let segWordOffset = seg.sourceTextWordOffset ?? 0;
       if (i === fromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
@@ -1461,11 +1465,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
             ttsSegText = computeSpeechText(slicedRaw || segText);
             eyeSegText = slicedRaw.slice(0, 160) || eyeSegText;
+            // Guided narration prefix was stripped from the sliced TTS — zero the offset so
+            // sourceTextWordOffsetRef doesn't double-subtract it from the PDF word index.
+            segWordOffset = 0;
             console.log("[SPEECH_CURSOR_CONSUMED]", { mode, segIdx: i, wordIdx, ttsPreview: ttsSegText.slice(0, 80) });
           }
         }
       }
-      beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, seg.sourceTextWordOffset ?? 0);
+      beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, segWordOffset);
       console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
       console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsSegText.length, mode, preview: ttsSegText.slice(0, 60) });
