@@ -374,6 +374,24 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeSentenceTextRef.current   = rawText ?? spokenText;
     sourceTextWordOffsetRef.current = wordOffset;
     useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
+    // Cross-system synchronization diagnostic: one entry per segment, at word 0.
+    // pdfTargetMatched uses pdfRenderedAnchorIds (written by SmartPDFViewer after the
+    // anchor highlight rect paints) — if true, a HighlightTarget exists and the PDF rect
+    // has been rendered at least once. pdfWordRectRendered confirms the moving word box.
+    const _s = buildCanonicalSyncState(anchorId, mode, 0);
+    console.log("[THOUGHT_UNIT_WORD_SYNC]", {
+      canonicalAnchorId:        anchorId,
+      mode,
+      sourceText:               (rawText ?? spokenText)?.slice(0, 80) ?? null,
+      sourceWordIndex:          0,
+      pdfTargetMatched:         _s.pdfAnchorRendered,
+      pdfWordRectRendered:      _s.pdfWordRendered,
+      leftPanelActiveId:        _s.leftPanelActive  ? anchorId : null,
+      expertBrainActiveId:      _s.expertBrainSelected ? anchorId : null,
+      studyNoteReferenceCount:  _s.studyNoteReferenceCount,
+      connectionReferenceCount: _s.connectionReferenceCount,
+      readingBarEnabled:        _s.readingBarEnabled,
+    });
   }
 
   function onSpokenWordIndex(spokenIdx: number) {
@@ -1121,10 +1139,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
       if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
       const text = computeSpeechText(raw);
-      // Consume the pending click cursor on the first sentence — slice TTS from the clicked
-      // word so speech starts at "organism" not "Trace elements are required by an organism".
-      // seekWordStartRef offsets onSpokenWordIndex so the PDF yellow box tracks the right word.
-      // rawText is always the FULL sentence so the overlay can match the PDF span correctly.
+      // seekWordStartRef MUST be reset to 0 at the top of every iteration (not just i>0)
+      // so the clicked-word offset cannot leak from the first segment into later segments.
+      // pendingSeekCursorRef was already nulled when consumed — this reset is the final guard.
       seekWordStartRef.current = 0;
       let ttsText = text;
       let eyeText = text.slice(0, 160);
@@ -1240,6 +1257,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
+      // Reset before every segment — prevents clicked-word offset leaking past the first segment.
       seekWordStartRef.current = 0;
       let ttsHText = hText;
       let eyeHText = seg.text.slice(0, 160);
@@ -1448,6 +1466,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
       if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
+      // Reset before every segment — prevents clicked-word offset leaking past the first segment.
       seekWordStartRef.current = 0;
       let ttsSegText = segText;
       let eyeSegText = seg.text.slice(0, 160);

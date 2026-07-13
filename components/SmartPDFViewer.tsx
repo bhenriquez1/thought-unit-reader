@@ -438,6 +438,12 @@ function WordRectOverlay({
       hasSentenceText: !!activeSpokenWord.sentenceText,
     });
     const container = viewerRef.current;
+    // Canonical-ID-first: resolve the HighlightTarget by canonicalAnchorId so the PDF
+    // rect is always grounded in the same Thought Unit identity that drives LeftPanel and
+    // Expert Brain. sentenceText (= verbatim rawText from the speech segment) is preferred
+    // over target.normalizedText — it is the exact PDF text, never a paraphrase or prefix.
+    // Text-only path (sentenceText without a target) applies only to unanchored segments
+    // such as some Current Page sentences that legitimately have no canonical anchor.
     const target = activeSpokenWord.anchorId
       ? highlightTargets?.find((t) =>
           t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
