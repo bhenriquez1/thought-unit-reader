@@ -438,6 +438,12 @@ function WordRectOverlay({
       hasSentenceText: !!activeSpokenWord.sentenceText,
     });
     const container = viewerRef.current;
+    // Canonical-ID-first: resolve the HighlightTarget by canonicalAnchorId so the PDF
+    // rect is always grounded in the same Thought Unit identity that drives LeftPanel and
+    // Expert Brain. sentenceText (= verbatim rawText from the speech segment) is preferred
+    // over target.normalizedText — it is the exact PDF text, never a paraphrase or prefix.
+    // Text-only path (sentenceText without a target) applies only to unanchored segments
+    // such as some Current Page sentences that legitimately have no canonical anchor.
     const target = activeSpokenWord.anchorId
       ? highlightTargets?.find((t) =>
           t.evidenceRefId === activeSpokenWord.anchorId || t.id === activeSpokenWord.anchorId
@@ -481,6 +487,22 @@ function WordRectOverlay({
         // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
         // can report pdfWordRendered from observed state, not assumption.
         useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
+        if (r) {
+          // Render-time confirmation — emitted after the rect actually paints, not at
+          // segment start. pdfAnchorRendered reads from the store written by the overlay
+          // paint that precedes word-tick. Correlate with [THOUGHT_UNIT_WORD_SYNC_REQUESTED]
+          // by canonicalAnchorId + sourceWordIndex.
+          const _rs = useReadingFocusStore.getState();
+          console.log("[THOUGHT_UNIT_WORD_SYNC_RENDERED]", {
+            canonicalAnchorId:  word.anchorId,
+            page:               currentPage,
+            sourceWordIndex:    word.wordIndex,
+            pdfAnchorRendered:  !!(word.anchorId && _rs.pdfRenderedAnchorIds.includes(word.anchorId)),
+            pdfWordRectRendered: true,
+            rect:               r,
+            renderGeneration:   pageRenderKey,
+          });
+        }
       });
     }
     // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
@@ -489,7 +511,7 @@ function WordRectOverlay({
     useReadingFocusStore.getState().setPdfRenderedWordAnchor(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
-  }, [activeSpokenWord, currentPage, overlayRects, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSpokenWord, currentPage, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!wordRect) return null;
   return (
