@@ -4,6 +4,7 @@
 
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 
 export type NoteSubject =
   | "Biology"
@@ -100,6 +101,8 @@ export interface UltraNote {
   visualAnchors?: VisualAnchor[];
   /** Free-form topic tags, surfaced as a badge row and included in exports. */
   tags?: string[];
+  /** DAT Study Sheet — one-concept visual study page generated on demand. */
+  datStudySheet?: DATStudySheet;
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -153,6 +156,8 @@ function compact(note: UltraNote): UltraNote {
       reason: a.reason.slice(0, 100),
     })),
     tags: note.tags?.slice(0, 8),
+    // Strip study sheet from LS mirror — it can be several KB; IDB holds the full copy.
+    datStudySheet: undefined,
   };
 }
 

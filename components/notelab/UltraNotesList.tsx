@@ -26,6 +26,8 @@ import {
   getConceptFieldLabel,
   type ProfessionMode,
 } from "@/lib/notelab/professionModes";
+import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
+import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -169,6 +171,18 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       await saveUltraNote(updated);
     } catch (e) {
       console.error("[NOTELAB_STAR_SAVE_FAILED]", String(e));
+    }
+  }
+
+  // ── Save study sheet ─────────────────────────────────────────────────────
+
+  async function handleSaveStudySheet(note: UltraNote, sheet: DATStudySheet) {
+    const updated: UltraNote = { ...note, datStudySheet: sheet };
+    setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
+    try {
+      await saveUltraNote(updated);
+    } catch (e) {
+      console.error("[NOTELAB_SHEET_SAVE_FAILED]", String(e));
     }
   }
 
@@ -322,6 +336,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onExplainCard={onExplainCard}
                               onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
                               onJumpToNote={handleJumpToNote}
+                              onSaveStudySheet={(sheet) => handleSaveStudySheet(note, sheet)}
                               focusedAnchorText={isExpanded ? focusedAnchorText : null}
                             />
                           );
@@ -414,7 +429,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, focusedAnchorText,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -432,10 +447,12 @@ function NoteCard({
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
   onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
+  onSaveStudySheet: (sheet: DATStudySheet) => void;
   focusedAnchorText?: string | null;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
+  const [noteView, setNoteView] = useState<"notes" | "studySheet">("notes");
 
   async function handleGenerateCards() {
     if (cardsSaving) return;
@@ -504,6 +521,45 @@ function NoteCard({
       {/* Expanded body */}
       {isExpanded && (
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Tab bar */}
+          <div style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
+            {(["notes", "studySheet"] as const).map((tab) => {
+              const active = noteView === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setNoteView(tab)}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 7,
+                    border: active ? "1px solid rgba(252,211,77,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                    background: active ? "rgba(252,211,77,0.1)" : "transparent",
+                    color: active ? "#fcd34d" : "rgba(148,163,184,0.7)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {tab === "notes" ? "📋 Notes" : "📊 Study Sheet"}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Study Sheet tab */}
+          {noteView === "studySheet" && (
+            <DATStudySheetCard
+              note={note}
+              sheet={note.datStudySheet ?? null}
+              onSheet={onSaveStudySheet}
+            />
+          )}
+
+          {/* Notes tab */}
+          {noteView === "notes" && <>
 
           {note.tags && note.tags.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -639,7 +695,9 @@ function NoteCard({
             );
           })()}
 
-          {/* Action buttons */}
+          </> /* end noteView === "notes" */}
+
+          {/* Action buttons — always visible regardless of tab */}
           <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
             <button
               type="button"
