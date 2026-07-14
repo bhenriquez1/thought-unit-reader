@@ -26,7 +26,9 @@ import {
   getConceptFieldLabel,
   type ProfessionMode,
 } from "@/lib/notelab/professionModes";
+import AdaptiveStudySheetCard from "@/components/notelab/AdaptiveStudySheetCard";
 import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
+import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 
 interface UltraNotesListProps {
@@ -176,8 +178,8 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   // ── Save study sheet ─────────────────────────────────────────────────────
 
-  async function handleSaveStudySheet(note: UltraNote, sheet: DATStudySheet) {
-    const updated: UltraNote = { ...note, datStudySheet: sheet };
+  async function handleSaveStudySheet(note: UltraNote, sheet: AdaptiveStudySheet) {
+    const updated: UltraNote = { ...note, adaptiveStudySheet: sheet };
     setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
     try {
       await saveUltraNote(updated);
@@ -447,7 +449,7 @@ function NoteCard({
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
   onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
-  onSaveStudySheet: (sheet: DATStudySheet) => void;
+  onSaveStudySheet: (sheet: AdaptiveStudySheet) => void;
   focusedAnchorText?: string | null;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
@@ -551,11 +553,23 @@ function NoteCard({
 
           {/* Study Sheet tab */}
           {noteView === "studySheet" && (
-            <DATStudySheetCard
-              note={note}
-              sheet={note.datStudySheet ?? null}
-              onSheet={onSaveStudySheet}
-            />
+            note.datStudySheet && !note.adaptiveStudySheet
+              ? (
+                // Backward compat: notes generated before the adaptive system
+                <DATStudySheetCard
+                  note={note}
+                  sheet={note.datStudySheet}
+                  onSheet={() => { /* legacy — no save path */ }}
+                />
+              )
+              : (
+                <AdaptiveStudySheetCard
+                  note={note}
+                  sheet={note.adaptiveStudySheet ?? null}
+                  onSheet={onSaveStudySheet}
+                  onNavigateToPage={onNavigate}
+                />
+              )
           )}
 
           {/* Notes tab */}
