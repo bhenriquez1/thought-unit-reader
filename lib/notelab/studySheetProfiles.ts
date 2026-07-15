@@ -297,20 +297,36 @@ Include both generic and brand drug names.`,
 
 // ── Profile detection ─────────────────────────────────────────────────────
 
-/** Map a raw subject/domain string to the best matching ProfileId. */
-export function profileFromSubject(subject: string): ProfileId {
+export interface ProfileDetection {
+  profileId:  ProfileId;
+  confidence: number;   // 0–1
+  signal:     string;   // human-readable description of what matched
+}
+
+/** Map a raw subject/domain string to the best matching profile with confidence. */
+export function profileFromSubject(subject: string): ProfileDetection {
   const s = subject.toLowerCase();
-  if (/\bdat\b|dental admission test/.test(s)) return "dat";
-  if (/\blaw\b|legal|contract|tort|constitutional|criminal/.test(s)) return "law";
-  if (/dental|dent|prostho|endo|perio|oral surg/.test(s)) return "dental";
-  if (/nursing|nclex|pharma/.test(s)) return "nursing";
-  if (/chem(istry)?|organic|biochem/.test(s)) return "chemistry";
-  if (/bio(logy)?|anatomy|physiology|genetics|cell|organism|microbio/.test(s)) return "biology";
-  if (/physics|mechanics|thermodynamic|electromagnet|quantum/.test(s)) return "physics";
-  if (/calc|math|algebra|geometry|trig|statistic|differential|linear|analysis/.test(s)) return "math";
-  if (/computer science|programming|algorithm|software|coding|data structure/.test(s)) return "cs";
-  if (/histor|war|revolution|empire|century|ancient|medieval/.test(s)) return "history";
-  return "general";
+  if (/\bdat\b|dental admission test/.test(s))
+    return { profileId: "dat",       confidence: 0.95, signal: "matched DAT keyword" };
+  if (/\blaw\b|legal|contract|tort|constitutional|criminal/.test(s))
+    return { profileId: "law",       confidence: 0.90, signal: "matched law/legal keyword" };
+  if (/dental|dent|prostho|endo|perio|oral surg/.test(s))
+    return { profileId: "dental",    confidence: 0.90, signal: "matched dental keyword" };
+  if (/nursing|nclex|pharma/.test(s))
+    return { profileId: "nursing",   confidence: 0.88, signal: "matched nursing/pharma keyword" };
+  if (/chem(istry)?|organic|biochem/.test(s))
+    return { profileId: "chemistry", confidence: 0.85, signal: "matched chemistry keyword" };
+  if (/bio(logy)?|anatomy|physiology|genetics|cell|organism|microbio/.test(s))
+    return { profileId: "biology",   confidence: 0.85, signal: "matched biology keyword" };
+  if (/physics|mechanics|thermodynamic|electromagnet|quantum/.test(s))
+    return { profileId: "physics",   confidence: 0.85, signal: "matched physics keyword" };
+  if (/calc|math|algebra|geometry|trig|statistic|differential|linear|analysis/.test(s))
+    return { profileId: "math",      confidence: 0.82, signal: "matched math keyword" };
+  if (/computer science|programming|algorithm|software|coding|data structure/.test(s))
+    return { profileId: "cs",        confidence: 0.88, signal: "matched CS keyword" };
+  if (/histor|war|revolution|empire|century|ancient|medieval/.test(s))
+    return { profileId: "history",   confidence: 0.80, signal: "matched history keyword" };
+  return { profileId: "general", confidence: 0.30, signal: "no domain keywords found" };
 }
 
 /** Accent color for each profile — used in UI badges. */

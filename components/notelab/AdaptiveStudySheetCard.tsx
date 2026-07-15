@@ -374,26 +374,35 @@ function GenerateButton({
   note: UltraNote;
   onSheet: (sheet: AdaptiveStudySheet) => void;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [error, setError]                   = useState<string | null>(null);
+  const [overrideProfileId, setOverride]    = useState<ProfileId | null>(null);
 
-  const profileId: ProfileId = profileFromSubject(note.subject ?? "General Notes") as ProfileId;
-  const profile = STUDY_SHEET_PROFILES[profileId];
-  const accentColor = PROFILE_ACCENT[profileId];
-  const anchorCount = note.highlightAnchors?.length ?? 0;
+  const detectedResult  = profileFromSubject(note.subject ?? "General Notes");
+  const profileId       = overrideProfileId ?? detectedResult.profileId;
+  const profile         = STUDY_SHEET_PROFILES[profileId];
+  const accentColor     = PROFILE_ACCENT[profileId];
+  const anchorCount     = note.highlightAnchors?.length ?? 0;
+  const confidence      = detectedResult.confidence;
+  const confidenceColor =
+    confidence >= 0.85 ? "rgba(52,211,153,0.85)" :
+    confidence >= 0.60 ? "rgba(148,163,184,0.7)" :
+                         "rgba(251,146,60,0.85)";
 
   const generate = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const body = {
-        concept:          note.topic,
-        subjectArea:      note.subject ?? "General Notes",
+        concept:           note.topic,
+        subjectArea:       note.subject ?? "General Notes",
         profileId,
-        canonicalAnchors: note.highlightAnchors?.slice(0, 10),
-        pageThesis:       note.pageThesis,
-        sourcePage:       note.pageNumber,
-        noteId:           note.id,
+        canonicalAnchors:  note.highlightAnchors?.slice(0, 10),
+        pageThesis:        note.pageThesis,
+        sourcePage:        note.pageNumber,
+        noteId:            note.id,
+        detectedProfileId: detectedResult.profileId,
+        selectedProfileId: profileId,
       };
       const res = await fetch("/api/adaptive-study-sheet", {
         method:  "POST",
@@ -411,15 +420,70 @@ function GenerateButton({
     } finally {
       setLoading(false);
     }
-  }, [note, profileId, onSheet]);
+  }, [note, profileId, detectedResult, onSheet]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "32px 16px", textAlign: "center" }}>
-      {/* Profile badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, border: `1px solid ${accentColor}40`, background: `${accentColor}10` }}>
-        <span style={{ fontSize: 16 }}>{profile.icon}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: accentColor }}>{profile.label} Profile</span>
+
+      {/* Profile badge + confidence */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, border: `1px solid ${accentColor}40`, background: `${accentColor}10` }}>
+          <span style={{ fontSize: 16 }}>{profile.icon}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: accentColor }}>{profile.label}</span>
+          {!overrideProfileId && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: confidenceColor }}>
+              {Math.round(confidence * 100)}% match
+            </span>
+          )}
+          {overrideProfileId && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(251,191,36,0.8)" }}>
+              manual
+            </span>
+          )}
+        </div>
+
+        {/* Profile override selector */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <select
+            value={profileId}
+            onChange={e => {
+              const val = e.target.value as ProfileId;
+              setOverride(val === detectedResult.profileId ? null : val);
+            }}
+            style={{
+              background: "rgba(15,23,42,0.9)",
+              border: "1px solid rgba(148,163,184,0.2)",
+              borderRadius: 6,
+              color: "rgba(148,163,184,0.7)",
+              fontSize: 11,
+              padding: "3px 8px",
+              cursor: "pointer",
+            }}
+          >
+            {Object.values(STUDY_SHEET_PROFILES).map(p => (
+              <option key={p.id} value={p.id}>
+                {p.icon} {p.label}
+              </option>
+            ))}
+          </select>
+          {overrideProfileId && (
+            <button
+              type="button"
+              onClick={() => setOverride(null)}
+              style={{ fontSize: 10, color: "rgba(148,163,184,0.5)", cursor: "pointer", background: "none", border: "none", padding: 0 }}
+            >
+              ✕ reset
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Low-confidence warning */}
+      {confidence < 0.60 && !overrideProfileId && (
+        <div style={{ fontSize: 11, color: "rgba(251,146,60,0.8)", maxWidth: 280, lineHeight: 1.55, padding: "6px 10px", borderRadius: 7, border: "1px solid rgba(251,146,60,0.2)", background: "rgba(251,146,60,0.05)" }}>
+          ⚠️ Low confidence — {detectedResult.signal}. Use the dropdown to select a profile manually.
+        </div>
+      )}
 
       <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>
         Generate Study Sheet for
@@ -499,7 +563,8 @@ export default function AdaptiveStudySheetCard({
 }: AdaptiveStudySheetCardProps) {
   const [regenerating, setRegenerating] = useState(false);
 
-  const profileId = (sheet?.profileId as ProfileId | undefined) ?? (profileFromSubject(note.subject ?? "General Notes") as ProfileId);
+  const profileId = ((sheet?.selectedProfileId ?? sheet?.profileId) as ProfileId | undefined)
+    ?? profileFromSubject(note.subject ?? "General Notes").profileId;
   const profile = STUDY_SHEET_PROFILES[profileId];
   const accentColor = PROFILE_ACCENT[profileId];
 
@@ -508,13 +573,14 @@ export default function AdaptiveStudySheetCard({
     setRegenerating(true);
     try {
       const body = {
-        concept:          note.topic,
-        subjectArea:      note.subject ?? "General Notes",
+        concept:           note.topic,
+        subjectArea:       note.subject ?? "General Notes",
         profileId,
-        canonicalAnchors: note.highlightAnchors?.slice(0, 10),
-        pageThesis:       note.pageThesis,
-        sourcePage:       note.pageNumber,
-        noteId:           note.id,
+        canonicalAnchors:  note.highlightAnchors?.slice(0, 10),
+        pageThesis:        note.pageThesis,
+        sourcePage:        note.pageNumber,
+        noteId:            note.id,
+        selectedProfileId: profileId,
       };
       const res = await fetch("/api/adaptive-study-sheet", {
         method:  "POST",
@@ -597,6 +663,24 @@ export default function AdaptiveStudySheetCard({
           onNavigate={onNavigateToPage}
         />
       ))}
+
+      {/* Validation issues — sections not grounded in supplied source */}
+      {sheet.validationIssues?.length ? (
+        <div style={{ ...card, background: "rgba(251,146,60,0.05)", border: "1px solid rgba(251,146,60,0.2)" }}>
+          <div style={{ ...labelStyle, color: "#fb923c" }}>
+            <span>⚠️</span>
+            <span>NOT FOUND IN SUPPLIED SOURCE</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {sheet.validationIssues.map((issue, i) => (
+              <div key={i} style={{ fontSize: 12.5, color: "rgba(226,232,240,0.7)", paddingBottom: i < sheet.validationIssues!.length - 1 ? 6 : 0, borderBottom: i < sheet.validationIssues!.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+                <span style={{ fontWeight: 700, color: "#fb923c" }}>{issue.sectionType}</span>
+                <span style={{ color: "rgba(148,163,184,0.6)", marginLeft: 6 }}>— {issue.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Formula */}
       {sheet.formula && (

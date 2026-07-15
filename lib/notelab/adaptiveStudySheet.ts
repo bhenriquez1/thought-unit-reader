@@ -12,9 +12,9 @@ export const StudySheetSectionSchema = z.object({
   icon:       z.string(),               // emoji
   content:    z.string(),               // primary paragraph content
   subItems:   z.array(z.string()).nullable(), // bullets or ordered steps
-  anchorId:   z.string().nullable(),    // "anchor_N" — index into canonicalAnchors
+  anchorId:   z.string().nullable(),    // stable "aN" — index into canonicalAnchors
   sourcePage: z.number().int().nullable(),
-  sourceText: z.string().nullable(),    // verbatim source passage
+  sourceText: z.string().nullable(),    // verbatim source passage (server-hydrated)
 });
 export type StudySheetSection = z.infer<typeof StudySheetSectionSchema>;
 
@@ -67,6 +67,15 @@ export const StudySheetQuestionSchema = z.object({
 });
 export type StudySheetQuestion = z.infer<typeof StudySheetQuestionSchema>;
 
+// ── Validation issue — records missing required content without fabricating it ──
+
+export const ValidationIssueSchema = z.object({
+  sectionType: z.string(),
+  code:        z.string(),  // e.g. "required-section-missing"
+  message:     z.string(),
+});
+export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
+
 // ── Full Adaptive Study Sheet ─────────────────────────────────────────────
 
 export const AdaptiveStudySheetSchema = z.object({
@@ -99,5 +108,20 @@ export const AdaptiveStudySheetSchema = z.object({
 
   // Source traceability
   canonicalSourcePage: z.number().int().nullable(),
+
+  // Profile provenance — set by server after generation, output null from model
+  detectedProfileId: z.string().nullable(),
+  selectedProfileId: z.string().nullable(),
+
+  // Sheet versioning — stamped server-side, output null from model
+  generatorVersion: z.string().nullable(),
+  profileVersion:   z.string().nullable(),
+  schemaVersion:    z.number().int().nullable(),
+  generatedAt:      z.string().nullable(),
+  modelId:          z.string().nullable(),
+  sourceDocumentId: z.string().nullable(),
+
+  // Post-generation validation — set by server, output null from model
+  validationIssues: z.array(ValidationIssueSchema).nullable(),
 });
 export type AdaptiveStudySheet = z.infer<typeof AdaptiveStudySheetSchema>;
