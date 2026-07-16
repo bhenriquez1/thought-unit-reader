@@ -39,6 +39,8 @@ interface RecallLabProps {
   onOpenInWhiteboard?: (detail: ThoughtUnitDetail) => void;
   /** "Open in Explain This Step" — seeds the tutor chat with this unit's source text */
   onOpenExplainStep?: (detail: ThoughtUnitDetail) => void;
+  /** When set, highlights the recall set whose knowledgeNodeId matches */
+  focusedKnowledgeNodeId?: string | null;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = [
@@ -124,6 +126,7 @@ export default function RecallLab({
   onVisualize,
   onOpenInWhiteboard,
   onOpenExplainStep,
+  focusedKnowledgeNodeId,
 }: RecallLabProps) {
   // Start from LS mirror for instant render; IDB async load fills in on mount
   const [sets, setSets] = useState<RecallSet[]>(() => {
@@ -332,6 +335,7 @@ export default function RecallLab({
               onOpenDeck={(s) => setView({ kind: "deck", set: s })}
               onDelete={handleDelete}
               onNavigate={onNavigateToPage}
+              focusedKnowledgeNodeId={focusedKnowledgeNodeId}
             />
           );
         })}
@@ -351,6 +355,7 @@ function SubjectGroup({
   onOpenDeck,
   onDelete,
   onNavigate,
+  focusedKnowledgeNodeId,
 }: {
   subject: NoteSubject;
   byBook: Map<string, RecallSet[]>;
@@ -358,6 +363,7 @@ function SubjectGroup({
   onOpenDeck: (s: RecallSet) => void;
   onDelete: (id: string) => void;
   onNavigate?: (page: number) => void;
+  focusedKnowledgeNodeId?: string | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const allSets = [...byBook.values()].flat();
@@ -390,6 +396,7 @@ function SubjectGroup({
               onOpenDeck={onOpenDeck}
               onDelete={onDelete}
               onNavigate={onNavigate}
+              focusedKnowledgeNodeId={focusedKnowledgeNodeId}
             />
           ))}
         </div>
@@ -410,6 +417,7 @@ function BookGroup({
   onOpenDeck,
   onDelete,
   onNavigate,
+  focusedKnowledgeNodeId,
 }: {
   bookId: string;
   bookTitle?: string;
@@ -418,6 +426,7 @@ function BookGroup({
   onOpenDeck: (s: RecallSet) => void;
   onDelete: (id: string) => void;
   onNavigate?: (page: number) => void;
+  focusedKnowledgeNodeId?: string | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const label = bookTitle || (bookId.length > 30 ? bookId.slice(0, 30) + "…" : bookId);
@@ -443,6 +452,7 @@ function BookGroup({
               onOpenDeck={() => onOpenDeck(s)}
               onDelete={() => onDelete(s.id)}
               onNavigate={onNavigate}
+              focusedKnowledgeNodeId={focusedKnowledgeNodeId}
             />
           ))}
         </div>
@@ -461,20 +471,23 @@ function RecallSetRow({
   onOpenDeck,
   onDelete,
   onNavigate,
+  focusedKnowledgeNodeId,
 }: {
   set: RecallSet;
   onStart: () => void;
   onOpenDeck: () => void;
   onDelete: () => void;
   onNavigate?: (page: number) => void;
+  focusedKnowledgeNodeId?: string | null;
 }) {
   const missedCount = set.cards.filter((c) => c.isMissed).length;
   const reviewedCount = set.cards.filter((c) => c.reviewCount > 0).length;
   const progress = set.cards.length > 0 ? Math.round((reviewedCount / set.cards.length) * 100) : 0;
   const src = set.sourceLabel ? SOURCE_LABEL[set.sourceLabel] : null;
+  const isFocused = !!(focusedKnowledgeNodeId && set.knowledgeNodeId === focusedKnowledgeNodeId);
 
   return (
-    <div style={{ borderRadius: 9, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(11,20,40,0.7)", padding: "10px 12px" }}>
+    <div style={{ borderRadius: 9, border: isFocused ? "1px solid rgba(139,92,246,0.6)" : "1px solid rgba(255,255,255,0.07)", background: "rgba(11,20,40,0.7)", padding: "10px 12px", boxShadow: isFocused ? "0 0 0 3px rgba(139,92,246,0.15)" : "none", transition: "border-color 0.3s, box-shadow 0.3s" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Topic + source badge */}

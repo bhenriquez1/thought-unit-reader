@@ -31,6 +31,7 @@ import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import KnowledgeNodeBadge from "@/components/knowledge/KnowledgeNodeBadge";
+import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -48,6 +49,8 @@ interface UltraNotesListProps {
   /** Verbatim text of a left-rail thought unit the user just clicked — passed
    *  through to NoteCardGrid so the matching card scrolls into view + highlights. */
   focusedAnchorText?: string | null;
+  /** When set, auto-expands and scrolls to the note with this knowledgeNodeId. */
+  focusedKnowledgeNodeId?: string | null;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = [
@@ -74,7 +77,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onActiveNoteChange, focusedAnchorText }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onActiveNoteChange, focusedAnchorText, focusedKnowledgeNodeId }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -211,6 +214,22 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
     }, 60);
     setTimeout(() => setHighlightedNoteId((cur) => (cur === target.id ? null : cur)), 1600);
   }
+
+  // ── KG node focus: auto-expand + scroll to matching note ─────────────────
+
+  useEffect(() => {
+    if (!focusedKnowledgeNodeId) return;
+    const match = notes.find((n) => n.knowledgeNodeId === focusedKnowledgeNodeId);
+    if (!match) return;
+    const subject = match.subject ?? "General Notes";
+    setCollapsedSubjects((prev) => { const next = new Set(prev); next.delete(subject); return next; });
+    setCollapsedBooks((prev) => { const next = new Set(prev); next.delete(`${subject}:${match.bookId}`); return next; });
+    setExpandedId(match.id);
+    onActiveNoteChange?.(match);
+    setHighlightedNoteId(match.id);
+    setTimeout(() => { noteRefs.current.get(match.id)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 60);
+    setTimeout(() => setHighlightedNoteId((cur) => (cur === match.id ? null : cur)), 1600);
+  }, [focusedKnowledgeNodeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Collapse toggles ──────────────────────────────────────────────────────
 
@@ -453,6 +472,7 @@ function NoteCard({
   onSaveStudySheet: (sheet: AdaptiveStudySheet) => void;
   focusedAnchorText?: string | null;
 }) {
+  const setSelectedKgNodeId = useKnowledgeSelectionStore((s) => s.setSelectedNodeId);
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
   const [noteView, setNoteView] = useState<"notes" | "studySheet">("notes");
@@ -512,6 +532,7 @@ function NoteCard({
             {note.knowledgeNodeId && (
               <KnowledgeNodeBadge
                 role={note.visualAnchors?.[0]?.role ?? "Concept"}
+                onClick={() => setSelectedKgNodeId(note.knowledgeNodeId!)}
               />
             )}
           </div>

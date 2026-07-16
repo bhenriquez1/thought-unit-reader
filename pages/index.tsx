@@ -146,6 +146,8 @@ import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
+import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
+import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 
 // Lazy-load to keep SSR clean with performance optimizations
@@ -628,6 +630,11 @@ export default function ThoughtUnitReader() {
   // Used by all note-save paths to attach knowledgeNodeId without blocking the UI.
   const pageKgNodeIdRef = useRef<string | null>(null);
 
+  // KG cross-module selection sync: badge clicks → auto-navigate + highlight.
+  const selectedKgNodeId = useKnowledgeSelectionStore((s) => s.selectedNodeId);
+  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+  const lastNavigatedKgNodeRef = useRef<string | null>(null);
+
   // Reading position from the single ReadingFocusStore — no local state needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
   const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
@@ -724,6 +731,21 @@ export default function ThoughtUnitReader() {
         .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
     }
   }, [currentPageStudyModel, bookId, currentPage]);
+
+  // ── KG selection → navigate reader + highlight anchor ─────────────────────
+  useEffect(() => {
+    if (!selectedKgNodeId || selectedKgNodeId === lastNavigatedKgNodeRef.current) return;
+    const node = kgNodes.find((n) => n.id === selectedKgNodeId);
+    if (!node) return;
+    lastNavigatedKgNodeRef.current = selectedKgNodeId;
+    if (node.sourcePages.length > 0) {
+      syncToPage(node.sourcePages[0], { reason: "TOC_JUMP" });
+      trySwitchShellTab("reader", "reader");
+    }
+    if (node.canonicalAnchorId) {
+      setFocusedEvidenceId(node.canonicalAnchorId);
+    }
+  }, [selectedKgNodeId, kgNodes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
@@ -4418,6 +4440,7 @@ export default function ThoughtUnitReader() {
                   }}
                   onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); }}
                   focusedAnchorText={notelabFocusedAnchorText}
+                  focusedKnowledgeNodeId={selectedKgNodeId}
                 />
               </ErrorBoundary>
             </div>
@@ -4669,6 +4692,7 @@ export default function ThoughtUnitReader() {
                 onVisualize={visualizeThoughtUnit}
                 onOpenInWhiteboard={openThoughtUnitInWhiteboard}
                 onOpenExplainStep={openExplainStepForThoughtUnit}
+                focusedKnowledgeNodeId={selectedKgNodeId}
               />
             </ErrorBoundary>
           </div>
