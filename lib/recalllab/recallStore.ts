@@ -7,6 +7,8 @@ import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import { getNodeProgress, saveNodeProgress } from "@/lib/knowledge/knowledgeGraphStore";
+import { recallDifficultyPatch } from "@/lib/knowledge/computeMastery";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -336,9 +338,41 @@ export async function updateCardDifficulty(setId: string, cardId: string, diffic
   // Always mirror to localStorage so the rating survives reload even if IDB failed.
   lsUpsert(set);
 
+  // Write KnowledgeNodeProgress if this set is linked to a KnowledgeNode.
+  if (set.knowledgeNodeId) {
+    const nodeId = set.knowledgeNodeId;
+    getNodeProgress(nodeId)
+      .then((existing) => {
+        const base = existing ?? emptyProgress(nodeId);
+        const patch = recallDifficultyPatch(base, difficulty);
+        return saveNodeProgress({ ...base, ...patch });
+      })
+      .catch((err) => {
+        console.error("[KG_PROGRESS_WRITE_FAIL]", { nodeId, error: err instanceof Error ? err.message : String(err) });
+      });
+  }
+
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("recall-lab-updated"));
   }
+}
+
+function emptyProgress(nodeId: string) {
+  return {
+    nodeId,
+    understandingScore: 0,
+    recallScore:        0,
+    memoryStrength:     0,
+    masteryScore:       0,
+    confidenceScore:    0,
+    lastStudiedAt:      null as string | null,
+    lastReviewedAt:     null as string | null,
+    nextReviewAt:       null as string | null,
+    predictedForgetAt:  null as string | null,
+    missCount:          0,
+    correctCount:       0,
+    confusionNodeIds:   [] as string[],
+  };
 }
 
 // ── Lifecycle state (New / Learning / Review / Mastered) ──────────────────
