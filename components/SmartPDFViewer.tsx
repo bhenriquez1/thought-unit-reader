@@ -128,8 +128,23 @@ function computeActiveWordRect(
   wordIndex: number,
 ): { top: number; left: number; width: number; height: number } | null {
   const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
-  const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
-  if (!spans.length) return null;
+  const rawSpans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+  if (!rawSpans.length) return null;
+  // Geometry-sort spans (top-to-bottom, left-to-right) to match buildStructuredPageText's
+  // Y-desc/X-asc item ordering. Without this, concatText follows PDF content-stream order,
+  // which on multi-column pages differs from visual reading order — causing indexOf to miss
+  // sentences that were correctly extracted by buildStructuredPageText.
+  // Precompute rects once to avoid repeated layout queries inside the sort comparator.
+  const rawRects = rawSpans.map(s => s.getBoundingClientRect());
+  const sortOrder = rawSpans
+    .map((_, i) => i)
+    .sort((a, b) => {
+      const yDiff = rawRects[a].top - rawRects[b].top;
+      if (Math.abs(yDiff) > 2) return yDiff; // ~2 viewport-px ≈ 3 PDF units at standard zoom
+      return rawRects[a].left - rawRects[b].left;
+    });
+  const spans = sortOrder.map(i => rawSpans[i]);
+  const sortedRects = sortOrder.map(i => rawRects[i]);
 
   const spanNorm = spans.map((s) => stripPunctForMatch(s.textContent || ""));
   const offsets: number[] = [];
@@ -191,7 +206,7 @@ function computeActiveWordRect(
     const sStart = offsets[i];
     const sEnd = sStart + spanNorm[i].length;
     if (sEnd <= wordStart || sStart >= wordEnd) continue;
-    const dr = spans[i].getBoundingClientRect();
+    const dr = sortedRects[i];
     if (dr.width < 1 || dr.height < 1) continue;
     const spanLen = Math.max(1, spanNorm[i].length);
     const fracStart = Math.max(0, (wordStart - sStart) / spanLen);

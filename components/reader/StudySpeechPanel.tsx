@@ -776,7 +776,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     } else {
       setFpSentences([]);
     }
-  }, [mode, activePageText, pageNumber]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mode is captured in the closure for OCR-repair gating but must not trigger a rebuild on tab switch; sentence content depends only on page text
+  }, [activePageText, pageNumber]);
 
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
@@ -1146,9 +1147,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i === effectiveFromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
+          // Always consume the cursor on the first iteration regardless of whether the
+          // text matches — a cursor that misses must not leak into the next play session.
+          pendingSeekCursorRef.current = null;
           const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
           if (raw.toLowerCase().includes(needle)) {
-            pendingSeekCursorRef.current = null;
             const rawWords = tokenizeWords(raw);
             const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
             seekWordStartRef.current = wordIdx;

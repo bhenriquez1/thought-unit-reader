@@ -4,6 +4,8 @@
 
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
+import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 
 export type NoteSubject =
   | "Biology"
@@ -100,6 +102,10 @@ export interface UltraNote {
   visualAnchors?: VisualAnchor[];
   /** Free-form topic tags, surfaced as a badge row and included in exports. */
   tags?: string[];
+  /** DAT Study Sheet — kept for backward compat with previously generated sheets. */
+  datStudySheet?: DATStudySheet;
+  /** Adaptive Study Sheet — profile-driven replacement for datStudySheet. */
+  adaptiveStudySheet?: AdaptiveStudySheet;
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -153,6 +159,9 @@ function compact(note: UltraNote): UltraNote {
       reason: a.reason.slice(0, 100),
     })),
     tags: note.tags?.slice(0, 8),
+    // Strip both sheet types from LS mirror — they can be several KB; IDB holds the full copy.
+    datStudySheet:     undefined,
+    adaptiveStudySheet: undefined,
   };
 }
 
