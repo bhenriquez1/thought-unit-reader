@@ -307,11 +307,11 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
     }
   } catch { /* non-fatal */ }
 
-  // Primary: IDB — on failure, fall back to the localStorage mirror so the note
-  // is not silently lost (consistent with saveRecallSet's IDB-failure fallback).
+  // Primary: IDB — full (uncompacted) note so large fields like adaptiveStudySheet
+  // and datStudySheet survive. On failure, fall back to the localStorage mirror.
   try {
-    await idbPutNote(c);
-    console.log("[NOTE_SAVE_SUCCESS]", { id: c.id, page: c.pageNumber, bookId: c.bookId, driver: "indexeddb" });
+    await idbPutNote(note);
+    console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, bookId: note.bookId, driver: "indexeddb" });
   } catch (e) {
     console.error("[NOTELAB_IDB_PUT_FAIL]", { id: c.id, error: String(e) }, "— falling back to localStorage mirror");
   }
