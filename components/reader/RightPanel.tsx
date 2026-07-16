@@ -1351,13 +1351,18 @@ export function RightPanel({
     return result;
   }, [ultraPageView, teachingSynthesis, ctx?.pageNumber, ctx?.sectionTitle, ctx?.chapterTitle]);
 
-  // Typed study model built when synthesis resolves — shared with all downstream features.
+  // Typed study model — emitted as soon as heuristic data is available, then upgraded
+  // when synthesis resolves. A heuristic-only model (no _synth) gives downstream features
+  // (KG, NoteLab, highlights) a valid model in ~200 ms instead of waiting 3-15 s for AI.
+  // buildStudyModel handles an empty synth safely: all synth fields null-coalesce to
+  // heuristic data (view.coreIdea, view.blocks) and the thesis fallback anchor.
+  // The fingerprint dedup in the emit effect below prevents double-emission of the same model.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
+    if (!ultraPageViewWithSynthesis) return null;
     const synth = (ultraPageViewWithSynthesis as any)?._synth as Record<string, unknown> | undefined;
-    if (!synth || !ultraPageViewWithSynthesis) return null;
     return buildStudyModel(
       ultraPageViewWithSynthesis,
-      synth,
+      synth ?? {},
       ctx?.documentId ?? "",
       ctx?.pageNumber ?? 0,
       effectivePresetId,
