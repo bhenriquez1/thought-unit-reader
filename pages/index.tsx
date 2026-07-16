@@ -26,6 +26,7 @@ import SurgeonView from "@/components/SurgeonView";
 // NoteLabViewEnhanced, StudySessionPanel, MemoCardsStudyPanel removed — superseded by UltraNotesList + RecallLab
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
+import AdaptiveSyllabusPanel from "@/components/syllabus/AdaptiveSyllabusPanel";
 import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
@@ -4481,6 +4482,21 @@ export default function ThoughtUnitReader() {
               console.error("📚 Syllabus Error:", { message: error.message, stack: error.stack });
             }}
           >
+            {/* AI Adaptive Syllabus — shown whenever a book is loaded */}
+            {bookId && syllabusToc.length > 0 && (
+              <div className="mb-4">
+                <AdaptiveSyllabusPanel
+                  bookId={bookId}
+                  bookTitle={uploadedFile?.name ?? bookId}
+                  filename={uploadedFile?.name}
+                  tocNodes={syllabusToc}
+                  pageCount={pdfPageCount || 1}
+                  onJumpToPage={(page) => handleSyllabusNodeClick({ id: `syllabus-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                  getPageText={(page) => pageTextByPage.get(`${bookId}:${page}`) ?? ""}
+                />
+              </div>
+            )}
+
             {!syllabusPages.length ? (
               <div className="space-y-2">
                 {syllabusUploadRequested && (
