@@ -511,6 +511,30 @@ export function buildStudyModel(
       };
     });
 
+  // Safety net: if no anchors survived (very short thesis, all-header page, review checkpoint)
+  // but the heuristic pipeline produced concept blocks, promote the first block's title as a
+  // coreIdea anchor so the KG effect always has something to resolve.
+  if (visualAnchors.length === 0 && conceptBlocks.length > 0) {
+    const firstBlock = conceptBlocks[0];
+    const fallbackText = firstBlock.pattern || firstBlock.title;
+    if (fallbackText && fallbackText.length >= 12) {
+      visualAnchors.push({
+        id:                  `va-p${page}-pageThesis-fallback`,
+        sourceField:         "pageThesis",
+        exactText:           fallbackText,
+        role:                "coreIdea",
+        kind:                "thesis",
+        reason:              "Derived from concept block — no primary anchor available",
+        priority:            1,
+        thesisRelevance:     1,
+        misconceptionRisk:   0,
+        proceduralImportance: 0,
+        connectionStrength:  1,
+        speechPriority:      1,
+      });
+    }
+  }
+
   // Item A — pre-resolve canonical anchor IDs for each Study Note field so RightPanel
   // never needs to rediscover them via sourceField matching at runtime.
   // noteText is passed so role-based fallbacks require semantic similarity (≥12% word overlap),

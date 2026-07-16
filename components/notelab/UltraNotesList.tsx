@@ -30,6 +30,7 @@ import AdaptiveStudySheetCard from "@/components/notelab/AdaptiveStudySheetCard"
 import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
+import KnowledgeNodeBadge from "@/components/knowledge/KnowledgeNodeBadge";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -503,11 +504,16 @@ function NoteCard({
           <div style={{ fontSize: 13, fontWeight: 700, color: "#fcd34d", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             ⚡ {note.topic}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.65)", display: "flex", gap: 10 }}>
+          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.65)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span>Page {note.pageNumber}</span>
             <span>·</span>
             <span>{new Date(note.createdAt).toLocaleDateString()}</span>
             {note.bookTitle && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{note.bookTitle}</span></>}
+            {note.knowledgeNodeId && (
+              <KnowledgeNodeBadge
+                role={note.visualAnchors?.[0]?.role ?? "Concept"}
+              />
+            )}
           </div>
         </div>
         <button

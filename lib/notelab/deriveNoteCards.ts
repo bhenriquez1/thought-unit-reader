@@ -67,5 +67,21 @@ export function deriveNoteCardsFromStudyModel(model: CurrentPageStudyModel): Not
   );
   if (complicationRisk) cards.push(complicationRisk);
 
+  // Safety net for heuristic-only models (synthesis not yet resolved):
+  // studyNotes fields are all null, but concept blocks from the heuristic pipeline
+  // are already available. Derive additional cards from them so a note saved before
+  // synthesis completes still shows meaningful content instead of zero cards.
+  if (cards.length <= 1) {
+    for (const block of model.conceptBlocks.slice(0, 5)) {
+      if (!block.title && !block.pattern) continue;
+      const body = [block.pattern, block.mechanism].filter(Boolean).join("\n\n") || block.pattern;
+      const c = card("pattern_recognition", block.title || "Key Concept", body);
+      if (c && !cards.some((x) => x.title === c.title)) cards.push(c);
+    }
+    const trapText = model.conceptBlocks.find((b) => b.trap)?.trap ?? null;
+    const trapCard = card("dat_trap", "Watch Out", trapText);
+    if (trapCard && !cards.some((x) => x.title === trapCard.title)) cards.push(trapCard);
+  }
+
   return cards;
 }

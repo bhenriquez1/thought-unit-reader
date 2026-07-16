@@ -145,6 +145,8 @@ import { type SmartTOCEntry } from "@/lib/tocParser";
 import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
+import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -622,6 +624,10 @@ export default function ThoughtUnitReader() {
   renderCountRef.current++;
   console.log("[INDEX_RENDER]", renderCountRef.current);
 
+  // Primary KnowledgeNode for the current page — populated by the KG effect below.
+  // Used by all note-save paths to attach knowledgeNodeId without blocking the UI.
+  const pageKgNodeIdRef = useRef<string | null>(null);
+
   // Reading position from the single ReadingFocusStore — no local state needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
   const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
@@ -683,6 +689,41 @@ export default function ThoughtUnitReader() {
     (isReading: boolean) => setSpeechReadingActive(isReading),
     []
   );
+
+  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
+  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
+  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
+  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
+  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
+  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
+  useEffect(() => {
+    if (!currentPageStudyModel || !bookId) return;
+    const { visualAnchors } = currentPageStudyModel;
+    if (!visualAnchors.length) return;
+
+    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
+    const chapterCandidateId = syllabus?.structureCandidates?.find(
+      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
+    )?.id ?? null;
+    const profileId = syllabus?.selectedProfileId ?? "general";
+
+    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
+    pageKgNodeIdRef.current = null;
+
+    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea" || a.role === "core_idea") ?? visualAnchors[0];
+
+    for (const anchor of visualAnchors) {
+      if (!anchor.id) continue;
+      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
+        .then(node => {
+          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
+          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
+            pageKgNodeIdRef.current = node.id;
+          }
+        })
+        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [currentPageStudyModel, bookId, currentPage]);
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
@@ -1893,6 +1934,8 @@ export default function ThoughtUnitReader() {
           priorityTier: u.priorityTier,
         }));
       }
+      note.knowledgeNodeId    = pageKgNodeIdRef.current ?? undefined;
+      note.canonicalAnchorId  = activeUnit?.id ?? undefined;
       await saveUltraNote(note);
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
@@ -2410,6 +2453,8 @@ export default function ThoughtUnitReader() {
         priority: 1,
         priorityTier: u.priorityTier,
       }));
+      note.knowledgeNodeId   = pageKgNodeIdRef.current ?? undefined;
+      note.canonicalAnchorId = unit.id;
       await saveUltraNote(note);
       setNoteLabRefreshKey((k) => k + 1);
       trySwitchShellTab("notelab", "notelab");
@@ -2433,6 +2478,8 @@ export default function ThoughtUnitReader() {
     if (detail.mechanism) sections.push({ label: "Mechanism", content: detail.mechanism });
     if (detail.examTrap) sections.push({ label: "Trap", content: detail.examTrap });
     note.sections = sections;
+    note.knowledgeNodeId   = pageKgNodeIdRef.current ?? undefined;
+    note.canonicalAnchorId = anchor.id;
     await saveUltraNote(note);
     setNoteLabRefreshKey((k) => k + 1);
     trySwitchShellTab("notelab", "notelab");
@@ -2486,6 +2533,7 @@ export default function ThoughtUnitReader() {
     if (parsed.example) sections.push({ label: "Example", content: parsed.example });
     if (parsed.commonMistake) sections.push({ label: "Common Mistake", content: parsed.commonMistake });
     note.sections = sections;
+    note.knowledgeNodeId = pageKgNodeIdRef.current ?? undefined;
     await saveUltraNote(note);
     console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber, sectionLabels: sections.map((s) => s.label) });
     setNoteLabRefreshKey((k) => k + 1);
