@@ -49,6 +49,8 @@ export interface RecallSet {
   cards: RecallCard[];
   createdAt: number;
   sourceNoteId?: string;
+  // Knowledge Graph reference (KG PR 1) — back-filled incrementally, never required.
+  knowledgeNodeId?: string;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────

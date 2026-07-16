@@ -63,6 +63,8 @@ export interface StudyGuideRecord extends StudyGuideOutput {
   targetScore?: string;
   sourceLabels: string[];
   createdAt: number;
+  // Knowledge Graph reference (KG PR 1) — back-filled incrementally, never required.
+  knowledgeNodeId?: string;
 }
 
 export type StudyGuideSource = {

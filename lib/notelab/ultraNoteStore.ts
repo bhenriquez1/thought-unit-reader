@@ -106,6 +106,12 @@ export interface UltraNote {
   datStudySheet?: DATStudySheet;
   /** Adaptive Study Sheet — profile-driven replacement for datStudySheet. */
   adaptiveStudySheet?: AdaptiveStudySheet;
+  // ── Knowledge Graph references (KG PR 1) ──────────────────────────────────
+  // Optional — notes created before KG PR 1 will not have these fields.
+  // Never renamed or removed; back-filled incrementally via resolveOrCreateNode.
+  knowledgeNodeId?:    string;
+  canonicalAnchorId?:  string;
+  chapterCandidateId?: string;
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────

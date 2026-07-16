@@ -145,6 +145,8 @@ import { type SmartTOCEntry } from "@/lib/tocParser";
 import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
+import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -683,6 +685,30 @@ export default function ThoughtUnitReader() {
     (isReading: boolean) => setSpeechReadingActive(isReading),
     []
   );
+
+  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
+  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
+  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
+  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
+  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
+  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
+  useEffect(() => {
+    if (!currentPageStudyModel || !bookId) return;
+    const { visualAnchors } = currentPageStudyModel;
+    if (!visualAnchors.length) return;
+
+    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
+    const chapterCandidateId = syllabus?.structureCandidates?.find(
+      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
+    )?.id ?? null;
+    const profileId = syllabus?.selectedProfileId ?? "general";
+
+    for (const anchor of visualAnchors) {
+      if (!anchor.id) continue;
+      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
+        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [currentPageStudyModel, bookId, currentPage]);
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
