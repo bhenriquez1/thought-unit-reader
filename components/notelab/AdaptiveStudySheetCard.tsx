@@ -3,14 +3,24 @@
 // Adaptive Study Sheet renderer — profile-driven, domain-agnostic.
 // Renders sections based on the active profile; each section carries optional citation metadata.
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
-import type { AdaptiveStudySheet, StudySheetSection, StudySheetDiagram, StudySheetQuestion } from "@/lib/notelab/adaptiveStudySheet";
-import { STUDY_SHEET_PROFILES, profileFromSubject, PROFILE_ACCENT, type ProfileId } from "@/lib/notelab/studySheetProfiles";
+import type {
+  AdaptiveStudySheet,
+  StudySheetSection,
+  StudySheetDiagram,
+  StudySheetQuestion,
+} from "@/lib/notelab/adaptiveStudySheet";
+import {
+  STUDY_SHEET_PROFILES,
+  profileFromSubject,
+  PROFILE_ACCENT,
+  type ProfileId,
+} from "@/lib/notelab/studySheetProfiles";
+import type { ExplainLevel } from "@/pages/api/explain-concept";
 
 // ── Color palette ─────────────────────────────────────────────────────────
 
-// Cycle of section background themes — assigned by section index
 const SECTION_PALETTE = [
   { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  border: "rgba(251,191,36,0.22)" },
   { accent: "#38bdf8", bg: "rgba(56,189,248,0.06)",  border: "rgba(56,189,248,0.22)" },
@@ -63,40 +73,40 @@ function CitationChip({
   sourceText?: string | null;
   onNavigate?: (page: number) => void;
 }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  if (!sourcePage && !sourceText) return null;
+  const [hovered, setHovered] = useState(false);
+  if (!sourcePage) return null;
   return (
-    <span style={{ position: "relative", display: "inline-block" }}>
-      <button
-        type="button"
-        onClick={() => sourcePage && onNavigate?.(sourcePage)}
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "2px 7px",
-          borderRadius: 4,
-          border: "1px solid rgba(148,163,184,0.25)",
-          background: "rgba(148,163,184,0.08)",
-          color: "rgba(148,163,184,0.75)",
-          fontSize: 10,
-          fontWeight: 600,
-          cursor: sourcePage && onNavigate ? "pointer" : "default",
-          marginTop: 6,
-        }}
-      >
-        {sourcePage ? `📄 p${sourcePage}` : "📄 source"}
-      </button>
-      {showTooltip && sourceText && (
+    <span
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={(e) => { e.stopPropagation(); onNavigate?.(sourcePage); }}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        padding: "1px 7px",
+        borderRadius: 4,
+        background: "rgba(56,189,248,0.1)",
+        border: "1px solid rgba(56,189,248,0.25)",
+        color: "#7dd3fc",
+        fontSize: 10,
+        fontWeight: 700,
+        cursor: onNavigate ? "pointer" : "default",
+        marginLeft: 4,
+        letterSpacing: "0.04em",
+        userSelect: "none",
+      }}
+    >
+      p.{sourcePage}
+      {hovered && sourceText && (
         <div style={{
           position: "absolute",
-          bottom: "calc(100% + 6px)",
+          top: "calc(100% + 6px)",
           left: 0,
-          zIndex: 20,
-          background: "#0d1628",
-          border: "1px solid rgba(148,163,184,0.2)",
+          zIndex: 999,
+          background: "rgba(15,23,42,0.97)",
+          border: "1px solid rgba(56,189,248,0.2)",
           borderRadius: 7,
           padding: "8px 10px",
           width: 260,
@@ -227,10 +237,8 @@ function DiagramView({ diagram }: { diagram: StudySheetDiagram }) {
     const nodeMap: Record<string, string> = {};
     nodes.forEach(n => { nodeMap[n.id] = n.label; });
 
-    // Build ordered chain from arrows if available, else just show nodes in sequence
     let chain: string[] = [];
     if (arrows?.length) {
-      const fromSet = new Set(arrows.map(a => a.from));
       const toSet   = new Set(arrows.map(a => a.to));
       const start   = nodes.find(n => !toSet.has(n.id)) ?? nodes[0];
       const visited = new Set<string>();
@@ -241,7 +249,6 @@ function DiagramView({ diagram }: { diagram: StudySheetDiagram }) {
         const next = arrows.find(a => a.from === cur && !visited.has(a.to));
         cur = next?.to ?? "";
       }
-      // add any remaining nodes not reached
       nodes.forEach(n => { if (!visited.has(n.id)) chain.push(n.id); });
     } else {
       chain = nodes.map(n => n.id);
@@ -284,7 +291,6 @@ function DiagramView({ diagram }: { diagram: StudySheetDiagram }) {
     );
   }
 
-  // Anatomy / unknown — render description
   return (
     <p style={{ ...bodyText, fontSize: 12.5, color: "rgba(148,163,184,0.8)", fontStyle: "italic", margin: 0 }}>
       {diagram.description}
@@ -326,17 +332,7 @@ function PracticeQuizPanel({ questions }: { questions: StudySheetQuestion[] }) {
                     key={oi}
                     type="button"
                     onClick={() => { setSelected(prev => ({ ...prev, [qi]: oi })); }}
-                    style={{
-                      textAlign: "left",
-                      padding: "8px 12px",
-                      borderRadius: 7,
-                      border,
-                      background: bg,
-                      color,
-                      fontSize: 12.5,
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
+                    style={{ textAlign: "left", padding: "8px 12px", borderRadius: 7, border, background: bg, color, fontSize: 12.5, cursor: "pointer", transition: "all 0.15s" }}
                   >
                     <span style={{ fontWeight: 700, marginRight: 6 }}>{["A", "B", "C", "D"][oi]}.</span>
                     {opt}
@@ -359,6 +355,541 @@ function PracticeQuizPanel({ questions }: { questions: StudySheetQuestion[] }) {
               </div>
             )}
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Learning Completeness Meter ───────────────────────────────────────────
+
+type CompletenessItem = {
+  label:    string;
+  icon:     string;
+  present:  boolean;
+  required: boolean;
+  category: "section" | "formula" | "diagram" | "questions" | "future";
+};
+
+function computeCompleteness(
+  sheet: AdaptiveStudySheet,
+  profileId: ProfileId,
+): { items: CompletenessItem[]; score: number } {
+  const profile  = STUDY_SHEET_PROFILES[profileId];
+  const items: CompletenessItem[] = [];
+
+  // Required + optional profile sections
+  for (const spec of profile.sections) {
+    const found = sheet.sections.find(s =>
+      s.label.toLowerCase() === spec.label.toLowerCase() && (s.content?.trim().length ?? 0) > 0
+    );
+    items.push({
+      label:    spec.label,
+      icon:     spec.icon,
+      present:  !!found,
+      required: spec.required,
+      category: "section",
+    });
+  }
+
+  // Structured sections
+  if (profile.hasFormula) {
+    items.push({
+      label:    "Formula",
+      icon:     "📐",
+      present:  !!sheet.formula?.expression,
+      required: true,
+      category: "formula",
+    });
+  }
+  if (profile.hasDiagram) {
+    items.push({
+      label:    "Diagram",
+      icon:     "📊",
+      present:  !!sheet.diagram && sheet.diagram.type !== "none",
+      required: false,
+      category: "diagram",
+    });
+  }
+  if (profile.hasPracticeQuestions) {
+    items.push({
+      label:    "Practice Questions",
+      icon:     "📝",
+      present:  (sheet.practiceQuestions?.length ?? 0) > 0,
+      required: false,
+      category: "questions",
+    });
+  }
+
+  // Future — always incomplete until those features exist
+  items.push(
+    { label: "Whiteboard",     icon: "✏️", present: false, required: false, category: "future" },
+    { label: "Knowledge Graph",icon: "🕸️", present: false, required: false, category: "future" },
+    { label: "Recall Cards",   icon: "🃏", present: false, required: false, category: "future" },
+  );
+
+  const scorableItems = items.filter(i => i.category !== "future");
+  const presentCount  = scorableItems.filter(i => i.present).length;
+  const score = scorableItems.length > 0 ? Math.round((presentCount / scorableItems.length) * 100) : 0;
+
+  return { items, score };
+}
+
+function CompletnessMeter({
+  sheet,
+  profileId,
+  accentColor,
+}: {
+  sheet: AdaptiveStudySheet;
+  profileId: ProfileId;
+  accentColor: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { items, score } = computeCompleteness(sheet, profileId);
+
+  const scorableItems = items.filter(i => i.category !== "future");
+  const presentCount  = scorableItems.filter(i => i.present).length;
+
+  const scoreColor =
+    score >= 85 ? "#34d399" :
+    score >= 60 ? "#fbbf24" :
+                  "#f87171";
+
+  return (
+    <div style={{
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,0.07)",
+      background: "rgba(255,255,255,0.02)",
+      overflow: "hidden",
+    }}>
+      {/* Summary row */}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "9px 14px",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", color: "rgba(148,163,184,0.6)", whiteSpace: "nowrap" }}>
+          COMPLETENESS
+        </span>
+
+        {/* Progress bar */}
+        <div style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+          <div style={{
+            height: "100%",
+            width: `${score}%`,
+            borderRadius: 2,
+            background: scoreColor,
+            transition: "width 0.4s ease",
+          }} />
+        </div>
+
+        <span style={{ fontSize: 12, fontWeight: 800, color: scoreColor, minWidth: 36, textAlign: "right" }}>
+          {score}%
+        </span>
+        <span style={{ fontSize: 10, color: "rgba(148,163,184,0.35)" }}>{expanded ? "▲" : "▼"}</span>
+      </div>
+
+      {/* Expanded item list */}
+      {expanded && (
+        <div style={{
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+          padding: "10px 14px 12px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "6px 8px",
+        }}>
+          {items.map((item, i) => {
+            const isFuture = item.category === "future";
+            const statusIcon = isFuture ? "🔮" : item.present ? "✅" : item.required ? "❌" : "⚠️";
+            const textColor = isFuture
+              ? "rgba(148,163,184,0.3)"
+              : item.present
+                ? "rgba(52,211,153,0.9)"
+                : item.required
+                  ? "rgba(248,113,113,0.85)"
+                  : "rgba(251,191,36,0.7)";
+            const borderColor = isFuture
+              ? "rgba(148,163,184,0.1)"
+              : item.present
+                ? "rgba(52,211,153,0.2)"
+                : item.required
+                  ? "rgba(248,113,113,0.2)"
+                  : "rgba(251,191,36,0.2)";
+            return (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  border: `1px solid ${borderColor}`,
+                  background: "rgba(0,0,0,0.15)",
+                  fontSize: 11,
+                  color: textColor,
+                  fontWeight: 600,
+                }}
+              >
+                <span style={{ fontSize: 10 }}>{statusIcon}</span>
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            );
+          })}
+          <div style={{ width: "100%", marginTop: 6, fontSize: 10.5, color: "rgba(148,163,184,0.45)" }}>
+            {presentCount} of {scorableItems.length} sections complete · 🔮 = coming soon
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Explain It Panel ──────────────────────────────────────────────────────
+
+const EXPLAIN_LEVELS: { id: ExplainLevel; label: string; short: string }[] = [
+  { id: "beginner",     label: "Explain Like I'm New",   short: "New to This" },
+  { id: "student",      label: "College Student",         short: "College" },
+  { id: "intermediate", label: "Advanced / Resident",     short: "Advanced" },
+  { id: "expert",       label: "Expert / Practitioner",   short: "Expert" },
+];
+
+function ExplainItPanel({
+  sheet,
+  profileId,
+  accentColor,
+}: {
+  sheet: AdaptiveStudySheet;
+  profileId: ProfileId;
+  accentColor: string;
+}) {
+  const [activeLevel, setActiveLevel]   = useState<ExplainLevel>("student");
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const cacheRef = useRef<Partial<Record<ExplainLevel, string>>>({});
+  const [cacheVersion, setCacheVersion] = useState(0);
+
+  const currentText = cacheRef.current[activeLevel];
+
+  const generate = useCallback(async (level: ExplainLevel) => {
+    if (cacheRef.current[level]) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/explain-concept", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          concept:     sheet.concept,
+          coreIdea:    sheet.coreIdea,
+          subjectArea: sheet.subjectArea,
+          profileId,
+          level,
+          sections: sheet.sections.slice(0, 6).map(s => ({
+            label:   s.label,
+            content: s.content,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
+      const { explanation } = await res.json();
+      cacheRef.current[level] = explanation;
+      setCacheVersion(v => v + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [sheet, profileId]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Level selector */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {EXPLAIN_LEVELS.map(lv => {
+          const isActive   = activeLevel === lv.id;
+          const isCached   = !!cacheRef.current[lv.id];
+          return (
+            <button
+              key={lv.id}
+              type="button"
+              onClick={() => {
+                setActiveLevel(lv.id);
+                if (!cacheRef.current[lv.id]) generate(lv.id);
+              }}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 7,
+                border: isActive ? `1px solid ${accentColor}60` : "1px solid rgba(148,163,184,0.2)",
+                background: isActive ? `${accentColor}15` : "rgba(255,255,255,0.03)",
+                color: isActive ? accentColor : "rgba(148,163,184,0.7)",
+                fontSize: 11.5,
+                fontWeight: isActive ? 700 : 600,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              {lv.short}
+              {isCached && <span style={{ fontSize: 8, opacity: 0.5 }}>●</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Explanation content */}
+      <div style={{
+        borderRadius: 11,
+        border: "1px solid rgba(255,255,255,0.07)",
+        background: "rgba(255,255,255,0.02)",
+        padding: "16px 18px",
+        minHeight: 120,
+      }}>
+        {loading && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(148,163,184,0.6)", fontSize: 13 }}>
+            <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
+            Generating explanation…
+          </div>
+        )}
+
+        {!loading && error && (
+          <div style={{ color: "#f87171", fontSize: 12.5 }}>⚠️ {error}</div>
+        )}
+
+        {!loading && !error && currentText && (
+          <div style={{ fontSize: 13.5, color: "rgba(226,232,240,0.92)", lineHeight: 1.8 }}>
+            {currentText.split("\n\n").map((para, i) => (
+              <p key={i} style={{ margin: i === 0 ? 0 : "12px 0 0" }}>{para}</p>
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && !currentText && (
+          <div style={{ textAlign: "center", paddingTop: 16 }}>
+            <button
+              type="button"
+              onClick={() => generate(activeLevel)}
+              style={{
+                padding: "9px 22px",
+                borderRadius: 8,
+                border: `1px solid ${accentColor}50`,
+                background: `${accentColor}12`,
+                color: accentColor,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              🎓 Explain at "{EXPLAIN_LEVELS.find(l => l.id === activeLevel)?.short}" level
+            </button>
+            <div style={{ marginTop: 8, fontSize: 11, color: "rgba(148,163,184,0.45)" }}>
+              Each level is cached — switch freely without re-fetching
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Level description */}
+      <div style={{ fontSize: 11, color: "rgba(148,163,184,0.45)", textAlign: "center" }}>
+        {activeLevel === "beginner"     && "Plain language, everyday analogies — no prior knowledge needed"}
+        {activeLevel === "student"      && "Correct terminology, mechanism, and one worked example"}
+        {activeLevel === "intermediate" && "Exceptions, edge cases, and advanced nuance"}
+        {activeLevel === "expert"       && "High-density, peer-level — skips basics, focuses on depth and debate"}
+      </div>
+    </div>
+  );
+}
+
+// ── Whiteboard view ───────────────────────────────────────────────────────
+
+function WhiteboardView({
+  sheet,
+  accentColor,
+}: {
+  sheet: AdaptiveStudySheet;
+  accentColor: string;
+}) {
+  return (
+    <div style={{
+      fontFamily: "'Courier New', Courier, monospace",
+      color: "rgba(226,232,240,0.9)",
+      lineHeight: 1.8,
+      fontSize: 13,
+    }}>
+      {/* Concept title */}
+      <div style={{ fontSize: 18, fontWeight: 800, color: accentColor, marginBottom: 6, letterSpacing: "-0.01em" }}>
+        {sheet.concept.toUpperCase()}
+      </div>
+      <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", marginBottom: 18, letterSpacing: "0.08em" }}>
+        {sheet.documentType} · {sheet.subjectArea}
+      </div>
+
+      {/* Core idea */}
+      <div style={{
+        padding: "10px 14px",
+        borderLeft: `3px solid ${accentColor}`,
+        background: `${accentColor}08`,
+        marginBottom: 18,
+        borderRadius: "0 6px 6px 0",
+      }}>
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: `${accentColor}80`, marginBottom: 4 }}>
+          CORE IDEA
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.6 }}>{sheet.coreIdea}</div>
+      </div>
+
+      {/* Sections as compact outline */}
+      {sheet.sections.map((section, i) => (
+        <div key={i} style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.1em",
+            color: "rgba(148,163,184,0.7)",
+            marginBottom: 4,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}>
+            <span>{section.icon}</span>
+            <span>{section.label.toUpperCase()}</span>
+            {section.sourcePage && (
+              <span style={{ fontSize: 9, color: "rgba(148,163,184,0.35)", fontWeight: 400 }}>p.{section.sourcePage}</span>
+            )}
+          </div>
+          {section.content && (
+            <div style={{ fontSize: 13, color: "rgba(226,232,240,0.88)", lineHeight: 1.7, paddingLeft: 18 }}>
+              {section.content}
+            </div>
+          )}
+          {section.subItems && section.subItems.length > 0 && (
+            <ul style={{ margin: "4px 0 0", padding: "0 0 0 32px" }}>
+              {section.subItems.map((item, j) => (
+                <li key={j} style={{ fontSize: 12.5, color: "rgba(226,232,240,0.8)", marginBottom: 2 }}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+
+      {/* Formula inline */}
+      {sheet.formula && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(148,163,184,0.7)", marginBottom: 4 }}>
+            📐 FORMULA
+          </div>
+          <div style={{ paddingLeft: 18 }}>
+            <code style={{ fontSize: 16, fontWeight: 700, color: "#fbbf24" }}>{sheet.formula.expression}</code>
+            <div style={{ fontSize: 12, color: "rgba(148,163,184,0.65)", marginTop: 3, fontStyle: "italic" }}>
+              {sheet.formula.description}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Connections */}
+      {sheet.connections?.length ? (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(148,163,184,0.7)", marginBottom: 4 }}>
+            🔗 CONNECTIONS
+          </div>
+          <div style={{ paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+            {sheet.connections.map((c, i) => (
+              <div key={i} style={{ fontSize: 12.5, color: "rgba(226,232,240,0.8)" }}>
+                <span style={{ fontWeight: 700, color: "#34d399" }}>{c.from}</span>
+                <span style={{ color: "rgba(148,163,184,0.5)", margin: "0 5px" }}>→</span>
+                <span style={{ fontWeight: 700, color: "#34d399" }}>{c.to}</span>
+                <span style={{ color: "rgba(148,163,184,0.6)", marginLeft: 6 }}>— {c.connection}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Related topics */}
+      {sheet.relatedTopics?.length ? (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: "rgba(148,163,184,0.7)", marginBottom: 6 }}>
+            ALSO STUDY
+          </div>
+          <div style={{ paddingLeft: 18, display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {sheet.relatedTopics.map((t, i) => (
+              <span key={i} style={{ fontSize: 11, color: "rgba(226,232,240,0.65)", padding: "2px 8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4 }}>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── View tab bar ──────────────────────────────────────────────────────────
+
+type SheetView = "sheet" | "explain" | "whiteboard" | "diagram";
+
+function ViewTabBar({
+  activeView,
+  onView,
+  hasDiagram,
+  accentColor,
+}: {
+  activeView: SheetView;
+  onView: (v: SheetView) => void;
+  hasDiagram: boolean;
+  accentColor: string;
+}) {
+  const tabs: { id: SheetView; label: string; icon: string }[] = [
+    { id: "sheet",      label: "Study Sheet", icon: "📋" },
+    { id: "explain",    label: "Explain It",  icon: "🎓" },
+    { id: "whiteboard", label: "Whiteboard",  icon: "✏️" },
+    ...(hasDiagram ? [{ id: "diagram" as SheetView, label: "Diagram", icon: "📊" }] : []),
+  ];
+
+  return (
+    <div style={{ display: "flex", gap: 4, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 0, marginBottom: 12 }}>
+      {tabs.map(tab => {
+        const isActive = activeView === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onView(tab.id)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "6px 6px 0 0",
+              border: isActive ? `1px solid rgba(255,255,255,0.1)` : "1px solid transparent",
+              borderBottom: isActive ? "1px solid rgba(15,23,42,1)" : "none",
+              background: isActive ? "rgba(255,255,255,0.05)" : "transparent",
+              color: isActive ? "rgba(226,232,240,0.95)" : "rgba(148,163,184,0.5)",
+              fontSize: 11.5,
+              fontWeight: isActive ? 700 : 500,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              marginBottom: -1,
+              transition: "color 0.12s",
+            }}
+          >
+            <span style={{ fontSize: 12 }}>{tab.icon}</span>
+            {tab.label}
+          </button>
         );
       })}
     </div>
@@ -562,11 +1093,14 @@ export default function AdaptiveStudySheetCard({
   onNavigateToPage,
 }: AdaptiveStudySheetCardProps) {
   const [regenerating, setRegenerating] = useState(false);
+  const [activeView, setActiveView]     = useState<SheetView>("sheet");
 
   const profileId = ((sheet?.selectedProfileId ?? sheet?.profileId) as ProfileId | undefined)
     ?? profileFromSubject(note.subject ?? "General Notes").profileId;
-  const profile = STUDY_SHEET_PROFILES[profileId];
+  const profile     = STUDY_SHEET_PROFILES[profileId];
   const accentColor = PROFILE_ACCENT[profileId];
+
+  const hasDiagram = !!sheet?.diagram && sheet.diagram.type !== "none";
 
   const handleRegenerate = useCallback(async () => {
     if (regenerating) return;
@@ -633,164 +1167,206 @@ export default function AdaptiveStudySheetCard({
         </button>
       </div>
 
-      {/* Core Idea — always prominent */}
-      <div style={{
-        borderRadius: 11,
-        padding: "14px 16px",
-        background: `${accentColor}0d`,
-        border: `2px solid ${accentColor}40`,
-      }}>
-        <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.13em", color: `${accentColor}99`, marginBottom: 8 }}>
-          CORE IDEA
-        </div>
-        <p style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.96)", lineHeight: 1.65, margin: 0 }}>
-          {sheet.coreIdea}
-        </p>
-        {sheet.canonicalSourcePage && (
-          <CitationChip
-            sourcePage={sheet.canonicalSourcePage}
-            onNavigate={onNavigateToPage}
-          />
-        )}
-      </div>
+      {/* Completeness meter — always visible */}
+      <CompletnessMeter sheet={sheet} profileId={profileId} accentColor={accentColor} />
 
-      {/* Profile sections */}
-      {sheet.sections.map((section, i) => (
-        <SectionCard
-          key={`${section.label}-${i}`}
-          section={section}
-          palette={SECTION_PALETTE[i % SECTION_PALETTE.length]}
-          onNavigate={onNavigateToPage}
-        />
-      ))}
+      {/* View tabs */}
+      <ViewTabBar
+        activeView={activeView}
+        onView={setActiveView}
+        hasDiagram={hasDiagram}
+        accentColor={accentColor}
+      />
 
-      {/* Validation issues — sections not grounded in supplied source */}
-      {sheet.validationIssues?.length ? (
-        <div style={{ ...card, background: "rgba(251,146,60,0.05)", border: "1px solid rgba(251,146,60,0.2)" }}>
-          <div style={{ ...labelStyle, color: "#fb923c" }}>
-            <span>⚠️</span>
-            <span>NOT FOUND IN SUPPLIED SOURCE</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {sheet.validationIssues.map((issue, i) => (
-              <div key={i} style={{ fontSize: 12.5, color: "rgba(226,232,240,0.7)", paddingBottom: i < sheet.validationIssues!.length - 1 ? 6 : 0, borderBottom: i < sheet.validationIssues!.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
-                <span style={{ fontWeight: 700, color: "#fb923c" }}>{issue.sectionType}</span>
-                <span style={{ color: "rgba(148,163,184,0.6)", marginLeft: 6 }}>— {issue.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Formula */}
-      {sheet.formula && (
-        <div style={{ ...card, background: FORMULA_STYLE.bg, border: `2px solid ${FORMULA_STYLE.border}` }}>
-          <div style={{ ...labelStyle, color: FORMULA_STYLE.accent }}>
-            <span>📐</span>
-            <span>FORMULA</span>
-            {sheet.formula.sourcePage && (
-              <CitationChip sourcePage={sheet.formula.sourcePage} onNavigate={onNavigateToPage} />
+      {/* ── Study Sheet view ── */}
+      {activeView === "sheet" && (
+        <>
+          {/* Core Idea — always prominent */}
+          <div style={{
+            borderRadius: 11,
+            padding: "14px 16px",
+            background: `${accentColor}0d`,
+            border: `2px solid ${accentColor}40`,
+          }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.13em", color: `${accentColor}99`, marginBottom: 8 }}>
+              CORE IDEA
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.96)", lineHeight: 1.65, margin: 0 }}>
+              {sheet.coreIdea}
+            </p>
+            {sheet.canonicalSourcePage && (
+              <CitationChip
+                sourcePage={sheet.canonicalSourcePage}
+                onNavigate={onNavigateToPage}
+              />
             )}
           </div>
-          <div style={{ textAlign: "center", padding: "10px 0" }}>
-            <code style={{ fontSize: 20, fontWeight: 700, color: FORMULA_STYLE.accent, letterSpacing: "0.04em" }}>
-              {sheet.formula.expression}
-            </code>
-          </div>
-          <p style={{ fontSize: 12.5, color: "rgba(226,232,240,0.7)", margin: "8px 0 10px", textAlign: "center", fontStyle: "italic" }}>
-            {sheet.formula.description}
-          </p>
-          {sheet.formula.variables?.length ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {sheet.formula.variables.map((v, i) => (
-                <div key={i} style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", fontSize: 12 }}>
-                  <code style={{ color: FORMULA_STYLE.accent, fontWeight: 700 }}>{v.symbol}</code>
-                  <span style={{ color: "rgba(226,232,240,0.7)", marginLeft: 5 }}>= {v.meaning}</span>
-                </div>
-              ))}
+
+          {/* Profile sections */}
+          {sheet.sections.map((section, i) => (
+            <SectionCard
+              key={`${section.label}-${i}`}
+              section={section}
+              palette={SECTION_PALETTE[i % SECTION_PALETTE.length]}
+              onNavigate={onNavigateToPage}
+            />
+          ))}
+
+          {/* Validation issues */}
+          {sheet.validationIssues?.length ? (
+            <div style={{ ...card, background: "rgba(251,146,60,0.05)", border: "1px solid rgba(251,146,60,0.2)" }}>
+              <div style={{ ...labelStyle, color: "#fb923c" }}>
+                <span>⚠️</span>
+                <span>NOT FOUND IN SUPPLIED SOURCE</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {sheet.validationIssues.map((issue, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: "rgba(226,232,240,0.7)", paddingBottom: i < sheet.validationIssues!.length - 1 ? 6 : 0, borderBottom: i < sheet.validationIssues!.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+                    <span style={{ fontWeight: 700, color: "#fb923c" }}>{issue.sectionType}</span>
+                    <span style={{ color: "rgba(148,163,184,0.6)", marginLeft: 6 }}>— {issue.message}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
+
+          {/* Formula */}
+          {sheet.formula && (
+            <div style={{ ...card, background: FORMULA_STYLE.bg, border: `2px solid ${FORMULA_STYLE.border}` }}>
+              <div style={{ ...labelStyle, color: FORMULA_STYLE.accent }}>
+                <span>📐</span>
+                <span>FORMULA</span>
+                {sheet.formula.sourcePage && (
+                  <CitationChip sourcePage={sheet.formula.sourcePage} onNavigate={onNavigateToPage} />
+                )}
+              </div>
+              <div style={{ textAlign: "center", padding: "10px 0" }}>
+                <code style={{ fontSize: 20, fontWeight: 700, color: FORMULA_STYLE.accent, letterSpacing: "0.04em" }}>
+                  {sheet.formula.expression}
+                </code>
+              </div>
+              <p style={{ fontSize: 12.5, color: "rgba(226,232,240,0.7)", margin: "8px 0 10px", textAlign: "center", fontStyle: "italic" }}>
+                {sheet.formula.description}
+              </p>
+              {sheet.formula.variables?.length ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {sheet.formula.variables.map((v, i) => (
+                    <div key={i} style={{ padding: "4px 10px", borderRadius: 6, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", fontSize: 12 }}>
+                      <code style={{ color: FORMULA_STYLE.accent, fontWeight: 700 }}>{v.symbol}</code>
+                      <span style={{ color: "rgba(226,232,240,0.7)", marginLeft: 5 }}>= {v.meaning}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Diagram */}
+          {hasDiagram && (
+            <div style={{ ...card, background: "rgba(56,189,248,0.05)", border: "1px solid rgba(56,189,248,0.2)" }}>
+              <div style={{ ...labelStyle, color: "#38bdf8" }}>
+                <span>📊</span>
+                <span>{`DIAGRAM: ${sheet.diagram!.title.toUpperCase()}`}</span>
+                {sheet.diagram!.anchorId && sheet.canonicalSourcePage && (
+                  <CitationChip sourcePage={sheet.canonicalSourcePage} onNavigate={onNavigateToPage} />
+                )}
+              </div>
+              <DiagramView diagram={sheet.diagram!} />
+              {sheet.diagram!.description && (
+                <p style={{ fontSize: 11.5, color: "rgba(148,163,184,0.65)", margin: "10px 0 0", fontStyle: "italic" }}>
+                  {sheet.diagram!.description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Practice Questions */}
+          {sheet.practiceQuestions?.length ? (
+            <div style={{ ...card, background: "rgba(196,181,253,0.05)", border: "1px solid rgba(196,181,253,0.2)" }}>
+              <div style={{ ...labelStyle, color: "#c4b5fd" }}>
+                <span>📝</span>
+                <span>PRACTICE QUESTIONS</span>
+              </div>
+              <PracticeQuizPanel questions={sheet.practiceQuestions} />
+            </div>
+          ) : null}
+
+          {/* Connections */}
+          {sheet.connections?.length ? (
+            <div style={{ ...card, background: "rgba(52,211,153,0.05)", border: "1px solid rgba(52,211,153,0.18)" }}>
+              <div style={{ ...labelStyle, color: "#34d399" }}>
+                <span>🔗</span>
+                <span>EXPERT CONNECTIONS</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {sheet.connections.map((c, i) => (
+                  <div key={i} style={{ fontSize: 13, color: "rgba(226,232,240,0.88)", lineHeight: 1.55 }}>
+                    <span style={{ color: "#34d399", fontWeight: 700 }}>{c.from}</span>
+                    <span style={{ color: "rgba(148,163,184,0.5)", margin: "0 6px" }}>→</span>
+                    <span style={{ color: "#34d399", fontWeight: 700 }}>{c.to}</span>
+                    <span style={{ color: "rgba(148,163,184,0.7)", display: "block", fontSize: 12, marginTop: 2, paddingLeft: 2 }}>
+                      {c.connection}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Related Topics */}
+          {sheet.relatedTopics?.length ? (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(148,163,184,0.5)", marginBottom: 7 }}>
+                RELATED TOPICS
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {sheet.relatedTopics.map((t, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(148,163,184,0.2)",
+                      background: "rgba(148,163,184,0.06)",
+                      color: "rgba(226,232,240,0.75)",
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
-      {/* Diagram */}
-      {sheet.diagram && sheet.diagram.type !== "none" && (
+      {/* ── Explain It view ── */}
+      {activeView === "explain" && (
+        <ExplainItPanel sheet={sheet} profileId={profileId} accentColor={accentColor} />
+      )}
+
+      {/* ── Whiteboard view ── */}
+      {activeView === "whiteboard" && (
+        <WhiteboardView sheet={sheet} accentColor={accentColor} />
+      )}
+
+      {/* ── Diagram view ── */}
+      {activeView === "diagram" && hasDiagram && (
         <div style={{ ...card, background: "rgba(56,189,248,0.05)", border: "1px solid rgba(56,189,248,0.2)" }}>
           <div style={{ ...labelStyle, color: "#38bdf8" }}>
             <span>📊</span>
-            <span>{`DIAGRAM: ${sheet.diagram.title.toUpperCase()}`}</span>
-            {sheet.diagram.anchorId && sheet.canonicalSourcePage && (
-              <CitationChip sourcePage={sheet.canonicalSourcePage} onNavigate={onNavigateToPage} />
-            )}
+            <span>{sheet.diagram!.title.toUpperCase()}</span>
           </div>
-          <DiagramView diagram={sheet.diagram} />
-          {sheet.diagram.description && (
-            <p style={{ fontSize: 11.5, color: "rgba(148,163,184,0.65)", margin: "10px 0 0", fontStyle: "italic" }}>
-              {sheet.diagram.description}
+          <DiagramView diagram={sheet.diagram!} />
+          {sheet.diagram!.description && (
+            <p style={{ fontSize: 12.5, color: "rgba(148,163,184,0.65)", margin: "14px 0 0", fontStyle: "italic", lineHeight: 1.6 }}>
+              {sheet.diagram!.description}
             </p>
           )}
         </div>
       )}
-
-      {/* Practice Questions */}
-      {sheet.practiceQuestions?.length ? (
-        <div style={{ ...card, background: "rgba(196,181,253,0.05)", border: "1px solid rgba(196,181,253,0.2)" }}>
-          <div style={{ ...labelStyle, color: "#c4b5fd" }}>
-            <span>📝</span>
-            <span>PRACTICE QUESTIONS</span>
-          </div>
-          <PracticeQuizPanel questions={sheet.practiceQuestions} />
-        </div>
-      ) : null}
-
-      {/* Connections */}
-      {sheet.connections?.length ? (
-        <div style={{ ...card, background: "rgba(52,211,153,0.05)", border: "1px solid rgba(52,211,153,0.18)" }}>
-          <div style={{ ...labelStyle, color: "#34d399" }}>
-            <span>🔗</span>
-            <span>EXPERT CONNECTIONS</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {sheet.connections.map((c, i) => (
-              <div key={i} style={{ fontSize: 13, color: "rgba(226,232,240,0.88)", lineHeight: 1.55 }}>
-                <span style={{ color: "#34d399", fontWeight: 700 }}>{c.from}</span>
-                <span style={{ color: "rgba(148,163,184,0.5)", margin: "0 6px" }}>→</span>
-                <span style={{ color: "#34d399", fontWeight: 700 }}>{c.to}</span>
-                <span style={{ color: "rgba(148,163,184,0.7)", display: "block", fontSize: 12, marginTop: 2, paddingLeft: 2 }}>
-                  {c.connection}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Related Topics */}
-      {sheet.relatedTopics?.length ? (
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(148,163,184,0.5)", marginBottom: 7 }}>
-            RELATED TOPICS
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {sheet.relatedTopics.map((t, i) => (
-              <span
-                key={i}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(148,163,184,0.2)",
-                  background: "rgba(148,163,184,0.06)",
-                  color: "rgba(226,232,240,0.75)",
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                }}
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
