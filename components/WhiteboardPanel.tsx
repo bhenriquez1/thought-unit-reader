@@ -88,6 +88,8 @@ type Props = {
   pageTitle?: string | null;
   knowledgeNodeId?: string | null;
   recallSubject?: NoteSubject;
+  /** Active Learning Profile — frames how the Whiteboard teaches (Standard / Dental / Medical / Surgeon / DAT). */
+  learningProfile?: string;
 };
 
 type WhiteboardDebugInfo = {
@@ -131,6 +133,7 @@ export default function WhiteboardPanel({
   pageTitle,
   knowledgeNodeId,
   recallSubject,
+  learningProfile,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -411,6 +414,7 @@ export default function WhiteboardPanel({
           debug:           isDebugMode,
           focusedAnchorId: activeAnchorId ?? null,
           pageNumber:      currentPage ?? null,
+          learningProfile: learningProfile ?? "standard",
         }),
       });
       const data = await resp.json();

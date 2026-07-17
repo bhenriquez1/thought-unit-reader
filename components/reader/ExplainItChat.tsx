@@ -112,6 +112,7 @@ export default function ExplainItChat({
           seedSegmentText: context.seedSegmentText,
           documentTitle: context.documentTitle,
           pageNumber: context.pageNumber,
+          learningProfile: context.learningProfile,
           messages: history.map(({ role, content }) => ({ role, content })),
         }),
       });

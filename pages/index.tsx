@@ -1343,7 +1343,10 @@ export default function ThoughtUnitReader() {
       setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
       setThemeMode(restored.themeMode || (restored.darkMode ? "dark" : "light") || "dark");
       setReadingMode(restored.readingMode || ((restored.fontFamily || "").includes("Comic") ? "dyslexia" : "normal"));
-      if (restored.learningProfile) setLearningProfile(restored.learningProfile as LearningProfile);
+      const VALID_PROFILES: LearningProfile[] = ["standard", "dental", "medical", "surgeon", "dat"];
+      if (restored.learningProfile && VALID_PROFILES.includes(restored.learningProfile as LearningProfile)) {
+        setLearningProfile(restored.learningProfile as LearningProfile);
+      }
       setFontSize(restored.fontSize || 16);
       setLineSpacing(restored.lineSpacing || 1.5);
       // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
@@ -2380,8 +2383,9 @@ export default function ThoughtUnitReader() {
       seedSegmentText,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
+      learningProfile,
     });
-  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript]);
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript, learningProfile]);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
@@ -5415,6 +5419,7 @@ export default function ThoughtUnitReader() {
                 bookTitle={uploadedFile?.name}
                 pageTitle={currentPageStudyModel?.pageThesis ?? null}
                 knowledgeNodeId={pageKgNodeIdRef.current}
+                learningProfile={learningProfile}
               />
             </div>
           </div>

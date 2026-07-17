@@ -1,13 +1,16 @@
 export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'elena' | 'podcast' | 'studyguide' | 'studyplan';
 
-/** Determines how the Reader, Whiteboard, and AI responses are framed. */
+/**
+ * Determines how the Reader, Whiteboard, and AI responses are framed.
+ * Adult learner profiles only — Elena Mode is a separate dedicated product experience,
+ * not a rendering variant of the adult platform.
+ */
 export type LearningProfile =
   | 'standard'
   | 'dental'
   | 'medical'
   | 'surgeon'
-  | 'dat'
-  | 'elena';
+  | 'dat';
 
 export const LEARNING_PROFILE_LABELS: Record<LearningProfile, string> = {
   standard: 'Standard',
@@ -15,7 +18,6 @@ export const LEARNING_PROFILE_LABELS: Record<LearningProfile, string> = {
   medical:  'Medical',
   surgeon:  'Surgeon',
   dat:      'DAT',
-  elena:    'Elena',
 };
 
 export type ReaderPanelState = {
