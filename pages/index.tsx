@@ -104,7 +104,8 @@ import {
   type RightPanelState,
   type RightPanelTab,
 } from "@/state/rightPanelState";
-import type { WorkspaceMode } from "@/types/workspace";
+import type { WorkspaceMode, LearningProfile } from "@/types/workspace";
+import { LEARNING_PROFILE_LABELS } from "@/types/workspace";
 
 import {
   firebaseConnected,
@@ -558,6 +559,13 @@ export default function ThoughtUnitReader() {
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [readingMode, setReadingMode] = useState<"normal" | "dyslexia">("normal");
+  const [learningProfile, setLearningProfile] = useState<LearningProfile>(() => {
+    try { return (localStorage.getItem("learningProfile") as LearningProfile) || "standard"; } catch { return "standard"; }
+  });
+  // Persist learning profile whenever it changes
+  useEffect(() => {
+    try { localStorage.setItem("learningProfile", learningProfile); } catch { /* ignore */ }
+  }, [learningProfile]);
   const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
   const fontFamily = readingMode === "dyslexia" ? "Arial, Verdana, Tahoma, sans-serif" : "Inter, Georgia, serif";
   const [lineSpacing, setLineSpacing] = useState(1.5);
@@ -1273,6 +1281,7 @@ export default function ThoughtUnitReader() {
         pdfPageCount,
         themeMode,
         readingMode,
+        learningProfile,
         fontSize,
         lineSpacing,
         fileUrl,
@@ -1334,6 +1343,7 @@ export default function ThoughtUnitReader() {
       setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
       setThemeMode(restored.themeMode || (restored.darkMode ? "dark" : "light") || "dark");
       setReadingMode(restored.readingMode || ((restored.fontFamily || "").includes("Comic") ? "dyslexia" : "normal"));
+      if (restored.learningProfile) setLearningProfile(restored.learningProfile as LearningProfile);
       setFontSize(restored.fontSize || 16);
       setLineSpacing(restored.lineSpacing || 1.5);
       // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
@@ -4542,11 +4552,7 @@ export default function ThoughtUnitReader() {
               documentName={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
               currentPage={currentPage}
               pdfPageCount={pdfPageCount}
-              onOpenInReader={(pageNumber) => {
-                syncToPage(pageNumber);
-                setViewMode("reader");
-              }}
-              onOpenInSurgeon={(pageNumber) => {
+              onOpenChapter={(pageNumber) => {
                 syncToPage(pageNumber);
                 setViewMode("reader");
               }}
@@ -4855,7 +4861,7 @@ export default function ThoughtUnitReader() {
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            📚 Syllabus
+            🗺 Learning Hub
           </button>
           <button
             onClick={() => trySwitchShellTab("notelab", "notelab")}
@@ -4967,6 +4973,22 @@ export default function ThoughtUnitReader() {
 
         <div className="flex-1" />
 
+
+        <div className="flex items-center gap-1.5 rounded-xl border border-white/20 bg-black/20 px-2 py-1">
+          <span className="text-[11px] text-slate-300">Profile</span>
+          <select
+            value={learningProfile}
+            onChange={(e) => setLearningProfile(e.target.value as LearningProfile)}
+            className="bg-transparent text-[11px] text-slate-200 border-none outline-none cursor-pointer appearance-none pr-1"
+            title="Learning Profile"
+          >
+            {(Object.keys(LEARNING_PROFILE_LABELS) as LearningProfile[]).map((p) => (
+              <option key={p} value={p} className="bg-slate-900 text-slate-200">
+                {LEARNING_PROFILE_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-black/20 px-2 py-1">
           <span className="text-[11px] text-slate-300">Reading</span>

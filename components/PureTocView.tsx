@@ -3,9 +3,8 @@
 // components/PureTocView.tsx
 // PURE TOC MODE - TOC tree ONLY
 // ❌ No PDF panel
-// ❌ No Surgeon View elements
 // ❌ No NoteLab
-// ✅ Clickable chapters with "Open in Reader" / "Open in Surgeon View"
+// ✅ Single "Open Chapter" action — rendering is determined by the active Learning Profile, not a button choice
 // ✅ SSR-safe with defensive guards
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -16,8 +15,7 @@ interface PureTocViewProps {
   documentName: string;
   currentPage: number;
   pdfPageCount: number;
-  onOpenInReader: (pageNumber: number) => void;
-  onOpenInSurgeon: (pageNumber: number) => void;
+  onOpenChapter: (pageNumber: number) => void;
 }
 
 export default function PureTocView({
@@ -25,8 +23,7 @@ export default function PureTocView({
   documentName,
   currentPage,
   pdfPageCount,
-  onOpenInReader,
-  onOpenInSurgeon
+  onOpenChapter,
 }: PureTocViewProps) {
   // SSR guard - ensure we're on client before accessing store
   const [isClient, setIsClient] = useState(false);
@@ -155,29 +152,18 @@ export default function PureTocView({
             </div>
           </div>
           
-          {/* Action Buttons - Show on hover */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Single open action — profile determines how the chapter renders */}
+          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenInReader(item.pageNumber);
+                onOpenChapter(item.pageNumber);
               }}
-              className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium transition-colors"
-              title="Open in Reader"
-              data-testid={`toc-open-reader-${item.id}`}
+              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium transition-colors"
+              title="Open chapter"
+              data-testid={`toc-open-chapter-${item.id}`}
             >
-              📖 Reader
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenInSurgeon(item.pageNumber);
-              }}
-              className="px-2 py-1 bg-purple-600 hover:bg-purple-500 rounded text-xs font-medium transition-colors"
-              title="Open in Surgeon View"
-              data-testid={`toc-open-surgeon-${item.id}`}
-            >
-              🔬 Surgeon
+              📖 Open
             </button>
           </div>
         </div>

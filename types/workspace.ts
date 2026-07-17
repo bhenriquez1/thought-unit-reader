@@ -1,5 +1,23 @@
 export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'elena' | 'podcast' | 'studyguide' | 'studyplan';
 
+/** Determines how the Reader, Whiteboard, and AI responses are framed. */
+export type LearningProfile =
+  | 'standard'
+  | 'dental'
+  | 'medical'
+  | 'surgeon'
+  | 'dat'
+  | 'elena';
+
+export const LEARNING_PROFILE_LABELS: Record<LearningProfile, string> = {
+  standard: 'Standard',
+  dental:   'Dental',
+  medical:  'Medical',
+  surgeon:  'Surgeon',
+  dat:      'DAT',
+  elena:    'Elena',
+};
+
 export type ReaderPanelState = {
   workspaceMode: WorkspaceMode;
   documentId: string | null;
