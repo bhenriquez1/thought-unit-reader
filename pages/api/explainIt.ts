@@ -17,6 +17,8 @@ import type {
   ExplainItRecallRef,
   ExplainItStudyGuideRef,
 } from "@/lib/explainIt/types";
+import { getProfileSystemBlock } from "@/lib/learningProfile/profileContext";
+import type { LearningProfile } from "@/types/workspace";
 
 export const config = {
   maxDuration: 30,
@@ -36,6 +38,8 @@ export interface ExplainItRequest {
   seedSegmentText?: string;
   documentTitle?: string;
   pageNumber?: number;
+  /** Active Learning Profile — frames how the tutor explains. */
+  learningProfile?: LearningProfile;
   /** Full conversation so far (excluding system prompt) */
   messages: ExplainItMessage[];
 }
@@ -76,7 +80,11 @@ function buildSystemPrompt(body: ExplainItRequest): string {
 
   const podcastLines = (body.podcastOutline || []).slice(0, 8).map((l) => `- ${l}`).join("\n");
 
-  return `You are "Explain It" — a study partner having an office-hours-style conversation with a student about the page/topic they're currently reading.
+  const profileBlock = getProfileSystemBlock(body.learningProfile);
+
+  return `${profileBlock}
+
+You are "Explain It" — a study partner having an office-hours-style conversation with a student about the page/topic they're currently reading.
 
 This is NOT "Explain This Step" (a quick one-line answer about a single selected sentence). Explain It is a real back-and-forth conversation about the broader page/topic: you discuss it, ask the student questions to check their understanding, and respond to what they actually say — the way a TA or study partner would during office hours, not the way a textbook would.
 

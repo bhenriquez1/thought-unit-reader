@@ -5,6 +5,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { generateWhiteboardStepsFromModel, splitMechanism, trunc } from "@/lib/insights/whiteboardFromStudyModel";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { buildDiagramPlan, type DiagramPlan } from "@/lib/whiteboard/diagramPlan";
+import { getProfileSystemBlock } from "@/lib/learningProfile/profileContext";
+import type { LearningProfile } from "@/types/workspace";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -227,6 +229,7 @@ export default async function handler(
       debug?: boolean;
       focusedAnchorId?: string | null;
       pageNumber?: number | null;
+      learningProfile?: LearningProfile;
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
@@ -237,6 +240,8 @@ export default async function handler(
     const debug      = Boolean(body.debug);
     const focusedAnchorId = body.focusedAnchorId ?? null;
     const pageNumber = typeof body.pageNumber === "number" ? body.pageNumber : (studyModel?.page ?? null);
+    const learningProfile = body.learningProfile ?? "standard";
+    const profileBlock = getProfileSystemBlock(learningProfile);
 
     if (!concept && !studyModel?.pageThesis) {
       return res.status(400).json({ error: "Missing concept/studyModel" });
@@ -266,6 +271,7 @@ export default async function handler(
     const modelCtx  = buildModelContext(studyModel);
 
     const system = [
+      profileBlock,
       "You are a visual teaching engine — you draw to teach, not write to explain.",
       "Avrrio style: colored-pencil educational board. Thick curved arrows, labeled structures, cause→effect. No generic text slides.",
       "Produce a whiteboard animation plan as strict JSON:",

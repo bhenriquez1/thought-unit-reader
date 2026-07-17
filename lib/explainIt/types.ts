@@ -52,4 +52,6 @@ export interface ExplainItContext {
   seedSegmentText?: string;
   documentTitle?: string;
   pageNumber: number;
+  /** Active Learning Profile — frames how the tutor explains (Standard / Dental / Medical / Surgeon / DAT). */
+  learningProfile?: string;
 }
