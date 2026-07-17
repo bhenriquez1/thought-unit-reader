@@ -12,7 +12,7 @@ import { recallDifficultyPatch } from "@/lib/knowledge/computeMastery";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
-export type SourceLabel = "right-panel" | "notelab" | "explain-step" | "study-guide" | "weak-review";
+export type SourceLabel = "right-panel" | "notelab" | "explain-step" | "study-guide" | "weak-review" | "teach-canvas";
 
 /** Lightweight mastery-state progression — NOT an interval/due-date spaced-repetition
  *  scheduler. Derived from rating streaks; see deriveSrsState / nextSrsState below. */
@@ -660,5 +660,64 @@ export function buildWeakTopicReviewSet(
     topic:       "Weak Topics Review",
     cards,
     createdAt:   Date.now(),
+  };
+}
+
+// ── Build from Teaching Canvas sequence (Adaptive Teaching Engine → Recall) ──
+// Converts NoteCard[] from the Teaching Canvas into a single in-memory RecallSet.
+// Not persisted by this function — caller decides whether to save.
+
+export function buildRecallSetFromTeachingSequence(
+  noteCards: NoteCard[],
+  opts: {
+    bookId: string;
+    bookTitle?: string;
+    pageNumber: number;
+    pageTitle?: string | null;
+    knowledgeNodeId?: string | null;
+    subject?: NoteSubject;
+  }
+): RecallSet {
+  const cardTypeOf = (type: NoteCard["type"]): CardType =>
+    type === "mechanism" || type === "procedure_flow" || type === "formula_breakdown" ? "mechanism"
+    : type === "dat_trap" || type === "common_mistake" || type === "complication_risk" || type === "exam_strategy" ? "concept"
+    : type === "why_this_matters" || type === "clinical_reasoning" || type === "clinical_pearl" ? "application"
+    : type === "recall_questions" || type === "quick_review" ? "fact"
+    : "concept";
+
+  const frontOf = (nc: NoteCard): string => {
+    if (nc.type === "recall_questions" || nc.type === "quick_review") return `Quiz: ${nc.title}`;
+    if (nc.type === "dat_trap" || nc.type === "exam_strategy") return `Watch out: what is the trap with "${nc.title}"?`;
+    if (nc.type === "mechanism" || nc.type === "procedure_flow") return `Explain the mechanism: ${nc.title}`;
+    if (nc.type === "common_mistake") return `What is the common mistake with: ${nc.title}?`;
+    if (nc.type === "memory_hook" || nc.type === "visual_mnemonic") return `How do you remember: ${nc.title}?`;
+    if (nc.type === "complication_risk") return `What are the complications of: ${nc.title}?`;
+    if (nc.type === "formula_breakdown") return `Break down the formula: ${nc.title}`;
+    return `${nc.title}`;
+  };
+
+  const cards: RecallCard[] = noteCards.map((nc, i) => ({
+    id:          `teach-${nc.type}-${i}`,
+    type:        cardTypeOf(nc.type),
+    front:       frontOf(nc),
+    back:        nc.body,
+    tag:         nc.type,
+    reviewCount: 0,
+    isMissed:    false,
+  }));
+
+  const topic = opts.pageTitle || `Page ${opts.pageNumber}`;
+
+  return {
+    id:              stableRecallId(opts.bookId, opts.pageNumber, "teach-seq"),
+    bookId:          opts.bookId,
+    bookTitle:       opts.bookTitle,
+    sourceLabel:     "teach-canvas",
+    pageNumber:      opts.pageNumber,
+    subject:         opts.subject ?? inferSubject(opts.bookId),
+    topic,
+    cards,
+    createdAt:       Date.now(),
+    knowledgeNodeId: opts.knowledgeNodeId ?? undefined,
   };
 }

@@ -56,7 +56,8 @@ import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
-import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import type { SynthHighlightAnchor, NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
@@ -146,6 +147,8 @@ import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
+import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
+import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 
 // Lazy-load to keep SSR clean with performance optimizations
@@ -628,6 +631,10 @@ export default function ThoughtUnitReader() {
   // Used by all note-save paths to attach knowledgeNodeId without blocking the UI.
   const pageKgNodeIdRef = useRef<string | null>(null);
 
+  // KG cross-module selection sync: badge clicks → auto-navigate + highlight.
+  const selectedKgNodeId = useKnowledgeSelectionStore((s) => s.selectedNodeId);
+  const lastNavigatedKgNodeRef = useRef<string | null>(null);
+
   // Reading position from the single ReadingFocusStore — no local state needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
   const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
@@ -690,40 +697,7 @@ export default function ThoughtUnitReader() {
     []
   );
 
-  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
-  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
-  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
-  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
-  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
-  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
-  useEffect(() => {
-    if (!currentPageStudyModel || !bookId) return;
-    const { visualAnchors } = currentPageStudyModel;
-    if (!visualAnchors.length) return;
-
-    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
-    const chapterCandidateId = syllabus?.structureCandidates?.find(
-      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
-    )?.id ?? null;
-    const profileId = syllabus?.selectedProfileId ?? "general";
-
-    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
-    pageKgNodeIdRef.current = null;
-
-    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea" || a.role === "core_idea") ?? visualAnchors[0];
-
-    for (const anchor of visualAnchors) {
-      if (!anchor.id) continue;
-      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
-        .then(node => {
-          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
-          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
-            pageKgNodeIdRef.current = node.id;
-          }
-        })
-        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
-    }
-  }, [currentPageStudyModel, bookId, currentPage]);
+  // KG resolve effect moved to after bookId declaration (avoids TS2448 TDZ error)
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
@@ -1221,6 +1195,14 @@ export default function ThoughtUnitReader() {
     [currentPageStudyModel, currentPage],
   );
 
+  // Teaching sequence for Universal Recall Lab (shared with WhiteboardPanel Teach tab)
+  const currentPageNoteCards = useMemo((): NoteCard[] | null => {
+    if (!currentPageStudyModel) return null;
+    const sm = currentPageStudyModel as any;
+    if (Array.isArray(sm.noteCards) && sm.noteCards.length > 0) return sm.noteCards as NoteCard[];
+    try { return deriveNoteCardsFromStudyModel(currentPageStudyModel); } catch { return null; }
+  }, [currentPageStudyModel]);
+
   const activeCanonicalThoughtUnit = useMemo(
     () => canonicalLeftPanelUnits.find((unit) => unit.evidenceRefId === focusedEvidenceId || unit.id === focusedEvidenceId) ?? canonicalLeftPanelUnits[0] ?? null,
     [canonicalLeftPanelUnits, focusedEvidenceId],
@@ -1377,6 +1359,58 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+  // useKnowledgeGraph must be called after bookId state is declared
+  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+
+  // ── KG selection → navigate reader + highlight anchor ─────────────────────
+  useEffect(() => {
+    if (!selectedKgNodeId || selectedKgNodeId === lastNavigatedKgNodeRef.current) return;
+    const node = kgNodes.find((n) => n.id === selectedKgNodeId);
+    if (!node) return;
+    lastNavigatedKgNodeRef.current = selectedKgNodeId;
+    if (node.sourcePages.length > 0) {
+      syncToPage(node.sourcePages[0], { reason: "TOC_JUMP" });
+      trySwitchShellTab("reader", "reader");
+    }
+    if (node.canonicalAnchorId) {
+      setFocusedEvidenceId(node.canonicalAnchorId);
+    }
+  }, [selectedKgNodeId, kgNodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
+  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
+  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
+  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
+  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
+  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
+  useEffect(() => {
+    if (!currentPageStudyModel || !bookId) return;
+    const { visualAnchors } = currentPageStudyModel;
+    if (!visualAnchors.length) return;
+
+    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
+    const chapterCandidateId = syllabus?.structureCandidates?.find(
+      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
+    )?.id ?? null;
+    const profileId = syllabus?.selectedProfileId ?? "general";
+
+    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
+    pageKgNodeIdRef.current = null;
+
+    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
+
+    for (const anchor of visualAnchors) {
+      if (!anchor.id) continue;
+      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
+        .then(node => {
+          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
+          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
+            pageKgNodeIdRef.current = node.id;
+          }
+        })
+        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [currentPageStudyModel, bookId, currentPage]);
 
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
@@ -4418,6 +4452,7 @@ export default function ThoughtUnitReader() {
                   }}
                   onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); }}
                   focusedAnchorText={notelabFocusedAnchorText}
+                  focusedKnowledgeNodeId={selectedKgNodeId}
                 />
               </ErrorBoundary>
             </div>
@@ -4669,6 +4704,10 @@ export default function ThoughtUnitReader() {
                 onVisualize={visualizeThoughtUnit}
                 onOpenInWhiteboard={openThoughtUnitInWhiteboard}
                 onOpenExplainStep={openExplainStepForThoughtUnit}
+                focusedKnowledgeNodeId={selectedKgNodeId}
+                currentPageNoteCards={currentPageNoteCards}
+                currentPage={currentPage}
+                currentPageTitle={currentPageStudyModel?.pageThesis ?? null}
               />
             </ErrorBoundary>
           </div>
@@ -5350,6 +5389,10 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(id);
                 }}
                 activeAnchorId={focusedEvidenceId}
+                bookId={bookId}
+                bookTitle={uploadedFile?.name}
+                pageTitle={currentPageStudyModel?.pageThesis ?? null}
+                knowledgeNodeId={pageKgNodeIdRef.current}
               />
             </div>
           </div>

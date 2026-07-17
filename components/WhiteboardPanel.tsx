@@ -11,6 +11,12 @@ import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteS
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
+import TeachingCanvas from "@/components/whiteboard/TeachingCanvas";
+import RecallCanvas from "@/components/whiteboard/RecallCanvas";
+import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
+import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
 
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
@@ -75,6 +81,13 @@ type Props = {
    * Defaults to NEXT_PUBLIC_WHITEBOARD_DEBUG === "1".
    */
   debugMode?: boolean;
+
+  /** Recall tab metadata — passed through to RecallCanvas for saving sets */
+  bookId?: string;
+  bookTitle?: string;
+  pageTitle?: string | null;
+  knowledgeNodeId?: string | null;
+  recallSubject?: NoteSubject;
 };
 
 type WhiteboardDebugInfo = {
@@ -113,6 +126,11 @@ export default function WhiteboardPanel({
   onAnchorStep,
   activeAnchorId,
   debugMode,
+  bookId,
+  bookTitle,
+  pageTitle,
+  knowledgeNodeId,
+  recallSubject,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -141,6 +159,19 @@ export default function WhiteboardPanel({
   const [viewMode, setViewMode] = useState<"illustration" | "diagram">("diagram");
   const [showFallbackNote, setShowFallbackNote] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  // ── Adaptive Teaching Engine tab state ───────────────────────────────────
+  type WbTab = "teach" | "recall" | "diagram" | "illustration";
+  const [wbTab, setWbTab] = useState<WbTab>("teach");
+  // Guard: only request diagram generation once (lazy, on first Diagram tab open)
+  const diagramRequestedRef = useRef(false);
+
+  const teachNoteCards = useMemo((): NoteCard[] => {
+    const sm = studyModel as any;
+    if (!sm) return [];
+    if (Array.isArray(sm.noteCards) && sm.noteCards.length > 0) return sm.noteCards as NoteCard[];
+    try { return deriveNoteCardsFromStudyModel(sm as CurrentPageStudyModel); } catch { return []; }
+  }, [studyModel]);
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -506,19 +537,20 @@ export default function WhiteboardPanel({
 
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
-    const shouldTrigger = studyModel ? !!studyModel : (autoTrigger && !!effectiveConcept && !!effectiveContext);
     if (studyModel) {
+      // Study model path: Teach tab renders instantly from noteCards — defer
+      // diagram generation to the first time the user opens the Diagram tab.
       console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
         page: currentPage ?? null,
         hasThesis: !!(studyModel as any).pageThesis,
         hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
         conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
       });
+      return;
     }
+    const shouldTrigger = autoTrigger && !!effectiveConcept && !!effectiveContext;
     if (!shouldTrigger) {
-      // No studyModel/autoTrigger path fired — but a bare concept (e.g. from
-      // "Explain This Step → Visualize") should still get an illustration even
-      // though the structured-diagram explain call above won't run for it.
+      // Bare concept (e.g. "Explain This Step → Visualize") — still generate illustration.
       if (effectiveConcept) generateAIDrawing(null);
       return;
     }
@@ -677,6 +709,67 @@ export default function WhiteboardPanel({
           transition={{ type: "spring", stiffness: 260, damping: 24 }}
           className="flex flex-col gap-3"
         >
+          {/* ── Adaptive Teaching Engine: mode tabs ─────────────────────── */}
+          <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
+            {(
+              [
+                ["teach",        "📚 Teach"],
+                ["recall",       "🎯 Recall"],
+                ["diagram",      "✏️ Diagram"],
+                ["illustration", "🖼 Illustration"],
+              ] as [WbTab, string][]
+            ).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setWbTab(tab);
+                  if (tab === "diagram" && !diagramRequestedRef.current && !steps.length) {
+                    diagramRequestedRef.current = true;
+                    runGenerate();
+                  }
+                }}
+                style={{
+                  flex: 1, padding: "10px 4px", fontSize: 11,
+                  fontWeight: wbTab === tab ? 700 : 500,
+                  background: "transparent",
+                  color: wbTab === tab ? "#fcd34d" : "rgba(148,163,184,0.5)",
+                  borderBottom: `2px solid ${wbTab === tab ? "#fcd34d" : "transparent"}`,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "color 0.15s, border-color 0.15s",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Teach tab: instant sequential teaching frames ─────────────── */}
+          {wbTab === "teach" && (
+            <TeachingCanvas
+              pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle}
+              noteCards={teachNoteCards}
+            />
+          )}
+
+          {/* ── Recall tab: flip-card session from the same teaching sequence ── */}
+          {wbTab === "recall" && (
+            <RecallCanvas
+              noteCards={teachNoteCards}
+              pageTitle={pageTitle ?? (studyModel as any)?.pageThesis ?? lessonTitle}
+              bookId={bookId}
+              bookTitle={bookTitle}
+              pageNumber={currentPage}
+              knowledgeNodeId={knowledgeNodeId}
+              subject={recallSubject}
+            />
+          )}
+
+          {/* ── Diagram + Illustration tabs: existing panel content ─────── */}
+          {wbTab !== "teach" && wbTab !== "recall" && (
+            <>
+
           {/* Header / Controls */}
           <div className="flex items-center gap-2 flex-wrap relative">
             {/* "Diagram detected" pill (auto-trigger cue) */}
@@ -749,25 +842,14 @@ export default function WhiteboardPanel({
               )}
             </div>
 
-            {/* Illustration / Diagram view toggle — only appears once an illustration exists */}
-            {aiImageUrl && (
-              <>
-                <div className="h-6 w-px bg-gray-700 mx-1" />
-                <div className="flex items-center rounded-lg border border-gray-700 overflow-hidden text-xs">
-                  <button
-                    onClick={() => setViewMode("illustration")}
-                    className={`px-2.5 py-1.5 transition-colors ${viewMode === "illustration" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
-                  >
-                    🖼 Illustration
-                  </button>
-                  <button
-                    onClick={() => setViewMode("diagram")}
-                    className={`px-2.5 py-1.5 transition-colors ${viewMode === "diagram" ? "bg-yellow-500/90 text-black font-medium" : "bg-gray-900 hover:bg-gray-800 text-gray-300"}`}
-                  >
-                    ✏️ Diagram
-                  </button>
-                </div>
-              </>
+            {/* Illustration ready chip — prompts the user to switch to the Illustration tab */}
+            {aiImageUrl && wbTab !== "illustration" && (
+              <div
+                onClick={() => setWbTab("illustration")}
+                style={{ fontSize: 10, color: "rgba(148,163,184,0.6)", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}
+              >
+                🖼 Illustration ready
+              </div>
             )}
 
             <div className="flex-1" />
@@ -910,8 +992,8 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* Illustration view — hidden (not unmounted) while viewMode === "diagram" */}
-          <div style={{ display: aiImageUrl && viewMode === "illustration" ? "block" : "none" }}>
+          {/* Illustration view — shown only on Illustration tab */}
+          <div style={{ display: aiImageUrl && wbTab === "illustration" ? "block" : "none" }}>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -928,8 +1010,8 @@ export default function WhiteboardPanel({
             </motion.div>
           </div>
 
-          {/* Diagram (canvas) view — the permanent base layer, always present, never blank */}
-          <div style={{ display: !aiImageUrl || viewMode === "diagram" ? "block" : "none" }}>
+          {/* Diagram (canvas) view — shown on Diagram tab */}
+          <div style={{ display: wbTab === "diagram" ? "block" : "none" }}>
             {canRender ? (
               <motion.div
                 ref={scrollRef}
@@ -976,46 +1058,41 @@ export default function WhiteboardPanel({
             ) : null}
           </div>
 
-          {/* Model/provider selector + integration controls */}
+          {/* Model/provider selector + integration controls — Illustration tab only */}
           <div className="flex flex-col gap-2 border-t border-gray-800 pt-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-xs opacity-80">Image provider</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as Provider)}
-                className="border rounded px-2 py-1 bg-gray-900 text-xs"
-              >
-                <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
-                <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
-                <option value="sdxl">Stable Diffusion XL</option>
-                <option value="sdxlFineTuned">Fine-tuned SDXL</option>
-                <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
-              </select>
-              <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
-                {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
-              </Button>
-            </div>
+            {wbTab === "illustration" && (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-xs opacity-80">Image provider</label>
+                  <select
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value as Provider)}
+                    className="border rounded px-2 py-1 bg-gray-900 text-xs"
+                  >
+                    <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
+                    <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
+                    <option value="sdxl">Stable Diffusion XL</option>
+                    <option value="sdxlFineTuned">Fine-tuned SDXL</option>
+                    <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
+                  </select>
+                  <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
+                    {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
+                  </Button>
+                </div>
 
-            {(provider === "sdxl" || provider === "sdxlFineTuned") && (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
-                <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
-                <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
-              </div>
+                {(provider === "sdxl" || provider === "sdxlFineTuned") && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                    <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
+                    <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
+                    <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                    <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
+                  </div>
+                )}
+              </>
             )}
 
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={handleSaveToNoteLab} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                📓 Save to NoteLab
-              </button>
-              <button onClick={handleCreateRecallCard} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                🧠 Create Recall Card
-              </button>
-              <button onClick={handleAddToStudyGuide} disabled={!diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                📘 Add to Study Guide
-              </button>
               <button onClick={handleExportPNG} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
                 🖼 Export PNG
               </button>
@@ -1025,7 +1102,6 @@ export default function WhiteboardPanel({
               <button onClick={handleRegenerate} disabled={loading || aiImageLoading} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
                 🔄 Regenerate
               </button>
-              {actionMessage && <span className="text-xs text-emerald-300">{actionMessage}</span>}
             </div>
           </div>
 
@@ -1042,6 +1118,24 @@ export default function WhiteboardPanel({
               </ul>
             </div>
           )}
+
+            </> /* end diagram/illustration wrapper (wbTab !== "teach" && wbTab !== "recall") */
+          )}
+
+          {/* Integration buttons — visible in all tabs */}
+          <div className="flex items-center gap-2 flex-wrap border-t border-gray-800 pt-2">
+            <button onClick={handleSaveToNoteLab} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+              📓 Save to NoteLab
+            </button>
+            <button onClick={handleCreateRecallCard} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+              🧠 Create Recall Card
+            </button>
+            <button onClick={handleAddToStudyGuide} disabled={!diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+              📘 Add to Study Guide
+            </button>
+            {actionMessage && <span className="text-xs text-emerald-300">{actionMessage}</span>}
+          </div>
+
         </motion.aside>
       )}
 
