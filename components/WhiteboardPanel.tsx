@@ -12,9 +12,11 @@ import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallSto
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import TeachingCanvas from "@/components/whiteboard/TeachingCanvas";
+import RecallCanvas from "@/components/whiteboard/RecallCanvas";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
+import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
 
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
@@ -79,6 +81,13 @@ type Props = {
    * Defaults to NEXT_PUBLIC_WHITEBOARD_DEBUG === "1".
    */
   debugMode?: boolean;
+
+  /** Recall tab metadata — passed through to RecallCanvas for saving sets */
+  bookId?: string;
+  bookTitle?: string;
+  pageTitle?: string | null;
+  knowledgeNodeId?: string | null;
+  recallSubject?: NoteSubject;
 };
 
 type WhiteboardDebugInfo = {
@@ -117,6 +126,11 @@ export default function WhiteboardPanel({
   onAnchorStep,
   activeAnchorId,
   debugMode,
+  bookId,
+  bookTitle,
+  pageTitle,
+  knowledgeNodeId,
+  recallSubject,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -147,7 +161,7 @@ export default function WhiteboardPanel({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // ── Adaptive Teaching Engine tab state ───────────────────────────────────
-  type WbTab = "teach" | "diagram" | "illustration";
+  type WbTab = "teach" | "recall" | "diagram" | "illustration";
   const [wbTab, setWbTab] = useState<WbTab>("teach");
   // Guard: only request diagram generation once (lazy, on first Diagram tab open)
   const diagramRequestedRef = useRef(false);
@@ -700,6 +714,7 @@ export default function WhiteboardPanel({
             {(
               [
                 ["teach",        "📚 Teach"],
+                ["recall",       "🎯 Recall"],
                 ["diagram",      "✏️ Diagram"],
                 ["illustration", "🖼 Illustration"],
               ] as [WbTab, string][]
@@ -738,8 +753,21 @@ export default function WhiteboardPanel({
             />
           )}
 
+          {/* ── Recall tab: flip-card session from the same teaching sequence ── */}
+          {wbTab === "recall" && (
+            <RecallCanvas
+              noteCards={teachNoteCards}
+              pageTitle={pageTitle ?? (studyModel as any)?.pageThesis ?? lessonTitle}
+              bookId={bookId}
+              bookTitle={bookTitle}
+              pageNumber={currentPage}
+              knowledgeNodeId={knowledgeNodeId}
+              subject={recallSubject}
+            />
+          )}
+
           {/* ── Diagram + Illustration tabs: existing panel content ─────── */}
-          {wbTab !== "teach" && (
+          {wbTab !== "teach" && wbTab !== "recall" && (
             <>
 
           {/* Header / Controls */}

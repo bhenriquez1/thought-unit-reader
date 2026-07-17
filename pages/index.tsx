@@ -56,7 +56,8 @@ import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
-import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import type { SynthHighlightAnchor, NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import { detectDomainPreset } from "@/lib/insights/domainPresets";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
@@ -1193,6 +1194,14 @@ export default function ThoughtUnitReader() {
     () => currentPageStudyModel ? generateWhiteboardStepsFromModel(currentPageStudyModel, currentPage) : [],
     [currentPageStudyModel, currentPage],
   );
+
+  // Teaching sequence for Universal Recall Lab (shared with WhiteboardPanel Teach tab)
+  const currentPageNoteCards = useMemo((): NoteCard[] | null => {
+    if (!currentPageStudyModel) return null;
+    const sm = currentPageStudyModel as any;
+    if (Array.isArray(sm.noteCards) && sm.noteCards.length > 0) return sm.noteCards as NoteCard[];
+    try { return deriveNoteCardsFromStudyModel(currentPageStudyModel); } catch { return null; }
+  }, [currentPageStudyModel]);
 
   const activeCanonicalThoughtUnit = useMemo(
     () => canonicalLeftPanelUnits.find((unit) => unit.evidenceRefId === focusedEvidenceId || unit.id === focusedEvidenceId) ?? canonicalLeftPanelUnits[0] ?? null,
@@ -4696,6 +4705,9 @@ export default function ThoughtUnitReader() {
                 onOpenInWhiteboard={openThoughtUnitInWhiteboard}
                 onOpenExplainStep={openExplainStepForThoughtUnit}
                 focusedKnowledgeNodeId={selectedKgNodeId}
+                currentPageNoteCards={currentPageNoteCards}
+                currentPage={currentPage}
+                currentPageTitle={currentPageStudyModel?.pageThesis ?? null}
               />
             </ErrorBoundary>
           </div>
@@ -5377,6 +5389,10 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(id);
                 }}
                 activeAnchorId={focusedEvidenceId}
+                bookId={bookId}
+                bookTitle={uploadedFile?.name}
+                pageTitle={currentPageStudyModel?.pageThesis ?? null}
+                knowledgeNodeId={pageKgNodeIdRef.current}
               />
             </div>
           </div>
