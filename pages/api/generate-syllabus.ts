@@ -331,7 +331,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       prerequisites,
       recommendedOrder,
       studyRoadmap:   parsed.studyRoadmap,
-      totalPages:     Number(totalPages) || candidates[candidates.length - 1]?.endPage ?? 1,
+      totalPages:     Number(totalPages) || (candidates[candidates.length - 1]?.endPage ?? 1),
       generatedAt:    new Date().toISOString(),
       generatorVersion: GENERATOR_VERSION,
       schemaVersion:  SCHEMA_VERSION,

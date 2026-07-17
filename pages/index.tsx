@@ -632,7 +632,6 @@ export default function ThoughtUnitReader() {
 
   // KG cross-module selection sync: badge clicks → auto-navigate + highlight.
   const selectedKgNodeId = useKnowledgeSelectionStore((s) => s.selectedNodeId);
-  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
   const lastNavigatedKgNodeRef = useRef<string | null>(null);
 
   // Reading position from the single ReadingFocusStore — no local state needed.
@@ -697,55 +696,7 @@ export default function ThoughtUnitReader() {
     []
   );
 
-  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
-  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
-  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
-  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
-  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
-  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
-  useEffect(() => {
-    if (!currentPageStudyModel || !bookId) return;
-    const { visualAnchors } = currentPageStudyModel;
-    if (!visualAnchors.length) return;
-
-    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
-    const chapterCandidateId = syllabus?.structureCandidates?.find(
-      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
-    )?.id ?? null;
-    const profileId = syllabus?.selectedProfileId ?? "general";
-
-    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
-    pageKgNodeIdRef.current = null;
-
-    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea" || a.role === "core_idea") ?? visualAnchors[0];
-
-    for (const anchor of visualAnchors) {
-      if (!anchor.id) continue;
-      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
-        .then(node => {
-          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
-          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
-            pageKgNodeIdRef.current = node.id;
-          }
-        })
-        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
-    }
-  }, [currentPageStudyModel, bookId, currentPage]);
-
-  // ── KG selection → navigate reader + highlight anchor ─────────────────────
-  useEffect(() => {
-    if (!selectedKgNodeId || selectedKgNodeId === lastNavigatedKgNodeRef.current) return;
-    const node = kgNodes.find((n) => n.id === selectedKgNodeId);
-    if (!node) return;
-    lastNavigatedKgNodeRef.current = selectedKgNodeId;
-    if (node.sourcePages.length > 0) {
-      syncToPage(node.sourcePages[0], { reason: "TOC_JUMP" });
-      trySwitchShellTab("reader", "reader");
-    }
-    if (node.canonicalAnchorId) {
-      setFocusedEvidenceId(node.canonicalAnchorId);
-    }
-  }, [selectedKgNodeId, kgNodes]); // eslint-disable-line react-hooks/exhaustive-deps
+  // KG resolve effect moved to after bookId declaration (avoids TS2448 TDZ error)
 
   // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
@@ -1399,6 +1350,58 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+  // useKnowledgeGraph must be called after bookId state is declared
+  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+
+  // ── KG selection → navigate reader + highlight anchor ─────────────────────
+  useEffect(() => {
+    if (!selectedKgNodeId || selectedKgNodeId === lastNavigatedKgNodeRef.current) return;
+    const node = kgNodes.find((n) => n.id === selectedKgNodeId);
+    if (!node) return;
+    lastNavigatedKgNodeRef.current = selectedKgNodeId;
+    if (node.sourcePages.length > 0) {
+      syncToPage(node.sourcePages[0], { reason: "TOC_JUMP" });
+      trySwitchShellTab("reader", "reader");
+    }
+    if (node.canonicalAnchorId) {
+      setFocusedEvidenceId(node.canonicalAnchorId);
+    }
+  }, [selectedKgNodeId, kgNodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
+  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
+  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
+  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
+  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
+  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
+  useEffect(() => {
+    if (!currentPageStudyModel || !bookId) return;
+    const { visualAnchors } = currentPageStudyModel;
+    if (!visualAnchors.length) return;
+
+    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
+    const chapterCandidateId = syllabus?.structureCandidates?.find(
+      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
+    )?.id ?? null;
+    const profileId = syllabus?.selectedProfileId ?? "general";
+
+    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
+    pageKgNodeIdRef.current = null;
+
+    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
+
+    for (const anchor of visualAnchors) {
+      if (!anchor.id) continue;
+      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
+        .then(node => {
+          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
+          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
+            pageKgNodeIdRef.current = node.id;
+          }
+        })
+        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [currentPageStudyModel, bookId, currentPage]);
 
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
