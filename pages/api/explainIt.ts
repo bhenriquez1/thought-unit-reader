@@ -114,6 +114,8 @@ Rules:
 - Keep replies conversational length — usually 2-5 sentences, occasionally longer if walking through a worked example.`;
 }
 
+const VALID_PROFILES = new Set<string>(["standard", "dental", "medical", "surgeon", "dat"]);
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ExplainItResponse>) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -123,6 +125,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const body = req.body as ExplainItRequest;
   if (!Array.isArray(body?.messages) || body.messages.length === 0) {
     return res.status(400).json({ reply: "", provider: "openai", error: "messages is required" });
+  }
+
+  // Validate profile server-side; untrusted client values fall back to standard.
+  if (body.learningProfile && !VALID_PROFILES.has(body.learningProfile)) {
+    body.learningProfile = "standard";
   }
 
   const openaiKey = process.env.OPENAI_API_KEY;

@@ -240,7 +240,9 @@ export default async function handler(
     const debug      = Boolean(body.debug);
     const focusedAnchorId = body.focusedAnchorId ?? null;
     const pageNumber = typeof body.pageNumber === "number" ? body.pageNumber : (studyModel?.page ?? null);
-    const learningProfile = body.learningProfile ?? "standard";
+    const VALID_PROFILES = new Set(["standard", "dental", "medical", "surgeon", "dat"]);
+    const rawProfile = body.learningProfile;
+    const learningProfile: LearningProfile = (rawProfile && VALID_PROFILES.has(rawProfile)) ? rawProfile : "standard";
     const profileBlock = getProfileSystemBlock(learningProfile);
 
     if (!concept && !studyModel?.pageThesis) {

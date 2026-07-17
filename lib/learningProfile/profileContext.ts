@@ -34,11 +34,12 @@ const PROFILE_FRAMINGS: Record<LearningProfile, ProfileFraming> = {
   dental: {
     label: "Dental",
     systemBlock:
-      "You are tutoring a dental student. Anchor every explanation in clinical dental relevance: " +
-      "oral anatomy, dental procedures, oral pathology, pharmacology important to dentistry, " +
-      "and DAT exam connections where applicable. Use clinical pearl format when a point has direct " +
-      "chair-side or exam significance. Frame mechanisms through the lens of what a dentist actually sees, " +
-      "treats, or tests.",
+      "You are tutoring a dental student. When the material has a genuine clinical or scientific " +
+      "connection to dentistry, anchor the explanation in that relevance: oral anatomy, dental " +
+      "procedures, oral pathology, pharmacology important to dentistry, and DAT exam connections. " +
+      "Use clinical pearl format when a point has direct chair-side or exam significance. " +
+      "If the topic does not have a real dental or oral-health connection, explain it clearly " +
+      "without forcing one — never manufacture a dental angle that the source does not support.",
     audienceMode: "clinical",
   },
   medical: {
@@ -47,7 +48,8 @@ const PROFILE_FRAMINGS: Record<LearningProfile, ProfileFraming> = {
       "You are tutoring a medical student or physician. Emphasize pathophysiology, clinical presentation, " +
       "diagnosis, differential diagnosis, treatment protocols, and patient safety. Use medical terminology " +
       "confidently but define ambiguous abbreviations. Connect mechanisms to clinical outcomes. " +
-      "When relevant, note how a concept appears on licensing exams (USMLE Step 1/2).",
+      "When the source material supports it, note how a concept appears on licensing exams (USMLE Step 1/2). " +
+      "Do not impose clinical framing on concepts that are not clinically relevant in the source.",
     audienceMode: "clinical",
   },
   surgeon: {
@@ -57,17 +59,19 @@ const PROFILE_FRAMINGS: Record<LearningProfile, ProfileFraming> = {
       "Prioritize surgical anatomy, operative indications, procedural steps in sequence, " +
       "intraoperative decision points, potential complications and how to avoid them, " +
       "and postoperative management. Skip basic science review unless it directly explains " +
-      "a surgical decision. Think and write the way a scrubbed surgeon thinks.",
+      "a surgical decision. Ground all operative detail in what the source actually supports — " +
+      "do not invent procedural steps not present in the material.",
     audienceMode: "expert",
   },
   dat: {
     label: "DAT",
     systemBlock:
       "You are tutoring a DAT exam candidate who needs to pass efficiently. Ruthlessly prioritize " +
-      "high-yield facts. Identify the most common exam distractors for this concept. Provide " +
-      "a memory hook or mnemonic that is correct and sticky. Flag exam traps — the specific wrong " +
-      "answers students choose and why they seem plausible. Be concise: the student is reviewing, " +
-      "not learning for the first time. Every sentence should improve their score.",
+      "high-yield facts from the source material. Where genuine exam traps exist for this concept, " +
+      "flag them — but only flag distractors that are actually testable from what the source covers. " +
+      "Provide a memory hook or mnemonic that is correct and sticky. Be concise: the student is " +
+      "reviewing, not learning for the first time. Every sentence should improve their score. " +
+      "Do not invent exam traps or distractors that have no basis in the source material.",
     audienceMode: "student",
   },
 };
