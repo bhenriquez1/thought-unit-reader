@@ -159,14 +159,13 @@ export default function WhiteboardPanel({
   const [aiTeachingScript, setAiTeachingScript] = useState("");
   const [aiImageError, setAiImageError] = useState<string | null>(null);
   const [aiImageDebugInfo, setAiImageDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
-  const [viewMode, setViewMode] = useState<"illustration" | "diagram">("diagram");
   const [showFallbackNote, setShowFallbackNote] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // ── Adaptive Teaching Engine tab state ───────────────────────────────────
-  type WbTab = "teach" | "recall" | "diagram" | "illustration";
+  type WbTab = "teach" | "recall" | "visualize";
   const [wbTab, setWbTab] = useState<WbTab>("teach");
-  // Guard: only request diagram generation once (lazy, on first Diagram tab open)
+  // Guard: only request generation once (lazy, on first Visualize tab open)
   const diagramRequestedRef = useRef(false);
 
   const teachNoteCards = useMemo((): NoteCard[] => {
@@ -357,7 +356,6 @@ export default function WhiteboardPanel({
 
       setAiImageUrl(data.imageUrl ?? null);
       setAiTeachingScript(data.teachingScript ?? "");
-      setViewMode("illustration");
       console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
     } catch (err: any) {
       console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
@@ -717,10 +715,9 @@ export default function WhiteboardPanel({
           <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
             {(
               [
-                ["teach",        "📚 Teach"],
-                ["recall",       "🎯 Recall"],
-                ["diagram",      "✏️ Diagram"],
-                ["illustration", "🖼 Illustration"],
+                ["teach",     "📚 Teach"],
+                ["recall",    "🎯 Recall"],
+                ["visualize", "📊 Visualize"],
               ] as [WbTab, string][]
             ).map(([tab, label]) => (
               <button
@@ -728,7 +725,7 @@ export default function WhiteboardPanel({
                 type="button"
                 onClick={() => {
                   setWbTab(tab);
-                  if (tab === "diagram" && !diagramRequestedRef.current && !steps.length) {
+                  if (tab === "visualize" && !diagramRequestedRef.current && !steps.length) {
                     diagramRequestedRef.current = true;
                     runGenerate();
                   }
@@ -770,8 +767,8 @@ export default function WhiteboardPanel({
             />
           )}
 
-          {/* ── Diagram + Illustration tabs: existing panel content ─────── */}
-          {wbTab !== "teach" && wbTab !== "recall" && (
+          {/* ── Visualize tab: canvas diagram + optional AI illustration ── */}
+          {wbTab === "visualize" && (
             <>
 
           {/* Header / Controls */}
@@ -845,16 +842,6 @@ export default function WhiteboardPanel({
                 </>
               )}
             </div>
-
-            {/* Illustration ready chip — prompts the user to switch to the Illustration tab */}
-            {aiImageUrl && wbTab !== "illustration" && (
-              <div
-                onClick={() => setWbTab("illustration")}
-                style={{ fontSize: 10, color: "rgba(148,163,184,0.6)", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}
-              >
-                🖼 Illustration ready
-              </div>
-            )}
 
             <div className="flex-1" />
 
@@ -996,26 +983,8 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* Illustration view — shown only on Illustration tab */}
-          <div style={{ display: aiImageUrl && wbTab === "illustration" ? "block" : "none" }}>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={aiImageUrl ?? undefined} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[60vh] object-contain bg-white" />
-              {aiTeachingScript && (
-                <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
-                  <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
-                  <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
-                </details>
-              )}
-            </motion.div>
-          </div>
-
-          {/* Diagram (canvas) view — shown on Diagram tab */}
-          <div style={{ display: wbTab === "diagram" ? "block" : "none" }}>
+          {/* Canvas diagram — primary view on Visualize tab */}
+          <div style={{ display: wbTab === "visualize" ? "block" : "none" }}>
             {canRender ? (
               <motion.div
                 ref={scrollRef}
@@ -1062,38 +1031,52 @@ export default function WhiteboardPanel({
             ) : null}
           </div>
 
-          {/* Model/provider selector + integration controls — Illustration tab only */}
-          <div className="flex flex-col gap-2 border-t border-gray-800 pt-2">
-            {wbTab === "illustration" && (
-              <>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-xs opacity-80">Image provider</label>
-                  <select
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value as Provider)}
-                    className="border rounded px-2 py-1 bg-gray-900 text-xs"
-                  >
-                    <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
-                    <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
-                    <option value="sdxl">Stable Diffusion XL</option>
-                    <option value="sdxlFineTuned">Fine-tuned SDXL</option>
-                    <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
-                  </select>
-                  <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
-                    {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
-                  </Button>
-                </div>
+          {/* AI Illustration — secondary view, shown below canvas when available */}
+          {aiImageUrl && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={aiImageUrl} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[50vh] object-contain bg-white" />
+              {aiTeachingScript && (
+                <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
+                  <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
+                  <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
+                </details>
+              )}
+            </motion.div>
+          )}
 
-                {(provider === "sdxl" || provider === "sdxlFineTuned") && (
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                    <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
-                    <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
-                    <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                    <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
-                  </div>
-                )}
-              </>
+          {/* Illustration controls + export/regenerate */}
+          <div className="flex flex-col gap-2 border-t border-gray-800 pt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs opacity-80">Image provider</label>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as Provider)}
+                className="border rounded px-2 py-1 bg-gray-900 text-xs"
+              >
+                <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
+                <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
+                <option value="sdxl">Stable Diffusion XL</option>
+                <option value="sdxlFineTuned">Fine-tuned SDXL</option>
+                <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
+              </select>
+              <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
+                {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
+              </Button>
+            </div>
+
+            {(provider === "sdxl" || provider === "sdxlFineTuned") && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
+                <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
+                <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
+                <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
+              </div>
             )}
 
             <div className="flex items-center gap-2 flex-wrap">
