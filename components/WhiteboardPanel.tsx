@@ -160,6 +160,9 @@ export default function WhiteboardPanel({
   const [aiImageError, setAiImageError] = useState<string | null>(null);
   const [aiImageDebugInfo, setAiImageDebugInfo] = useState<WhiteboardDebugInfo | null>(null);
   const [showFallbackNote, setShowFallbackNote] = useState(false);
+  // Track which profile was active when the illustration was generated so we
+  // can warn the student if the profile has since changed.
+  const [illustrationProfile, setIllustrationProfile] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // ── Adaptive Teaching Engine tab state ───────────────────────────────────
@@ -356,6 +359,7 @@ export default function WhiteboardPanel({
 
       setAiImageUrl(data.imageUrl ?? null);
       setAiTeachingScript(data.teachingScript ?? "");
+      setIllustrationProfile(learningProfile ?? "standard");
       console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
     } catch (err: any) {
       console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
@@ -1038,6 +1042,19 @@ export default function WhiteboardPanel({
               animate={{ opacity: 1 }}
               className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
             >
+              {/* Stale-profile indicator: illustration was generated under a different profile */}
+              {illustrationProfile && illustrationProfile !== (learningProfile ?? "standard") && (
+                <div className="flex items-center justify-between px-3 py-1.5 bg-amber-900/30 border-b border-amber-700/40 text-xs text-amber-300/80">
+                  <span>Illustration generated under <strong>{illustrationProfile}</strong> profile — may not match current framing.</span>
+                  <button
+                    onClick={() => generateAIDrawing(diagramPlan)}
+                    disabled={aiImageLoading}
+                    className="ml-3 px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-700/60 transition-colors disabled:opacity-50"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              )}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={aiImageUrl} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[50vh] object-contain bg-white" />
               {aiTeachingScript && (
