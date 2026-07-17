@@ -3,7 +3,7 @@
 // Zero-API flip-card recall session powered by the current page's NoteCard[] teaching sequence.
 // Each NoteCard becomes one flip card. Completion offers "Save to Recall Lab".
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import {
   buildRecallSetFromTeachingSequence,
@@ -97,6 +97,15 @@ export default function RecallCanvas({
   const [ratings, setRatings] = useState<RatingResult[]>([]);
   const [saved, setSaved]     = useState(false);
   const [saving, setSaving]   = useState(false);
+
+  // Reset session whenever the teaching sequence changes (same-page study-model refresh
+  // or programmatic noteCards update). Page/book changes unmount the whole panel via key.
+  useEffect(() => {
+    setIdx(0);
+    setFlipped(false);
+    setRatings([]);
+    setSaved(false);
+  }, [noteCards]);
 
   const cards = useMemo(
     () => noteCards.map(nc => ({ front: buildFront(nc), back: nc.body, type: nc.type })),

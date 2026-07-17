@@ -1119,7 +1119,7 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-            </> /* end wbTab !== "teach" wrapper */
+            </> /* end diagram/illustration wrapper (wbTab !== "teach" && wbTab !== "recall") */
           )}
 
           {/* Integration buttons — visible in all tabs */}
