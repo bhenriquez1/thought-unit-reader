@@ -31,7 +31,6 @@ import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore"
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
-import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -4237,6 +4236,39 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
+  const handleAskCoach = useCallback(async () => {
+    if (!coachQuestion.trim() || coachLoading) return;
+    setCoachLoading(true);
+    setCoachResponse(null);
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
+    try {
+      const res = await fetch("/api/ai-coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: coachQuestion.trim(),
+          context: {
+            bookTitle: uploadedFile?.name ?? "Unknown",
+            masteryPct: courseProgress?.overallMasteryPct ?? 0,
+            readPct: courseProgress?.overallReadPct ?? 0,
+            weakAreas: courseWeakAreas ?? [],
+            nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
+            currentPage,
+            totalPages: pdfPageCount,
+            todayTopics: todayPlan?.topics ?? [],
+          },
+        }),
+      });
+      const data = await res.json();
+      setCoachResponse(data.response ?? data.error ?? "No response.");
+    } catch {
+      setCoachResponse("Coach unavailable. Check your connection and try again.");
+    } finally {
+      setCoachLoading(false);
+    }
+  }, [coachQuestion, coachLoading, syllabusStudyPlan, uploadedFile, courseProgress, courseWeakAreas, nextTopicRecommendation, currentPage, pdfPageCount]);
+
   /* =========================================================================
      🔹 Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
@@ -5101,39 +5133,9 @@ export default function ThoughtUnitReader() {
                   value={coachQuestion}
                   onChange={e => setCoachQuestion(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && coachQuestion.trim() && !coachLoading) {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
-                      (async () => {
-                        setCoachLoading(true);
-                        setCoachResponse(null);
-                        const todayStr = new Date().toISOString().split("T")[0];
-                        const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
-                        try {
-                          const res = await fetch("/api/ai-coach", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              question: coachQuestion.trim(),
-                              context: {
-                                bookTitle: uploadedFile?.name ?? "Unknown",
-                                masteryPct: courseProgress?.overallMasteryPct ?? 0,
-                                readPct: courseProgress?.overallReadPct ?? 0,
-                                weakAreas: courseWeakAreas ?? [],
-                                nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
-                                currentPage,
-                                totalPages: pdfPageCount,
-                                todayTopics: todayPlan?.topics ?? [],
-                              },
-                            }),
-                          });
-                          const data = await res.json();
-                          setCoachResponse(data.response ?? data.error ?? "No response.");
-                        } catch {
-                          setCoachResponse("Coach unavailable. Check your connection and try again.");
-                        } finally {
-                          setCoachLoading(false);
-                        }
-                      })();
+                      handleAskCoach();
                     }
                   }}
                   placeholder="Ask your coach anything about your study plan, weak areas, exam strategy…"
@@ -5142,38 +5144,7 @@ export default function ThoughtUnitReader() {
                 />
                 <button
                   disabled={!coachQuestion.trim() || coachLoading}
-                  onClick={async () => {
-                    if (!coachQuestion.trim() || coachLoading) return;
-                    setCoachLoading(true);
-                    setCoachResponse(null);
-                    const todayStr = new Date().toISOString().split("T")[0];
-                    const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
-                    try {
-                      const res = await fetch("/api/ai-coach", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          question: coachQuestion.trim(),
-                          context: {
-                            bookTitle: uploadedFile?.name ?? "Unknown",
-                            masteryPct: courseProgress?.overallMasteryPct ?? 0,
-                            readPct: courseProgress?.overallReadPct ?? 0,
-                            weakAreas: courseWeakAreas ?? [],
-                            nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
-                            currentPage,
-                            totalPages: pdfPageCount,
-                            todayTopics: todayPlan?.topics ?? [],
-                          },
-                        }),
-                      });
-                      const data = await res.json();
-                      setCoachResponse(data.response ?? data.error ?? "No response.");
-                    } catch {
-                      setCoachResponse("Coach unavailable. Check your connection and try again.");
-                    } finally {
-                      setCoachLoading(false);
-                    }
-                  }}
+                  onClick={handleAskCoach}
                   className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-semibold transition-colors"
                 >
                   {coachLoading ? "Thinking…" : "Ask Coach  ⌘↵"}
