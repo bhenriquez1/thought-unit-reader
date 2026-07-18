@@ -257,7 +257,6 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
         {confirmDelete && (
           <DeleteModal note={confirmDelete} onConfirm={executeDelete} onCancel={() => setConfirmDelete(null)} />
         )}
-        <ModeSelector mode={mode} onChange={handleModeChange} />
         <div style={{ padding: "40px 24px", textAlign: "center", color: "rgba(148,163,184,0.7)" }}>
           <div style={{ fontSize: 40, marginBottom: 14 }}>📝</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginBottom: 8 }}>No notes yet</div>
@@ -286,7 +285,6 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       {confirmDelete && (
         <DeleteModal note={confirmDelete} onConfirm={executeDelete} onCancel={() => setConfirmDelete(null)} />
       )}
-      <ModeSelector mode={mode} onChange={handleModeChange} />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px" }}>
         {usedSubjects.map((subject) => {
           const byBook = bySubject.get(subject)!;

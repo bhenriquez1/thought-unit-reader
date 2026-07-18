@@ -103,7 +103,7 @@ RULES:
 
 function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string, mode: StudyGuideMode, examGoal?: ExamGoal, targetScore?: string): string {
   const modeLabel: Record<StudyGuideMode, string> = {
-    dat: "DAT Master Notes", dental: "Dental School Notes",
+    dat: "Study Sheet", dental: "Dental School Notes",
     topstudent: "Top Student Notes", examcram: "Exam Cram Notes",
     visual: "Visual Learner Notes", highyield: "High-Yield Notes",
   };
