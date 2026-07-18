@@ -18,6 +18,7 @@ import type { StructureCandidate } from "@/lib/syllabus/syllabusSchema";
 import type { UniversalSyllabus } from "@/lib/syllabus/types";
 import { parseSyllabusResponse } from "@/lib/syllabus/normalizer";
 import { buildSampleContent } from "@/lib/syllabus/structureExtractor";
+import { getReasoningStrategy } from "@/lib/bookIntelligence/reasoningStrategies";
 
 export const config = {
   maxDuration: 60,
@@ -43,11 +44,14 @@ export interface GenerateUniversalSyllabusResponse {
 
 /* ─── System prompt ───────────────────────────────────────────────────────── */
 
-function buildSystemPrompt(intelligence: BookIntelligence): string {
-  const { reasoningStrategy } = intelligence;
+function buildSystemPrompt(primaryDomain: string): string {
+  // Reasoning strategy is derived server-side from the domain name — never from
+  // client-supplied content. getReasoningStrategy() returns GENERIC_REASONING for
+  // unknown domains, so the system prompt is always server-controlled.
+  const strategy = getReasoningStrategy(primaryDomain);
   return `You are a curriculum intelligence engine. You enrich a document's structural outline into a fully normalized learning syllabus.
 
-${reasoningStrategy.systemBlock}
+${strategy.systemBlock}
 
 Return ONLY a JSON object — no markdown, no prose:
 
@@ -200,7 +204,7 @@ export default async function handler(
     confidence: Number(c.confidence),
   }));
 
-  const systemPrompt = buildSystemPrompt(body.intelligence);
+  const systemPrompt = buildSystemPrompt(body.intelligence.classification.primaryDomain);
   const userPrompt   = buildUserPrompt(body.intelligence, candidates, body.totalPages, body.contextSample);
 
   const openaiKey    = process.env.OPENAI_API_KEY;
