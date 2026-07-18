@@ -32,6 +32,7 @@ import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommen
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
+import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
@@ -4726,14 +4727,7 @@ export default function ThoughtUnitReader() {
     }
 
     if (activeShellTab === "elena") {
-      return (
-        <UnderConstructionPanel
-          icon="✨"
-          title="Elena Mode (Under Construction)"
-          subtitle="Guided Elena workflows are in active development."
-          bullets={["Premium tutoring flow", "Adaptive coaching", "Session memory", "Voice-guided review"]}
-        />
-      );
+      return <ElenaChildWorkspace />;
     }
 
     if (activeShellTab === "podcast") {
@@ -4937,10 +4931,15 @@ export default function ThoughtUnitReader() {
           </button>
           <button
             onClick={() => trySwitchShellTab("elena", "elena")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
-            title="Elena Mode is under construction."
+            data-testid="nav-elena"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
+              activeShellTab === "elena"
+                ? "bg-violet-700 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+            title="Elena Mode — personalized child learning"
           >
-            Elena Mode (Under Construction)
+            ✨ Elena Mode
           </button>
                   </div>
 
