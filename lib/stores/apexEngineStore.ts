@@ -21,6 +21,7 @@ import type {
 import {
   buildAiInsights,
   buildDatProjection,
+  computeNextDifficulty,
   recommendNextAction,
   updatePatternReadiness,
 } from "@/lib/apex/apexScoringEngine";
@@ -28,6 +29,8 @@ import {
 // ---------------------------------------------------------------------------
 // Store interface
 // ---------------------------------------------------------------------------
+
+export type AdaptiveDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
 
 interface ApexEngineActions {
   // Sessions
@@ -75,7 +78,7 @@ interface ApexEngineActions {
   setProjection: (p: DatProjection) => void;
 }
 
-type ApexEngineStore = DatApexState & ApexEngineActions;
+type ApexEngineStore = DatApexState & { adaptiveDifficulty: AdaptiveDifficulty } & ApexEngineActions;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,6 +205,7 @@ export const useApexEngineStore = create<ApexEngineStore>()(
       questionBank: { questions: [], attempts: [] },
       projection: null,
       currentRecommendation: null,
+      adaptiveDifficulty: 'mixed' as AdaptiveDifficulty,
       insights: [
         "Complete a practice session to unlock personalised insights.",
         "Start with Pattern Drill to build recognition speed.",
@@ -385,13 +389,36 @@ export const useApexEngineStore = create<ApexEngineStore>()(
 
       recalculate: () => {
         const s = get();
-        const readiness: PatternReadiness[] = s.patterns.map((p) =>
-          updatePatternReadiness(p, [], []),
-        );
+        // Pass per-pattern recent attempt times so the speed metric uses real data.
+        const readiness: PatternReadiness[] = s.patterns.map((p) => {
+          const recentTimes = s.questionBank.attempts
+            .filter(a => a.patternId === p.id)
+            .slice(0, 20)
+            .map(a => a.timeSeconds);
+          return updatePatternReadiness(p, [], recentTimes);
+        });
         const projection = buildDatProjection(s.sessions, s.scores, readiness, s.traps);
         const insights = buildAiInsights(s.mistakes, readiness, projection);
         const currentRecommendation = recommendNextAction(projection, readiness, s.traps);
-        set({ patternReadiness: readiness, projection, insights, currentRecommendation });
+
+        // Derive adaptive difficulty from recent session performance.
+        let adaptiveDifficulty: AdaptiveDifficulty = 'mixed';
+        if (s.sessions.length >= 2) {
+          const recent = s.sessions.slice(0, 10);
+          const recentAccuracy = recent.reduce(
+            (sum, sess) => sum + (sess.total > 0 ? (sess.correct / sess.total) * 100 : 50), 0,
+          ) / recent.length;
+          const recentAvgTime = recent.reduce(
+            (sum, sess) => sum + (sess.total > 0 ? sess.durationSeconds / sess.total : 70), 0,
+          ) / recent.length;
+          const avgTrapResistance = readiness.length
+            ? readiness.reduce((sum, r) => sum + r.trapResistance, 0) / readiness.length
+            : 50;
+          const level = computeNextDifficulty(5, recentAccuracy, recentAvgTime, avgTrapResistance, false);
+          adaptiveDifficulty = level <= 3 ? 'easy' : level <= 6 ? 'medium' : 'hard';
+        }
+
+        set({ patternReadiness: readiness, projection, insights, currentRecommendation, adaptiveDifficulty });
       },
 
       setProjection: (p) => set({ projection: p }),
@@ -418,6 +445,7 @@ export const useApexEngineStore = create<ApexEngineStore>()(
         questionBank: s.questionBank,
         projection: s.projection,
         currentRecommendation: s.currentRecommendation,
+        adaptiveDifficulty: s.adaptiveDifficulty,
         insights: s.insights,
       }),
       skipHydration: typeof window === "undefined",

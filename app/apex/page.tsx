@@ -47,7 +47,27 @@ const BAND_INFO: Record<string, { label: string; color: string; bg: string }> = 
 /* ─── Today tab ───────────────────────────────────────────────────────────── */
 
 function TodayTab() {
-  const { sessions, scores, patterns, projection, currentRecommendation, insights } = useApexEngineStore();
+  const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
+  const router = useRouter();
+  const [launching, setLaunching] = useState(false);
+
+  const handleStartRecommended = useCallback(async () => {
+    if (!currentRecommendation) return;
+    setLaunching(true);
+    try {
+      const gen = await ExamGenerator.fromQuestionBank();
+      const baseOpts = examGeneratorUtils.createWeakTopicsPractice(
+        patterns,
+        currentRecommendation.targetPatterns,
+        20,
+      );
+      const exam = gen.generateExam({ ...baseOpts, difficulty: adaptiveDifficulty });
+      localStorage.setItem("currentExam", JSON.stringify(exam));
+      router.push("/apex/proctor");
+    } catch {
+      setLaunching(false);
+    }
+  }, [currentRecommendation, patterns, adaptiveDifficulty, router]);
 
   const bp         = ACTIVE_DAT_BLUEPRINT;
   const totalItems = totalBlueprintItems(bp);
@@ -119,16 +139,28 @@ function TodayTab() {
         <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 rounded-xl p-4 border border-indigo-500/30">
           <div className="flex items-start gap-3">
             <span className="text-yellow-400 text-lg mt-0.5">⚡</span>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-white font-semibold text-sm">Next Best Action</p>
               <p className="text-gray-300 text-sm mt-1">{currentRecommendation.reason}</p>
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded">
                   {SECTION_DISPLAY[currentRecommendation.section]?.short ?? currentRecommendation.section}
                 </span>
                 <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded">
                   {currentRecommendation.mode}
                 </span>
+                {adaptiveDifficulty !== 'mixed' && (
+                  <span className="text-xs bg-orange-600/30 text-orange-300 px-2 py-0.5 rounded">
+                    {adaptiveDifficulty}
+                  </span>
+                )}
+                <button
+                  onClick={handleStartRecommended}
+                  disabled={launching}
+                  className="ml-auto px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors"
+                >
+                  {launching ? "Loading…" : "Start Now"}
+                </button>
               </div>
             </div>
           </div>
