@@ -70,12 +70,14 @@ PRs that add features to a workspace must not regress any previously passing ite
 
 ### 🎧 Listen (PodcastLab)
 
-- [ ] Script generation uses `scriptFetchAbortRef` — mode or page change aborts in-flight generation
-- [ ] `prebufferSegments` checks `abortRef.current` before each blob write — aborted runs never pollute the audio cache
-- [ ] Play button is disabled (⏳) while `audioReady` is false — no live per-segment fetches during buffering
-- [ ] ⟨10 / 10⟩ buttons scrub `audioRef.currentTime` ± 10 s, not segment-skip
-- [ ] Each podcast mode uses distinct host and guest voices (no two identical voices in `PODCAST_MODES`)
-- [ ] Empty state renders inside the scrollable `flex-1` container
+> Items marked `[→ #515]` are established by PR #515 and enforceable once that PR is merged into main.
+
+- [ ] Script generation uses `scriptFetchAbortRef` — mode or page change aborts in-flight generation `[→ #515]`
+- [ ] `prebufferSegments` checks `abortRef.current` before each blob write — aborted runs never pollute the audio cache `[→ #515]`
+- [ ] Play button is disabled (⏳) while `audioReady` is false — no live per-segment fetches during buffering `[→ #515]`
+- [ ] ⟨10 / 10⟩ buttons scrub `audioRef.currentTime` ± 10 s, not segment-skip `[→ #515]`
+- [ ] Each podcast mode uses distinct host and guest voices (no two identical voices in `PODCAST_MODES`) `[→ #515]`
+- [ ] Empty state renders inside the scrollable `flex-1` container `[→ #515]`
 
 ### 🎯 DAT Apex
 

@@ -190,15 +190,28 @@ useEffect(() => {
 
 ### Zustand subscriptions
 
+`useReadingFocusStore` (and most stores in this codebase) use plain `create` without `subscribeWithSelector` middleware. Plain `subscribe` accepts only a single whole-state listener — passing a selector as the first argument and a callback as the second silently ignores the callback. The correct imperative form is:
+
 ```ts
 useEffect(() => {
   const unsub = useReadingFocusStore.subscribe(
-    s => s.thoughtUnitId,
-    (id) => { /* ... */ },
+    (state) => {
+      const id = state.thoughtUnitId;
+      if (id) { /* handle change */ }
+    },
   );
   return unsub; // unsubscribe on unmount
 }, []);
 ```
+
+Prefer the React hook for component subscriptions — it is safer and automatically unsubscribes:
+
+```ts
+// Preferred inside a component
+const thoughtUnitId = useReadingFocusStore(s => s.thoughtUnitId);
+```
+
+Only use the imperative `subscribe` form when subscribing outside a component (e.g. in a library utility or a Zustand action).
 
 ---
 

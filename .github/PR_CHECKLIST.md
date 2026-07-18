@@ -24,8 +24,8 @@ Copy this into every PR description, or verify each item before marking the PR r
 ## Quality Gates
 
 - [ ] `npx tsc --noEmit` — no new TypeScript errors
-- [ ] `next lint` — no new lint errors
-- [ ] `next build` — build succeeds locally (or CI is trusted to catch this)
+- [ ] `npx next lint` — no new lint errors
+- [ ] `npm run build` — build succeeds locally (or CI is trusted to catch this)
 - [ ] CI (CodeQL) is green — or failure is pre-existing and documented
 
 ---
@@ -49,9 +49,11 @@ Copy this into every PR description, or verify each item before marking the PR r
 
 ---
 
-## Workspace Definition of Done
+## Workspace Definition of Done — Regression Check
 
-For each workspace this PR touches, confirm it still satisfies its checklist in `.github/WORKSPACE_DEFINITION_OF_DONE.md`:
+For each workspace this PR touches, verify that **currently implemented** invariants have not regressed. Check the relevant section in `.github/WORKSPACE_DEFINITION_OF_DONE.md` and confirm each item that already exists in the codebase still passes.
+
+> Items in the DoD that are tagged as Sprint 3–7 deliverables or are not yet implemented do **not** need to be completed before this PR ships — they are aspirational targets, not gates. A bugfix in Recall does not require confidence UI (Sprint 3) to be present first.
 
 - [ ] Reader
 - [ ] NoteLab / Study Sheet
