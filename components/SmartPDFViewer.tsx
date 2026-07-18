@@ -840,13 +840,12 @@ export default function SmartPDFViewer({
     prevRebuildRef.current = { key: highlightKey, renderKey: pageRenderKey };
     const myGen = ++rebuildGenerationRef.current;
 
-    // Clear stale rects immediately before starting async matching.
-    // Without this, old highlight rectangles persist in state for the entire
-    // retry window (~10 attempts × 140ms) whenever new anchors fail to match
-    // on the first try (e.g. text layer not yet painted).
-    // Also clear pdfRenderedAnchorIds atomically — the store must not report stale
-    // anchors as rendered while the rect set is transiently empty during rebuild.
-    setOverlayRects([]);
+    // Do NOT clear overlayRects here — old rects stay visible as a placeholder
+    // during the async retry loop (up to 5 s while the text layer paints).
+    // The highlightKey-change effect above already clears them synchronously when
+    // the content truly changes; clearing again here would blank the overlay for
+    // the entire retry window (RC-5). pdfRenderedAnchors IS cleared immediately
+    // so the focus system doesn't report stale anchors as rendered.
     useReadingFocusStore.getState().setPdfRenderedAnchors([]);
 
     let attempts = 0;

@@ -657,6 +657,9 @@ export default function ThoughtUnitReader() {
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
   const speechPanelRef = useRef<StudySpeechPanelHandle>(null);
+  // Guards scroll-debounce from overwriting a card-click selection for 1.5 s after
+  // the user explicitly focuses an evidence item (RC-3 highlighting race).
+  const userFocusLockedUntilRef = useRef<number>(0);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
@@ -1906,6 +1909,9 @@ export default function ThoughtUnitReader() {
   // PDF overlay glow/scroll) and re-fires focusSnippet (drives the text-search yellow
   // flash + scrollIntoView), and auto-zooms so the target paragraph fills the screen.
   const focusEvidence = useCallback((snippet: string, evidenceId?: string) => {
+    // Lock out scroll-debounce overwrites for 1.5 s so the card-click selection
+    // survives the setTimeout(0) gap and any concurrent scroll events (RC-2, RC-3).
+    userFocusLockedUntilRef.current = Date.now() + 1500;
     setFocusSnippet(null);
     setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
     const { zoom: currentZoom, setZoom } = useZoomStore.getState();
@@ -1929,8 +1935,6 @@ export default function ThoughtUnitReader() {
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
     const text = anchor?.text ?? activeUnit?.exactText ?? null;
     if (text) setFocusSnippet(text);
-    // Re-affirm focus so the active style stays visible if any internal reset fired.
-    setFocusedEvidenceId(id);
   }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
 
   useEffect(() => {
@@ -3037,8 +3041,14 @@ export default function ThoughtUnitReader() {
 
     // Scroll → active anchor: resolve the viewport-center snippet to the closest
     // thought-unit anchor and keep the Expert Brain / LeftPanel card in sync.
-    // Only runs when speech is not playing (speech owns the anchor during playback).
-    if (snippet && useReadingFocusStore.getState().playbackState === 'idle') {
+    // Only runs when speech is not playing (speech owns the anchor during playback)
+    // and when no explicit card-click focus is locked (RC-3: prevents overwriting
+    // a user-selected card in the gap after focusEvidence fires).
+    if (
+      snippet &&
+      useReadingFocusStore.getState().playbackState === 'idle' &&
+      Date.now() > userFocusLockedUntilRef.current
+    ) {
       const resolved = resolveEvidenceId(snippet);
       if (resolved) setFocusedEvidenceId(resolved);
     }
