@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
 import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
+import { ExamGenerator, examGeneratorUtils } from "@/lib/apex/examGenerator";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 
 /* ─── Tab config ──────────────────────────────────────────────────────────── */
@@ -271,6 +273,23 @@ function PracticeTab() {
 
 function FullExamsTab() {
   const bp = ACTIVE_DAT_BLUEPRINT;
+  const router = useRouter();
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  const handleStartSimulation = useCallback(async () => {
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      const gen = await ExamGenerator.fromQuestionBank();
+      const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
+      localStorage.setItem("currentExam", JSON.stringify(exam));
+      router.push("/apex/proctor");
+    } catch (err) {
+      setSeedError("Could not prepare the exam. Please try again.");
+      setSeeding(false);
+    }
+  }, [router]);
 
   return (
     <div className="space-y-6">
@@ -292,12 +311,14 @@ function FullExamsTab() {
             </div>
           ))}
         </div>
-        <Link
-          href="/apex/proctor?config=full-dat"
-          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 text-white font-semibold rounded-lg transition-opacity"
+        {seedError && <p className="mb-3 text-sm text-red-400">{seedError}</p>}
+        <button
+          onClick={handleStartSimulation}
+          disabled={seeding}
+          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-opacity"
         >
-          ⏰ Start Full DAT Simulation
-        </Link>
+          {seeding ? "⏳ Preparing simulation…" : "⏰ Start Full DAT Simulation"}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

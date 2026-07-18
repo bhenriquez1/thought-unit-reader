@@ -33,6 +33,7 @@ import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
+import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
@@ -448,6 +449,8 @@ function applyHighlightBudget<T extends BudgetAnchor>(
   return result;
 }
 
+
+const ELENA_ENABLED = resolveElenaModeFlagsFromEnv().ELENA_MODE_ENABLED;
 
 export default function ThoughtUnitReader() {
   const router = useRouter();
@@ -4654,43 +4657,79 @@ export default function ThoughtUnitReader() {
             ))}
           </div>
 
-          {/* Overview — quick summary dashboard */}
+          {/* Overview — learning dashboard */}
           {hubSubTab === "overview" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {bookId ? (
                 <>
-                  <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Active Book</div>
+                  {/* Continue Learning CTA */}
+                  <button
+                    onClick={() => { trySwitchShellTab("reader", "reader"); }}
+                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
                     <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
-                    <div className="mt-2 flex gap-4 text-[11px] text-slate-400">
-                      <span>{chapterProgressList.length} chapters</span>
-                      <span>p.{currentPage} / {pdfPageCount}</span>
-                      {courseProgress && <span>{Math.round((courseProgress.completedChapters / Math.max(courseProgress.totalChapters, 1)) * 100)}% complete</span>}
+                    <div className="mt-2 text-[11px] text-indigo-300 font-medium">
+                      {nextTopicRecommendation
+                        ? `→ ${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
+                        : `p.${currentPage} of ${pdfPageCount}`}
                     </div>
-                  </div>
-                  {nextTopicRecommendation && (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Up Next</div>
-                      <div className="text-sm text-white">{nextTopicRecommendation.chapterTitle}</div>
-                      <button onClick={() => setHubSubTab("today")} className="mt-2 text-[11px] text-emerald-300 hover:text-emerald-200">View today's plan →</button>
+                  </button>
+
+                  {/* Stats row */}
+                  {courseProgress && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "Mastery",   value: `${Math.round(courseProgress.overallMasteryPct)}%`,  sub: "overall" },
+                        { label: "Read",      value: `${Math.round(courseProgress.overallReadPct)}%`,     sub: "of book" },
+                        { label: "Chapters",  value: `${courseProgress.completedChapters}/${courseProgress.totalChapters}`, sub: "done" },
+                        { label: "Time Left", value: courseProgress.estimatedRemainingMinutes >= 60
+                            ? `${Math.round(courseProgress.estimatedRemainingMinutes / 60)}h`
+                            : `${courseProgress.estimatedRemainingMinutes}m`,
+                          sub: "estimated" },
+                      ].map(({ label, value, sub }) => (
+                        <div key={label} className="rounded-lg border border-white/10 bg-slate-900/60 p-2.5 text-center">
+                          <div className="text-base font-bold text-white">{value}</div>
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400">{label}</div>
+                          <div className="text-[9px] text-slate-500">{sub}</div>
+                        </div>
+                      ))}
                     </div>
                   )}
+
+                  {/* Weak areas alert */}
+                  {courseWeakAreas && courseWeakAreas.length > 0 && (
+                    <button
+                      onClick={() => setHubSubTab("weak")}
+                      className="w-full flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 hover:bg-rose-950/30 px-3 py-2.5 text-left transition-colors"
+                    >
+                      <span className="text-base">⚠️</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-rose-300 truncate">{courseWeakAreas[0]}</div>
+                        {courseWeakAreas.length > 1 && <div className="text-[10px] text-slate-500">+{courseWeakAreas.length - 1} more weak areas</div>}
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0">View →</span>
+                    </button>
+                  )}
+
+                  {/* Quick nav grid */}
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { id: "today",     label: "Today's Plan",     icon: "📅" },
-                      { id: "roadmap",   label: "Book Roadmap",     icon: "🗺" },
-                      { id: "studyplan", label: "Study Plan",       icon: "🧪" },
-                      { id: "mastery",   label: "Mastery",          icon: "🏆" },
-                      { id: "weak",      label: "Weak Areas",       icon: "⚠️" },
-                      { id: "exam",      label: "Exam Readiness",   icon: "🎯" },
-                    ] as const).map(({ id, label, icon }) => (
+                      { id: "today",     label: "Today",          icon: "📅", sub: "What to study now" },
+                      { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
+                      { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
+                      { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
+                    ] as const).map(({ id, label, icon, sub }) => (
                       <button
                         key={id}
                         onClick={() => setHubSubTab(id)}
-                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
+                        className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
                       >
-                        <span className="text-base">{icon}</span>
-                        <span className="text-[12px] font-medium text-slate-200">{label}</span>
+                        <span className="text-base mt-0.5">{icon}</span>
+                        <div>
+                          <div className="text-[12px] font-medium text-slate-200">{label}</div>
+                          <div className="text-[10px] text-slate-500">{sub}</div>
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -4704,51 +4743,100 @@ export default function ThoughtUnitReader() {
             </div>
           )}
 
-          {/* Today — next session focus */}
+          {/* Today — command center for the current session */}
           {hubSubTab === "today" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Today&apos;s Focus</div>
-              {nextTopicRecommendation && (
-                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Recommended Next</div>
-                  <div className="text-sm font-medium text-white">{nextTopicRecommendation.chapterTitle}</div>
-                  {nextTopicRecommendation.page && (
-                    <button
-                      onClick={() => { syncToPage(nextTopicRecommendation.page); trySwitchShellTab("reader", "reader"); }}
-                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
-                    >
-                      Jump to p.{nextTopicRecommendation.page} →
-                    </button>
-                  )}
-                </div>
-              )}
-              {syllabusStudyPlan.length > 0 && (() => {
-                const todaySession = syllabusStudyPlan.find(day => !day.pages.some((p: { start: number; end: number }) =>
-                  Array.from(syllabusStudiedPages).some((sp: number) => sp >= p.start && sp <= p.end)
-                ));
-                if (!todaySession) return null;
-                return (
-                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
-                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Next Study Session</div>
-                    <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
-                    <div className="mt-1 flex gap-3 text-[10px] text-slate-400">
-                      <span>{todaySession.date}</span>
-                      <span>~{todaySession.estimatedMinutes} min</span>
+              {bookId ? (
+                <>
+                  {/* Primary CTA — continue where I left off */}
+                  <button
+                    onClick={() => {
+                      if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">
+                      {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
                     </div>
-                    <button
-                      onClick={() => {
-                        const page = todaySession.pages[0]?.start;
-                        if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
-                      }}
-                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
-                    >
-                      Start reading →
-                    </button>
-                  </div>
-                );
-              })()}
-              {!nextTopicRecommendation && !syllabusStudyPlan.length && (
-                <div className="text-center text-slate-500 text-sm py-10">No plan yet. Upload a syllabus or load a book to generate one.</div>
+                    <div className="text-sm font-semibold text-white">
+                      {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
+                    </div>
+                    <div className="mt-1 text-[11px] text-indigo-300">
+                      {nextTopicRecommendation
+                        ? `p.${nextTopicRecommendation.page} · ${nextTopicRecommendation.reason}`
+                        : `p.${currentPage}`}
+                    </div>
+                  </button>
+
+                  {/* Study session from plan */}
+                  {syllabusStudyPlan.length > 0 && (() => {
+                    const todaySession = syllabusStudyPlan.find(day => !day.pages.some((p: { start: number; end: number }) =>
+                      Array.from(syllabusStudiedPages).some((sp: number) => sp >= p.start && sp <= p.end)
+                    ));
+                    if (!todaySession) return (
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3 text-center">
+                        <div className="text-emerald-400 text-sm font-semibold">All sessions complete 🎉</div>
+                        <div className="text-[11px] text-slate-500 mt-1">Consider reviewing your weakest chapters.</div>
+                      </div>
+                    );
+                    return (
+                      <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Today&apos;s Session</div>
+                        <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
+                        {todaySession.topics.length > 1 && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">+{todaySession.topics.length - 1} more topics</div>
+                        )}
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex gap-3 text-[10px] text-slate-400">
+                            {todaySession.date && <span>📅 {todaySession.date}</span>}
+                            <span>⏱ ~{todaySession.estimatedMinutes} min</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const page = todaySession.pages[0]?.start;
+                              if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
+                            }}
+                            className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200"
+                          >
+                            Start →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Estimated time remaining */}
+                  {courseProgress && courseProgress.estimatedRemainingMinutes > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2">
+                      <span className="text-[11px] text-slate-400">Estimated time to complete book</span>
+                      <span className="text-[12px] font-semibold text-white">
+                        {courseProgress.estimatedRemainingMinutes >= 60
+                          ? `${Math.round(courseProgress.estimatedRemainingMinutes / 60)}h ${courseProgress.estimatedRemainingMinutes % 60}m`
+                          : `${courseProgress.estimatedRemainingMinutes}m`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Weak areas to focus on today */}
+                  {courseWeakAreas && courseWeakAreas.length > 0 && (
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-rose-400 mb-2">Review These Today</div>
+                      <div className="space-y-1">
+                        {courseWeakAreas.slice(0, 3).map((area: string, i: number) => (
+                          <div key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                            <span className="text-rose-400 mt-0.5">•</span>{area}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
+                  <div className="text-3xl mb-3">📅</div>
+                  <div className="text-sm">Load a book to plan today&apos;s session</div>
+                </div>
               )}
             </div>
           )}
@@ -4968,7 +5056,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    if (activeShellTab === "elena") {
+    if (activeShellTab === "elena" && ELENA_ENABLED) {
       return <ElenaChildWorkspace />;
     }
 
@@ -5138,6 +5226,7 @@ export default function ThoughtUnitReader() {
           >
             🎯 DAT Apex
           </button>
+          {ELENA_ENABLED && (
           <button
             onClick={() => trySwitchShellTab("elena", "elena")}
             data-testid="nav-elena"
@@ -5150,6 +5239,7 @@ export default function ThoughtUnitReader() {
           >
             ✨ Elena Mode
           </button>
+          )}
                   </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}
