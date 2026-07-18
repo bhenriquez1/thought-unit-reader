@@ -1,798 +1,674 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { DAT_SECTIONS } from "@/types/apex-exam";
-import { DAT_PATTERN_MODULES, getModulesBySection } from "@/lib/apex/datApex.seed";
-import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import TrainingArena from "@/components/apex/TrainingArena";
+import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
+import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
+import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
+import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
+import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+/* ─── Tab config ──────────────────────────────────────────────────────────── */
 
-function formatSeconds(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+type TabId = "today" | "learn" | "practice" | "exams" | "mistakes" | "readiness" | "history";
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
+const TABS: { id: TabId; label: string; icon: string }[] = [
+  { id: "today",     label: "Today",             icon: "🎯" },
+  { id: "learn",     label: "Learn & Improve",   icon: "🧠" },
+  { id: "practice",  label: "Practice",          icon: "⚡" },
+  { id: "exams",     label: "Full-Length Exams", icon: "📋" },
+  { id: "mistakes",  label: "Review Mistakes",   icon: "🔍" },
+  { id: "readiness", label: "Readiness",         icon: "📊" },
+  { id: "history",   label: "History",           icon: "📅" },
+];
 
-const MODE_LABELS: Record<string, string> = {
-  quick: "Quick",
-  mistake_review: "Mistake Review",
-  pattern_drill: "Pattern Drill",
-  section_test: "Section Test",
-  full_sim: "Full Sim",
+/* ─── Display maps ────────────────────────────────────────────────────────── */
+
+const SECTION_DISPLAY: Record<string, { label: string; short: string; colorClass: string }> = {
+  "biology":               { label: "Biology",               short: "Bio", colorClass: "text-purple-400" },
+  "general-chemistry":     { label: "General Chemistry",     short: "GC",  colorClass: "text-blue-400"   },
+  "organic-chemistry":     { label: "Organic Chemistry",     short: "OC",  colorClass: "text-green-400"  },
+  "perceptual-ability":    { label: "Perceptual Ability",    short: "PAT", colorClass: "text-yellow-400" },
+  "reading-comprehension": { label: "Reading Comprehension", short: "RC",  colorClass: "text-pink-400"   },
+  "quantitative-reasoning":{ label: "Quantitative Reasoning",short: "QR",  colorClass: "text-teal-400"   },
 };
 
-const SECTION_LABELS: Record<string, string> = {
-  bio: "Bio",
-  gc: "GC",
-  orgo: "Orgo",
-  pat: "PAT",
-  rc: "RC",
-  qr: "QR",
-  mixed: "Mixed",
+const BAND_INFO: Record<string, { label: string; color: string; bg: string }> = {
+  "foundation":  { label: "Foundation",  color: "text-gray-300",   bg: "bg-gray-600/20"   },
+  "developing":  { label: "Developing",  color: "text-yellow-300", bg: "bg-yellow-600/20" },
+  "competitive": { label: "Competitive", color: "text-blue-300",   bg: "bg-blue-600/20"   },
+  "strong":      { label: "Strong",      color: "text-green-300",  bg: "bg-green-600/20"  },
+  "exam-ready":  { label: "Exam Ready",  color: "text-emerald-300",bg: "bg-emerald-600/20"},
 };
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
+/* ─── Today tab ───────────────────────────────────────────────────────────── */
 
-export default function DATLearningHub() {
-  const {
-    sessions,
-    scores,
-    patterns,
-    insights,
-    projection,
-    mistakes,
-    traps,
-    currentRecommendation,
-  } = useApexEngineStore();
+function TodayTab() {
+  const { sessions, scores, patterns, projection, currentRecommendation, insights } = useApexEngineStore();
 
-  // ── Derived metrics ────────────────────────────────────────────────────────
+  const bp         = ACTIVE_DAT_BLUEPRINT;
+  const totalItems = totalBlueprintItems(bp);
+  const testMins   = totalTestingMinutes(bp);
 
-  // Deep Work: timed sessions (section_test or full_sim)
-  const deepWorkCount = sessions.filter(
-    (s) => s.mode === "section_test" || s.mode === "full_sim",
-  ).length;
+  const patternsReady = patterns.filter(p => p.masteryLevel === "strong" || p.masteryLevel === "mastered").length;
+  const seenPatterns  = patterns.filter(p => p.timesSeen > 0);
+  const decisionAcc   = seenPatterns.length > 0
+    ? Math.round(seenPatterns.reduce((s, p) => s + p.timesCorrect / p.timesSeen, 0) / seenPatterns.length * 100)
+    : null;
 
-  // Patterns Ready: strong + mastered
-  const patternsReady = patterns.filter(
-    (p) => p.masteryLevel === "strong" || p.masteryLevel === "mastered",
-  ).length;
+  return (
+    <div className="space-y-6">
+      {/* Blueprint snapshot */}
+      <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-white">Blueprint v{bp.version}</h2>
+          <span className="text-xs text-gray-400">Effective {bp.effectiveDate}</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          {[
+            { label: "Total Items",   value: String(totalItems),           sub: "across all sections"          },
+            { label: "Testing Time",  value: `${testMins} min`,            sub: "excl. tutorial"               },
+            { label: "Tutorial",      value: `${bp.tutorialMinutes} min`,  sub: "before exam"                  },
+            { label: "Break",         value: `${bp.breaks[0]?.durationMinutes ?? 0} min`, sub: "after PAT (optional)" },
+          ].map(({ label, value, sub }) => (
+            <div key={label} className="bg-white/5 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-white">{value}</div>
+              <div className="text-xs text-blue-200 font-medium mt-0.5">{label}</div>
+              <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {bp.sections.map(sec => (
+            <div key={sec.family} className="flex items-center justify-between text-sm py-1 border-b border-white/5 last:border-b-0">
+              <span className="text-gray-300 font-medium">{sec.label}</span>
+              <div className="flex items-center gap-4 text-xs text-gray-400">
+                <span>{sec.totalItemCount} items</span>
+                <span>{sec.timeLimitMinutes} min</span>
+                {sec.subSections.length > 1 && (
+                  <span className="text-gray-500">
+                    ({sec.subSections.map(ss => SECTION_DISPLAY[ss.id]?.short ?? ss.id).join(" · ")})
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-  // Decision Accuracy: avg correct/seen across patterns that have been seen
-  const seenPatterns = patterns.filter((p) => p.timesSeen > 0);
-  const decisionAccuracy =
-    seenPatterns.length > 0
-      ? Math.round(
-          (seenPatterns.reduce(
-            (sum, p) => sum + p.timesCorrect / p.timesSeen,
-            0,
-          ) /
-            seenPatterns.length) *
-            100,
-        )
-      : 0;
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Sessions",          value: String(sessions.length),                              color: "text-white",       sub: "total"                    },
+          { label: "Patterns Ready",    value: `${patternsReady}/${patterns.length}`,                color: "text-green-400",   sub: "strong or mastered"       },
+          { label: "Decision Accuracy", value: decisionAcc !== null ? `${decisionAcc}%` : "—",       color: "text-orange-400",  sub: "avg across patterns"      },
+          { label: "Score Projection",  value: projection?.totalProjected ? String(projection.totalProjected) : "—", color: "text-blue-400", sub: projection?.confidence ?? "start practicing" },
+        ].map(({ label, value, color, sub }) => (
+          <div key={label} className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+            <div className={`text-2xl font-bold ${color}`}>{value}</div>
+            <div className="text-xs text-blue-200 font-medium mt-1">{label}</div>
+            <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
+          </div>
+        ))}
+      </div>
 
-  // DAT Projection
-  const datProjection = projection?.totalProjected ?? null;
-  const projDelta =
-    scores.length >= 2
-      ? Math.round(scores[0].percent - scores[1].percent)
-      : null;
+      {currentRecommendation && (
+        <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 rounded-xl p-4 border border-indigo-500/30">
+          <div className="flex items-start gap-3">
+            <span className="text-yellow-400 text-lg mt-0.5">⚡</span>
+            <div>
+              <p className="text-white font-semibold text-sm">Next Best Action</p>
+              <p className="text-gray-300 text-sm mt-1">{currentRecommendation.reason}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded">
+                  {SECTION_DISPLAY[currentRecommendation.section]?.short ?? currentRecommendation.section}
+                </span>
+                <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded">
+                  {currentRecommendation.mode}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-  // Strengths: top 3 mastered/strong patterns
-  const strengthPatterns = [...patterns]
-    .filter((p) => p.masteryLevel === "mastered" || p.masteryLevel === "strong")
-    .sort((a, b) => b.readiness - a.readiness)
-    .slice(0, 3);
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { href: "/apex/generator",            label: "Create Practice Exam",  icon: "📝", color: "from-blue-600 to-blue-700"   },
+          { href: "/apex/proctor?config=full",  label: "Full DAT Simulation",   icon: "⏰", color: "from-green-600 to-green-700"  },
+          { href: "/apex/review",               label: "Review Mistakes",       icon: "🔍", color: "from-purple-600 to-purple-700" },
+          { href: "/apex/generator?mode=quick", label: "Quick Practice (30q)",  icon: "⚡", color: "from-orange-600 to-orange-700" },
+        ].map(({ href, label, icon, color }) => (
+          <Link
+            key={href}
+            href={href}
+            className={`bg-gradient-to-r ${color} rounded-lg p-4 text-white hover:opacity-90 transition-opacity`}
+          >
+            <div className="text-2xl mb-1">{icon}</div>
+            <div className="text-sm font-semibold">{label}</div>
+          </Link>
+        ))}
+      </div>
 
-  // Focus areas: learning/unstable patterns
-  const focusPatterns = [...patterns]
-    .filter(
-      (p) => p.masteryLevel === "learning" || p.masteryLevel === "unstable",
-    )
-    .sort((a, b) => a.readiness - b.readiness)
-    .slice(0, 3);
+      {insights.length > 0 && (
+        <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+          <h3 className="text-sm font-bold text-white mb-3">🤖 AI Insights</h3>
+          <div className="space-y-2">
+            {insights.map((insight, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                <span className="text-blue-400 shrink-0">💡</span>
+                <p>{insight}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-  // Top trap this week
-  const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const recentTraps = traps
-    .filter((t) => new Date(t.lastTriggeredAt).getTime() > weekCutoff)
-    .sort((a, b) => b.timesTriggered - a.timesTriggered);
-  const topTrap = recentTraps[0] ?? null;
+/* ─── Practice tab ────────────────────────────────────────────────────────── */
 
-  // Recent sessions (last 5 with score data)
-  const recentSessions = sessions.slice(0, 5);
+// Maps canonical DatSectionId → legacy ApexEngineStore section key
+const LEGACY_SECTION_MAP: Record<string, string> = {
+  "biology":               "bio",
+  "general-chemistry":     "gc",
+  "organic-chemistry":     "orgo",
+  "perceptual-ability":    "pat",
+  "reading-comprehension": "rc",
+  "quantitative-reasoning":"qr",
+};
 
-  // AI insights (from store — engine-backed after first session)
-  const aiInsights = insights;
+function PracticeTab() {
+  const { patterns } = useApexEngineStore();
+  const bp = ACTIVE_DAT_BLUEPRINT;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {bp.sections.flatMap(sec =>
+          sec.subSections.map(ss => {
+            const display   = SECTION_DISPLAY[ss.id] ?? { label: ss.id, short: ss.id, colorClass: "text-gray-400" };
+            const legacyId  = LEGACY_SECTION_MAP[ss.id] ?? ss.id;
+            const secPats   = patterns.filter(p => p.section === legacyId);
+            const seen      = secPats.filter(p => p.timesSeen > 0);
+            const mastered  = seen.filter(p => p.masteryLevel === "mastered" || p.masteryLevel === "strong").length;
+            const avgReady  = seen.length
+              ? Math.round(seen.reduce((s, p) => s + p.readiness, 0) / seen.length)
+              : null;
+
+            return (
+              <div key={ss.id} className="bg-black/30 rounded-xl p-5 border border-white/10">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className={`font-semibold ${display.colorClass}`}>{display.label}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {ss.itemCount} items · shared block {sec.timeLimitMinutes} min
+                    </p>
+                  </div>
+                  {avgReady !== null && (
+                    <span className={`text-sm font-bold ${avgReady >= 75 ? "text-emerald-400" : avgReady >= 50 ? "text-yellow-400" : "text-rose-400"}`}>
+                      {avgReady}%
+                    </span>
+                  )}
+                </div>
+
+                {avgReady !== null && (
+                  <>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
+                      <div
+                        className={`h-full rounded-full ${avgReady >= 75 ? "bg-emerald-500" : avgReady >= 50 ? "bg-yellow-500" : "bg-rose-500"}`}
+                        style={{ width: `${avgReady}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-500 mb-3">
+                      {mastered}/{seen.length} patterns mastered or strong
+                    </p>
+                  </>
+                )}
+
+                <div className="flex gap-2 mt-2">
+                  <Link
+                    href={`/apex/patterns?section=${ss.id}`}
+                    className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
+                  >
+                    Study Patterns
+                  </Link>
+                  <Link
+                    href={`/apex/generator?section=${legacyId}`}
+                    className="flex-1 text-center px-3 py-2 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 rounded text-xs transition-colors"
+                  >
+                    Practice
+                  </Link>
+                </div>
+              </div>
+            );
+          }),
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {[
+          { href: "/apex/generator",               label: "📝 Build Custom Exam",         color: "from-blue-600 to-purple-600"   },
+          { href: "/apex/patterns/decision-tree",  label: "🌳 Interactive Decision Trees", color: "from-indigo-600 to-purple-600" },
+          { href: "/apex/patterns/flashcards",     label: "🃏 Pattern Flashcards",         color: "from-emerald-600 to-teal-600"  },
+        ].map(({ href, label, color }) => (
+          <Link
+            key={href}
+            href={href}
+            className={`px-4 py-2 bg-gradient-to-r ${color} hover:opacity-90 text-white rounded-lg text-sm font-medium transition-opacity`}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Full-Length Exams tab ───────────────────────────────────────────────── */
+
+function FullExamsTab() {
+  const bp = ACTIVE_DAT_BLUEPRINT;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+        <h2 className="text-lg font-bold text-white mb-1">Official Format Simulation</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          All sections in order · {bp.breaks[0]?.durationMinutes ?? 15}-min optional break after PAT · {bp.totalAdministrationMinutes} min total.
+        </p>
+        <div className="space-y-2 mb-5">
+          {bp.sections.map(sec => (
+            <div key={sec.family} className="flex items-center justify-between py-2 border-b border-white/5 last:border-b-0 text-sm">
+              <span className="text-gray-300">{sec.label}</span>
+              <span className="text-gray-400 text-xs">{sec.totalItemCount} items · {sec.timeLimitMinutes} min</span>
+            </div>
+          ))}
+          {bp.breaks.map((brk, i) => (
+            <div key={i} className="text-xs italic text-yellow-300/60 py-1">
+              ↕ Optional {brk.durationMinutes}-min break after {brk.afterSectionFamily}
+            </div>
+          ))}
+        </div>
+        <Link
+          href="/apex/proctor?config=full-dat"
+          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 text-white font-semibold rounded-lg transition-opacity"
+        >
+          ⏰ Start Full DAT Simulation
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { label: "Section Test",     desc: "One section, timed",              href: "/apex/generator?mode=section_test", icon: "🎯", color: "from-blue-600/20 to-blue-700/20",     border: "border-blue-500/30"   },
+          { label: "Timed Practice",   desc: "Mixed questions, real pacing",    href: "/apex/proctor?config=timed",        icon: "⏱️", color: "from-purple-600/20 to-purple-700/20", border: "border-purple-500/30" },
+          { label: "Foundation Drill", desc: "Concept-by-concept, no pressure", href: "/apex/generator?mode=foundation",   icon: "🌱", color: "from-green-600/20 to-green-700/20",   border: "border-green-500/30"  },
+        ].map(({ label, desc, href, icon, color, border }) => (
+          <Link
+            key={label}
+            href={href}
+            className={`bg-gradient-to-br ${color} rounded-xl p-5 border ${border} hover:opacity-90 transition-opacity block`}
+          >
+            <div className="text-2xl mb-2">{icon}</div>
+            <div className="font-semibold text-white text-sm">{label}</div>
+            <p className="text-xs text-gray-400 mt-1">{desc}</p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Review Mistakes tab ─────────────────────────────────────────────────── */
+
+function MistakesTab() {
+  const { mistakes } = useApexEngineStore();
+
+  if (mistakes.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-4xl mb-3">✅</div>
+        <p className="text-gray-400 text-sm">No mistakes recorded yet.</p>
+        <p className="text-gray-500 text-xs mt-1">Complete practice sessions to populate this section.</p>
+        <Link
+          href="/apex/generator?mode=quick"
+          className="inline-block mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-colors"
+        >
+          Start Practicing
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-white">PDRM Mistake Review</h2>
+        <span className="text-xs bg-rose-600/20 text-rose-300 px-2 py-0.5 rounded border border-rose-500/30">
+          {mistakes.length} logged
+        </span>
+      </div>
+      {mistakes.map(m => (
+        <div key={m.id} className="bg-black/30 rounded-xl p-4 border border-rose-500/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-rose-300 uppercase tracking-wide">
+              {m.reasonMissed.replace(/_/g, " ")}
+            </span>
+            <span className="text-[10px] text-gray-500">{m.createdAt.slice(0, 10)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-purple-400 font-medium">Pattern</span>
+              <p className="text-gray-300 mt-0.5">{m.pdrm.pattern}</p>
+            </div>
+            <div>
+              <span className="text-blue-400 font-medium">Decision Rule</span>
+              <p className="text-gray-300 mt-0.5">{m.pdrm.decisionRule}</p>
+            </div>
+            <div>
+              <span className="text-green-400 font-medium">Why Correct</span>
+              <p className="text-gray-300 mt-0.5">{m.pdrm.reason}</p>
+            </div>
+            <div>
+              <span className="text-rose-400 font-medium">Miss</span>
+              <p className="text-gray-300 mt-0.5">{m.pdrm.miss}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span>
+              You: <span className="text-rose-300">{m.userAnswer}</span>
+              {" → "}
+              Correct: <span className="text-emerald-300">{m.correctAnswer}</span>
+            </span>
+            <span className="bg-white/5 px-2 py-0.5 rounded uppercase">
+              {SECTION_DISPLAY[m.section]?.short ?? m.section}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Readiness tab ───────────────────────────────────────────────────────── */
+
+function ReadinessTab() {
+  const [idbState, setIdbState] = useState<DatReadinessState | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const { patterns, projection } = useApexEngineStore();
+
+  useEffect(() => {
+    loadReadinessState("default")
+      .then(s => setIdbState(s))
+      .catch(() => setIdbState(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const LEGACY_IDS = [
+    { id: "bio",  fullId: "biology",                label: "Biology"               },
+    { id: "gc",   fullId: "general-chemistry",      label: "General Chemistry"     },
+    { id: "orgo", fullId: "organic-chemistry",      label: "Organic Chemistry"     },
+    { id: "pat",  fullId: "perceptual-ability",     label: "Perceptual Ability"    },
+    { id: "rc",   fullId: "reading-comprehension",  label: "Reading Comprehension" },
+    { id: "qr",   fullId: "quantitative-reasoning", label: "Quantitative Reasoning"},
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+        <h2 className="text-lg font-bold text-white mb-4">Pattern Readiness by Section</h2>
+        <div className="space-y-3">
+          {LEGACY_IDS.map(({ id, fullId, label }) => {
+            const secPats  = patterns.filter(p => p.section === id);
+            const seen     = secPats.filter(p => p.timesSeen > 0);
+            const mastered = seen.filter(p => p.masteryLevel === "mastered" || p.masteryLevel === "strong").length;
+            const avgReady = seen.length
+              ? Math.round(seen.reduce((s, p) => s + p.readiness, 0) / seen.length)
+              : null;
+            const display  = SECTION_DISPLAY[fullId];
+
+            return (
+              <div key={id}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-sm font-medium ${display?.colorClass ?? "text-gray-300"}`}>{label}</span>
+                  <span className={`text-sm font-bold ${avgReady === null ? "text-gray-500" : avgReady >= 75 ? "text-emerald-400" : avgReady >= 50 ? "text-yellow-400" : "text-rose-400"}`}>
+                    {avgReady !== null ? `${avgReady}%` : "—"}
+                  </span>
+                </div>
+                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${avgReady === null ? "bg-transparent" : avgReady >= 75 ? "bg-emerald-500" : avgReady >= 50 ? "bg-yellow-500" : "bg-rose-500"}`}
+                    style={{ width: `${avgReady ?? 0}%` }}
+                  />
+                </div>
+                {seen.length > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    {mastered}/{seen.length} patterns at strong or mastered · {secPats.length - seen.length} not started
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {projection && (
+        <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+          <h2 className="text-lg font-bold text-white mb-3">Score Projection</h2>
+          <div className="flex items-center gap-4 mb-4">
+            <div className="text-3xl font-bold text-blue-400">{projection.totalProjected ?? "—"}</div>
+            <div className="text-xs text-gray-400">{projection.confidence} confidence</div>
+          </div>
+          {projection.sectionProjected && (
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.entries(projection.sectionProjected) as [string, number][]).map(([sec, score]) => (
+                <div key={sec} className="bg-white/5 rounded-lg p-2 text-center">
+                  <div className="text-sm font-bold text-white">{score}</div>
+                  <div className="text-[10px] text-gray-400 uppercase">{sec}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && idbState && (
+        <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+          <h2 className="text-lg font-bold text-white mb-1">Exam Attempt Readiness</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Updated {new Date(idbState.updatedAt).toLocaleDateString()} · {idbState.totalAttempts} attempt{idbState.totalAttempts !== 1 ? "s" : ""}
+          </p>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-gray-400 text-sm">Overall Band:</span>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${BAND_INFO[idbState.overallBand]?.bg ?? "bg-gray-600/20"} ${BAND_INFO[idbState.overallBand]?.color ?? "text-gray-300"}`}>
+              {BAND_INFO[idbState.overallBand]?.label ?? idbState.overallBand}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {(Object.entries(idbState.sectionBands) as [string, string][]).map(([sec, band]) => (
+              <div key={sec} className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">{SECTION_DISPLAY[sec]?.label ?? sec}</span>
+                <span className={`text-xs px-2 py-0.5 rounded ${BAND_INFO[band]?.bg ?? "bg-gray-600/20"} ${BAND_INFO[band]?.color ?? "text-gray-300"}`}>
+                  {BAND_INFO[band]?.label ?? band}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── History tab ─────────────────────────────────────────────────────────── */
+
+function HistoryTab() {
+  const [attempts, setAttempts] = useState<DatAttempt[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const { sessions, scores }    = useApexEngineStore();
+
+  useEffect(() => {
+    listAttempts()
+      .then(all => setAttempts(all.sort((a, b) => b.startedAt.localeCompare(a.startedAt))))
+      .catch(() => setAttempts([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {/* Pattern practice history */}
+      <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+        <h2 className="text-lg font-bold text-white mb-4">Pattern Practice Sessions</h2>
+        {sessions.length === 0 ? (
+          <p className="text-sm text-gray-400">No sessions yet. Start practicing to build history.</p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.slice(0, 10).map(session => {
+              const pct = session.total > 0 ? Math.round((session.correct / session.total) * 100) : null;
+              return (
+                <div key={session.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-b-0">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-blue-600/20 text-blue-300 px-1.5 py-0.5 rounded uppercase">{session.section}</span>
+                      <span className="text-xs text-gray-400">{session.mode}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">{new Date(session.startedAt).toLocaleDateString()}</div>
+                  </div>
+                  {pct !== null && (
+                    <span className={`text-sm font-bold ${pct >= 75 ? "text-emerald-400" : pct >= 50 ? "text-yellow-400" : "text-rose-400"}`}>
+                      {pct}%
+                      <span className="text-[10px] text-gray-500 font-normal ml-1">{session.correct}/{session.total}</span>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Full exam attempts from IDB */}
+      <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+        <h2 className="text-lg font-bold text-white mb-1">Full Exam Attempts</h2>
+        <p className="text-xs text-gray-400 mb-4">Persisted to IndexedDB (avrrio-dat-apex)</p>
+        {loading ? (
+          <div className="text-center py-6 text-gray-400 text-sm">Loading…</div>
+        ) : attempts.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-gray-400 text-sm">No full exam attempts recorded yet.</p>
+            <Link
+              href="/apex/proctor?config=full-dat"
+              className="inline-block mt-3 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm transition-colors"
+            >
+              Take First Full Exam
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {attempts.map(attempt => (
+              <div key={attempt.id} className="flex items-center justify-between py-3 border-b border-white/5 last:border-b-0">
+                <div>
+                  <div className="text-sm text-white font-medium">
+                    {attempt.mode === "simulation" ? "Full Simulation" : "Practice Attempt"}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {new Date(attempt.startedAt).toLocaleDateString()} · {attempt.state}
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500">{attempt.id.slice(0, 8)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {scores.length > 0 && (
+        <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
+          <h2 className="text-lg font-bold text-white mb-4">Score History</h2>
+          <div className="space-y-2">
+            {scores.map((score, i) => (
+              <div key={i} className="flex items-center justify-between text-sm">
+                <span className="text-gray-400">{new Date(score.createdAt).toLocaleDateString()}</span>
+                <span className="font-bold text-blue-300">{Math.round(score.percent)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Page shell ──────────────────────────────────────────────────────────── */
+
+export default function DatApexPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("today");
+  const { projection } = useApexEngineStore();
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_28%),linear-gradient(135deg,#020617,#0f172a_48%,#111827)] text-white">
-      {/* Header */}
-      <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-white">
-                🎯 DAT Apex Expert Dashboard
-              </h1>
-              <p className="text-blue-200 mt-1 max-w-2xl">
-                Pattern engine · decision rules · weak-pattern review · score projection
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-              >
-                ← Back to Reader
-              </Link>
-
+      <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-white">🎯 DAT Apex</h1>
+            <p className="text-xs text-blue-200 mt-0.5">
+              Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/"
+              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
+            >
+              ← Reader
+            </Link>
+            {projection?.totalProjected && (
               <div className="text-right">
-                <div className="text-sm text-blue-200">Projection</div>
-                <div className="text-xl font-bold text-green-400">
-                  {datProjection ? datProjection : "—"}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {projection?.confidence
-                    ? `${projection.confidence} confidence`
-                    : "no data yet"}
-                </div>
+                <div className="text-xs text-blue-200">Projected</div>
+                <div className="text-lg font-bold text-green-400">{projection.totalProjected}</div>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex overflow-x-auto">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? "border-blue-400 text-white"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-          {[
-            ["Pattern Engine", "Learn the recognition patterns that actually drive DAT questions.", "🧠"],
-            ["Decision Rules", "Convert misses into if/then rules you can apply under time pressure.", "⚖️"],
-            ["Weak-Pattern Review", "Prioritize unstable concepts before they become score leaks.", "🔍"],
-          ].map(([title, body, icon]) => (
-            <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/20 backdrop-blur">
-              <div className="text-2xl">{icon}</div>
-              <div className="mt-2 text-sm font-bold uppercase tracking-widest text-emerald-300">{title}</div>
-              <p className="mt-1 text-sm leading-relaxed text-slate-300">{body}</p>
-            </div>
-          ))}
-        </div>
-        {/* ── Top 4 stat cards ─────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          {/* Deep Work */}
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-200 text-sm">Deep Work</p>
-                <p className="text-2xl font-bold text-white">
-                  {deepWorkCount}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  timed sessions
-                </p>
-              </div>
-              <div className="text-purple-400 text-2xl">⏱️</div>
-            </div>
-          </div>
-
-          {/* Patterns Ready */}
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-200 text-sm">Patterns Ready</p>
-                <p className="text-2xl font-bold text-green-400">
-                  {patternsReady}
-                  <span className="text-base text-gray-400 font-normal">
-                    /{patterns.length}
-                  </span>
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  strong + mastered
-                </p>
-              </div>
-              <div className="text-green-400 text-2xl">🧠</div>
-            </div>
-          </div>
-
-          {/* Decision Accuracy */}
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-200 text-sm">Decision Accuracy</p>
-                <p className="text-2xl font-bold text-orange-400">
-                  {seenPatterns.length > 0 ? `${decisionAccuracy}%` : "—"}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  rule selection avg
-                </p>
-              </div>
-              <div className="text-orange-400 text-2xl">🎯</div>
-            </div>
-          </div>
-
-          {/* DAT Projection */}
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-200 text-sm">DAT Projection</p>
-                <p className="text-2xl font-bold text-blue-400">
-                  {datProjection ? datProjection : "—"}
-                </p>
-                {projDelta !== null && (
-                  <p
-                    className={`text-xs mt-1 ${projDelta >= 0 ? "text-green-400" : "text-red-400"}`}
-                  >
-                    {projDelta >= 0 ? `+${projDelta}%` : `${projDelta}%`} vs
-                    last
-                  </p>
-                )}
-                {!projDelta && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {projection?.confidence ?? "start practicing"}
-                  </p>
-                )}
-              </div>
-              <div className="text-blue-400 text-2xl">📈</div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Next Action recommendation ───────────────────────────────────── */}
-        {currentRecommendation && (
-          <div className="mb-8 bg-gradient-to-r from-indigo-600/20 to-purple-600/20 rounded-xl p-4 border border-indigo-500/30">
-            <div className="flex items-start gap-3">
-              <span className="text-yellow-400 text-lg mt-0.5">⚡</span>
-              <div>
-                <p className="text-white font-semibold text-sm">
-                  Next Best Action
-                </p>
-                <p className="text-gray-300 text-sm mt-1">
-                  {currentRecommendation.reason}
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded">
-                    {SECTION_LABELS[currentRecommendation.section] ??
-                      currentRecommendation.section}
-                  </span>
-                  <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded">
-                    {MODE_LABELS[currentRecommendation.mode] ??
-                      currentRecommendation.mode}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* ── Main column ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Quick Start */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-xl font-bold text-white mb-4">
-                🚀 Quick Start
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Link
-                  href="/apex/generator"
-                  className="group bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 rounded-lg p-6 transition-all transform hover:scale-105"
-                >
-                  <div className="text-white">
-                    <div className="text-2xl mb-2">📝</div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      Create Practice Exam
-                    </h3>
-                    <p className="text-blue-100 text-sm">
-                      Custom section · pattern density · difficulty · timed
-                    </p>
-                  </div>
-                </Link>
-
-                <Link
-                  href="/apex/proctor?config=full-dat"
-                  className="group bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 rounded-lg p-6 transition-all transform hover:scale-105"
-                >
-                  <div className="text-white">
-                    <div className="text-2xl mb-2">⏰</div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      Full DAT Simulation
-                    </h3>
-                    <p className="text-green-100 text-sm">
-                      All sections · official timing · top trap analysis
-                    </p>
-                  </div>
-                </Link>
-
-                <Link
-                  href="/apex/review"
-                  className="group bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 rounded-lg p-6 transition-all transform hover:scale-105"
-                >
-                  <div className="text-white">
-                    <div className="text-2xl mb-2">🧠</div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      Review Mistakes
-                    </h3>
-                    <p className="text-purple-100 text-sm">
-                      PDRM breakdown · pattern · trap · decision rule
-                    </p>
-                    {mistakes.length > 0 && (
-                      <span className="inline-block mt-2 text-xs bg-white/20 px-2 py-0.5 rounded">
-                        {mistakes.length} logged
-                      </span>
-                    )}
-                  </div>
-                </Link>
-
-                <Link
-                  href="/apex/generator?mode=quick"
-                  className="group bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 rounded-lg p-6 transition-all transform hover:scale-105"
-                >
-                  <div className="text-white">
-                    <div className="text-2xl mb-2">⚡</div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      Quick Practice
-                    </h3>
-                    <p className="text-orange-100 text-sm">
-                      Recognition · decision · speed — mixed 30q
-                    </p>
-                  </div>
-                </Link>
-              </div>
-            </div>
-
-            {/* Pattern Rules & Decision Making */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white">
-                  🎯 Pattern Rules & Decision Making
-                </h2>
-              </div>
-
-              <p className="text-gray-300 text-sm mb-6">
-                Each pattern tile shows your readiness, the trigger, decision
-                rule, and common trap.
-              </p>
-
-              {/* Section grid — sourced from DAT_PATTERN_MODULES (single source of truth) */}
-              {(() => {
-                const SECTION_CONFIG: Array<{
-                  id: "bio" | "gc" | "orgo" | "pat" | "rc" | "qr";
-                  label: string;
-                  gradient: string;
-                  border: string;
-                }> = [
-                  { id: "bio",  label: "Biology",              gradient: "from-purple-600/20 to-violet-600/20",  border: "border-purple-500/30" },
-                  { id: "gc",   label: "General Chemistry",    gradient: "from-blue-600/20 to-cyan-600/20",      border: "border-blue-500/30"   },
-                  { id: "orgo", label: "Organic Chemistry",    gradient: "from-green-600/20 to-emerald-600/20",  border: "border-green-500/30"  },
-                  { id: "pat",  label: "PAT",                  gradient: "from-yellow-600/20 to-orange-600/20",  border: "border-yellow-500/30" },
-                  { id: "rc",   label: "Reading Comprehension",gradient: "from-pink-600/20 to-rose-600/20",      border: "border-pink-500/30"   },
-                  { id: "qr",   label: "QR / Math",            gradient: "from-teal-600/20 to-cyan-600/20",     border: "border-teal-500/30"   },
-                ];
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    {SECTION_CONFIG.map((sec) => {
-                      const sectionModules = getModulesBySection(sec.id);
-                      const sectionPatterns = patterns.filter((p) => p.section === sec.id);
-                      const seenInSection = sectionPatterns.filter((p) => p.timesSeen > 0);
-                      const avgReadiness = seenInSection.length
-                        ? Math.round(seenInSection.reduce((s, p) => s + p.readiness, 0) / seenInSection.length)
-                        : null;
-                      return (
-                        <div key={sec.id} className={`bg-gradient-to-br ${sec.gradient} rounded-lg p-4 border ${sec.border}`}>
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-white">{sec.label}</h3>
-                            <div className="flex items-center gap-2">
-                              {avgReadiness !== null && (
-                                <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-green-300">
-                                  {avgReadiness}% ready
-                                </span>
-                              )}
-                              <span className="text-xs bg-white/10 px-2 py-1 rounded text-gray-300">
-                                {sectionModules.length} patterns
-                              </span>
-                            </div>
-                          </div>
-                          <div className="space-y-2 mb-4">
-                            {sectionModules.slice(0, 2).map((m) => {
-                              const sp = patterns.find((p) => p.id === m.id);
-                              return (
-                                <div key={m.id} className="text-sm">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-white font-medium">• {m.name}</span>
-                                    {sp && sp.timesSeen > 0 && (
-                                      <span className={`text-xs px-1 rounded ${
-                                        sp.masteryLevel === "mastered" ? "bg-green-500/20 text-green-300"
-                                          : sp.masteryLevel === "strong" ? "bg-blue-500/20 text-blue-300"
-                                          : sp.masteryLevel === "unstable" ? "bg-yellow-500/20 text-yellow-300"
-                                          : "bg-red-500/20 text-red-300"
-                                      }`}>{sp.masteryLevel}</span>
-                                    )}
-                                  </div>
-                                  <p className="text-gray-400 text-xs mt-0.5 ml-3">
-                                    Trap: {m.trap.slice(0, 60)}{m.trap.length > 60 ? "…" : ""}
-                                  </p>
-                                </div>
-                              );
-                            })}
-                            {sectionModules.length > 2 && (
-                              <div className="text-xs text-gray-400">+{sectionModules.length - 2} more patterns</div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Link
-                              href={`/apex/patterns?section=${sec.id}`}
-                              className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
-                            >
-                              Study Patterns
-                            </Link>
-                            <Link
-                              href={`/apex/generator?section=${sec.id}`}
-                              className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
-                            >
-                              Practice
-                            </Link>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-
-              {/* Pattern Spotlight — top 3 modules with lowest store readiness (priority focus) */}
-              {(() => {
-                const spotlight = [...DAT_PATTERN_MODULES]
-                  .map((m) => {
-                    const sp = patterns.find((p) => p.id === m.id);
-                    return { m, readiness: sp?.readiness ?? 0, timesSeen: sp?.timesSeen ?? 0 };
-                  })
-                  .filter((x) => x.timesSeen === 0 || x.readiness < 70)
-                  .slice(0, 3);
-                if (!spotlight.length) return null;
-                return (
-                  <div className="bg-gradient-to-r from-yellow-600/10 to-orange-600/10 rounded-lg p-4 border border-yellow-500/30 mb-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-lg">⭐</span>
-                      <h3 className="font-semibold text-yellow-300">Priority Pattern Focus</h3>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {spotlight.map(({ m, readiness, timesSeen }) => (
-                        <div key={m.id} className="bg-black/20 rounded-lg p-3 border border-gray-600/30">
-                          <div className="flex items-center justify-between mb-1">
-                            <h4 className="font-medium text-white text-sm">{m.name}</h4>
-                            {timesSeen > 0 && (
-                              <span className={`text-xs ${readiness < 50 ? "text-rose-400" : "text-yellow-400"}`}>
-                                {readiness}%
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-400 mb-1">
-                            <span className="text-purple-400">Pattern:</span> {m.pattern.slice(0, 50)}{m.pattern.length > 50 ? "…" : ""}
-                          </p>
-                          <p className="text-xs text-rose-400/80 mb-3">
-                            Trap: {m.trap.slice(0, 50)}{m.trap.length > 50 ? "…" : ""}
-                          </p>
-                          <Link
-                            href={`/apex/generator?section=${m.section}`}
-                            className="text-xs px-2 py-1 bg-green-600/30 text-green-200 rounded hover:bg-green-600/40 transition-colors"
-                          >
-                            Practice Now
-                          </Link>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/apex/patterns/decision-tree"
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg text-sm font-medium transition-all"
-                >
-                  🌳 Interactive Decision Trees
-                </Link>
-                <Link
-                  href="/apex/patterns/flashcards"
-                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-sm font-medium transition-all"
-                >
-                  🃏 Pattern Flashcards
-                </Link>
-                <Link
-                  href="/apex/generator?mode=pattern-focused"
-                  className="px-4 py-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white rounded-lg text-sm font-medium transition-all"
-                >
-                  🎯 Pattern-Focused Practice
-                </Link>
-              </div>
-            </div>
-
-            {/* DAT Sections Overview */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-xl font-bold text-white mb-4">
-                📚 DAT Sections
-              </h2>
-
-              <div className="space-y-4">
-                {DAT_SECTIONS.map((section) => {
-                  const sectionScore = projection?.sectionProjected?.[
-                    section.id as keyof typeof projection.sectionProjected
-                  ];
-                  return (
-                    <div
-                      key={section.id}
-                      className="bg-black/20 rounded-lg p-4 border border-gray-600/30"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-white">
-                          {section.name}
-                        </h3>
-                        <div className="flex items-center gap-3">
-                          {sectionScore && (
-                            <span className="text-sm font-bold text-blue-300">
-                              {sectionScore}
-                            </span>
-                          )}
-                          <span className="text-sm text-blue-300">
-                            {section.shortName}
-                          </span>
-                        </div>
-                      </div>
-
-                      <p className="text-gray-300 text-sm mb-3">
-                        {section.description}
-                      </p>
-
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="text-gray-400">
-                          {section.questionCount} questions ·{" "}
-                          {section.timeLimit} minutes
-                        </div>
-
-                        <Link
-                          href={`/apex/generator?section=${section.id}`}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs transition-colors"
-                        >
-                          Practice {section.shortName}
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ── DAT Training Arena ────────────────────────────────────── */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {activeTab === "today"     && <TodayTab />}
+        {activeTab === "learn"     && (
+          <div>
+            <p className="text-sm text-gray-400 mb-4">
+              Study recognition patterns, decision rules, mechanisms, and traps for each DAT section.
+            </p>
             <TrainingArena />
           </div>
-
-          {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-          <div className="space-y-6">
-            {/* Performance Overview */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-lg font-bold text-white mb-4">
-                📊 Performance
-              </h2>
-
-              {strengthPatterns.length > 0 ? (
-                <div className="mb-4">
-                  <h3 className="text-sm font-semibold text-green-400 mb-2">
-                    💪 Strengths
-                  </h3>
-                  <div className="space-y-1">
-                    {strengthPatterns.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span className="text-gray-300">{p.name}</span>
-                        <span className="text-xs text-green-400">
-                          {p.readiness}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 mb-4">
-                  Complete practice sessions to identify strengths.
-                </p>
-              )}
-
-              {focusPatterns.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-sm font-semibold text-red-400 mb-2">
-                    🎯 Focus Areas
-                  </h3>
-                  <div className="space-y-1">
-                    {focusPatterns.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span className="text-gray-300">{p.name}</span>
-                        <span
-                          className={`text-xs ${p.masteryLevel === "unstable" ? "text-yellow-400" : "text-red-400"}`}
-                        >
-                          {p.readiness}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {topTrap && (
-                <div className="pt-3 border-t border-gray-600/30">
-                  <h3 className="text-sm font-semibold text-orange-400 mb-1">
-                    ⚠️ Top Trap This Week
-                  </h3>
-                  <p className="text-xs text-gray-300">{topTrap.description}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Triggered {topTrap.timesTriggered}× ·{" "}
-                    {SECTION_LABELS[topTrap.section] ?? topTrap.section}
-                  </p>
-                </div>
-              )}
-
-              {/* Section projection mini-table */}
-              {projection && (
-                <div className="pt-3 border-t border-gray-600/30 mt-3">
-                  <h3 className="text-sm font-semibold text-blue-300 mb-2">
-                    Section Projections
-                  </h3>
-                  {(
-                    Object.entries(projection.sectionProjected) as [
-                      string,
-                      number,
-                    ][]
-                  ).map(([sec, score]) => (
-                    <div
-                      key={sec}
-                      className="flex items-center justify-between text-xs py-0.5"
-                    >
-                      <span className="text-gray-400 uppercase">{sec}</span>
-                      <span className="text-white font-medium">{score}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Recent Sessions */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-lg font-bold text-white mb-4">
-                📅 Recent Sessions
-              </h2>
-
-              {recentSessions.length === 0 ? (
-                <p className="text-xs text-gray-400">
-                  No sessions yet. Start a practice session to track progress.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {recentSessions.map((session) => {
-                    const pct =
-                      session.total > 0
-                        ? Math.round((session.correct / session.total) * 100)
-                        : null;
-                    return (
-                      <div
-                        key={session.id}
-                        className="flex items-center justify-between py-2 border-b border-gray-600/30 last:border-b-0"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs bg-blue-600/20 text-blue-300 px-1.5 py-0.5 rounded uppercase">
-                              {SECTION_LABELS[session.section] ??
-                                session.section}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {MODE_LABELS[session.mode] ?? session.mode}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {formatDate(session.startedAt)} ·{" "}
-                            {formatSeconds(session.durationSeconds)}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          {pct !== null && (
-                            <div
-                              className={`text-sm font-semibold ${pct >= 75 ? "text-green-400" : pct >= 50 ? "text-yellow-400" : "text-red-400"}`}
-                            >
-                              {pct}%
-                            </div>
-                          )}
-                          <div className="text-xs text-gray-500">
-                            {session.correct}/{session.total}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* AI Insights */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-lg font-bold text-white mb-4">
-                🤖 AI Insights
-              </h2>
-
-              <div className="space-y-3">
-                {aiInsights.map((insight, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-start gap-3 p-3 bg-blue-600/10 rounded-lg border border-blue-500/20"
-                  >
-                    <span className="text-blue-400 text-sm">💡</span>
-                    <p className="text-sm text-gray-300 flex-1">{insight}</p>
-                  </div>
-                ))}
-              </div>
-
-              {insights.length === 1 && insights[0].startsWith("Complete") && (
-                <div className="mt-4 pt-4 border-t border-gray-600/30 text-xs text-gray-500">
-                  Engine recalculates after each session.
-                </div>
-              )}
-            </div>
-
-            {/* Quick Actions */}
-            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-lg font-bold text-white mb-4">
-                ⚡ Quick Actions
-              </h2>
-
-              <div className="space-y-3">
-                <Link
-                  href="/apex/review"
-                  className="block w-full px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-200 rounded-lg text-sm transition-colors"
-                >
-                  📚 PDRM Mistake Review
-                  {mistakes.length > 0 && (
-                    <span className="ml-2 text-xs bg-red-500/30 px-1.5 py-0.5 rounded">
-                      {mistakes.length}
-                    </span>
-                  )}
-                </Link>
-
-                <Link
-                  href="/apex/generator?mode=weak-topics"
-                  className="block w-full px-4 py-2 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-200 rounded-lg text-sm transition-colors"
-                >
-                  🎯 Practice Weak Patterns
-                </Link>
-
-                <Link
-                  href="/apex/proctor?config=timed-practice"
-                  className="block w-full px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 rounded-lg text-sm transition-colors"
-                >
-                  ⏱️ Timed Section Test
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+        )}
+        {activeTab === "practice"  && <PracticeTab />}
+        {activeTab === "exams"     && <FullExamsTab />}
+        {activeTab === "mistakes"  && <MistakesTab />}
+        {activeTab === "readiness" && <ReadinessTab />}
+        {activeTab === "history"   && <HistoryTab />}
+      </main>
     </div>
   );
 }

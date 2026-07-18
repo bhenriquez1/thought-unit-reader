@@ -4922,7 +4922,7 @@ export default function ThoughtUnitReader() {
                 const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for DAT Apex?");
                 if (!ok) return;
               }
-              router.push("/dat-apex");
+              router.push("/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
             title="Open DAT Apex"
