@@ -1,11 +1,23 @@
 // components/elena/ElenaChildWorkspace.tsx
-// Minimal Elena Mode workspace — profile setup + personalized home screen.
+// Elena Mode workspace — profile setup + personalized home screen with rewards.
 // Uses getChildDisplayCopy() for all labels; never hard-codes "Elena".
 
 import React, { useState, useEffect, useCallback } from "react";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
-import { saveChildProfile, loadChildProfile } from "@/lib/elena/idbStore";
-import type { ChildProfile, ChildAgeRange, ReadingLevel } from "@/lib/elena/types";
+import {
+  saveChildProfile,
+  loadChildProfile,
+  loadRewardState,
+  saveRewardState,
+  loadChildProgress,
+  saveChildProgress,
+} from "@/lib/elena/idbStore";
+import type {
+  ChildProfile,
+  ChildAgeRange,
+  ChildRewardState,
+  ChildProgress,
+} from "@/lib/elena/types";
 
 const INTERESTS = [
   "Animals", "Space", "Dinosaurs", "Art", "Music", "Sports",
@@ -19,6 +31,36 @@ const AGE_RANGES: { value: ChildAgeRange; label: string }[] = [
   { value: "9-10", label: "9–10 years" },
   { value: "11-12",label: "11–12 years" },
 ];
+
+// Milestone achievements — unlocked by totalStars or currentStreak
+const ACHIEVEMENTS: { id: string; icon: string; label: string; desc: string; test: (r: ChildRewardState) => boolean }[] = [
+  { id: "first-star",   icon: "⭐", label: "First Star",     desc: "Earned your first star!",              test: r => r.totalStars >= 1 },
+  { id: "reader-5",     icon: "📖", label: "Bookworm",       desc: "Earned 5 stars — you love reading!",   test: r => r.totalStars >= 5 },
+  { id: "reader-10",    icon: "🏆", label: "Reading Champ",  desc: "Earned 10 stars — incredible!",        test: r => r.totalStars >= 10 },
+  { id: "reader-25",    icon: "🌟", label: "Super Reader",   desc: "25 stars — you're a super reader!",    test: r => r.totalStars >= 25 },
+  { id: "streak-2",     icon: "🔥", label: "On a Roll",      desc: "Read 2 days in a row!",               test: r => r.currentStreak >= 2 },
+  { id: "streak-7",     icon: "💥", label: "Week Warrior",   desc: "7-day reading streak!",               test: r => r.currentStreak >= 7 },
+  { id: "streak-best",  icon: "🎯", label: "Personal Best",  desc: `Longest streak: ${0} days`,           test: r => r.longestStreak >= 3 },
+];
+
+function isoToday(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function awardStar(prev: ChildRewardState): ChildRewardState {
+  const todayStr = isoToday();
+  const lastStr  = prev.updatedAt.split("T")[0];
+  const ms = new Date(todayStr).getTime() - new Date(lastStr).getTime();
+  const daysDiff = Math.round(ms / 86400000);
+  const newStreak = daysDiff <= 1 ? prev.currentStreak + 1 : 1;
+  return {
+    ...prev,
+    totalStars:    prev.totalStars + 1,
+    currentStreak: newStreak,
+    longestStreak: Math.max(prev.longestStreak, newStreak),
+    updatedAt:     new Date().toISOString(),
+  };
+}
 
 /* ─── Setup form ────────────────────────────────────────────────────────────── */
 
@@ -169,27 +211,36 @@ function SetupForm({ onSave }: SetupFormProps) {
 /* ─── Home screen ───────────────────────────────────────────────────────────── */
 
 interface HomeScreenProps {
-  profile:  ChildProfile;
-  onReset:  () => void;
+  profile:      ChildProfile;
+  rewards:      ChildRewardState;
+  progress:     ChildProgress | null;
+  onReset:      () => void;
+  onLogSession: () => Promise<void>;
 }
 
-function HomeScreen({ profile, onReset }: HomeScreenProps) {
+function HomeScreen({ profile, rewards, progress, onReset, onLogSession }: HomeScreenProps) {
   const copy = getChildDisplayCopy(profile);
+  const [logging, setLogging] = useState(false);
+  const [justEarned, setJustEarned] = useState(false);
 
-  const sections = [
-    { icon: "📖", label: copy.readingLabel,   coming: false, desc: "Pick up where you left off or start something new." },
-    { icon: "📚", label: copy.libraryLabel,   coming: true,  desc: "All books in one place." },
-    { icon: "📊", label: copy.progressLabel,  coming: true,  desc: "See how far you've come." },
-    { icon: "⭐", label: "Rewards",           coming: true,  desc: "Earn stars for every reading session." },
-  ];
+  const earned = ACHIEVEMENTS.filter(a => a.test(rewards));
+  const nextUp  = ACHIEVEMENTS.find(a => !a.test(rewards));
+
+  async function handleLog() {
+    setLogging(true);
+    await onLogSession();
+    setLogging(false);
+    setJustEarned(true);
+    setTimeout(() => setJustEarned(false), 2500);
+  }
 
   return (
-    <div className="h-full w-full overflow-auto bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 p-6">
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
+    <div className="h-full w-full overflow-auto bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 p-5">
+      {/* Header — name + star count + streak */}
+      <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-white">{copy.workspaceTitle}</h1>
-          <p className="text-indigo-300 mt-1">{copy.welcomeGreeting}</p>
+          <h1 className="text-2xl font-bold text-white">{copy.workspaceTitle}</h1>
+          <p className="text-indigo-300 text-sm mt-0.5">{copy.welcomeGreeting}</p>
           {profile.interests.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {profile.interests.map(i => (
@@ -198,55 +249,115 @@ function HomeScreen({ profile, onReset }: HomeScreenProps) {
             </div>
           )}
         </div>
-        <button
-          onClick={onReset}
-          className="text-xs text-white/30 hover:text-white/60 transition-colors mt-1"
-          title="Reset profile (testing)"
-        >
-          Reset profile
-        </button>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-3 py-1.5">
+            <span className="text-lg">⭐</span>
+            <span className="text-yellow-200 font-bold text-lg tabular-nums">{rewards.totalStars}</span>
+            <span className="text-yellow-400/60 text-xs">stars</span>
+          </div>
+          {rewards.currentStreak > 0 && (
+            <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2.5 py-1">
+              <span className="text-sm">🔥</span>
+              <span className="text-orange-200 font-semibold text-sm">{rewards.currentStreak} day streak</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Reading space — placeholder */}
-      <div className="mb-6 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-5">
-        <div className="flex items-center gap-3 mb-2">
+      {/* Star earned toast */}
+      {justEarned && (
+        <div className="mb-4 rounded-2xl bg-yellow-400/20 border border-yellow-400/40 p-3 text-center animate-bounce">
+          <span className="text-2xl">⭐</span>
+          <p className="text-yellow-200 font-semibold text-sm mt-1">You earned a star! Great reading!</p>
+        </div>
+      )}
+
+      {/* Reading CTA */}
+      <div className="mb-4 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-4">
+        <div className="flex items-center gap-3 mb-3">
           <span className="text-2xl">📖</span>
           <div>
-            <p className="text-white font-semibold">Continue Reading</p>
-            <p className="text-indigo-300 text-sm">No book loaded yet — open a PDF from the Reader to get started.</p>
+            <p className="text-white font-semibold">{copy.readingLabel}</p>
+            <p className="text-indigo-300 text-sm">Open a PDF in the Reader, then log your session here.</p>
           </div>
         </div>
         <button
-          disabled
-          className="mt-2 px-4 py-2 rounded-xl bg-white/10 text-white/50 text-sm cursor-not-allowed"
+          onClick={handleLog}
+          disabled={logging}
+          className="w-full py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
         >
-          Open a book in the Reader →
+          {logging ? "Logging…" : "✅ Log Reading Session  (+1 ⭐)"}
         </button>
       </div>
 
-      {/* Feature sections */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {sections.slice(1).map(section => (
-          <div
-            key={section.label}
-            className="rounded-2xl border border-white/10 bg-white/5 p-5 relative"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-xl">{section.icon}</span>
-              <p className="text-white font-semibold">{section.label}</p>
-              {section.coming && (
-                <span className="ml-auto text-xs text-indigo-400/80 border border-indigo-400/30 rounded-full px-2 py-0.5">Soon</span>
-              )}
-            </div>
-            <p className="text-slate-400 text-sm">{section.desc}</p>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {[
+          { icon: "⭐", value: String(rewards.totalStars),           label: "Stars Earned" },
+          { icon: "🔥", value: String(rewards.currentStreak),        label: "Day Streak"   },
+          { icon: "📚", value: String(progress?.totalSessions ?? 0), label: "Sessions"     },
+        ].map(({ icon, value, label }) => (
+          <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
+            <div className="text-xl mb-0.5">{icon}</div>
+            <div className="text-xl font-bold text-white tabular-nums">{value}</div>
+            <div className="text-[10px] text-slate-400">{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Version note */}
-      <p className="mt-6 text-center text-white/20 text-xs">
-        Elena Mode — groundwork preview · Full experience coming in a future release
-      </p>
+      {/* Rewards / achievements */}
+      <div className="rounded-2xl border border-yellow-400/20 bg-yellow-500/5 p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold text-yellow-200">⭐ Rewards</div>
+          <div className="text-[10px] text-yellow-400/60">{earned.length}/{ACHIEVEMENTS.length} earned</div>
+        </div>
+        {earned.length === 0 ? (
+          <p className="text-xs text-yellow-400/50">Log your first reading session to earn your first badge!</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {earned.map(a => (
+              <div key={a.id} className="flex items-center gap-1.5 bg-yellow-400/15 border border-yellow-400/25 rounded-xl px-2.5 py-1.5" title={a.desc}>
+                <span className="text-base">{a.icon}</span>
+                <span className="text-yellow-200 text-xs font-medium">{a.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {nextUp && (
+          <div className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+            <span className="text-base opacity-40">{nextUp.icon}</span>
+            <div>
+              <div className="text-[11px] text-slate-400 font-medium">Next: {nextUp.label}</div>
+              <div className="text-[10px] text-slate-500">{nextUp.desc}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Progress card */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+        <div className="text-sm font-semibold text-slate-200 mb-2">📊 {copy.progressLabel}</div>
+        <div className="space-y-1.5">
+          {[
+            ["Longest streak", `${rewards.longestStreak} days`],
+            ["Total sessions", String(progress?.totalSessions ?? 0)],
+            ["Total reading time", progress?.totalMinutes ? `${progress.totalMinutes} min` : "—"],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between text-[11px]">
+              <span className="text-slate-400">{label}</span>
+              <span className="text-slate-200 font-medium">{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={onReset}
+        className="mt-2 text-xs text-white/20 hover:text-white/50 transition-colors block mx-auto"
+        title="Reset profile"
+      >
+        Reset profile
+      </button>
     </div>
   );
 }
@@ -255,27 +366,79 @@ function HomeScreen({ profile, onReset }: HomeScreenProps) {
 
 const STORAGE_KEY = "elena-active-profile-id";
 
+function makeDefaultRewards(childProfileId: string): ChildRewardState {
+  return {
+    childProfileId,
+    totalStars:    0,
+    currentStreak: 0,
+    longestStreak: 0,
+    updatedAt:     new Date().toISOString(),
+  };
+}
+
+function makeDefaultProgress(childProfileId: string): ChildProgress {
+  return {
+    childProfileId,
+    currentLevel:    "developing",
+    booksCompleted:  0,
+    totalSessions:   0,
+    totalMinutes:    0,
+    totalWordsRead:  0,
+    lastActiveAt:    new Date().toISOString(),
+    updatedAt:       new Date().toISOString(),
+  };
+}
+
 export default function ElenaChildWorkspace() {
   const [profile,  setProfile]  = useState<ChildProfile | null>(null);
+  const [rewards,  setRewards]  = useState<ChildRewardState | null>(null);
+  const [progress, setProgress] = useState<ChildProgress | null>(null);
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
     const savedId = localStorage.getItem(STORAGE_KEY);
     if (!savedId) { setLoading(false); return; }
-    loadChildProfile(savedId)
-      .then(p => { setProfile(p); setLoading(false); })
-      .catch(() => setLoading(false));
+    Promise.all([
+      loadChildProfile(savedId),
+      loadRewardState(savedId),
+      loadChildProgress(savedId),
+    ]).then(([p, r, prog]) => {
+      setProfile(p);
+      setRewards(r ?? (p ? makeDefaultRewards(p.id) : null));
+      setProgress(prog);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
-  const handleSave = useCallback((p: ChildProfile) => {
+  const handleSave = useCallback(async (p: ChildProfile) => {
     localStorage.setItem(STORAGE_KEY, p.id);
+    const defaultRewards = makeDefaultRewards(p.id);
+    await saveRewardState(defaultRewards);
     setProfile(p);
+    setRewards(defaultRewards);
+    setProgress(null);
   }, []);
 
   const handleReset = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setProfile(null);
+    setRewards(null);
+    setProgress(null);
   }, []);
+
+  const handleLogSession = useCallback(async () => {
+    if (!profile || !rewards) return;
+    const updated = awardStar(rewards);
+    await saveRewardState(updated);
+    setRewards(updated);
+
+    const now = new Date().toISOString();
+    const updatedProgress: ChildProgress = progress
+      ? { ...progress, totalSessions: progress.totalSessions + 1, lastActiveAt: now, updatedAt: now }
+      : { ...makeDefaultProgress(profile.id), totalSessions: 1, lastActiveAt: now };
+    await saveChildProgress(updatedProgress);
+    setProgress(updatedProgress);
+  }, [profile, rewards, progress]);
 
   if (loading) {
     return (
@@ -285,6 +448,14 @@ export default function ElenaChildWorkspace() {
     );
   }
 
-  if (!profile) return <SetupForm onSave={handleSave} />;
-  return <HomeScreen profile={profile} onReset={handleReset} />;
+  if (!profile || !rewards) return <SetupForm onSave={handleSave} />;
+  return (
+    <HomeScreen
+      profile={profile}
+      rewards={rewards}
+      progress={progress}
+      onReset={handleReset}
+      onLogSession={handleLogSession}
+    />
+  );
 }
