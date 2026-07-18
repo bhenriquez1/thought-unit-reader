@@ -27,10 +27,6 @@ interface HighlightState {
   /** highlights[docId][pageIndex][paragraphId] */
   highlights: Record<string, DocHighlights>;
 
-  /** The paragraph currently focused / scroll-synced */
-  activeParagraphId: string | null;
-  setActiveParagraphId: (id: string | null) => void;
-
   /** Set a pinned highlight for a paragraph */
   setPinned: (
     docId: string,
@@ -74,9 +70,6 @@ interface HighlightState {
 
 export const useHighlightStore = create<HighlightState>((set, get) => ({
   highlights: {},
-  activeParagraphId: null,
-
-  setActiveParagraphId: (id) => set({ activeParagraphId: id }),
 
   setPinned: (docId, pageIndex, paragraphId, textKey, bbox, color = 'teal') => {
     set((state) => {
@@ -116,7 +109,7 @@ export const useHighlightStore = create<HighlightState>((set, get) => ({
         textKey,
       };
       docHL[pageIndex] = pageHL;
-      return { highlights: { ...state.highlights, [docId]: docHL }, activeParagraphId: paragraphId };
+      return { highlights: { ...state.highlights, [docId]: docHL } };
     });
   },
 
