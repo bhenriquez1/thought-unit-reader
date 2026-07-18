@@ -827,7 +827,7 @@ export default function StudyGuideLab({
       {/* Header */}
       <div className="flex-shrink-0 border-b border-slate-800 px-5 py-3.5 flex items-center justify-between bg-gradient-to-r from-slate-950 to-slate-900">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Study Guide Lab</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Study Sheet</div>
           <div className="text-xs text-slate-500 mt-0.5">Build notes a top student would actually keep.</div>
         </div>
         <div className="flex gap-2">
@@ -1051,10 +1051,10 @@ export default function StudyGuideLab({
                 className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors shadow-lg shadow-teal-900/30"
               >
                 {loading
-                  ? "Building Study Guide…"
+                  ? "Generating Study Sheet…"
                   : studyModel
-                    ? `📖 Build ${STUDY_GUIDE_MODE_LABELS[mode]} — Page ${currentPage ?? studyModel.page}`
-                    : `🎓 Build ${STUDY_GUIDE_MODE_LABELS[mode]}`}
+                    ? `📑 Generate ${STUDY_GUIDE_MODE_LABELS[mode]} — Page ${currentPage ?? studyModel.page}`
+                    : `📑 Generate ${STUDY_GUIDE_MODE_LABELS[mode]}`}
               </button>
             </div>
 

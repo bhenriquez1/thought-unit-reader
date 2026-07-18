@@ -4443,13 +4443,13 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "🏗 Study Guide" : "🎙️ Podcast"}
+                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🎧 Listen"}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Study Guide sub-tab */}
+          {/* Study Sheet sub-tab */}
           {notesSubTab === "studyguide" && (
             <div className="flex-1 overflow-hidden">
               <StudyGuideLab
@@ -4466,7 +4466,7 @@ export default function ThoughtUnitReader() {
             </div>
           )}
 
-          {/* Podcast sub-tab */}
+          {/* Listen sub-tab */}
           {notesSubTab === "podcast" && (
             <div className="flex-1 overflow-hidden">
               <PodcastLab

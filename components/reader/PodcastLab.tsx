@@ -458,10 +458,10 @@ export default function PodcastLab({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/8 shrink-0">
         <div className="flex items-center gap-2.5">
-          <span className="text-lg">🎙️</span>
+          <span className="text-lg">🎧</span>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-white/30">PodcastLab</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-white/30">Listen</span>
               <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${cfg.accent} text-white`}>
                 {cfg.badge}
               </span>
@@ -520,7 +520,7 @@ export default function PodcastLab({
             disabled={!studyModel || generating}
             className={`w-full py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white shadow ${cfg.accent} hover:opacity-90`}
           >
-            {generating ? "Generating podcast…" : !studyModel ? "Waiting for Right Panel…" : "🎙️ Generate Podcast"}
+            {generating ? "Generating audio…" : !studyModel ? "Waiting for Right Panel…" : "🎧 Generate Audio"}
           </button>
           {genError && <p className="mt-2 text-[11px] text-red-400/80 text-center">{genError}</p>}
         </div>
@@ -668,8 +668,8 @@ export default function PodcastLab({
       {/* Empty state */}
       {!script && !generating && !studyModel && (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <span className="text-3xl">🎙️</span>
-          <p className="text-[12px] text-white/35 leading-relaxed">Open a page in the Reader to activate PodcastLab. The Right Panel must synthesize first.</p>
+          <span className="text-3xl">🎧</span>
+          <p className="text-[12px] text-white/35 leading-relaxed">Open a page in the Reader to activate Listen. The Right Panel must synthesize first.</p>
         </div>
       )}
     </div>
