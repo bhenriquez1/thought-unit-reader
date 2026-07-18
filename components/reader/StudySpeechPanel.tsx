@@ -293,6 +293,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
   const [speed, setSpeed]     = useState(1.0);
+  // Ref mirrors — readable inside async callbacks and event handlers without stale closures.
+  const speedRef   = useRef(1.0);
+  const segIdxRef  = useRef(0);
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   // Mirror of segments state kept in a ref for imperative handle access (seekToCursor).
   const segmentsRef = useRef<SpeechSegment[]>([]);
@@ -604,6 +607,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
+
+  // Keep refs in sync with state so async handlers always see the latest values.
+  useEffect(() => { speedRef.current  = speed;  }, [speed]);
+  useEffect(() => { segIdxRef.current = segIdx; }, [segIdx]);
 
   // Reset on mode switch so playback always starts at the first segment of the new mode.
   useEffect(() => {
@@ -1076,7 +1083,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       .replace(/,\s*,/g, ",")
       .trim();
     const utt = new SpeechSynthesisUtterance(normalized);
-    utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
+    utt.rate  = Math.min(speedRef.current * 1.05, 1.8); // uses ref so rate is correct after mid-playback speed change
     const token = globalTokenRef.current;
     registerActiveUtterance(token, utt, () => stopAudio());
 
@@ -1871,7 +1878,21 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
               <span style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>{speed.toFixed(1)}×</span>
               <input type="range" min={0.5} max={2.5} step={0.1} value={speed}
-                onChange={e => { const v = Number(e.target.value); setSpeed(v); if (audioRef.current) audioRef.current.playbackRate = v; }}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  speedRef.current = v;   // update ref before any restart
+                  setSpeed(v);
+                  if (audioRef.current) audioRef.current.playbackRate = v;
+                  // Browser SpeechSynthesis rate can't be changed mid-utterance —
+                  // cancel and restart from the current segment with the new rate.
+                  if (
+                    providerRef.current === "browser" &&
+                    typeof window !== "undefined" &&
+                    window.speechSynthesis?.speaking
+                  ) {
+                    playRef.current(segIdxRef.current);
+                  }
+                }}
                 style={{ width: 60, accentColor: "#818cf8" }} title="Playback speed" />
             </div>
           </div>
