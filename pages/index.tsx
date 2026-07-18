@@ -616,6 +616,9 @@ export default function ThoughtUnitReader() {
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
+  // Sub-tab selections within consolidated panels
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "podcast">("notes");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "studyplan">("overview");
   // NoteLab 3-column dashboard: which note's thought units/export tools the
   // left/right rails are currently bound to (the note currently expanded in
   // the center column's list) and which of its anchors was just clicked.
@@ -4425,10 +4428,62 @@ export default function ThoughtUnitReader() {
     if (activeShellTab === "notelab") {
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
-          <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">Generated study notes · saved locally</div>
+          <div className="border-b border-white/10 px-4 py-2 flex-shrink-0 flex items-center gap-2">
+            <div className="flex-1">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
+            </div>
+            <div className="flex gap-1">
+              {(["notes", "studyguide", "podcast"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setNotesSubTab(v)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                    notesSubTab === v
+                      ? "bg-emerald-600/20 text-emerald-300 border border-emerald-600/30"
+                      : "text-slate-400 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "🏗 Study Guide" : "🎙️ Podcast"}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Study Guide sub-tab */}
+          {notesSubTab === "studyguide" && (
+            <div className="flex-1 overflow-hidden">
+              <StudyGuideLab
+                bookId={bookId}
+                bookTitle={uploadedFile?.name ?? undefined}
+                currentPage={currentPage}
+                studyModel={currentPageStudyModel}
+                pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+                onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+                onPodcastScript={(script) => setStudyGuideScript(script)}
+              />
+            </div>
+          )}
+
+          {/* Podcast sub-tab */}
+          {notesSubTab === "podcast" && (
+            <div className="flex-1 overflow-hidden">
+              <PodcastLab
+                studyModel={currentPageStudyModel}
+                pageNumber={currentPage}
+                bookId={bookId}
+                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+                initialScript={studyGuideScript}
+                explainItSeed={explainItPodcastSeed}
+                onDiscussSegment={handleDiscussPodcastSegment}
+              />
+            </div>
+          )}
+
+          {/* Notes sub-tab */}
+          {notesSubTab === "notes" && (
           <div className="flex-1 flex overflow-hidden">
             {/* Left: Thought Unit navigation for the currently open note */}
             <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
@@ -4539,6 +4594,7 @@ export default function ThoughtUnitReader() {
               )}
             </div>
           </div>
+          )}
         </div>
       );
     }
@@ -4567,10 +4623,47 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus View - upload → parse → auto-TOC → jump/study
+    // ✅ Learning Hub — Book Roadmap · Study Plan (consolidated)
     if (activeShellTab === "syllabus") {
       return (
-        <div className="h-full overflow-y-auto p-4" data-testid="syllabus-view-container">
+        <div className="h-full flex flex-col overflow-hidden" data-testid="syllabus-view-container">
+          {/* Sub-tab bar */}
+          <div className="border-b border-white/10 px-4 py-2 flex-shrink-0 flex items-center gap-1 bg-slate-950/60">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mr-3">Learning Hub</span>
+            {(["overview", "studyplan"] as const).map(v => (
+              <button
+                key={v}
+                onClick={() => setHubSubTab(v)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  hubSubTab === v
+                    ? "bg-indigo-600/20 text-indigo-300 border border-indigo-600/30"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {v === "overview" ? "🗺 Book Roadmap" : "🧪 Study Plan"}
+              </button>
+            ))}
+          </div>
+
+          {/* Study Plan sub-tab */}
+          {hubSubTab === "studyplan" && (
+            <div className="flex-1 overflow-hidden">
+              <StudyPlanLab
+                bookId={bookId}
+                bookTitle={uploadedFile?.name ?? undefined}
+                pageTextByPage={pageTextByPage}
+                uploadedFile={uploadedFile}
+                chapterProgressList={chapterProgressList}
+                courseProgress={courseProgress}
+                nextTopicRecommendation={nextTopicRecommendation}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+              />
+            </div>
+          )}
+
+          {/* Overview sub-tab */}
+          {hubSubTab === "overview" && (
+          <div className="flex-1 overflow-y-auto p-4">
           <ErrorBoundary
             onError={(error) => {
               console.error("📚 Syllabus Error:", { message: error.message, stack: error.stack });
@@ -4688,6 +4781,8 @@ export default function ThoughtUnitReader() {
               </div>
             )}
           </ErrorBoundary>
+          </div>
+          )}
         </div>
       );
     }
@@ -4882,39 +4977,6 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🎯 Recall Lab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("podcast", "podcast")}
-            data-testid="nav-podcast"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
-              activeShellTab === "podcast"
-                ? "bg-violet-600 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🎙️ PodcastLab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("studyguide", "studyguide")}
-            data-testid="nav-studyguide"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeShellTab === "studyguide"
-                ? "bg-teal-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🏗 Study Guide Lab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("studyplan", "studyplan")}
-            data-testid="nav-studyplan"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeShellTab === "studyplan"
-                ? "bg-fuchsia-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🧪 Study Plan Lab
           </button>
           <button
             onClick={() => {
