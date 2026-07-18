@@ -208,6 +208,184 @@ function SetupForm({ onSave }: SetupFormProps) {
   );
 }
 
+/* ─── Shared tab types ──────────────────────────────────────────────────────── */
+
+type ElenaTab = "home" | "library" | "progress";
+
+const ELENA_TABS: { id: ElenaTab; icon: string; label: string }[] = [
+  { id: "home",     icon: "🏠", label: "Home"     },
+  { id: "library",  icon: "📚", label: "Library"  },
+  { id: "progress", icon: "🌟", label: "Progress" },
+];
+
+/* ─── Library tab ───────────────────────────────────────────────────────────── */
+
+const INTEREST_EMOJI: Record<string, string> = {
+  Animals: "🐾", Space: "🚀", Dinosaurs: "🦕", Art: "🎨", Music: "🎵",
+  Sports: "⚽", Science: "🔬", Math: "🔢", History: "🏛️", Cooking: "🍳",
+  Nature: "🌿", Technology: "💻",
+};
+
+function LibraryTab({ profile, progress }: { profile: ChildProfile; progress: ChildProgress | null }) {
+  const booksCompleted = progress?.booksCompleted ?? 0;
+  const totalSessions  = progress?.totalSessions ?? 0;
+
+  const BOOK_EMOJIS = ["📘", "📗", "📙", "📕", "📔", "📒", "📓"];
+
+  return (
+    <div className="h-full overflow-auto p-5">
+      {/* My books */}
+      <div className="mb-5">
+        <h2 className="text-lg font-bold text-white mb-1">📚 My Books</h2>
+        <p className="text-indigo-300 text-sm mb-3">
+          {booksCompleted === 0
+            ? "Open the Reader to start your first book!"
+            : `${booksCompleted} ${booksCompleted === 1 ? "book" : "books"} completed!`}
+        </p>
+        {/* Bookshelf */}
+        <div className="flex flex-wrap gap-2 min-h-[48px] rounded-2xl border border-indigo-400/20 bg-indigo-500/5 p-3">
+          {booksCompleted === 0 ? (
+            <span className="text-indigo-400/40 text-sm italic self-center">Your bookshelf is empty — start reading!</span>
+          ) : (
+            Array.from({ length: Math.min(booksCompleted, 14) }).map((_, i) => (
+              <span key={i} className="text-3xl leading-none" title={`Book ${i + 1}`}>
+                {BOOK_EMOJIS[i % BOOK_EMOJIS.length]}
+              </span>
+            ))
+          )}
+          {booksCompleted > 14 && (
+            <span className="text-indigo-300 text-sm self-center font-semibold">+{booksCompleted - 14} more</span>
+          )}
+        </div>
+        {booksCompleted > 0 && (
+          <p className="text-[11px] text-indigo-400/60 mt-1.5 text-right">{totalSessions} reading sessions total</p>
+        )}
+      </div>
+
+      {/* Reading topics */}
+      {profile.interests.length > 0 && (
+        <div className="mb-5">
+          <h2 className="text-base font-bold text-white mb-2">❤️ Topics I Love</h2>
+          <div className="flex flex-wrap gap-2">
+            {profile.interests.map(interest => (
+              <div key={interest}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-violet-500/15 border border-violet-400/25 text-violet-200 text-sm font-medium">
+                <span>{INTEREST_EMOJI[interest] ?? "✨"}</span>
+                <span>{interest}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reading adventures */}
+      <div className="rounded-2xl border border-teal-400/20 bg-teal-500/5 p-4">
+        <h2 className="text-base font-bold text-teal-200 mb-3">🗺️ Reading Adventures</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { icon: "📖", label: "Sessions",        value: String(totalSessions)  },
+            { icon: "📚", label: "Books Done",       value: String(booksCompleted) },
+            { icon: "⏱️", label: "Total Minutes",    value: progress?.totalMinutes ? `${progress.totalMinutes}` : "—" },
+            { icon: "✍️", label: "Words Explored",   value: progress?.totalWordsRead ? `${progress.totalWordsRead}` : "—" },
+          ].map(({ icon, label, value }) => (
+            <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
+              <div className="text-xl mb-0.5">{icon}</div>
+              <div className="text-lg font-bold text-white tabular-nums">{value}</div>
+              <div className="text-[10px] text-slate-400">{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Progress tab ──────────────────────────────────────────────────────────── */
+
+const LEVEL_INFO: Record<string, { icon: string; label: string; desc: string; color: string }> = {
+  emergent:     { icon: "🌱", label: "Emergent Reader",    desc: "Just starting out — every page is an adventure!",    color: "text-green-300" },
+  early:        { icon: "🐣", label: "Early Reader",       desc: "Words are coming together — keep it up!",            color: "text-yellow-300" },
+  developing:   { icon: "📖", label: "Developing Reader",  desc: "Getting stronger every day!",                        color: "text-blue-300"   },
+  transitional: { icon: "🚀", label: "Transitional Reader",desc: "Reading is becoming second nature!",                 color: "text-purple-300" },
+  fluent:       { icon: "⭐", label: "Fluent Reader",      desc: "Reading flows! You make it look easy.",              color: "text-yellow-200" },
+  advanced:     { icon: "🏆", label: "Advanced Reader",    desc: "Outstanding! You're a reading champion.",            color: "text-orange-300" },
+};
+
+function ProgressTab({ rewards, progress }: { rewards: ChildRewardState; progress: ChildProgress | null }) {
+  const level     = progress?.currentLevel ?? "developing";
+  const levelInfo = LEVEL_INFO[level] ?? LEVEL_INFO.developing;
+  const earned    = ACHIEVEMENTS.filter(a => a.test(rewards));
+  const locked    = ACHIEVEMENTS.filter(a => !a.test(rewards));
+
+  return (
+    <div className="h-full overflow-auto p-5">
+      {/* Level badge */}
+      <div className="mb-5 rounded-2xl border border-purple-400/30 bg-purple-500/10 p-4 text-center">
+        <div className="text-4xl mb-1">{levelInfo.icon}</div>
+        <div className={`text-lg font-bold ${levelInfo.color} mb-0.5`}>{levelInfo.label}</div>
+        <div className="text-indigo-300 text-sm">{levelInfo.desc}</div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        {[
+          { icon: "⭐", label: "Total Stars",      value: String(rewards.totalStars)              },
+          { icon: "🔥", label: "Best Streak",      value: `${rewards.longestStreak} days`         },
+          { icon: "🔥", label: "Current Streak",   value: `${rewards.currentStreak} days`         },
+          { icon: "📚", label: "Sessions Done",    value: String(progress?.totalSessions ?? 0)    },
+          { icon: "📘", label: "Books Completed",  value: String(progress?.booksCompleted ?? 0)   },
+          { icon: "⏱️", label: "Minutes Read",     value: progress?.totalMinutes ? String(progress.totalMinutes) : "—" },
+        ].map(({ icon, label, value }) => (
+          <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
+            <div className="text-xl mb-0.5">{icon}</div>
+            <div className="text-lg font-bold text-white tabular-nums">{value}</div>
+            <div className="text-[10px] text-slate-400">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* All achievements */}
+      <h2 className="text-base font-bold text-white mb-3">🏅 Achievements</h2>
+
+      {earned.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[11px] text-yellow-400/70 font-semibold mb-2 uppercase tracking-wide">Earned ({earned.length})</div>
+          <div className="space-y-2">
+            {earned.map(a => (
+              <div key={a.id} className="flex items-center gap-3 rounded-xl bg-yellow-400/10 border border-yellow-400/25 px-3 py-2.5">
+                <span className="text-2xl">{a.icon}</span>
+                <div>
+                  <div className="text-yellow-200 font-semibold text-sm">{a.label}</div>
+                  <div className="text-yellow-400/60 text-[11px]">{a.desc}</div>
+                </div>
+                <span className="ml-auto text-yellow-300 text-sm">✓</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {locked.length > 0 && (
+        <div>
+          <div className="text-[11px] text-slate-500 font-semibold mb-2 uppercase tracking-wide">Locked ({locked.length})</div>
+          <div className="space-y-2">
+            {locked.map(a => (
+              <div key={a.id} className="flex items-center gap-3 rounded-xl bg-white/3 border border-white/8 px-3 py-2.5 opacity-50">
+                <span className="text-2xl grayscale">{a.icon}</span>
+                <div>
+                  <div className="text-slate-300 font-semibold text-sm">{a.label}</div>
+                  <div className="text-slate-500 text-[11px]">{a.desc}</div>
+                </div>
+                <span className="ml-auto text-slate-500 text-sm">🔒</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Home screen ───────────────────────────────────────────────────────────── */
 
 interface HomeScreenProps {
@@ -390,10 +568,11 @@ function makeDefaultProgress(childProfileId: string): ChildProgress {
 }
 
 export default function ElenaChildWorkspace() {
-  const [profile,  setProfile]  = useState<ChildProfile | null>(null);
-  const [rewards,  setRewards]  = useState<ChildRewardState | null>(null);
-  const [progress, setProgress] = useState<ChildProgress | null>(null);
-  const [loading,  setLoading]  = useState(true);
+  const [profile,   setProfile]   = useState<ChildProfile | null>(null);
+  const [rewards,   setRewards]   = useState<ChildRewardState | null>(null);
+  const [progress,  setProgress]  = useState<ChildProgress | null>(null);
+  const [loading,   setLoading]   = useState(true);
+  const [activeTab, setActiveTab] = useState<ElenaTab>("home");
 
   useEffect(() => {
     const savedId = localStorage.getItem(STORAGE_KEY);
@@ -449,13 +628,47 @@ export default function ElenaChildWorkspace() {
   }
 
   if (!profile || !rewards) return <SetupForm onSave={handleSave} />;
+
   return (
-    <HomeScreen
-      profile={profile}
-      rewards={rewards}
-      progress={progress}
-      onReset={handleReset}
-      onLogSession={handleLogSession}
-    />
+    <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950">
+      {/* Tab content — fills available height above bottom nav */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {activeTab === "home" && (
+          <HomeScreen
+            profile={profile}
+            rewards={rewards}
+            progress={progress}
+            onReset={handleReset}
+            onLogSession={handleLogSession}
+          />
+        )}
+        {activeTab === "library" && (
+          <LibraryTab profile={profile} progress={progress} />
+        )}
+        {activeTab === "progress" && (
+          <ProgressTab rewards={rewards} progress={progress} />
+        )}
+      </div>
+
+      {/* Bottom nav */}
+      <div className="flex-shrink-0 border-t border-white/10 bg-slate-950/80 backdrop-blur-sm">
+        <div className="flex">
+          {ELENA_TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 transition-colors ${
+                activeTab === tab.id
+                  ? "text-indigo-300 border-t-2 border-indigo-400"
+                  : "text-slate-500 hover:text-slate-300 border-t-2 border-transparent"
+              }`}
+            >
+              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="text-[10px] font-medium">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
