@@ -24,6 +24,8 @@ export const StructureCandidateSchema = z.object({
   endPage:    z.number().int().min(1).optional(),
   source:     z.enum(["bookmark", "toc", "heading", "uploaded", "ai-inferred"]),
   confidence: z.number().min(0).max(1),
+  // PR B graph references — backfilled incrementally; absent on existing records
+  canonicalAnchorId: z.string().optional(),
 });
 export type StructureCandidate = z.infer<typeof StructureCandidateSchema>;
 
@@ -95,6 +97,9 @@ export interface AdaptiveChapter {
   recommendedOrder:    number;
   concepts:            string[];
   confidence:          number;
+  // PR B graph references — backfilled incrementally; absent on existing records
+  canonicalAnchorIds?: string[];
+  knowledgeNodeIds?:   string[];
 }
 
 // ── Full adaptive syllabus (stored per bookId) ────────────────────────────
@@ -119,4 +124,6 @@ export interface AdaptiveSyllabus {
   schemaVersion:    number;
 
   validationIssues: SyllabusValidationIssue[] | null;
+  // PR B graph reference — links to the BookIntelligence that drove this syllabus
+  bookIntelligenceRef?: { documentId: string; version: number };
 }
