@@ -5123,7 +5123,7 @@ export default function ThoughtUnitReader() {
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🎯 Recall
+            🧠 Recall
           </button>
           <button
             onClick={() => {
