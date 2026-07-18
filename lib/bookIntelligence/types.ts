@@ -145,6 +145,14 @@ export type ReasoningStrategy = {
 
 /* ─── Combined BookIntelligence ───────────────────────────────────────────── */
 
+/**
+ * Quality of the classification result:
+ *   "classified"           — confident result backed by adequate evidence
+ *   "provisional"          — best-effort result; more evidence would improve it
+ *   "insufficient-evidence" — too little signal to classify reliably; treat as unknown
+ */
+export type ClassificationStatus = "classified" | "provisional" | "insufficient-evidence";
+
 export type BookIntelligence = {
   /** Matches the document's IDB key */
   documentId: string;
@@ -154,6 +162,8 @@ export type BookIntelligence = {
   /** 0–1 confidence in the complexity judgment */
   complexityConfidence: number;
   reasoningStrategy: ReasoningStrategy;
+  /** Quality of this classification result */
+  classificationStatus: ClassificationStatus;
   /** Unix ms timestamp of last computation */
   computedAt: number;
   /** Increment when the schema changes to trigger re-classification */
@@ -195,3 +205,11 @@ export type AdaptiveSyllabusMetadata = {
 };
 
 export const BOOK_INTELLIGENCE_VERSION = 1;
+
+/** Thresholds for classificationStatus derivation */
+export const CLASSIFICATION_THRESHOLDS = {
+  /** confidence >= this → "classified" */
+  classified: 0.65,
+  /** confidence >= this → "provisional"; below → "insufficient-evidence" */
+  provisional: 0.30,
+} as const;

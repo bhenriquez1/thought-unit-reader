@@ -21,11 +21,15 @@ import type {
   LearningCharacteristics,
   BookComplexity,
   ClassificationEvidence,
+  ClassificationStatus,
   Domain,
   DocumentType,
   InstructionalStyle,
 } from "@/lib/bookIntelligence/types";
-import { BOOK_INTELLIGENCE_VERSION } from "@/lib/bookIntelligence/types";
+import {
+  BOOK_INTELLIGENCE_VERSION,
+  CLASSIFICATION_THRESHOLDS,
+} from "@/lib/bookIntelligence/types";
 import { getReasoningStrategy } from "@/lib/bookIntelligence/reasoningStrategies";
 
 export const config = {
@@ -130,58 +134,92 @@ const VALID_COMPLEXITIES: BookComplexity[] = [
   "introductory","intermediate","advanced","expert",
 ];
 
-function parseAiResponse(raw: string, documentId: string): BookIntelligence | null {
+/** Clamp a value to [0, 1]; default to 0.5 when not a number. */
+function clamp01(v: unknown): number {
+  return typeof v === "number" ? Math.min(1, Math.max(0, v)) : 0.5;
+}
+
+function deriveClassificationStatus(confidence: number, evidenceCount: number): ClassificationStatus {
+  if (confidence >= CLASSIFICATION_THRESHOLDS.classified && evidenceCount > 0) return "classified";
+  if (confidence >= CLASSIFICATION_THRESHOLDS.provisional) return "provisional";
+  return "insufficient-evidence";
+}
+
+/**
+ * Parse and normalize a raw AI response string into a BookIntelligence record.
+ * Returns null only if the JSON is entirely unparseable — all other problems
+ * are normalized to safe defaults.
+ */
+export function parseAiResponse(raw: string, documentId: string): BookIntelligence | null {
+  let j: any;
   try {
-    const j = JSON.parse(raw);
-
-    const classification: BookClassification = {
-      primaryDomain: (typeof j.primaryDomain === "string" ? j.primaryDomain : "unknown") as Domain,
-      secondaryDomains: Array.isArray(j.secondaryDomains)
-        ? j.secondaryDomains.filter((d: any) => typeof d === "string") as Domain[]
-        : [],
-      documentType: VALID_DOCUMENT_TYPES.includes(j.documentType) ? j.documentType : "unknown",
-      instructionalStyle: VALID_INSTRUCTIONAL_STYLES.includes(j.instructionalStyle)
-        ? j.instructionalStyle : "mixed",
-      confidence: typeof j.confidence === "number" ? Math.min(1, Math.max(0, j.confidence)) : 0.5,
-      evidence: Array.isArray(j.evidence)
-        ? j.evidence.slice(0, 8).map((e: any): ClassificationEvidence => ({
-            signal: e.signal ?? "page-sample",
-            excerpt: String(e.excerpt ?? "").slice(0, 80),
-            weight: typeof e.weight === "number" ? Math.min(1, Math.max(0, e.weight)) : 0.5,
-          }))
-        : [],
-    };
-
-    const lc = j.learningCharacteristics ?? {};
-    const clamp = (v: any) => typeof v === "number" ? Math.min(1, Math.max(0, v)) : 0.5;
-    const learningCharacteristics: LearningCharacteristics = {
-      prerequisiteHeavy:  clamp(lc.prerequisiteHeavy),
-      conceptDense:       clamp(lc.conceptDense),
-      procedureHeavy:     clamp(lc.procedureHeavy),
-      calculationHeavy:   clamp(lc.calculationHeavy),
-      memorizationHeavy:  clamp(lc.memorizationHeavy),
-      caseBased:          clamp(lc.caseBased),
-      visualHeavy:        clamp(lc.visualHeavy),
-      discussionHeavy:    clamp(lc.discussionHeavy),
-    };
-
-    const complexity: BookComplexity = VALID_COMPLEXITIES.includes(j.complexity)
-      ? j.complexity : "intermediate";
-
-    return {
-      documentId,
-      classification,
-      learningCharacteristics,
-      complexity,
-      complexityConfidence: typeof j.complexityConfidence === "number"
-        ? Math.min(1, Math.max(0, j.complexityConfidence)) : 0.5,
-      reasoningStrategy: getReasoningStrategy(classification.primaryDomain),
-      computedAt: Date.now(),
-      version: BOOK_INTELLIGENCE_VERSION,
-    };
+    j = JSON.parse(raw);
   } catch {
     return null;
   }
+
+  const primaryDomain: Domain =
+    typeof j.primaryDomain === "string" && j.primaryDomain.trim()
+      ? (j.primaryDomain.trim() as Domain)
+      : "unknown";
+
+  // Deduplicate: remove primaryDomain from secondaryDomains if present
+  const rawSecondary: Domain[] = Array.isArray(j.secondaryDomains)
+    ? j.secondaryDomains
+        .filter((d: any) => typeof d === "string" && d.trim())
+        .map((d: string) => d.trim() as Domain)
+        .filter((d: Domain) => d !== primaryDomain)
+        // Remove duplicate secondary domains
+        .filter((d: Domain, i: number, arr: Domain[]) => arr.indexOf(d) === i)
+        .slice(0, 5) // cap secondary domains
+    : [];
+
+  const confidence = clamp01(j.confidence);
+
+  const evidence: ClassificationEvidence[] = Array.isArray(j.evidence)
+    ? j.evidence.slice(0, 8).map((e: any): ClassificationEvidence => ({
+        signal: typeof e?.signal === "string" ? e.signal : "page-sample",
+        excerpt: String(e?.excerpt ?? "").slice(0, 80),
+        weight: clamp01(e?.weight),
+      }))
+    : [];
+
+  const classification: BookClassification = {
+    primaryDomain,
+    secondaryDomains: rawSecondary,
+    documentType: VALID_DOCUMENT_TYPES.includes(j.documentType) ? j.documentType : "unknown",
+    instructionalStyle: VALID_INSTRUCTIONAL_STYLES.includes(j.instructionalStyle)
+      ? j.instructionalStyle : "mixed",
+    confidence,
+    evidence,
+  };
+
+  const lc = j.learningCharacteristics ?? {};
+  const learningCharacteristics: LearningCharacteristics = {
+    prerequisiteHeavy:  clamp01(lc.prerequisiteHeavy),
+    conceptDense:       clamp01(lc.conceptDense),
+    procedureHeavy:     clamp01(lc.procedureHeavy),
+    calculationHeavy:   clamp01(lc.calculationHeavy),
+    memorizationHeavy:  clamp01(lc.memorizationHeavy),
+    caseBased:          clamp01(lc.caseBased),
+    visualHeavy:        clamp01(lc.visualHeavy),
+    discussionHeavy:    clamp01(lc.discussionHeavy),
+  };
+
+  const complexity: BookComplexity = VALID_COMPLEXITIES.includes(j.complexity)
+    ? j.complexity : "intermediate";
+
+  return {
+    documentId,
+    classification,
+    learningCharacteristics,
+    complexity,
+    complexityConfidence: clamp01(j.complexityConfidence),
+    reasoningStrategy: getReasoningStrategy(classification.primaryDomain),
+    classificationStatus: deriveClassificationStatus(confidence, evidence.length),
+    computedAt: Date.now(),
+    version: BOOK_INTELLIGENCE_VERSION,
+  };
 }
 
 /* ─── Handler ────────────────────────────────────────────────────────────── */
@@ -232,10 +270,14 @@ export default async function handler(
           primaryDomain: intelligence.classification.primaryDomain,
           complexity: intelligence.complexity,
           confidence: intelligence.classification.confidence,
+          status: intelligence.classificationStatus,
         });
         return res.status(200).json({ intelligence, provider: "openai" });
       }
+      // Valid HTTP response but unparseable content — log internally, fall through to Anthropic
+      console.error("[CLASSIFY_DOCUMENT_OPENAI_PARSE_ERROR]", { rawLength: raw.length });
     } catch (err: any) {
+      // Log internally; never expose provider error details to the client
       console.error("[CLASSIFY_DOCUMENT_OPENAI_ERROR]", err?.message ?? String(err));
     }
   }
