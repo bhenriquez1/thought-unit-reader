@@ -621,7 +621,10 @@ export default function ThoughtUnitReader() {
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "podcast">("notes");
-  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph">("overview");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
+  const [coachQuestion, setCoachQuestion] = useState("");
+  const [coachResponse, setCoachResponse] = useState<string | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
   // NoteLab 3-column dashboard: which note's thought units/export tools the
   // left/right rails are currently bound to (the note currently expanded in
   // the center column's list) and which of its anchors was just clicked.
@@ -4652,6 +4655,7 @@ export default function ThoughtUnitReader() {
               { id: "weak",      label: "Weak Areas" },
               { id: "exam",      label: "Exam Readiness" },
               { id: "graph",     label: "Knowledge Graph" },
+              { id: "coach",     label: "AI Coach" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
@@ -5058,6 +5062,158 @@ export default function ThoughtUnitReader() {
                   Open DAT Apex →
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* AI Coach — personalized coaching via the student's progress context */}
+          {hubSubTab === "coach" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Coach header */}
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🤖</span>
+                <div>
+                  <div className="text-sm font-semibold text-white">AI Study Coach</div>
+                  <div className="text-[10px] text-slate-400">Personalized advice based on your progress</div>
+                </div>
+              </div>
+
+              {/* Quick prompts */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "What should I focus on today?",
+                  "How's my progress?",
+                  "Help me tackle my weakest area",
+                  "Give me a 30-min study plan",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setCoachQuestion(prompt)}
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800 border border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              {/* Text input */}
+              <div className="space-y-2">
+                <textarea
+                  value={coachQuestion}
+                  onChange={e => setCoachQuestion(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && coachQuestion.trim() && !coachLoading) {
+                      e.preventDefault();
+                      (async () => {
+                        setCoachLoading(true);
+                        setCoachResponse(null);
+                        const todayStr = new Date().toISOString().split("T")[0];
+                        const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
+                        try {
+                          const res = await fetch("/api/ai-coach", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              question: coachQuestion.trim(),
+                              context: {
+                                bookTitle: uploadedFile?.name ?? "Unknown",
+                                masteryPct: courseProgress?.overallMasteryPct ?? 0,
+                                readPct: courseProgress?.overallReadPct ?? 0,
+                                weakAreas: courseWeakAreas ?? [],
+                                nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
+                                currentPage,
+                                totalPages: pdfPageCount,
+                                todayTopics: todayPlan?.topics ?? [],
+                              },
+                            }),
+                          });
+                          const data = await res.json();
+                          setCoachResponse(data.response ?? data.error ?? "No response.");
+                        } catch {
+                          setCoachResponse("Coach unavailable. Check your connection and try again.");
+                        } finally {
+                          setCoachLoading(false);
+                        }
+                      })();
+                    }
+                  }}
+                  placeholder="Ask your coach anything about your study plan, weak areas, exam strategy…"
+                  rows={3}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/60 text-slate-200 text-[12px] px-3 py-2 resize-none focus:outline-none focus:border-indigo-500/60 placeholder:text-slate-600"
+                />
+                <button
+                  disabled={!coachQuestion.trim() || coachLoading}
+                  onClick={async () => {
+                    if (!coachQuestion.trim() || coachLoading) return;
+                    setCoachLoading(true);
+                    setCoachResponse(null);
+                    const todayStr = new Date().toISOString().split("T")[0];
+                    const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
+                    try {
+                      const res = await fetch("/api/ai-coach", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          question: coachQuestion.trim(),
+                          context: {
+                            bookTitle: uploadedFile?.name ?? "Unknown",
+                            masteryPct: courseProgress?.overallMasteryPct ?? 0,
+                            readPct: courseProgress?.overallReadPct ?? 0,
+                            weakAreas: courseWeakAreas ?? [],
+                            nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
+                            currentPage,
+                            totalPages: pdfPageCount,
+                            todayTopics: todayPlan?.topics ?? [],
+                          },
+                        }),
+                      });
+                      const data = await res.json();
+                      setCoachResponse(data.response ?? data.error ?? "No response.");
+                    } catch {
+                      setCoachResponse("Coach unavailable. Check your connection and try again.");
+                    } finally {
+                      setCoachLoading(false);
+                    }
+                  }}
+                  className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-semibold transition-colors"
+                >
+                  {coachLoading ? "Thinking…" : "Ask Coach  ⌘↵"}
+                </button>
+              </div>
+
+              {/* Coach response */}
+              {coachResponse && (
+                <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2">Coach Says</div>
+                  <div className="text-[12px] text-slate-200 whitespace-pre-wrap leading-relaxed">{coachResponse}</div>
+                </div>
+              )}
+
+              {/* Context snapshot shown to the coach */}
+              {bookId && courseProgress && (
+                <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Your Progress Snapshot</div>
+                  <div className="space-y-1">
+                    {[
+                      [`📖 Read`, `${Math.round(courseProgress.overallReadPct)}%`],
+                      [`🏆 Mastery`, `${Math.round(courseProgress.overallMasteryPct)}%`],
+                      [`🔴 Weak areas`, courseWeakAreas?.length ? courseWeakAreas.slice(0, 2).join(", ") : "None yet"],
+                      [`📍 Next topic`, nextTopicRecommendation?.chapterTitle ?? "—"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">{label}</span>
+                        <span className="text-slate-300 font-medium truncate max-w-[55%] text-right">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!bookId && (
+                <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
+                  <div className="text-3xl mb-3">🤖</div>
+                  <div className="text-sm">Load a book to get personalized coaching</div>
+                </div>
+              )}
             </div>
           )}
 

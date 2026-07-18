@@ -155,8 +155,8 @@ export const PODCAST_MODES: Array<{
     label: "Exam Cram",
     icon: "🎯",
     description: "High-yield rapid review — facts, mechanisms, quiz breaks",
-    hostVoice: "echo",
-    guestVoice: "echo",
+    hostVoice: "onyx",
+    guestVoice: "alloy",
   },
   {
     id: "clinical",
