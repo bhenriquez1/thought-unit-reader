@@ -32,6 +32,7 @@ import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommen
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
+import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
@@ -615,6 +616,9 @@ export default function ThoughtUnitReader() {
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
+  // Sub-tab selections within consolidated panels
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "podcast">("notes");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph">("overview");
   // NoteLab 3-column dashboard: which note's thought units/export tools the
   // left/right rails are currently bound to (the note currently expanded in
   // the center column's list) and which of its anchors was just clicked.
@@ -4424,10 +4428,62 @@ export default function ThoughtUnitReader() {
     if (activeShellTab === "notelab") {
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
-          <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">Generated study notes · saved locally</div>
+          <div className="border-b border-white/10 px-4 py-2 flex-shrink-0 flex items-center gap-2">
+            <div className="flex-1">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
+            </div>
+            <div className="flex gap-1">
+              {(["notes", "studyguide", "podcast"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setNotesSubTab(v)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                    notesSubTab === v
+                      ? "bg-emerald-600/20 text-emerald-300 border border-emerald-600/30"
+                      : "text-slate-400 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🎧 Listen"}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Study Sheet sub-tab */}
+          {notesSubTab === "studyguide" && (
+            <div className="flex-1 overflow-hidden">
+              <StudyGuideLab
+                bookId={bookId}
+                bookTitle={uploadedFile?.name ?? undefined}
+                currentPage={currentPage}
+                studyModel={currentPageStudyModel}
+                pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+                onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+                onPodcastScript={(script) => setStudyGuideScript(script)}
+              />
+            </div>
+          )}
+
+          {/* Listen sub-tab */}
+          {notesSubTab === "podcast" && (
+            <div className="flex-1 overflow-hidden">
+              <PodcastLab
+                studyModel={currentPageStudyModel}
+                pageNumber={currentPage}
+                bookId={bookId}
+                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+                initialScript={studyGuideScript}
+                explainItSeed={explainItPodcastSeed}
+                onDiscussSegment={handleDiscussPodcastSegment}
+              />
+            </div>
+          )}
+
+          {/* Notes sub-tab */}
+          {notesSubTab === "notes" && (
           <div className="flex-1 flex overflow-hidden">
             {/* Left: Thought Unit navigation for the currently open note */}
             <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
@@ -4538,6 +4594,7 @@ export default function ThoughtUnitReader() {
               )}
             </div>
           </div>
+          )}
         </div>
       );
     }
@@ -4566,16 +4623,144 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus View - upload → parse → auto-TOC → jump/study
+    // ✅ Learning Hub — Book Roadmap · Study Plan (consolidated)
     if (activeShellTab === "syllabus") {
       return (
-        <div className="h-full overflow-y-auto p-4" data-testid="syllabus-view-container">
+        <div className="h-full flex flex-col overflow-hidden" data-testid="syllabus-view-container">
+          {/* Sub-tab bar */}
+          <div className="border-b border-white/10 px-3 py-2 flex-shrink-0 flex items-center gap-1 bg-slate-950/60 overflow-x-auto">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mr-2 shrink-0">Learning Hub</span>
+            {([
+              { id: "overview",  label: "Overview" },
+              { id: "today",     label: "Today" },
+              { id: "roadmap",   label: "Book Roadmap" },
+              { id: "studyplan", label: "Study Plan" },
+              { id: "mastery",   label: "Mastery" },
+              { id: "weak",      label: "Weak Areas" },
+              { id: "exam",      label: "Exam Readiness" },
+              { id: "graph",     label: "Knowledge Graph" },
+            ] as const).map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setHubSubTab(id)}
+                className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  hubSubTab === id
+                    ? "bg-indigo-600/20 text-indigo-300 border border-indigo-600/30"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Overview — quick summary dashboard */}
+          {hubSubTab === "overview" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {bookId ? (
+                <>
+                  <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Active Book</div>
+                    <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
+                    <div className="mt-2 flex gap-4 text-[11px] text-slate-400">
+                      <span>{chapterProgressList.length} chapters</span>
+                      <span>p.{currentPage} / {pdfPageCount}</span>
+                      {courseProgress && <span>{Math.round((courseProgress.completedChapters / Math.max(courseProgress.totalChapters, 1)) * 100)}% complete</span>}
+                    </div>
+                  </div>
+                  {nextTopicRecommendation && (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Up Next</div>
+                      <div className="text-sm text-white">{nextTopicRecommendation.chapterTitle}</div>
+                      <button onClick={() => setHubSubTab("today")} className="mt-2 text-[11px] text-emerald-300 hover:text-emerald-200">View today's plan →</button>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { id: "today",     label: "Today's Plan",     icon: "📅" },
+                      { id: "roadmap",   label: "Book Roadmap",     icon: "🗺" },
+                      { id: "studyplan", label: "Study Plan",       icon: "🧪" },
+                      { id: "mastery",   label: "Mastery",          icon: "🏆" },
+                      { id: "weak",      label: "Weak Areas",       icon: "⚠️" },
+                      { id: "exam",      label: "Exam Readiness",   icon: "🎯" },
+                    ] as const).map(({ id, label, icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => setHubSubTab(id)}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
+                      >
+                        <span className="text-base">{icon}</span>
+                        <span className="text-[12px] font-medium text-slate-200">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
+                  <div className="text-3xl mb-3">📚</div>
+                  <div className="text-sm">Load a book to see your learning overview</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Today — next session focus */}
+          {hubSubTab === "today" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Today&apos;s Focus</div>
+              {nextTopicRecommendation && (
+                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Recommended Next</div>
+                  <div className="text-sm font-medium text-white">{nextTopicRecommendation.chapterTitle}</div>
+                  {nextTopicRecommendation.page && (
+                    <button
+                      onClick={() => { syncToPage(nextTopicRecommendation.page); trySwitchShellTab("reader", "reader"); }}
+                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
+                    >
+                      Jump to p.{nextTopicRecommendation.page} →
+                    </button>
+                  )}
+                </div>
+              )}
+              {syllabusStudyPlan.length > 0 && (() => {
+                const todaySession = syllabusStudyPlan.find(day => !day.pages.some((p: { start: number; end: number }) =>
+                  Array.from(syllabusStudiedPages).some((sp: number) => sp >= p.start && sp <= p.end)
+                ));
+                if (!todaySession) return null;
+                return (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Next Study Session</div>
+                    <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
+                    <div className="mt-1 flex gap-3 text-[10px] text-slate-400">
+                      <span>{todaySession.date}</span>
+                      <span>~{todaySession.estimatedMinutes} min</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const page = todaySession.pages[0]?.start;
+                        if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
+                      }}
+                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
+                    >
+                      Start reading →
+                    </button>
+                  </div>
+                );
+              })()}
+              {!nextTopicRecommendation && !syllabusStudyPlan.length && (
+                <div className="text-center text-slate-500 text-sm py-10">No plan yet. Upload a syllabus or load a book to generate one.</div>
+              )}
+            </div>
+          )}
+
+          {/* Book Roadmap — TocTree + ChapterDashboard */}
+          {hubSubTab === "roadmap" && (
+          <div className="flex-1 overflow-y-auto p-4">
           <ErrorBoundary
             onError={(error) => {
               console.error("📚 Syllabus Error:", { message: error.message, stack: error.stack });
             }}
           >
-            {/* AI Adaptive Syllabus — shown whenever a book is loaded */}
             {bookId && syllabusToc.length > 0 && (
               <div className="mb-4">
                 <AdaptiveSyllabusPanel
@@ -4631,53 +4816,6 @@ export default function ThoughtUnitReader() {
                   prerequisiteChain={coursePrerequisiteChain}
                 />
 
-                {/* ── CollegeCal-style study plan ── */}
-                {syllabusStudyPlan.length > 0 && (
-                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-                    <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Study Plan · {syllabusStudyPlan.length} sessions</div>
-                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
-                      {syllabusStudyPlan.map((day, idx) => {
-                        const isStudied = day.pages.some((p) =>
-                          Array.from(syllabusStudiedPages).some((sp) => sp >= p.start && sp <= p.end)
-                        );
-                        const label = day.topics[0] ?? `Session ${idx + 1}`;
-                        const targetPage = day.pages[0]?.start ?? 1;
-                        const weekNum = idx + 1;
-                        return (
-                          <button
-                            key={day.blockId ?? idx}
-                            onClick={() => {
-                              if (targetPage) handleSyllabusNodeClick({ id: day.blockId, title: label, page: targetPage, kind: day.isExamDay ? "exam" : "topic" });
-                            }}
-                            className={`w-full text-left rounded-lg px-3 py-2 text-sm transition-colors ${
-                              day.isExamDay
-                                ? "bg-rose-900/40 border border-rose-500/30 hover:bg-rose-900/60"
-                                : isStudied
-                                ? "bg-emerald-900/30 border border-emerald-500/20 hover:bg-emerald-900/50"
-                                : "bg-slate-800/60 border border-white/5 hover:bg-slate-700/60"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-white truncate">{label}</span>
-                              <span className={`shrink-0 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded ${
-                                day.isExamDay ? "bg-rose-500/40 text-rose-200" :
-                                isStudied ? "bg-emerald-500/40 text-emerald-200" : "bg-slate-600/60 text-slate-400"
-                              }`}>
-                                {day.isExamDay ? "Exam" : isStudied ? "Done" : `Wk ${weekNum}`}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 flex gap-3 text-[10px] text-slate-400">
-                              <span>{day.date}</span>
-                              {targetPage > 0 && <span>p.{targetPage}</span>}
-                              <span>~{day.estimatedMinutes}min</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 <TocTree
                   toc={syllabusToc}
                   activePage={currentPage}
@@ -4687,6 +4825,111 @@ export default function ThoughtUnitReader() {
               </div>
             )}
           </ErrorBoundary>
+          </div>
+          )}
+
+          {/* Study Plan sub-tab */}
+          {hubSubTab === "studyplan" && (
+            <div className="flex-1 overflow-hidden">
+              <StudyPlanLab
+                bookId={bookId}
+                bookTitle={uploadedFile?.name ?? undefined}
+                pageTextByPage={pageTextByPage}
+                uploadedFile={uploadedFile}
+                chapterProgressList={chapterProgressList}
+                courseProgress={courseProgress}
+                nextTopicRecommendation={nextTopicRecommendation}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+              />
+            </div>
+          )}
+
+          {/* Mastery — chapter-level mastery breakdown */}
+          {hubSubTab === "mastery" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Mastery</div>
+              {chapterProgressList.length > 0 ? (
+                <div className="space-y-2">
+                  {chapterProgressList.map((ch, idx) => {
+                    const pct = ch.progress.masteryPct ?? 0;
+                    const color = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-rose-500";
+                    return (
+                      <div key={idx} className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[12px] font-medium text-white truncate">{ch.chapter.title ?? `Chapter ${idx + 1}`}</span>
+                          <span className="text-[11px] text-slate-400 ml-2 shrink-0">{Math.round(pct)}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
+                          <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center text-slate-500 text-sm py-10">Read chapters to build mastery data.</div>
+              )}
+            </div>
+          )}
+
+          {/* Weak Areas */}
+          {hubSubTab === "weak" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-rose-400">Weak Areas</div>
+              {courseWeakAreas && courseWeakAreas.length > 0 ? (
+                <div className="space-y-2">
+                  {courseWeakAreas.map((area: string, idx: number) => (
+                    <div key={idx} className="flex items-start gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 px-3 py-2">
+                      <span className="text-rose-400 text-sm mt-0.5">⚠️</span>
+                      <span className="text-[12px] text-slate-200">{area}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-slate-500 text-sm py-10">No weak areas detected yet. Complete more chapters to see gaps.</div>
+              )}
+            </div>
+          )}
+
+          {/* Exam Readiness */}
+          {hubSubTab === "exam" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Exam Readiness</div>
+              {courseProgress ? (
+                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-400">Chapters completed</span>
+                    <span className="text-white font-medium">{courseProgress.completedChapters} / {courseProgress.totalChapters}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
+                    <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.round((courseProgress.completedChapters / Math.max(courseProgress.totalChapters, 1)) * 100)}%` }} />
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4 text-center">
+                <div className="text-2xl mb-2">🎯</div>
+                <div className="text-sm text-slate-300 font-medium">DAT Apex Practice Exams</div>
+                <div className="text-[11px] text-slate-500 mt-1">Full-length simulations with section scoring</div>
+                <button
+                  onClick={() => { router.push("/apex"); }}
+                  className="mt-3 px-4 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-500/30 text-indigo-200 text-[12px] font-medium hover:bg-indigo-600/50 transition-colors"
+                >
+                  Open DAT Apex →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge Graph — scaffold */}
+          {hubSubTab === "graph" && (
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center gap-4 text-center">
+              <div className="text-4xl">🕸</div>
+              <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
+              <div className="text-[12px] text-slate-500 max-w-xs">
+                Visual map of concepts, their relationships, and your mastery across chapters. Coming soon.
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -4696,7 +4939,7 @@ export default function ThoughtUnitReader() {
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
           <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Recall Lab</div>
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Recall</div>
             <div className="mt-0.5 text-[11px] text-slate-500">Memory-engineering layer · flip cards · active recall</div>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -4726,14 +4969,7 @@ export default function ThoughtUnitReader() {
     }
 
     if (activeShellTab === "elena") {
-      return (
-        <UnderConstructionPanel
-          icon="✨"
-          title="Elena Mode (Under Construction)"
-          subtitle="Guided Elena workflows are in active development."
-          bullets={["Premium tutoring flow", "Adaptive coaching", "Session memory", "Voice-guided review"]}
-        />
-      );
+      return <ElenaChildWorkspace />;
     }
 
     if (activeShellTab === "podcast") {
@@ -4887,40 +5123,7 @@ export default function ThoughtUnitReader() {
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🎯 Recall Lab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("podcast", "podcast")}
-            data-testid="nav-podcast"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
-              activeShellTab === "podcast"
-                ? "bg-violet-600 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🎙️ PodcastLab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("studyguide", "studyguide")}
-            data-testid="nav-studyguide"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeShellTab === "studyguide"
-                ? "bg-teal-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🏗 Study Guide Lab
-          </button>
-          <button
-            onClick={() => trySwitchShellTab("studyplan", "studyplan")}
-            data-testid="nav-studyplan"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeShellTab === "studyplan"
-                ? "bg-fuchsia-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🧪 Study Plan Lab
+            🎯 Recall
           </button>
           <button
             onClick={() => {
@@ -4928,7 +5131,7 @@ export default function ThoughtUnitReader() {
                 const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for DAT Apex?");
                 if (!ok) return;
               }
-              router.push("/dat-apex");
+              router.push("/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
             title="Open DAT Apex"
@@ -4937,10 +5140,15 @@ export default function ThoughtUnitReader() {
           </button>
           <button
             onClick={() => trySwitchShellTab("elena", "elena")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
-            title="Elena Mode is under construction."
+            data-testid="nav-elena"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
+              activeShellTab === "elena"
+                ? "bg-violet-700 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+            title="Elena Mode — personalized child learning"
           >
-            Elena Mode (Under Construction)
+            ✨ Elena Mode
           </button>
                   </div>
 

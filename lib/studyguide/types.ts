@@ -20,7 +20,7 @@ export type DatTargetScore = typeof DAT_TARGET_SCORES[number];
 export type PriorityLevel = 'High' | 'Medium' | 'Low';
 
 export const STUDY_GUIDE_MODE_LABELS: Record<StudyGuideMode, string> = {
-  dat:        'DAT Master Notes',
+  dat:        'Study Sheet',
   dental:     'Dental School Notes',
   topstudent: 'Top Student Notes',
   examcram:   'Exam Cram Mode',

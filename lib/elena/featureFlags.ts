@@ -34,6 +34,17 @@ export const ELENA_MODE_DEFAULT_FLAGS: ElenaModeFlags = {
 };
 
 /**
+ * Resolve flags from environment variables for use in Next.js pages/components.
+ * Set NEXT_PUBLIC_ELENA_MODE_ENABLED=true to enable Elena Mode for testing.
+ */
+export function resolveElenaModeFlagsFromEnv(): ElenaModeFlags {
+  const enabled =
+    typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_ELENA_MODE_ENABLED === "true";
+  return resolveElenaModeFlags({ ELENA_MODE_ENABLED: enabled });
+}
+
+/**
  * Merge stored or environment flags with safe defaults.
  * Unknown keys in `overrides` are ignored — new flags in defaults win.
  */
