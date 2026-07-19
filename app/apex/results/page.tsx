@@ -12,6 +12,8 @@ import { buildStudyRecommendation } from '@/lib/examEngine/recommendationEngine'
 import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/datProfile';
 import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
 import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
+import { useTocStore } from '@/lib/stores/tocStore';
+import { chapterForPage } from '@/lib/apex/bookCatalogue';
 
 const ANSWER_LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -72,7 +74,8 @@ interface ExamResults {
 export default function ExamResultsPage() {
   const [results, setResults] = useState<ExamResults | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'sections' | 'topics' | 'review'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'sections' | 'chapters' | 'topics' | 'review'>('overview');
+  const tocs = useTocStore((s) => s.tocs);
   const [tuModalOpen, setTuModalOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<DATQuestion | null>(null);
   const [selectedUserAnswer, setSelectedUserAnswer] = useState<string | undefined>(undefined);
@@ -376,17 +379,18 @@ export default function ExamResultsPage() {
       <div className="p-6">
         <div className="max-w-6xl mx-auto">
           {/* Tab Navigation */}
-          <div className="flex gap-1 mb-6 bg-gray-800/50 rounded-lg p-1">
+          <div className="flex flex-wrap gap-1 mb-6 bg-gray-800/50 rounded-lg p-1">
             {[
-              { id: 'overview', label: '📊 Overview', icon: '📊' },
-              { id: 'sections', label: '📚 Sections', icon: '📚' },
-              { id: 'topics', label: '🎯 Topics', icon: '🎯' },
-              { id: 'review', label: '🔍 Review', icon: '🔍' }
+              { id: 'overview', label: '📊 Overview' },
+              { id: 'sections', label: '📚 Sections' },
+              { id: 'chapters', label: '📑 Chapters' },
+              { id: 'topics', label: '🎯 Topics' },
+              { id: 'review', label: '🔍 Review' },
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                className={`flex-1 px-3 py-2 rounded-lg font-semibold transition-all text-sm ${
                   activeTab === tab.id
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -580,6 +584,79 @@ export default function ExamResultsPage() {
               ))}
             </div>
           )}
+
+          {/* Chapters Tab */}
+          {activeTab === 'chapters' && (() => {
+            const bookId = results.exam.questions.find((q) => q.sourceBookId)?.sourceBookId ?? '';
+            const toc = tocs[bookId] ?? null;
+            const tocItems = toc?.items ?? [];
+
+            const chapterMap = new Map<string, { correct: number; total: number; pages: number[] }>();
+            for (const question of results.exam.questions) {
+              const page = question.sourcePageNumber ?? 0;
+              const chapterTitle = tocItems.length > 0
+                ? chapterForPage(page, tocItems)
+                : page > 0
+                ? `Page ${page}`
+                : 'Unknown Chapter';
+              const response = results.attempt.responses.find((r) => r.questionId === question.id);
+              const isCorrect = response?.selectedAnswer === question.correctAnswer;
+              const entry = chapterMap.get(chapterTitle) ?? { correct: 0, total: 0, pages: [] };
+              entry.total += 1;
+              if (isCorrect) entry.correct += 1;
+              if (page > 0 && !entry.pages.includes(page)) entry.pages.push(page);
+              chapterMap.set(chapterTitle, entry);
+            }
+
+            const chapterRows = Array.from(chapterMap.entries())
+              .map(([title, stats]) => ({
+                title,
+                ...stats,
+                percentage: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
+                pageRange: stats.pages.length > 0
+                  ? `p.${Math.min(...stats.pages)}–${Math.max(...stats.pages)}`
+                  : '',
+              }))
+              .sort((a, b) => a.percentage - b.percentage);
+
+            return (
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold text-blue-400">📑 Chapter Breakdown</h3>
+                {chapterRows.length === 0 ? (
+                  <p className="text-sm text-gray-400">
+                    No chapter data — questions were not tagged with source pages.
+                  </p>
+                ) : (
+                  chapterRows.map((ch) => (
+                    <div key={ch.title} className="bg-gray-800/50 rounded-lg p-5">
+                      <div className="flex items-start justify-between mb-3 gap-3">
+                        <div>
+                          <h4 className="font-semibold text-white text-sm">{ch.title}</h4>
+                          {ch.pageRange && (
+                            <div className="text-xs text-gray-500 mt-0.5">{ch.pageRange}</div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className={`text-xl font-bold ${getScoreColor(ch.percentage)}`}>
+                            {ch.percentage}%
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {ch.correct} / {ch.total}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-700 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${getScoreBg(ch.percentage)}`}
+                          style={{ width: `${ch.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })()}
 
           {/* Topics Tab */}
           {activeTab === 'topics' && (

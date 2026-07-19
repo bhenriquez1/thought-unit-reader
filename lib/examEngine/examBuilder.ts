@@ -19,6 +19,9 @@ export interface ExamBuildOptions {
   sectionIds?: string[];          // subset of profile.sections to include; default all
   questionTypes?: QuestionType[]; // default profile.questionTypes
   randomize?: boolean;
+  /** Filter notes to these inclusive page ranges (chapter selection). */
+  chapterPageRanges?: { start: number; end: number }[];
+  practiceMode?: 'practice' | 'practice-exam' | 'full-dat';
 }
 
 export interface BuiltExam {
@@ -85,7 +88,17 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   const questionTypes = opts.questionTypes?.length ? opts.questionTypes : opts.profile.questionTypes;
 
   const eligibleNotes = notes.filter((n) => sectionIds.includes(matchSection(n, opts.profile)));
-  const pool = eligibleNotes.length > 0 ? eligibleNotes : notes;
+  let pool = eligibleNotes.length > 0 ? eligibleNotes : notes;
+
+  // Narrow to selected chapters when the generator provided page ranges.
+  if (opts.chapterPageRanges?.length) {
+    const chapterFiltered = pool.filter((n) =>
+      opts.chapterPageRanges!.some(
+        (r) => n.pageNumber >= r.start && n.pageNumber <= r.end,
+      ),
+    );
+    if (chapterFiltered.length > 0) pool = chapterFiltered;
+  }
 
   if (pool.length === 0) {
     return {

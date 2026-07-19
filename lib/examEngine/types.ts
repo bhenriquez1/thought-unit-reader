@@ -4,7 +4,7 @@
 // board-exam profiles plug into the same ExamProfile/EngineQuestion shapes
 // without changing this file.
 
-export type DifficultyLevel = "foundation" | "simulation" | "mastery";
+export type DifficultyLevel = "foundation" | "simulation" | "advanced" | "mastery";
 
 export type QuestionType =
   | "recognition"
