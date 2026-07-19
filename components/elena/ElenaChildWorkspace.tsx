@@ -173,7 +173,10 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
           <p className="text-indigo-300">Let's set up a learning space. Tell us a bit about the learner.</p>
         </div>
 
-        <div className="rounded-2xl border border-white/15 bg-white/5 backdrop-blur-xl p-6 space-y-5 shadow-xl">
+        <form
+          onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+          className="rounded-2xl border border-white/15 bg-white/5 backdrop-blur-xl p-6 space-y-5 shadow-xl"
+        >
           <div>
             <label className="block text-sm font-medium text-indigo-200 mb-1.5">
               Name <span className="text-red-400">*</span>
@@ -243,14 +246,13 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <button
-            type="button"
-            onClick={handleSave}
+            type="submit"
             disabled={saving || !displayName.trim()}
             className="w-full rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 font-semibold text-white transition-colors"
           >
             {saving ? "Setting up…" : "Create Learning Space →"}
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -1377,6 +1379,8 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
       saveChildProfile(p).then(() => null).catch((e: unknown) => e),
       saveRewardState(defaultRewards).then(() => null).catch((e: unknown) => e),
     ]);
+    if (profileErr) console.error("[Elena] saveChildProfile failed:", profileErr);
+    if (rewardErr)  console.error("[Elena] saveRewardState failed:",  rewardErr);
     if (profileErr || rewardErr) {
       const blocked = String(profileErr ?? rewardErr).includes("blocked");
       setPersistenceWarning(
