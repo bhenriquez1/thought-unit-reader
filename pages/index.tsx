@@ -5313,7 +5313,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    if (activeShellTab === "elena" && ELENA_ENABLED) {
+    if (activeShellTab === "elena") {
       return (
         <ElenaChildWorkspace
           bookTitle={uploadedFile?.name}
@@ -5490,7 +5490,6 @@ export default function ThoughtUnitReader() {
           >
             🎯 DAT Apex
           </button>
-          {ELENA_ENABLED && (
           <button
             onClick={() => trySwitchShellTab("elena", "elena")}
             data-testid="nav-elena"
@@ -5503,7 +5502,6 @@ export default function ThoughtUnitReader() {
           >
             ✨ Elena Mode
           </button>
-          )}
                   </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}

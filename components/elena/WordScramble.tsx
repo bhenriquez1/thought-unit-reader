@@ -182,7 +182,7 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
         <div className="flex gap-1.5 flex-wrap justify-center">
           {answer.split("").map((_, i) => {
             const tileId  = chosen[i];
-            const letter  = tileId ? tileId.split("-")[0] : null;
+            const letter  = tileId ? tileId.slice(0, tileId.lastIndexOf("-")) : null;
             return (
               <button
                 key={i}
