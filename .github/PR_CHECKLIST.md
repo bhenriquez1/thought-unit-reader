@@ -27,6 +27,9 @@ Copy this into every PR description, or verify each item before marking the PR r
 - [ ] `npx next lint` — no new lint errors
 - [ ] `npm run build` — build succeeds locally (or CI is trusted to catch this)
 - [ ] CI (CodeQL) is green — or failure is pre-existing and documented
+- [ ] **Browser smoke test run** — `npm run dev`, open each workspace this PR touches, and exercise the changed flow end-to-end in a real browser (see `TESTING_GUIDELINES.md`). A build passing in CI is not a substitute for running the app.
+
+> **Never merge without a browser smoke test.** TypeScript and linting verify code structure, not runtime behaviour. Every PR that touches a workspace component must be manually exercised before merge — a compile-clean PR can still produce an infinite re-render loop, a hydration crash, or a broken interaction that only surfaces when the app actually runs.
 
 ---
 

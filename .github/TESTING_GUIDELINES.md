@@ -3,6 +3,13 @@
 Manual smoke tests for each workspace. Run the relevant section before marking a PR ready.
 These are **not** automated tests — they are human-verified flows that catch integration and UX regressions that unit tests miss.
 
+> **Policy: Never merge without a browser smoke test.**
+> TypeScript, linting, and `npm run build` verify code structure — not runtime behaviour.
+> A PR that compiles cleanly can still introduce an infinite re-render loop (e.g. an inline
+> `.filter()` inside a Zustand selector), a hydration mismatch crash, or a broken interaction
+> that only appears when the app actually runs. Every PR that touches a workspace component
+> **must** be manually exercised in a running browser before it is merged.
+
 ---
 
 ## Setup
@@ -71,6 +78,13 @@ These are **not** automated tests — they are human-verified flows that catch i
 ---
 
 ## 🎯 DAT Apex — Smoke Tests
+
+**Training Arena (must verify on every PR touching `/app/apex/` or `TrainingArena.tsx`)**
+1. Open `/apex` → Today tab loads without errors in the browser console
+2. Click "Learn & Improve" tab → Training Arena header appears (collapsed), no crash
+3. Click "🏟️ DAT Training Arena" to expand → all 6 subject panels render (Bio · GC · Orgo · PAT · QR · RC)
+4. Click "Practice" tab inside any subject panel → mode picker shows; click "Start Pattern Drill" → no crash
+5. Click "Generate" tab → click "Generate Question" → question appears with choices; select an answer and submit
 
 **Adaptive difficulty**
 1. Complete 5+ practice sessions
