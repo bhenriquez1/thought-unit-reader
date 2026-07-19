@@ -9,6 +9,7 @@ import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from "@/lib/examEngine/types";
+import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -52,6 +53,23 @@ function genId(): string {
   return `exam-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** Normalise a question stem to a short fingerprint for duplicate detection.
+ *  Strip punctuation, collapse whitespace, lowercase, take first 80 chars. */
+function stemFingerprint(stem: string): string {
+  return stem.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+/** Remove questions whose stems are too similar to an earlier one. */
+function deduplicateQuestions(questions: EngineQuestion[]): EngineQuestion[] {
+  const seen = new Set<string>();
+  return questions.filter((q) => {
+    const fp = stemFingerprint(q.stem);
+    if (seen.has(fp)) return false;
+    seen.add(fp);
+    return true;
+  });
+}
+
 /** Aggregates one UltraNote's teaching content into grounding text for the
  *  AI question generator — never a static/copyrighted question bank. */
 function buildConceptText(note: UltraNote): string {
@@ -92,8 +110,9 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
 
   // Narrow to selected chapters when the generator provided page ranges.
   if (opts.chapterPageRanges?.length) {
+    const normalizedRanges = normalizePageRanges(opts.chapterPageRanges);
     const chapterFiltered = pool.filter((n) =>
-      opts.chapterPageRanges!.some(
+      normalizedRanges.some(
         (r) => n.pageNumber >= r.start && n.pageNumber <= r.end,
       ),
     );
@@ -140,7 +159,7 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
     }),
   );
 
-  let questions = batches.flat();
+  let questions = deduplicateQuestions(batches.flat());
   if (opts.randomize ?? true) questions = shuffle(questions);
   questions = questions.slice(0, opts.questionCount);
 

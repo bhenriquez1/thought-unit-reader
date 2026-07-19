@@ -12,8 +12,11 @@ import {
   PRACTICE_MODES,
   DIFFICULTY_OPTIONS,
   tocToPageRanges,
+  setSubjectOverride,
+  computeSourceSufficiency,
 } from '@/lib/apex/bookCatalogue';
 import { useTocStore } from '@/lib/stores/tocStore';
+import { getNotesByBook } from '@/lib/notelab/ultraNoteStore';
 import type { DATSubject, PracticeMode } from '@/lib/apex/bookCatalogue';
 import type { DifficultyLevel } from '@/lib/examEngine/types';
 import type { GeneratedExam } from '@/lib/apex/examGenerator';
@@ -41,7 +44,8 @@ const SUBJECT_COLORS: Record<string, string> = {
 
 export default function ExamGeneratorPage() {
   const tocs = useTocStore((s) => s.tocs);
-  const books = useMemo(() => getUserBookCatalogue(), []);
+  const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
+  const books = useMemo(() => getUserBookCatalogue(), [catalogueRefreshKey]);
 
   // --- State ---
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
@@ -57,6 +61,7 @@ export default function ExamGeneratorPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedExam, setGeneratedExam] = useState<GeneratedExam | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
 
   // --- Derived ---
   const modeConfig = PRACTICE_MODES.find((m) => m.id === practiceMode)!;
@@ -70,6 +75,20 @@ export default function ExamGeneratorPage() {
 
   // Chapters: flatten top-level items from TOC
   const topLevelChapters = tocItems.filter((item) => item.level === 0 || tocItems.every((t) => t.level !== 0));
+
+  // Source coverage: count notes available given current chapter selection
+  const allBookNotes = useMemo(() => bookId ? getNotesByBook(bookId) : [], [bookId]);
+  const availableNoteCount = useMemo(() => {
+    if (!selectedChapterIds.size) return allBookNotes.length;
+    const ranges = tocToPageRanges(tocItems, selectedChapterIds);
+    return allBookNotes.filter((n) =>
+      ranges.some((r) => n.pageNumber >= r.start && n.pageNumber <= r.end),
+    ).length;
+  }, [allBookNotes, selectedChapterIds, tocItems]);
+  const sufficiency = useMemo(
+    () => computeSourceSufficiency(availableNoteCount, questionCount),
+    [availableNoteCount, questionCount],
+  );
 
   // When mode changes, reset questionCount to mode default
   function handleModeChange(mode: PracticeMode) {
@@ -102,6 +121,14 @@ export default function ExamGeneratorPage() {
 
   function clearAllChapters() {
     setSelectedChapterIds(new Set());
+  }
+
+  function handleSubjectOverride(subject: DATSubject | null) {
+    if (!bookId) return;
+    setSubjectOverride(bookId, subject);
+    setCatalogueRefreshKey((k) => k + 1);
+    setSubjectPickerOpen(false);
+    setGeneratedExam(null);
   }
 
   function handleSectionToggle(sectionId: string) {
@@ -225,24 +252,34 @@ export default function ExamGeneratorPage() {
                         const badgeClass = SUBJECT_COLORS[book.subject] ?? SUBJECT_COLORS.Other;
                         const bookToc = tocs[book.bookId];
                         return (
-                          <button
+                          <div
                             key={book.bookId}
-                            onClick={() => handleBookSelect(book.bookId)}
-                            className={`text-left p-4 rounded-lg border-2 transition-all ${
+                            className={`text-left p-4 rounded-lg border-2 transition-all cursor-pointer ${
                               isSelected
                                 ? 'border-blue-500 bg-blue-500/10'
                                 : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
                             }`}
+                            onClick={() => handleBookSelect(book.bookId)}
                           >
                             <div className="font-medium text-white text-sm leading-tight mb-2">
                               {book.bookTitle}
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`px-2 py-0.5 rounded text-xs border ${badgeClass}`}>
+                              {/* Subject badge — low-confidence gets a ⚠️ and is editable */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleBookSelect(book.bookId);
+                                  setSubjectPickerOpen((v) => !v || bookId !== book.bookId);
+                                }}
+                                className={`px-2 py-0.5 rounded text-xs border ${badgeClass} flex items-center gap-1`}
+                                title={book.subjectConfidence === 'low' ? 'Subject inferred with low confidence — click to change' : 'Click to change subject'}
+                              >
                                 {SUBJECT_ICONS[book.subject]} {book.subject}
-                              </span>
+                                {book.subjectConfidence === 'low' && <span className="text-yellow-400 ml-0.5">⚠</span>}
+                              </button>
                               <span className="text-xs text-gray-400">
-                                {book.noteCount} page{book.noteCount !== 1 ? 's' : ''} synthesized
+                                {book.noteCount} note{book.noteCount !== 1 ? 's' : ''}
                               </span>
                               {bookToc && (
                                 <span className="text-xs text-gray-500">
@@ -250,7 +287,34 @@ export default function ExamGeneratorPage() {
                                 </span>
                               )}
                             </div>
-                          </button>
+                            {/* Inline subject picker (only for the selected book) */}
+                            {isSelected && subjectPickerOpen && (
+                              <div
+                                className="mt-2 flex flex-wrap gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {DAT_SUBJECTS.map((s) => (
+                                  <button
+                                    key={s}
+                                    onClick={() => handleSubjectOverride(s)}
+                                    className={`px-2 py-0.5 rounded text-xs border transition-all ${
+                                      book.subject === s
+                                        ? 'border-blue-400 bg-blue-800/60 text-blue-200'
+                                        : 'border-gray-500 bg-gray-700 text-gray-300 hover:border-gray-400'
+                                    }`}
+                                  >
+                                    {SUBJECT_ICONS[s]} {s}
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={() => handleSubjectOverride(null)}
+                                  className="px-2 py-0.5 rounded text-xs border border-gray-600 text-gray-500 hover:text-gray-300"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -454,6 +518,12 @@ export default function ExamGeneratorPage() {
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Questions:{' '}
                 <span className="text-blue-400 font-bold">{questionCount}</span>
+                {bookId && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    {availableNoteCount} note{availableNoteCount !== 1 ? 's' : ''} available
+                    {selectedChapterIds.size > 0 ? ` in ${selectedChapterIds.size} chapter${selectedChapterIds.size !== 1 ? 's' : ''}` : ''}
+                  </span>
+                )}
               </label>
               <input
                 type="range"
@@ -467,6 +537,22 @@ export default function ExamGeneratorPage() {
                 <span>{modeConfig.questionRange[0]}</span>
                 <span>{modeConfig.questionRange[1]}</span>
               </div>
+
+              {/* Source sufficiency warning */}
+              {bookId && !sufficiency.sufficient && (
+                <div className="mt-3 flex items-start gap-2 rounded-lg border border-yellow-500/40 bg-yellow-900/20 p-3">
+                  <span className="text-yellow-400 mt-0.5 shrink-0">⚠️</span>
+                  <div>
+                    <p className="text-xs text-yellow-300 leading-relaxed">{sufficiency.warning}</p>
+                    <button
+                      onClick={() => setQuestionCount(sufficiency.recommendedMax)}
+                      className="mt-1.5 text-xs text-yellow-400 hover:text-yellow-300 underline"
+                    >
+                      Set to {sufficiency.recommendedMax} (recommended max)
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {modeConfig.timed && (
                 <div className="mt-3 text-sm text-gray-400">
