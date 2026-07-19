@@ -4,6 +4,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReadingBuddy from "@/components/elena/ReadingBuddy";
+import MemoryMatch  from "@/components/elena/MemoryMatch";
+import WordScramble from "@/components/elena/WordScramble";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
 import {
   saveChildProfile,
@@ -1088,54 +1090,86 @@ function VocabularyTab({
 
 /* ─── Memory Games tab (placeholder — PR #4) ─────────────────────────────────── */
 
-function GamesTab({ rewards }: { rewards: ChildRewardState }) {
-  const GAMES = [
-    { emoji: "🃏", name: "Memory Match",    desc: "Match words to their meanings",    starsNeeded: 0  },
-    { emoji: "🔤", name: "Word Builder",    desc: "Unscramble letters to make words", starsNeeded: 5  },
-    { emoji: "🖼️", name: "Picture Match",  desc: "Match words to pictures",          starsNeeded: 10 },
-    { emoji: "📝", name: "Fill-in-Blank",   desc: "Complete the sentence",            starsNeeded: 15 },
-    { emoji: "🔀", name: "Story Sequencer", desc: "Put the story in the right order", starsNeeded: 25 },
+type ActiveGame = "memory-match" | "word-scramble" | null;
+
+function GamesTab({
+  profile,
+  rewards,
+  onAwardStar,
+}: {
+  profile:     ChildProfile;
+  rewards:     ChildRewardState;
+  onAwardStar: () => Promise<void>;
+}) {
+  const [activeGame, setActiveGame] = useState<ActiveGame>(null);
+
+  const GAMES: {
+    id:          ActiveGame;
+    emoji:       string;
+    name:        string;
+    desc:        string;
+    starsNeeded: number;
+  }[] = [
+    { id: "memory-match",  emoji: "🃏", name: "Memory Match",    desc: "Match each word to its meaning",        starsNeeded: 0 },
+    { id: "word-scramble", emoji: "🔤", name: "Word Scramble",   desc: "Unscramble letters to spell the word",  starsNeeded: 5 },
+    { id: null,            emoji: "🖼️", name: "Picture Match",  desc: "Match words to pictures",               starsNeeded: 10 },
+    { id: null,            emoji: "📝", name: "Fill-in-Blank",   desc: "Complete the sentence",                 starsNeeded: 15 },
+    { id: null,            emoji: "🔀", name: "Story Sequencer", desc: "Put the story in the right order",      starsNeeded: 25 },
   ];
+
+  if (activeGame === "memory-match") {
+    return (
+      <MemoryMatch
+        childProfileId={profile.id}
+        onBack={() => setActiveGame(null)}
+        onWin={async () => { await onAwardStar(); }}
+      />
+    );
+  }
+
+  if (activeGame === "word-scramble") {
+    return (
+      <WordScramble
+        childProfileId={profile.id}
+        onBack={() => setActiveGame(null)}
+        onWin={async () => { await onAwardStar(); }}
+      />
+    );
+  }
 
   return (
     <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-1">🧠 Memory Games</h2>
-      <p className="text-indigo-300 text-sm mb-5">Games that make learning fun!</p>
+      <h2 className="text-lg font-bold text-white mb-1">🧠 Games</h2>
+      <p className="text-indigo-300 text-sm mb-5">Play with words from your collection!</p>
 
-      {/* Coming soon banner */}
-      <div className="mb-5 rounded-2xl border border-green-400/30 bg-green-500/10 p-4 text-center">
-        <div className="text-3xl mb-2">🎮</div>
-        <p className="text-green-200 font-bold text-sm mb-1">Memory Games — Coming Soon!</p>
-        <p className="text-green-400/60 text-xs">
-          Games use the words from your Vocabulary Collection. Build your word list first!
-        </p>
-      </div>
-
-      {/* Game previews */}
       <div className="space-y-3">
-        {GAMES.map(({ emoji, name, desc, starsNeeded }) => {
-          const unlocked = rewards.totalStars >= starsNeeded;
+        {GAMES.map(({ id, emoji, name, desc, starsNeeded }) => {
+          const unlocked  = rewards.totalStars >= starsNeeded;
+          const playable  = unlocked && id !== null;
+
           return (
-            <div
+            <button
               key={name}
-              className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
-                unlocked && starsNeeded === 0
-                  ? "border-green-400/25 bg-green-500/8"
-                  : "border-white/8 bg-white/3 opacity-50"
+              onClick={() => playable && setActiveGame(id)}
+              disabled={!playable}
+              className={`w-full rounded-xl border px-4 py-3 flex items-center gap-3 text-left transition-colors ${
+                playable
+                  ? "border-indigo-400/25 bg-indigo-500/8 hover:bg-indigo-500/15"
+                  : "border-white/8 bg-white/3 opacity-50 cursor-not-allowed"
               }`}
             >
-              <span className={`text-2xl ${unlocked ? "" : "grayscale"}`}>{emoji}</span>
-              <div className="flex-1">
+              <span className={`text-2xl flex-shrink-0 ${!unlocked ? "grayscale" : ""}`}>{emoji}</span>
+              <div className="flex-1 min-w-0">
                 <div className="text-white font-semibold text-sm">{name}</div>
                 <div className="text-slate-400 text-xs">{desc}</div>
                 {starsNeeded > 0 && !unlocked && (
                   <div className="text-yellow-400/60 text-[10px] mt-0.5">Unlock at {starsNeeded} ⭐</div>
                 )}
               </div>
-              <span className="text-slate-600 text-sm flex-shrink-0">
-                {starsNeeded === 0 ? "🔜" : "🔒"}
+              <span className="text-slate-500 text-sm flex-shrink-0">
+                {playable ? "▶" : "🔒"}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -1350,7 +1384,9 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
             bookTitle={bookTitle} currentPage={currentPage}
           />
         )}
-        {activeTab === "games"        && <GamesTab rewards={rewards} />}
+        {activeTab === "games"        && (
+          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleLogSession} />
+        )}
         {activeTab === "challenge"    && (
           <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
         )}
