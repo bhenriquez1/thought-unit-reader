@@ -307,57 +307,125 @@ function PracticeTab() {
 function FullExamsTab() {
   const bp = ACTIVE_DAT_BLUEPRINT;
   const router = useRouter();
-  const [seeding, setSeeding] = useState(false);
-  const [seedError, setSeedError] = useState<string | null>(null);
+  const [seeding, setSeeding]       = useState(false);
+  const [seedError, setSeedError]   = useState<string | null>(null);
+  const [inProgress, setInProgress] = useState(false);
 
-  const handleStartSimulation = useCallback(async () => {
+  // Check if there's a paused exam in localStorage
+  useEffect(() => {
+    setInProgress(!!localStorage.getItem("examProgress"));
+  }, []);
+
+  const handleStartSimulation = useCallback(async (prometric: boolean) => {
     setSeeding(true);
     setSeedError(null);
     try {
-      const gen = await ExamGenerator.fromQuestionBank();
+      const gen  = await ExamGenerator.fromQuestionBank();
       const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
       localStorage.setItem("currentExam", JSON.stringify(exam));
-      router.push("/apex/proctor");
-    } catch (err) {
+      router.push(prometric ? "/apex/proctor?prometric=1" : "/apex/proctor");
+    } catch {
       setSeedError("Could not prepare the exam. Please try again.");
       setSeeding(false);
     }
   }, [router]);
 
+  const handleResume = useCallback(() => {
+    const progress = localStorage.getItem("examProgress");
+    if (!progress) return;
+    try {
+      const saved = JSON.parse(progress);
+      if (saved.exam) localStorage.setItem("currentExam", JSON.stringify(saved.exam));
+      router.push("/apex/proctor");
+    } catch {
+      setSeedError("Could not resume the saved exam. It may be corrupted.");
+    }
+  }, [router]);
+
   return (
     <div className="space-y-6">
+      {/* Resume banner */}
+      {inProgress && (
+        <div className="bg-amber-900/30 border border-amber-500/40 rounded-xl p-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-amber-200">📌 Exam In Progress</div>
+            <div className="text-xs text-amber-300/70 mt-0.5">You have an unfinished exam saved. Resume where you left off.</div>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={handleResume}
+              className="text-sm px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-lg transition-colors"
+            >
+              Resume →
+            </button>
+            <button
+              onClick={() => { localStorage.removeItem("examProgress"); localStorage.removeItem("currentExam"); setInProgress(false); }}
+              className="text-sm px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Full simulation panel */}
       <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
-        <h2 className="text-lg font-bold text-white mb-1">Official Format Simulation</h2>
+        <div className="flex items-start justify-between mb-1 gap-4">
+          <h2 className="text-lg font-bold text-white">Full-Length DAT Simulation</h2>
+          <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide bg-green-900/40 text-green-300 border border-green-600/30 px-2 py-0.5 rounded-full">
+            Official Format
+          </span>
+        </div>
         <p className="text-sm text-gray-400 mb-4">
-          All sections in order · {bp.breaks[0]?.durationMinutes ?? 15}-min optional break after PAT · {bp.totalAdministrationMinutes} min total.
+          All sections in order · {bp.breaks[0]?.durationMinutes ?? 15}-min optional break after PAT · {bp.totalAdministrationMinutes} min total
         </p>
+
         <div className="space-y-2 mb-5">
-          {bp.sections.map(sec => (
+          {bp.sections.map((sec, idx) => (
             <div key={sec.family} className="flex items-center justify-between py-2 border-b border-white/5 last:border-b-0 text-sm">
-              <span className="text-gray-300">{sec.label}</span>
-              <span className="text-gray-400 text-xs">{sec.totalItemCount} items · {sec.timeLimitMinutes} min</span>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 tabular-nums text-xs">{idx + 1}.</span>
+                <span className="text-gray-300">{sec.label}</span>
+              </div>
+              <span className="text-gray-400 text-xs tabular-nums">{sec.totalItemCount} items · {sec.timeLimitMinutes} min</span>
             </div>
           ))}
           {bp.breaks.map((brk, i) => (
-            <div key={i} className="text-xs italic text-yellow-300/60 py-1">
-              ↕ Optional {brk.durationMinutes}-min break after {brk.afterSectionFamily}
+            <div key={i} className="text-xs italic text-yellow-300/60 py-1 flex items-center gap-1">
+              <span>☕</span>
+              <span>Optional {brk.durationMinutes}-min break after PAT</span>
             </div>
           ))}
         </div>
+
         {seedError && <p className="mb-3 text-sm text-red-400">{seedError}</p>}
-        <button
-          onClick={handleStartSimulation}
-          disabled={seeding}
-          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-opacity"
-        >
-          {seeding ? "⏳ Preparing simulation…" : "⏰ Start Full DAT Simulation"}
-        </button>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleStartSimulation(false)}
+            disabled={seeding}
+            className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
+          >
+            {seeding ? "⏳ Preparing…" : "Start Practice Simulation"}
+          </button>
+          <button
+            onClick={() => handleStartSimulation(true)}
+            disabled={seeding}
+            title="No pausing, section-locked — mirrors the real DAT testing center"
+            className="flex-1 py-3 bg-gradient-to-r from-red-700 to-rose-700 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
+          >
+            {seeding ? "⏳ Preparing…" : "🏛 Prometric Mode"}
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-500 mt-2 text-center">
+          Prometric Mode: no pause, section-locked, auto-submits — just like the real test center
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: "Section Test",     desc: "One section, timed",              href: "/apex/generator?mode=section_test", icon: "🎯", color: "from-blue-600/20 to-blue-700/20",     border: "border-blue-500/30"   },
-          { label: "Timed Practice",   desc: "Mixed questions, real pacing",    href: "/apex/proctor?config=timed",        icon: "⏱️", color: "from-purple-600/20 to-purple-700/20", border: "border-purple-500/30" },
+          { label: "Timed Practice",   desc: "Mixed questions, real pacing",    href: "/apex/generator?mode=timed",        icon: "⏱️", color: "from-purple-600/20 to-purple-700/20", border: "border-purple-500/30" },
           { label: "Foundation Drill", desc: "Concept-by-concept, no pressure", href: "/apex/generator?mode=foundation",   icon: "🌱", color: "from-green-600/20 to-green-700/20",   border: "border-green-500/30"  },
         ].map(({ label, desc, href, icon, color, border }) => (
           <Link

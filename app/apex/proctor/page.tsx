@@ -1,273 +1,345 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
-import { formatTime, getTimeRemaining, isTimeWarning } from '@/types/apex-exam';
-import type { GeneratedExam } from '@/lib/apex/examGenerator';
-import type { DATQuestion, ExamAttempt } from '@/types/apex-exam';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { formatTime, isTimeWarning, DAT_SECTIONS } from "@/types/apex-exam";
+import type { GeneratedExam } from "@/lib/apex/examGenerator";
+import type { DATQuestion } from "@/types/apex-exam";
 
-interface ProctorState {
-  exam: GeneratedExam | null;
-  attempt: ExamAttempt | null;
-  currentQuestionIndex: number;
-  currentSectionIndex: number;
-  timeRemaining: number;
-  isPaused: boolean;
-  responses: Record<string, string>;
-  flaggedQuestions: Set<string>;
-  startTime: string;
-  sectionStartTime: string;
+/* ─── Section display metadata ───────────────────────────────────────────────── */
+
+const SECTION_COLORS: Record<string, { bg: string; text: string; border: string; ring: string }> = {
+  "survey-natural-sciences": { bg: "bg-purple-900/30", text: "text-purple-300", border: "border-purple-500/40", ring: "ring-purple-500" },
+  "perceptual-ability":      { bg: "bg-yellow-900/30", text: "text-yellow-300", border: "border-yellow-500/40", ring: "ring-yellow-500" },
+  "reading-comprehension":   { bg: "bg-pink-900/30",   text: "text-pink-300",   border: "border-pink-500/40",   ring: "ring-pink-500"   },
+  "quantitative-reasoning":  { bg: "bg-teal-900/30",   text: "text-teal-300",   border: "border-teal-500/40",   ring: "ring-teal-500"   },
+};
+const DEFAULT_COLORS = { bg: "bg-gray-900/30", text: "text-gray-300", border: "border-gray-500/40", ring: "ring-gray-500" };
+
+const SECTION_NAMES: Record<string, string> = {
+  "survey-natural-sciences": "Survey of Natural Sciences",
+  "perceptual-ability":      "Perceptual Ability Test",
+  "reading-comprehension":   "Reading Comprehension",
+  "quantitative-reasoning":  "Quantitative Reasoning",
+};
+
+const SECTION_SHORT: Record<string, string> = {
+  "survey-natural-sciences": "SNS",
+  "perceptual-ability":      "PAT",
+  "reading-comprehension":   "RC",
+  "quantitative-reasoning":  "QR",
+};
+
+// Real DAT: optional 15-min break after PAT
+const BREAK_AFTER_SECTION  = "perceptual-ability";
+const BREAK_DURATION_SECS  = 15 * 60;
+
+/* ─── Types ──────────────────────────────────────────────────────────────────── */
+
+type ExamPhase = "loading" | "examining" | "section-transition" | "break" | "reviewing" | "submitting";
+
+interface SectionGroup {
+  sectionId:        string;
+  questions:        DATQuestion[];
+  timeLimitSeconds: number;
 }
 
+interface ProctorState {
+  exam:                GeneratedExam;
+  sections:            SectionGroup[];
+  currentSectionIdx:   number;
+  currentQuestionIdx:  number;
+  sectionTimeRemaining: number;
+  responses:           Record<string, string>;
+  flagged:             Set<string>;
+  isPaused:            boolean;
+  startTime:           string;
+  breakTimeRemaining:  number;
+  isProctored:         boolean; // Prometric/strict mode — no pause, section-locked
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────────────────── */
+
+function groupBySections(exam: GeneratedExam): SectionGroup[] {
+  // Preserve official section order from metadata
+  const order = exam.metadata.sectionBreakdown.map(s => s.sectionId);
+  for (const q of exam.questions) {
+    if (!order.includes(q.sectionId)) order.push(q.sectionId);
+  }
+  return order
+    .map(sectionId => {
+      const meta      = exam.metadata.sectionBreakdown.find(s => s.sectionId === sectionId);
+      const questions = exam.questions.filter(q => q.sectionId === sectionId);
+      const timeLimit = meta?.timeLimit ?? DAT_SECTIONS.find(s => s.id === sectionId)?.timeLimit ?? 60;
+      return { sectionId, questions, timeLimitSeconds: timeLimit * 60 };
+    })
+    .filter(g => g.questions.length > 0);
+}
+
+function sectionColors(sectionId: string) {
+  return SECTION_COLORS[sectionId] ?? DEFAULT_COLORS;
+}
+
+/* ─── Component ──────────────────────────────────────────────────────────────── */
+
 export default function ExamProctorPage() {
-  const [state, setState] = useState<ProctorState>({
-    exam: null,
-    attempt: null,
-    currentQuestionIndex: 0,
-    currentSectionIndex: 0,
-    timeRemaining: 0,
-    isPaused: false,
-    responses: {},
-    flaggedQuestions: new Set(),
-    startTime: '',
-    sectionStartTime: ''
-  });
+  const [phase,           setPhase]           = useState<ExamPhase>("loading");
+  const [state,           setState]           = useState<ProctorState | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [autoSaveStatus,  setAutoSaveStatus]  = useState<"saved" | "saving" | "error">("saved");
 
-  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const autoSaveRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs for stable callbacks that need latest state
+  const stateRef    = useRef<ProctorState | null>(null);
+  const submitRef   = useRef<(() => void) | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const breakRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load exam from localStorage on mount
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  /* ─── Load exam ───────────────────────────────────────────────────────────── */
+
   useEffect(() => {
-    const examData = localStorage.getItem('currentExam');
-    if (examData) {
-      try {
-        const exam: GeneratedExam = JSON.parse(examData);
-        const startTime = new Date().toISOString();
-        
-        setState(prev => ({
-          ...prev,
-          exam,
-          startTime,
-          sectionStartTime: startTime,
-          timeRemaining: exam.config.totalTimeLimit * 60 // Convert to seconds
-        }));
+    const raw = localStorage.getItem("currentExam");
+    if (!raw) return;
 
-        // Create initial attempt
-        const attempt: Partial<ExamAttempt> = {
-          id: `attempt-${Date.now()}`,
-          userId: 'demo-user',
-          examConfigId: exam.id,
-          startTime,
-          status: 'in-progress',
-          currentSectionIndex: 0,
-          currentQuestionIndex: 0,
-          totalTimeSpent: 0,
-          responses: [],
-          sectionTimes: [],
-          lastSaved: startTime,
-          saveVersion: 1
-        };
+    try {
+      const exam: GeneratedExam = JSON.parse(raw);
+      const sections    = groupBySections(exam);
+      const isProctored = !!exam.config.strictMode ||
+        new URLSearchParams(window.location.search).get("prometric") === "1";
 
-        setState(prev => ({ ...prev, attempt: attempt as ExamAttempt }));
-      } catch (error) {
-        console.error('Failed to load exam:', error);
-      }
+      const s: ProctorState = {
+        exam,
+        sections,
+        currentSectionIdx:    0,
+        currentQuestionIdx:   0,
+        sectionTimeRemaining: sections[0]?.timeLimitSeconds ?? exam.config.totalTimeLimit * 60,
+        responses:            {},
+        flagged:              new Set(),
+        isPaused:             false,
+        startTime:            new Date().toISOString(),
+        breakTimeRemaining:   BREAK_DURATION_SECS,
+        isProctored,
+      };
+      setState(s);
+      stateRef.current = s;
+      setPhase("examining");
+    } catch {
+      // Stay in loading — "No Exam Found" screen renders
     }
   }, []);
 
-  // Timer effect
+  /* ─── Submit exam ─────────────────────────────────────────────────────────── */
+
+  const handleSubmitExam = useCallback(() => {
+    const s = stateRef.current;
+    if (!s) return;
+    setPhase("submitting");
+
+    const results = {
+      id:                   `attempt-${Date.now()}`,
+      userId:               "demo-user",
+      examConfigId:         s.exam.id,
+      startTime:            s.startTime,
+      endTime:              new Date().toISOString(),
+      status:               "completed" as const,
+      currentSectionIndex:  s.currentSectionIdx,
+      currentQuestionIndex: s.currentQuestionIdx,
+      totalTimeSpent:       0,
+      responses:            Object.entries(s.responses).map(([questionId, answer]) => ({
+        questionId,
+        selectedAnswer: answer as "A" | "B" | "C" | "D" | "E",
+        timeSpent:      0,
+        flagged:        s.flagged.has(questionId),
+        timestamp:      new Date().toISOString(),
+      })),
+      sectionTimes: [],
+      lastSaved:    new Date().toISOString(),
+      saveVersion:  1,
+      // Embed exam so results page can read it after currentExam is cleared
+      _exam: s.exam,
+    };
+
+    localStorage.setItem("examResults", JSON.stringify(results));
+    localStorage.removeItem("currentExam");
+    localStorage.removeItem("examProgress");
+    window.location.href = "/apex/results";
+  }, []);
+
+  useEffect(() => { submitRef.current = handleSubmitExam; }, [handleSubmitExam]);
+
+  /* ─── Advance section ─────────────────────────────────────────────────────── */
+
+  const handleAdvanceSection = useCallback(() => {
+    const s = stateRef.current;
+    if (!s) return;
+
+    const nextIdx = s.currentSectionIdx + 1;
+
+    if (nextIdx >= s.sections.length) {
+      submitRef.current?.();
+      return;
+    }
+
+    const currentSectionId = s.sections[s.currentSectionIdx].sectionId;
+
+    setState(prev => prev ? {
+      ...prev,
+      currentSectionIdx:    nextIdx,
+      currentQuestionIdx:   0,
+      sectionTimeRemaining: prev.sections[nextIdx].timeLimitSeconds,
+    } : prev);
+
+    if (currentSectionId === BREAK_AFTER_SECTION && !s.isProctored) {
+      setState(prev => prev ? { ...prev, breakTimeRemaining: BREAK_DURATION_SECS } : prev);
+      setPhase("break");
+    } else {
+      setPhase("section-transition");
+    }
+  }, []);
+
+  /* ─── Section timer ───────────────────────────────────────────────────────── */
+
   useEffect(() => {
-    if (!state.exam || state.isPaused) return;
+    if (phase !== "examining") return;
+    if (!state || state.isPaused) return;
 
     timerRef.current = setInterval(() => {
       setState(prev => {
-        const newTimeRemaining = prev.timeRemaining - 1;
-        
-        // Auto-submit when time expires
-        if (newTimeRemaining <= 0) {
-          handleSubmitExam();
-          return prev;
+        if (!prev || prev.isPaused) return prev;
+        const next = prev.sectionTimeRemaining - 1;
+        if (next <= 0) {
+          // Schedule section advance outside setState (can't call setState inside setState)
+          setTimeout(() => handleAdvanceSection(), 0);
+          return { ...prev, sectionTimeRemaining: 0 };
         }
-
-        return { ...prev, timeRemaining: newTimeRemaining };
+        return { ...prev, sectionTimeRemaining: next };
       });
     }, 1000);
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [state.exam, state.isPaused]);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase, state?.isPaused, state?.currentSectionIdx, handleAdvanceSection]);
 
-  // Auto-save effect
+  /* ─── Break timer ─────────────────────────────────────────────────────────── */
+
   useEffect(() => {
-    if (!state.exam) return;
+    if (phase !== "break") return;
 
+    breakRef.current = setInterval(() => {
+      setState(prev => {
+        if (!prev) return prev;
+        const next = prev.breakTimeRemaining - 1;
+        if (next <= 0) {
+          setPhase("section-transition");
+          return { ...prev, breakTimeRemaining: 0 };
+        }
+        return { ...prev, breakTimeRemaining: next };
+      });
+    }, 1000);
+
+    return () => { if (breakRef.current) clearInterval(breakRef.current); };
+  }, [phase]);
+
+  /* ─── Auto-save ───────────────────────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!state) return;
     autoSaveRef.current = setInterval(() => {
-      handleAutoSave();
-    }, 30000); // Auto-save every 30 seconds
-
-    return () => {
-      if (autoSaveRef.current) {
-        clearInterval(autoSaveRef.current);
+      setAutoSaveStatus("saving");
+      try {
+        localStorage.setItem("examProgress", JSON.stringify({
+          exam: state.exam,
+          currentState: {
+            currentSectionIdx:    state.currentSectionIdx,
+            currentQuestionIdx:   state.currentQuestionIdx,
+            sectionTimeRemaining: state.sectionTimeRemaining,
+            responses:            state.responses,
+            flagged:              Array.from(state.flagged),
+          },
+        }));
+        setAutoSaveStatus("saved");
+      } catch {
+        setAutoSaveStatus("error");
       }
-    };
-  }, [state.exam, state.responses]);
+    }, 30_000);
+    return () => { if (autoSaveRef.current) clearInterval(autoSaveRef.current); };
+  }, [state]);
 
-  const handleAutoSave = () => {
-    if (!state.exam || !state.attempt) return;
+  /* ─── Keyboard shortcuts ──────────────────────────────────────────────────── */
 
-    setAutoSaveStatus('saving');
-    
-    try {
-      // Save to localStorage
-      const saveData = {
-        exam: state.exam,
-        attempt: {
-          ...state.attempt,
-          responses: Object.entries(state.responses).map(([questionId, answer]) => ({
-            questionId,
-            selectedAnswer: answer as 'A' | 'B' | 'C' | 'D' | 'E',
-            timeSpent: 0, // TODO: Track individual question time
-            flagged: state.flaggedQuestions.has(questionId),
-            timestamp: new Date().toISOString()
-          })),
-          lastSaved: new Date().toISOString(),
-          saveVersion: (state.attempt.saveVersion || 0) + 1
-        },
-        currentState: {
-          currentQuestionIndex: state.currentQuestionIndex,
-          currentSectionIndex: state.currentSectionIndex,
-          timeRemaining: state.timeRemaining,
-          responses: state.responses,
-          flaggedQuestions: Array.from(state.flaggedQuestions)
-        }
-      };
-
-      localStorage.setItem('examProgress', JSON.stringify(saveData));
-      setAutoSaveStatus('saved');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-      setAutoSaveStatus('error');
-    }
-  };
-
-  const handleAnswerSelect = (questionId: string, answer: string) => {
-    setState(prev => ({
-      ...prev,
-      responses: { ...prev.responses, [questionId]: answer }
-    }));
-  };
-
-  const handleFlagQuestion = (questionId: string) => {
-    setState(prev => {
-      const newFlagged = new Set(prev.flaggedQuestions);
-      if (newFlagged.has(questionId)) {
-        newFlagged.delete(questionId);
-      } else {
-        newFlagged.add(questionId);
-      }
-      return { ...prev, flaggedQuestions: newFlagged };
-    });
-  };
-
-  const handleNavigateQuestion = (direction: 'prev' | 'next' | number) => {
-    if (!state.exam) return;
-
-    setState(prev => {
-      let newIndex = prev.currentQuestionIndex;
-      
-      if (direction === 'prev') {
-        newIndex = Math.max(0, prev.currentQuestionIndex - 1);
-      } else if (direction === 'next') {
-        newIndex = Math.min(state.exam!.questions.length - 1, prev.currentQuestionIndex + 1);
-      } else if (typeof direction === 'number') {
-        newIndex = Math.max(0, Math.min(state.exam!.questions.length - 1, direction));
-      }
-
-      return { ...prev, currentQuestionIndex: newIndex };
-    });
-  };
-
-  const handlePauseToggle = () => {
-    if (!state.exam?.config.allowPause) return;
-    
-    setState(prev => ({ ...prev, isPaused: !prev.isPaused }));
-  };
-
-  const handleSubmitExam = () => {
-    if (!state.exam || !state.attempt) return;
-
-    // Save final results
-    const finalResults = {
-      ...state.attempt,
-      endTime: new Date().toISOString(),
-      status: 'completed' as const,
-      responses: Object.entries(state.responses).map(([questionId, answer]) => ({
-        questionId,
-        selectedAnswer: answer as 'A' | 'B' | 'C' | 'D' | 'E',
-        timeSpent: 0,
-        flagged: state.flaggedQuestions.has(questionId),
-        timestamp: new Date().toISOString()
-      }))
-    };
-
-    localStorage.setItem('examResults', JSON.stringify(finalResults));
-    localStorage.removeItem('currentExam');
-    localStorage.removeItem('examProgress');
-
-    // Navigate to results
-    window.location.href = '/apex/results';
-  };
-
-  // Keyboard shortcuts
+  // Use functional setState so the handler is always stable and never has TDZ/stale issues.
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (!currentQuestion) return;
+    const handler = (e: KeyboardEvent) => {
+      setState(prev => {
+        if (!prev) return prev;
+        const section = prev.sections[prev.currentSectionIdx];
+        const q       = section?.questions[prev.currentQuestionIdx];
+        if (!q) return prev;
 
-      // Number keys for answers
-      if (e.key >= '1' && e.key <= '5') {
-        const answerIndex = parseInt(e.key) - 1;
-        const answers = ['A', 'B', 'C', 'D', 'E'];
-        if (answerIndex < Object.keys(currentQuestion.options).length) {
-          handleAnswerSelect(currentQuestion.id, answers[answerIndex]);
+        if (e.key >= "1" && e.key <= "5") {
+          const keys = Object.keys(q.options);
+          const idx  = parseInt(e.key) - 1;
+          if (idx < keys.length)
+            return { ...prev, responses: { ...prev.responses, [q.id]: keys[idx] } };
         }
-      }
-      
-      // Navigation
-      if (e.key === 'ArrowLeft' || e.key === 'p') {
-        e.preventDefault();
-        handleNavigateQuestion('prev');
-      } else if (e.key === 'ArrowRight' || e.key === 'n') {
-        e.preventDefault();
-        handleNavigateQuestion('next');
-      }
-      
-      // Flag question
-      if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        handleFlagQuestion(currentQuestion.id);
-      }
+        if (e.key === "f" || e.key === "F") {
+          e.preventDefault();
+          const nf = new Set(prev.flagged);
+          if (nf.has(q.id)) nf.delete(q.id); else nf.add(q.id);
+          return { ...prev, flagged: nf };
+        }
+        if (e.key === "ArrowLeft" || e.key === "p") {
+          e.preventDefault();
+          return { ...prev, currentQuestionIdx: Math.max(0, prev.currentQuestionIdx - 1) };
+        }
+        if (e.key === "ArrowRight" || e.key === "n") {
+          e.preventDefault();
+          const maxIdx = (section?.questions.length ?? 1) - 1;
+          return { ...prev, currentQuestionIdx: Math.min(maxIdx, prev.currentQuestionIdx + 1) };
+        }
+        return prev;
+      });
     };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [state.currentQuestionIndex, state.exam]);
+  /* ─── Interaction handlers ────────────────────────────────────────────────── */
 
-  if (!state.exam) {
+  const handleAnswer = (questionId: string, answer: string) =>
+    setState(prev => prev ? { ...prev, responses: { ...prev.responses, [questionId]: answer } } : prev);
+
+  const handleFlag = (questionId: string) =>
+    setState(prev => {
+      if (!prev) return prev;
+      const nf = new Set(prev.flagged);
+      if (nf.has(questionId)) nf.delete(questionId); else nf.add(questionId);
+      return { ...prev, flagged: nf };
+    });
+
+  const handleNav = (idx: number) =>
+    setState(prev => {
+      if (!prev) return prev;
+      const maxIdx = (prev.sections[prev.currentSectionIdx]?.questions.length ?? 1) - 1;
+      return { ...prev, currentQuestionIdx: Math.max(0, Math.min(maxIdx, idx)) };
+    });
+
+  const handleEndSection = () => {
+    setShowReviewModal(false);
+    handleAdvanceSection();
+  };
+
+  /* ─── Phase: loading ──────────────────────────────────────────────────────── */
+
+  if (phase === "loading" || !state) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">⚠️</div>
           <h1 className="text-2xl font-bold mb-4">No Exam Found</h1>
           <p className="text-gray-300 mb-6">Please generate an exam first.</p>
-          <Link 
-            href="/apex/generator" 
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition-colors"
-          >
+          <Link href="/apex/generator" className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition-colors">
             Create Practice Exam
           </Link>
         </div>
@@ -275,21 +347,107 @@ export default function ExamProctorPage() {
     );
   }
 
-  const currentQuestion = state.exam.questions[state.currentQuestionIndex];
-  const progress = ((state.currentQuestionIndex + 1) / state.exam.questions.length) * 100;
-  const isWarningTime = isTimeWarning(state.timeRemaining, state.exam.config.totalTimeLimit * 60);
+  /* ─── Phase: submitting ───────────────────────────────────────────────────── */
 
-  if (!currentQuestion) {
+  if (phase === "submitting") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4" />
+          <h1 className="text-xl font-semibold">Submitting exam…</h1>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Phase: section-transition ───────────────────────────────────────────── */
+
+  if (phase === "section-transition") {
+    const nextSection = state.sections[state.currentSectionIdx];
+    const cols = nextSection ? sectionColors(nextSection.sectionId) : DEFAULT_COLORS;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex items-center justify-center">
+        <div className="max-w-md w-full text-center px-6">
+          <div className="text-5xl mb-4">✅</div>
+          <h2 className="text-2xl font-bold mb-2">Section Complete!</h2>
+          <p className="text-gray-400 mb-6">
+            {nextSection
+              ? `Next: Section ${state.currentSectionIdx + 1} of ${state.sections.length}`
+              : "All sections done"}
+          </p>
+          {nextSection && (
+            <div className={`${cols.bg} ${cols.border} border rounded-2xl p-5 mb-6 text-left`}>
+              <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${cols.text}`}>
+                {SECTION_SHORT[nextSection.sectionId] ?? nextSection.sectionId}
+              </div>
+              <div className="text-white font-bold text-lg">
+                {SECTION_NAMES[nextSection.sectionId] ?? nextSection.sectionId}
+              </div>
+              <div className="text-gray-400 text-sm mt-1.5 flex items-center gap-3">
+                <span>{nextSection.questions.length} questions</span>
+                <span>·</span>
+                <span>{Math.round(nextSection.timeLimitSeconds / 60)} min</span>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => setPhase("examining")}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition-colors"
+          >
+            Begin Section →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Phase: break ────────────────────────────────────────────────────────── */
+
+  if (phase === "break") {
+    const nextSection = state.sections[state.currentSectionIdx];
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex items-center justify-center">
+        <div className="max-w-md w-full text-center px-6">
+          <div className="text-5xl mb-4">☕</div>
+          <h2 className="text-2xl font-bold mb-2">Optional Break</h2>
+          <p className="text-gray-400 mb-4">Take up to 15 minutes. Your section timer is paused.</p>
+          <div className="text-6xl font-mono font-bold text-blue-400 mb-6 tabular-nums">
+            {formatTime(state.breakTimeRemaining)}
+          </div>
+          {nextSection && (
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 text-sm text-left">
+              <div className="text-gray-400 text-xs mb-1">Next section:</div>
+              <div className="text-white font-semibold">
+                {SECTION_NAMES[nextSection.sectionId] ?? nextSection.sectionId}
+              </div>
+              <div className="text-gray-400 text-xs mt-1">
+                {nextSection.questions.length} questions · {Math.round(nextSection.timeLimitSeconds / 60)} min
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => setPhase("section-transition")}
+            className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl transition-colors"
+          >
+            End Break & Continue →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Phase: examining ────────────────────────────────────────────────────── */
+
+  const currentSection  = state.sections[state.currentSectionIdx];
+  const currentQuestion = currentSection?.questions[state.currentQuestionIdx] ?? null;
+
+  if (!currentSection || !currentQuestion) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">❓</div>
           <h1 className="text-2xl font-bold mb-4">Question Not Found</h1>
-          <p className="text-gray-300 mb-6">Unable to load the current question.</p>
-          <Link 
-            href="/apex" 
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition-colors"
-          >
+          <Link href="/apex" className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition-colors">
             Back to Hub
           </Link>
         </div>
@@ -297,266 +455,368 @@ export default function ExamProctorPage() {
     );
   }
 
+  const cols            = sectionColors(currentSection.sectionId);
+  const isWarnTime      = isTimeWarning(state.sectionTimeRemaining, currentSection.timeLimitSeconds);
+  const sectionProgress = ((state.currentQuestionIdx + 1) / currentSection.questions.length) * 100;
+
+  const answeredInSection = currentSection.questions.filter(q => state.responses[q.id]).length;
+  const flaggedInSection  = currentSection.questions.filter(q => state.flagged.has(q.id)).length;
+  const unansweredTotal   = state.sections.reduce((sum, sg) =>
+    sum + sg.questions.filter(q => !state.responses[q.id]).length, 0);
+  const flaggedTotal = state.flagged.size;
+  const isLastSection = state.currentSectionIdx === state.sections.length - 1;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white">
-      {/* Pause Overlay */}
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex flex-col">
+
+      {/* ── Pause overlay ─── */}
       {state.isPaused && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-8 text-center">
+          <div className="bg-gray-800 rounded-2xl p-8 text-center max-w-sm w-full">
             <div className="text-4xl mb-4">⏸️</div>
-            <h2 className="text-2xl font-bold mb-4">Exam Paused</h2>
-            <p className="text-gray-300 mb-6">Click Resume to continue your exam.</p>
+            <h2 className="text-xl font-bold mb-4">Exam Paused</h2>
+            <p className="text-gray-400 text-sm mb-6">Your section timer is paused. Click Resume when ready.</p>
             <button
-              onClick={handlePauseToggle}
-              className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold"
+              onClick={() => setState(prev => prev ? { ...prev, isPaused: false } : prev)}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 rounded-xl font-semibold transition-colors"
             >
-              ▶️ Resume Exam
+              ▶ Resume Exam
             </button>
           </div>
         </div>
       )}
 
-      {/* Submit Confirmation Modal */}
-      {showConfirmSubmit && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-8 max-w-md">
-            <h2 className="text-2xl font-bold mb-4 text-red-400">Submit Exam?</h2>
-            <p className="text-gray-300 mb-6">
-              Are you sure you want to submit your exam? This action cannot be undone.
+      {/* ── Pre-submit review modal ─── */}
+      {showReviewModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 border border-white/10 rounded-2xl p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-1">
+              {isLastSection ? "Submit Exam?" : "End Section?"}
+            </h2>
+            <p className="text-gray-400 text-sm mb-5">
+              {isLastSection
+                ? "Once submitted you cannot change your answers."
+                : "You cannot return to this section."}
             </p>
-            <div className="flex gap-4">
+
+            <div className="space-y-2.5 mb-5">
+              {state.sections.map((sg, idx) => {
+                const ans   = sg.questions.filter(q => state.responses[q.id]).length;
+                const flag  = sg.questions.filter(q => state.flagged.has(q.id)).length;
+                const unans = sg.questions.length - ans;
+                const c     = sectionColors(sg.sectionId);
+                const isCur = idx === state.currentSectionIdx;
+                const done  = idx < state.currentSectionIdx;
+                return (
+                  <div key={sg.sectionId} className={`${c.bg} ${c.border} border rounded-xl p-3 ${!done && !isCur ? "opacity-40" : ""}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-bold ${c.text}`}>
+                        {SECTION_SHORT[sg.sectionId] ?? sg.sectionId} · {SECTION_NAMES[sg.sectionId] ?? sg.sectionId}
+                      </span>
+                      <span className="text-[10px] text-gray-500">
+                        {done ? "✓ done" : isCur ? "current" : "upcoming"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="text-emerald-400">✓ {ans}</span>
+                      {unans > 0 && <span className="text-gray-400">○ {unans} blank</span>}
+                      {flag > 0  && <span className="text-yellow-400">🚩 {flag}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {unansweredTotal > 0 && isLastSection && (
+              <div className="bg-yellow-900/30 border border-yellow-500/30 rounded-xl p-3 mb-4 text-sm text-yellow-200">
+                ⚠️ {unansweredTotal} question{unansweredTotal !== 1 ? "s" : ""} left blank. Unanswered questions count as wrong on the DAT.
+              </div>
+            )}
+
+            <div className="flex gap-3">
               <button
-                onClick={() => setShowConfirmSubmit(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded font-semibold"
+                onClick={() => setShowReviewModal(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors"
               >
-                Cancel
+                ← Keep Reviewing
               </button>
               <button
-                onClick={handleSubmitExam}
-                className="flex-1 bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold"
+                onClick={isLastSection ? handleSubmitExam : handleEndSection}
+                className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
+                  isLastSection
+                    ? "bg-red-600 hover:bg-red-500 text-white"
+                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                }`}
               >
-                Submit
+                {isLastSection ? "Submit Exam" : "End Section →"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Header with Timer and Controls */}
-      <div className="bg-gray-800/90 border-b border-gray-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-blue-400">⚡ DAT Apex Proctor</h1>
-            <div className="text-sm text-gray-300">
-              Question {state.currentQuestionIndex + 1} of {state.exam.questions.length}
+      {/* ── Header ─── */}
+      <header className="flex-shrink-0 bg-gray-900/80 backdrop-blur-sm border-b border-white/8">
+        <div className="px-4 py-3 flex items-center justify-between gap-3">
+
+          {/* Section badge + info */}
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <span className={`flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-md ${cols.bg} ${cols.text} border ${cols.border}`}>
+              {SECTION_SHORT[currentSection.sectionId] ?? "SEC"}
+            </span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white truncate hidden sm:block">
+                {SECTION_NAMES[currentSection.sectionId] ?? currentSection.sectionId}
+              </div>
+              <div className="text-[10px] text-gray-400 tabular-nums">
+                Sec {state.currentSectionIdx + 1}/{state.sections.length} · Q{state.currentQuestionIdx + 1}/{currentSection.questions.length}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Auto-save Status */}
-            <div className="flex items-center gap-2 text-sm">
-              {autoSaveStatus === 'saving' && (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
-                  <span className="text-blue-400">Saving...</span>
-                </>
-              )}
-              {autoSaveStatus === 'saved' && (
-                <>
-                  <span className="text-green-400">✓</span>
-                  <span className="text-green-400">Saved</span>
-                </>
-              )}
-              {autoSaveStatus === 'error' && (
-                <>
-                  <span className="text-red-400">⚠</span>
-                  <span className="text-red-400">Save Error</span>
-                </>
-              )}
-            </div>
+          {/* Timer */}
+          <div className={`flex-shrink-0 text-lg font-mono font-bold px-3 py-1 rounded-lg tabular-nums ${
+            isWarnTime ? "bg-red-600 text-white animate-pulse" : "bg-gray-800 text-white"
+          }`}>
+            {formatTime(state.sectionTimeRemaining)}
+          </div>
 
-            {/* Timer */}
-            <div className={`text-lg font-mono px-3 py-1 rounded ${
-              isWarningTime ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-700'
+          {/* Controls */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-xs hidden md:inline ${
+              autoSaveStatus === "saved"  ? "text-green-400" :
+              autoSaveStatus === "saving" ? "text-blue-400"  : "text-red-400"
             }`}>
-              {formatTime(state.timeRemaining)}
-            </div>
+              {autoSaveStatus === "saved" ? "✓" : autoSaveStatus === "saving" ? "…" : "⚠"}
+            </span>
 
-            {/* Pause Button */}
-            {state.exam.config.allowPause && (
+            {!state.isProctored && state.exam.config.allowPause && (
               <button
-                onClick={handlePauseToggle}
-                className={`px-4 py-2 rounded font-semibold ${
-                  state.isPaused 
-                    ? 'bg-green-600 hover:bg-green-700' 
-                    : 'bg-yellow-600 hover:bg-yellow-700'
-                }`}
+                onClick={() => setState(prev => prev ? { ...prev, isPaused: !prev.isPaused } : prev)}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-yellow-700/30 hover:bg-yellow-700/50 text-yellow-200 border border-yellow-600/20 transition-colors"
               >
-                {state.isPaused ? '▶️ Resume' : '⏸️ Pause'}
+                {state.isPaused ? "▶" : "⏸"}
               </button>
             )}
 
-            {/* Submit Button */}
             <button
-              onClick={() => setShowConfirmSubmit(true)}
-              className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold"
+              onClick={() => setShowReviewModal(true)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-red-700/30 hover:bg-red-700/50 text-red-200 border border-red-600/20 transition-colors font-semibold"
             >
-              Submit Exam
+              {isLastSection ? "Submit" : "End Section"}
             </button>
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="mt-3">
-          <div className="w-full bg-gray-700 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
-          <div className="flex justify-between text-xs text-gray-400 mt-1">
-            <span>Progress: {Math.round(progress)}%</span>
-            <span>
-              Answered: {Object.keys(state.responses).length} / {state.exam.questions.length}
-            </span>
-          </div>
+        {/* Section progress bar */}
+        <div className="h-0.5 bg-white/5">
+          <div
+            className={`h-full transition-all duration-300 ${cols.text.replace("text-", "bg-").replace("-300", "-500")}`}
+            style={{ width: `${sectionProgress}%` }}
+          />
         </div>
-      </div>
+      </header>
 
-      {/* Main Content */}
-      <div className="flex-1 p-6">
-        <div className="max-w-4xl mx-auto">
-          {/* Question */}
-          <div className="bg-gray-800/50 rounded-lg p-6 mb-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
-                  Q{state.currentQuestionIndex + 1}
+      {/* ── Main ─── */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto p-4 space-y-4 pb-8">
+
+          {/* Question card */}
+          <div className={`${cols.bg} border ${cols.border} rounded-2xl p-5`}>
+            <div className="flex items-center justify-between mb-4 gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="flex-shrink-0 bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-bold">
+                  Q{state.currentQuestionIdx + 1}
                 </span>
-                <span className="text-sm text-gray-400">
-                  {currentQuestion.topic} • {currentQuestion.difficulty}
+                <span className="text-sm text-gray-400 truncate">
+                  {currentQuestion.topic}{currentQuestion.difficulty && ` · ${currentQuestion.difficulty}`}
                 </span>
               </div>
               <button
-                onClick={() => handleFlagQuestion(currentQuestion.id)}
-                className={`px-3 py-1 rounded text-sm font-semibold ${
-                  state.flaggedQuestions.has(currentQuestion.id)
-                    ? 'bg-yellow-600 text-white'
-                    : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+                onClick={() => handleFlag(currentQuestion.id)}
+                className={`flex-shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                  state.flagged.has(currentQuestion.id)
+                    ? "bg-yellow-600 text-white"
+                    : "bg-gray-700/50 hover:bg-gray-700 text-gray-300"
                 }`}
               >
-                🚩 {state.flaggedQuestions.has(currentQuestion.id) ? 'Flagged' : 'Flag'}
+                🚩 {state.flagged.has(currentQuestion.id) ? "Flagged" : "Flag"}
               </button>
             </div>
 
-            <div className="text-lg mb-6 leading-relaxed">
-              {currentQuestion.stem}
-            </div>
+            <p className="text-base leading-relaxed mb-6 text-gray-100">{currentQuestion.stem}</p>
 
-            {/* Answer Options */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {Object.entries(currentQuestion.options).map(([key, value]) => (
                 <label
                   key={key}
-                  className={`flex items-start gap-3 p-4 rounded-lg cursor-pointer transition-all ${
+                  className={`flex items-start gap-3 p-4 rounded-xl cursor-pointer transition-all border-2 ${
                     state.responses[currentQuestion.id] === key
-                      ? 'bg-blue-600/20 border-2 border-blue-500'
-                      : 'bg-gray-700/30 border-2 border-transparent hover:bg-gray-700/50'
+                      ? "bg-blue-600/20 border-blue-500 text-white"
+                      : "bg-white/5 border-transparent hover:bg-white/10 hover:border-white/20 text-gray-200"
                   }`}
                 >
                   <input
                     type="radio"
-                    name={`question-${currentQuestion.id}`}
+                    name={`q-${currentQuestion.id}`}
                     value={key}
                     checked={state.responses[currentQuestion.id] === key}
-                    onChange={() => handleAnswerSelect(currentQuestion.id, key)}
-                    className="mt-1 text-blue-600 focus:ring-blue-500"
+                    onChange={() => handleAnswer(currentQuestion.id, key)}
+                    className="mt-0.5 accent-blue-500 flex-shrink-0"
                   />
-                  <div className="flex-1">
-                    <span className="font-semibold text-blue-400 mr-2">{key}.</span>
-                    <span>{value}</span>
-                  </div>
+                  <span className="font-bold text-blue-400 mr-1 flex-shrink-0">{key}.</span>
+                  <span className="flex-1 text-sm">{value as string}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Navigation */}
-          <div className="flex items-center justify-between">
+          {/* Navigation bar */}
+          <div className="flex items-center justify-between gap-4">
             <button
-              onClick={() => handleNavigateQuestion('prev')}
-              disabled={state.currentQuestionIndex === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+              onClick={() => handleNav(state.currentQuestionIdx - 1)}
+              disabled={state.currentQuestionIdx === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl text-sm transition-colors"
             >
-              ← Previous
+              ← Prev
             </button>
 
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Keyboard shortcuts:</span>
-              <span className="text-xs bg-gray-700 px-2 py-1 rounded">1-5: Answer</span>
-              <span className="text-xs bg-gray-700 px-2 py-1 rounded">F: Flag</span>
-              <span className="text-xs bg-gray-700 px-2 py-1 rounded">←→: Navigate</span>
+            <div className="flex items-center gap-3 text-[10px] text-gray-500 hidden sm:flex">
+              <span>1–5: answer</span>
+              <span>F: flag</span>
+              <span>←→ or P/N: navigate</span>
             </div>
 
-            <button
-              onClick={() => handleNavigateQuestion('next')}
-              disabled={state.currentQuestionIndex === state.exam.questions.length - 1}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
-            >
-              Next →
-            </button>
+            {state.currentQuestionIdx < currentSection.questions.length - 1 ? (
+              <button
+                onClick={() => handleNav(state.currentQuestionIdx + 1)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-xl text-sm transition-colors"
+              >
+                Next →
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowReviewModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600/50 hover:bg-indigo-600 rounded-xl text-sm font-semibold transition-colors"
+              >
+                {isLastSection ? "Submit Exam →" : "End Section →"}
+              </button>
+            )}
           </div>
 
-          {/* Question Navigator */}
-          <div className="mt-8 bg-gray-800/50 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Question Navigator</h3>
-            <div className="grid grid-cols-10 gap-2">
-              {state.exam.questions.map((_, index) => {
-                const isAnswered = state.responses[state.exam!.questions[index].id];
-                const isFlagged = state.flaggedQuestions.has(state.exam!.questions[index].id);
-                const isCurrent = index === state.currentQuestionIndex;
-                
+          {/* Question navigator */}
+          <div className="bg-gray-800/40 border border-white/8 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-white">Question Navigator</h3>
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                <span className="text-emerald-400">✓ {answeredInSection}</span>
+                {flaggedInSection > 0 && <span className="text-yellow-400">🚩 {flaggedInSection}</span>}
+                <span>{currentSection.questions.length - answeredInSection} blank</span>
+              </div>
+            </div>
+
+            {/* Section tabs — shown only for multi-section exams */}
+            {state.sections.length > 1 && (
+              <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+                {state.sections.map((sg, idx) => {
+                  const c   = sectionColors(sg.sectionId);
+                  const cur = idx === state.currentSectionIdx;
+                  const ans = sg.questions.filter(q => state.responses[q.id]).length;
+                  const locked = state.isProctored && idx > state.currentSectionIdx;
+                  return (
+                    <button
+                      key={sg.sectionId}
+                      onClick={() => {
+                        if (!locked) {
+                          setState(prev => prev ? {
+                            ...prev,
+                            currentSectionIdx:    idx,
+                            currentQuestionIdx:   0,
+                            sectionTimeRemaining: prev.sections[idx].timeLimitSeconds,
+                          } : prev);
+                        }
+                      }}
+                      disabled={locked}
+                      title={locked ? "Unavailable in Prometric mode" : SECTION_NAMES[sg.sectionId] ?? sg.sectionId}
+                      className={`flex-none text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-colors ${
+                        cur
+                          ? `${c.bg} ${c.text} ${c.border}`
+                          : locked
+                          ? "bg-gray-800/50 text-gray-600 border-white/5 cursor-not-allowed"
+                          : "bg-gray-700/30 text-gray-400 border-white/10 hover:bg-gray-700/50"
+                      }`}
+                    >
+                      {SECTION_SHORT[sg.sectionId] ?? sg.sectionId}
+                      {" "}
+                      <span className={ans === sg.questions.length ? "text-emerald-400" : ""}>
+                        {ans}/{sg.questions.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Question grid */}
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(36px, 1fr))" }}>
+              {currentSection.questions.map((q, idx) => {
+                const answered = !!state.responses[q.id];
+                const flagged  = state.flagged.has(q.id);
+                const current  = idx === state.currentQuestionIdx;
                 return (
                   <button
-                    key={index}
-                    onClick={() => handleNavigateQuestion(index)}
-                    className={`w-10 h-10 rounded text-sm font-semibold transition-all ${
-                      isCurrent
-                        ? 'bg-blue-600 text-white ring-2 ring-blue-400'
-                        : isAnswered
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : isFlagged
-                        ? 'bg-yellow-600 text-white hover:bg-yellow-700'
-                        : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                    key={q.id}
+                    onClick={() => handleNav(idx)}
+                    title={`Q${idx + 1}${answered ? " · answered" : " · blank"}${flagged ? " · flagged" : ""}`}
+                    className={`h-9 rounded-lg text-xs font-bold transition-all ${
+                      current
+                        ? `bg-blue-600 text-white ring-2 ${cols.ring} ring-offset-1 ring-offset-gray-900`
+                        : flagged && answered
+                        ? "bg-yellow-600 text-white hover:bg-yellow-500"
+                        : flagged
+                        ? "bg-yellow-700/80 text-white hover:bg-yellow-600"
+                        : answered
+                        ? "bg-emerald-700 text-white hover:bg-emerald-600"
+                        : "bg-gray-700/60 text-gray-300 hover:bg-gray-600"
                     }`}
                   >
-                    {index + 1}
-                    {isFlagged && <div className="text-xs">🚩</div>}
+                    {idx + 1}
                   </button>
                 );
               })}
             </div>
-            <div className="flex items-center gap-6 mt-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-600 rounded"></div>
-                <span>Current</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-600 rounded"></div>
-                <span>Answered</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-600 rounded"></div>
-                <span>Flagged</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-gray-600 rounded"></div>
-                <span>Not Answered</span>
-              </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-400 flex-wrap">
+              {[
+                { cls: "bg-blue-600", label: "Current" },
+                { cls: "bg-emerald-700", label: "Answered" },
+                { cls: "bg-yellow-600", label: "Flagged" },
+                { cls: "bg-gray-700", label: "Blank" },
+              ].map(({ cls, label }) => (
+                <span key={label} className="flex items-center gap-1">
+                  <span className={`w-3 h-3 rounded ${cls} inline-block`} />
+                  {label}
+                </span>
+              ))}
             </div>
           </div>
+
+          {/* Overall progress footer */}
+          {state.sections.length > 1 && (
+            <div className="bg-gray-800/30 border border-white/5 rounded-xl px-4 py-3 flex items-center justify-between text-xs text-gray-400">
+              <span>
+                Total answered: {Object.keys(state.responses).length} /{" "}
+                {state.sections.reduce((s, g) => s + g.questions.length, 0)}
+              </span>
+              {flaggedTotal > 0 && <span className="text-yellow-400">🚩 {flaggedTotal} flagged</span>}
+              <span className={unansweredTotal === 0 ? "text-emerald-400" : ""}>
+                {unansweredTotal === 0 ? "All answered ✓" : `${unansweredTotal} blank`}
+              </span>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
