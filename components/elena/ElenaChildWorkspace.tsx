@@ -3,6 +3,7 @@
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
 import React, { useState, useEffect, useCallback } from "react";
+import ReadingBuddy from "@/components/elena/ReadingBuddy";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
 import {
   saveChildProfile,
@@ -431,85 +432,75 @@ function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: H
 /* ─── Continue Reading tab ───────────────────────────────────────────────────── */
 
 function ContinueReadingTab({
+  profile,
   bookTitle,
   currentPage,
   totalPages,
+  pageText,
   progress,
   onLogSession,
 }: {
-  bookTitle?: string;
-  currentPage?: number;
-  totalPages?: number;
-  progress: ChildProgress | null;
-  onLogSession: () => Promise<void>;
+  profile:       ChildProfile;
+  bookTitle?:    string;
+  currentPage?:  number;
+  totalPages?:   number;
+  pageText?:     string;
+  progress:      ChildProgress | null;
+  onLogSession:  () => Promise<void>;
 }) {
   const pct = currentPage && totalPages && totalPages > 0
     ? Math.round((currentPage / totalPages) * 100)
     : null;
 
   return (
-    <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-4">📖 Continue Reading</h2>
-
-      {bookTitle ? (
-        <div className="mb-5 rounded-2xl border border-blue-400/30 bg-blue-500/10 p-5">
-          <div className="flex items-start gap-3 mb-4">
-            <span className="text-3xl">📘</span>
-            <div className="min-w-0">
-              <h3 className="text-white font-bold text-base leading-tight truncate">{bookTitle}</h3>
-              {currentPage && totalPages ? (
-                <p className="text-blue-300 text-sm mt-0.5">
-                  Page {currentPage} of {totalPages}
-                </p>
-              ) : (
-                <p className="text-blue-300/60 text-sm mt-0.5">Open in Reader to track your page</p>
-              )}
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Book context strip */}
+      <div className="flex-shrink-0 p-4 pb-3">
+        {bookTitle ? (
+          <div className="rounded-2xl border border-blue-400/30 bg-blue-500/10 p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <span className="text-3xl">📘</span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-white font-bold text-base leading-tight truncate">{bookTitle}</h3>
+                {currentPage && totalPages ? (
+                  <p className="text-blue-300 text-sm mt-0.5">Page {currentPage} of {totalPages}</p>
+                ) : (
+                  <p className="text-blue-300/60 text-sm mt-0.5">Open in Reader to track your page</p>
+                )}
+              </div>
+              <LogSessionButton onLog={onLogSession} compact />
             </div>
+            {pct !== null && (
+              <div>
+                <div className="flex justify-between text-[11px] text-blue-300/70 mb-1.5">
+                  <span>Reading progress</span><span>{pct}%</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-white/3 p-5 text-center">
+            <div className="text-4xl mb-2">📚</div>
+            <h3 className="text-white font-bold text-base mb-1">No book open yet</h3>
+            <p className="text-slate-400 text-sm">Switch to the Reader tab and open a PDF to track your progress.</p>
+          </div>
+        )}
+      </div>
 
-          {pct !== null && (
-            <div className="mb-4">
-              <div className="flex justify-between text-[11px] text-blue-300/70 mb-1.5">
-                <span>Reading progress</span>
-                <span>{pct}%</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          <LogSessionButton onLog={onLogSession} compact />
-        </div>
-      ) : (
-        <div className="mb-5 rounded-2xl border border-white/10 bg-white/3 p-6 text-center">
-          <div className="text-4xl mb-3">📚</div>
-          <h3 className="text-white font-bold text-base mb-1">No book open yet</h3>
-          <p className="text-slate-400 text-sm">
-            Switch to the Reader tab and open a PDF to see your reading progress here.
-          </p>
-        </div>
-      )}
-
-      {/* Reading history summary */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <h3 className="text-sm font-bold text-white mb-3">📊 My Reading Story</h3>
-        <div className="space-y-2">
-          {[
-            ["Sessions completed",    String(progress?.totalSessions ?? 0)],
-            ["Books finished",        String(progress?.booksCompleted ?? 0)],
-            ["Total reading time",    progress?.totalMinutes ? `${progress.totalMinutes} min` : "—"],
-            ["Words explored",        progress?.totalWordsRead ? String(progress.totalWordsRead) : "—"],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between items-center">
-              <span className="text-slate-400 text-sm">{label}</span>
-              <span className="text-white font-semibold text-sm tabular-nums">{value}</span>
-            </div>
-          ))}
-        </div>
+      {/* Reading Buddy — fills remaining space */}
+      <div className="flex-1 min-h-0 px-4 pb-4">
+        <ReadingBuddy
+          profile={profile}
+          pageText={pageText}
+          bookTitle={bookTitle}
+          currentPage={currentPage}
+        />
       </div>
     </div>
   );
@@ -1069,9 +1060,11 @@ interface ElenaChildWorkspaceProps {
   bookTitle?:    string;
   currentPage?:  number;
   totalPages?:   number;
+  /** Raw text of the current PDF page (from the Reader's OCR pipeline) */
+  pageText?:     string;
 }
 
-export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages }: ElenaChildWorkspaceProps) {
+export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages, pageText }: ElenaChildWorkspaceProps) {
   const [profile,   setProfile]   = useState<ChildProfile | null>(null);
   const [rewards,   setRewards]   = useState<ChildRewardState | null>(null);
   const [progress,  setProgress]  = useState<ChildProgress | null>(null);
@@ -1143,8 +1136,9 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         )}
         {activeTab === "reading" && (
           <ContinueReadingTab
+            profile={profile}
             bookTitle={bookTitle} currentPage={currentPage} totalPages={totalPages}
-            progress={progress} onLogSession={handleLogSession}
+            pageText={pageText} progress={progress} onLogSession={handleLogSession}
           />
         )}
         {activeTab === "today" && (

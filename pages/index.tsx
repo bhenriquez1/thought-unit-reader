@@ -5307,6 +5307,7 @@ export default function ThoughtUnitReader() {
           bookTitle={uploadedFile?.name}
           currentPage={currentPage}
           totalPages={pdfPageCount}
+          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || undefined}
         />
       );
     }
