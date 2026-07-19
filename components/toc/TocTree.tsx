@@ -25,7 +25,7 @@ const KIND_LABEL: Record<TocNode["kind"], string> = {
   frontmatter: "Frontmatter",
 };
 
-const STORAGE_KEY = (bookId: string) => `toc-expanded:${bookId}`;
+const STORAGE_KEY = (bookId: string) => `avrrio:v1:toc-expanded:${bookId}`;
 
 /** Find the node id whose page is the largest value ≤ activePage (active chapter). */
 function findActiveId(nodes: TocNode[], activePage: number): string | null {
@@ -76,7 +76,9 @@ export default function TocTree({ toc, activePage, onJump, onStudy, bookId }: To
     if (!bookId || typeof window === "undefined") return {};
     try {
       const raw = localStorage.getItem(STORAGE_KEY(bookId));
-      return raw ? JSON.parse(raw) : {};
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }

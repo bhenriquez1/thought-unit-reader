@@ -153,9 +153,19 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
       createdAt: now,
       updatedAt: now,
     };
-    await saveChildProfile(profile);
-    onSave(profile);
-    setSaving(false);
+    try {
+      await saveChildProfile(profile);
+      onSave(profile);
+    } catch (err) {
+      const blocked = String(err).includes("blocked");
+      setError(
+        blocked
+          ? "Elena Mode needs a storage update. Close other Avrrio Reader tabs and try again."
+          : "Couldn't save the profile. Please try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1320,10 +1330,14 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   const [rewards,     setRewards]     = useState<ChildRewardState | null>(null);
   const [progress,    setProgress]    = useState<ChildProgress | null>(null);
   const [loading,     setLoading]     = useState(true);
+  const [idbError,    setIdbError]    = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [activeTab,   setActiveTab]   = useState<ElenaTab>("home");
   const [showParent,  setShowParent]  = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setIdbError(null);
     const savedId = localStorage.getItem(STORAGE_KEY);
     if (!savedId) { setLoading(false); return; }
     Promise.all([
@@ -1335,8 +1349,16 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
       setRewards(r ?? (p ? makeDefaultRewards(p.id) : null));
       setProgress(prog);
       setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    }).catch((err) => {
+      const blocked = String(err).includes("blocked");
+      setIdbError(
+        blocked
+          ? "Elena Mode needs a storage update. Close other Avrrio Reader tabs, then tap Retry."
+          : "Couldn't load your profile. Please retry.",
+      );
+      setLoading(false);
+    });
+  }, [loadAttempt]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
     localStorage.setItem(STORAGE_KEY, p.id);
@@ -1379,6 +1401,21 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950">
         <div className="text-indigo-400 text-sm animate-pulse">Loading…</div>
+      </div>
+    );
+  }
+
+  if (idbError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 p-8 text-center">
+        <div className="text-4xl">⚠️</div>
+        <p className="text-sm text-indigo-200 max-w-xs leading-relaxed">{idbError}</p>
+        <button
+          onClick={() => setLoadAttempt(a => a + 1)}
+          className="rounded-xl bg-indigo-500 hover:bg-indigo-400 px-5 py-2.5 text-sm font-semibold text-white transition-colors"
+        >
+          Retry
+        </button>
       </div>
     );
   }
