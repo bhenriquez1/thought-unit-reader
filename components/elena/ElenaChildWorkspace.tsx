@@ -2,7 +2,7 @@
 // Elena Mode workspace — child-learning hub with 9 sections.
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReadingBuddy from "@/components/elena/ReadingBuddy";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
 import {
@@ -12,6 +12,9 @@ import {
   saveRewardState,
   loadChildProgress,
   saveChildProgress,
+  saveVocabWord,
+  loadVocabWords,
+  deleteVocabWord,
 } from "@/lib/elena/idbStore";
 import type {
   ChildProfile,
@@ -19,6 +22,8 @@ import type {
   ChildRewardState,
   ChildProgress,
 } from "@/lib/elena/types";
+import type { VocabWord, VocabStatus } from "@/lib/elena/vocabulary";
+import { VOCAB_STATUS_META } from "@/lib/elena/vocabulary";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 
@@ -844,47 +849,239 @@ function LibraryTab({ profile, progress }: { profile: ChildProfile; progress: Ch
   );
 }
 
-/* ─── Vocabulary tab (placeholder — PR #3) ───────────────────────────────────── */
+/* ─── Vocabulary tab ─────────────────────────────────────────────────────────── */
 
-function VocabularyTab() {
-  const PREVIEW_WORDS = [
-    { word: "Chrysalis", emoji: "🦋", preview: "The protective case around a butterfly…" },
-    { word: "Photosynthesis", emoji: "🌱", preview: "How plants make their own food…" },
-    { word: "Orbit", emoji: "🪐", preview: "The path a planet takes around the sun…" },
-  ];
+const STATUS_ORDER: VocabStatus[] = ["new", "reviewing", "mastered"];
+
+function nextStatus(s: VocabStatus): VocabStatus | null {
+  const i = STATUS_ORDER.indexOf(s);
+  return i < STATUS_ORDER.length - 1 ? STATUS_ORDER[i + 1] : null;
+}
+
+function VocabularyTab({
+  profile,
+  pageText,
+  bookTitle,
+  currentPage,
+}: {
+  profile:      ChildProfile;
+  pageText?:    string;
+  bookTitle?:   string;
+  currentPage?: number;
+}) {
+  const [words,     setWords]     = useState<VocabWord[]>([]);
+  const [flippedId, setFlippedId] = useState<string | null>(null);
+  const [filter,    setFilter]    = useState<VocabStatus | "all">("all");
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    loadVocabWords(profile.id).then(setWords).catch(() => {});
+  }, [profile.id]);
+
+  const extractWords = useCallback(async () => {
+    if (!pageText?.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    try {
+      const resp = await fetch("/api/elena-vocab", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ pageText, ageRange: profile.ageRange, bookTitle, currentPage }),
+        signal:  abortRef.current.signal,
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) { setError(data.error || "Couldn't find words. Try again!"); return; }
+
+      const now = new Date().toISOString();
+      const existing = new Set(words.map(w => w.word.toLowerCase()));
+      const newWords: VocabWord[] = (data.words as { word: string; definition: string; exampleSentence: string; emoji: string }[])
+        .filter(w => !existing.has(w.word.toLowerCase()))
+        .map(w => ({
+          id:              crypto.randomUUID(),
+          childProfileId:  profile.id,
+          word:            w.word,
+          definition:      w.definition,
+          exampleSentence: w.exampleSentence,
+          emoji:           w.emoji,
+          sourceBookTitle: bookTitle,
+          sourcePage:      currentPage,
+          status:          "new" as VocabStatus,
+          createdAt:       now,
+          updatedAt:       now,
+        }));
+
+      await Promise.all(newWords.map(saveVocabWord));
+      setWords(prev => [...prev, ...newWords]);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError("Something went wrong. Try again in a moment!");
+    } finally {
+      setLoading(false);
+    }
+  }, [pageText, loading, words, profile, bookTitle, currentPage]);
+
+  const advanceStatus = useCallback(async (word: VocabWord) => {
+    const next = nextStatus(word.status);
+    if (!next) return;
+    const updated: VocabWord = { ...word, status: next, updatedAt: new Date().toISOString() };
+    await saveVocabWord(updated);
+    setWords(prev => prev.map(w => w.id === word.id ? updated : w));
+  }, []);
+
+  const removeWord = useCallback(async (id: string) => {
+    await deleteVocabWord(id);
+    setWords(prev => prev.filter(w => w.id !== id));
+    if (flippedId === id) setFlippedId(null);
+  }, [flippedId]);
+
+  const counts = {
+    new:       words.filter(w => w.status === "new").length,
+    reviewing: words.filter(w => w.status === "reviewing").length,
+    mastered:  words.filter(w => w.status === "mastered").length,
+  };
+
+  const visible = filter === "all" ? words : words.filter(w => w.status === filter);
 
   return (
-    <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-1">🔤 My Words</h2>
-      <p className="text-indigo-300 text-sm mb-5">Words you discover while reading appear here.</p>
-
-      {/* Coming soon banner */}
-      <div className="mb-5 rounded-2xl border border-teal-400/30 bg-teal-500/10 p-4 text-center">
-        <div className="text-3xl mb-2">🔤</div>
-        <p className="text-teal-200 font-bold text-sm mb-1">Vocabulary Builder — Coming Soon!</p>
-        <p className="text-teal-400/60 text-xs">
-          Every new word you find while reading will become a flashcard you can study and master.
-        </p>
-      </div>
-
-      {/* Preview cards */}
-      <div className="mb-3">
-        <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide mb-3">Preview</p>
-        <div className="space-y-3">
-          {PREVIEW_WORDS.map(({ word, emoji, preview }) => (
-            <div key={word} className="rounded-xl border border-white/8 bg-white/3 px-4 py-3 flex items-start gap-3 opacity-60">
-              <span className="text-2xl">{emoji}</span>
-              <div>
-                <div className="text-white font-bold text-sm">{word}</div>
-                <div className="text-slate-400 text-xs mt-0.5">{preview}</div>
-              </div>
-              <span className="ml-auto text-slate-600 text-xs flex-shrink-0">🔒</span>
-            </div>
-          ))}
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header + stats */}
+      <div className="flex-shrink-0 px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-bold text-white leading-tight">🔤 My Words</h2>
+            <p className="text-indigo-300/70 text-xs">{words.length} word{words.length !== 1 ? "s" : ""} collected</p>
+          </div>
+          {pageText && (
+            <button
+              onClick={extractWords}
+              disabled={loading}
+              className="flex items-center gap-1.5 text-xs bg-teal-600/30 hover:bg-teal-600/50 disabled:opacity-50 border border-teal-400/30 text-teal-200 rounded-xl px-3 py-2 transition-colors"
+            >
+              {loading ? (
+                <span className="inline-flex gap-1">
+                  <span className="w-1 h-1 bg-teal-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1 h-1 bg-teal-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1 h-1 bg-teal-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                </span>
+              ) : "✨ Find words"}
+            </button>
+          )}
         </div>
+
+        {/* Mastery stats row */}
+        <div className="flex gap-2 mb-3">
+          {(["new", "reviewing", "mastered"] as VocabStatus[]).map(s => {
+            const m = VOCAB_STATUS_META[s];
+            return (
+              <button
+                key={s}
+                onClick={() => setFilter(prev => prev === s ? "all" : s)}
+                className={`flex-1 rounded-xl py-1.5 text-center transition-colors border ${
+                  filter === s
+                    ? "bg-white/10 border-white/20"
+                    : "bg-white/3 border-white/8 hover:bg-white/6"
+                }`}
+              >
+                <div className="text-base leading-none">{m.emoji}</div>
+                <div className={`text-[10px] font-bold tabular-nums mt-0.5 ${m.color}`}>{counts[s]}</div>
+                <div className="text-[9px] text-slate-500">{m.label}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-400 bg-red-900/20 border border-red-500/20 rounded-xl px-3 py-2 mb-2">
+            {error}
+          </div>
+        )}
       </div>
 
-      <p className="text-center text-slate-500 text-xs">Your real word collection will look just like this!</p>
+      {/* Word list */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+        {visible.length === 0 ? (
+          <div className="text-center py-10">
+            <div className="text-4xl mb-3">{words.length === 0 ? "📖" : "🔍"}</div>
+            <p className="text-slate-400 text-sm font-medium mb-1">
+              {words.length === 0 ? "No words yet!" : `No ${filter} words`}
+            </p>
+            <p className="text-slate-500 text-xs">
+              {words.length === 0
+                ? pageText
+                  ? 'Tap "✨ Find words" to discover words from this page.'
+                  : "Open a book in the Reader, then come back here."
+                : "Try a different filter above."}
+            </p>
+          </div>
+        ) : (
+          visible.map(word => {
+            const isFlipped = flippedId === word.id;
+            const meta = VOCAB_STATUS_META[word.status];
+            const next = nextStatus(word.status);
+
+            return (
+              <div
+                key={word.id}
+                className="rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-900/40 to-violet-900/30 overflow-hidden"
+              >
+                {/* Card front */}
+                <button
+                  onClick={() => setFlippedId(isFlipped ? null : word.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                >
+                  <span className="text-2xl flex-shrink-0">{word.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-bold text-sm">{word.word}</div>
+                    {!isFlipped && (
+                      <div className="text-indigo-300/60 text-xs mt-0.5 truncate">{word.definition}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className={`text-[10px] font-semibold ${meta.color}`}>{meta.emoji} {meta.label}</span>
+                    <span className="text-slate-500 text-xs">{isFlipped ? "▲" : "▼"}</span>
+                  </div>
+                </button>
+
+                {/* Card back (expanded) */}
+                {isFlipped && (
+                  <div className="px-4 pb-4 border-t border-white/8">
+                    <p className="text-indigo-100 text-sm mt-3 leading-relaxed">{word.definition}</p>
+                    <p className="text-indigo-300/80 text-xs mt-2 italic leading-relaxed">
+                      &ldquo;{word.exampleSentence}&rdquo;
+                    </p>
+                    {word.sourceBookTitle && (
+                      <p className="text-slate-500 text-[10px] mt-2">
+                        From: {word.sourceBookTitle}{word.sourcePage ? ` p.${word.sourcePage}` : ""}
+                      </p>
+                    )}
+                    <div className="flex gap-2 mt-3">
+                      {next && (
+                        <button
+                          onClick={() => advanceStatus(word)}
+                          className="flex-1 text-xs bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-400/30 text-emerald-200 rounded-xl py-2 transition-colors"
+                        >
+                          {VOCAB_STATUS_META[next].emoji} Mark as {VOCAB_STATUS_META[next].label}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeWord(word.id)}
+                        className="text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-500/20 text-red-400 rounded-xl px-3 py-2 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -1060,7 +1257,7 @@ interface ElenaChildWorkspaceProps {
   bookTitle?:    string;
   currentPage?:  number;
   totalPages?:   number;
-  /** Raw text of the current PDF page (from the Reader's OCR pipeline) */
+  /** Raw text of the current PDF page — passed to Vocabulary Builder and Reading Buddy */
   pageText?:     string;
 }
 
@@ -1147,7 +1344,12 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         {activeTab === "adventures"   && <AdventuresTab rewards={rewards} />}
         {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
         {activeTab === "library"      && <LibraryTab profile={profile} progress={progress} />}
-        {activeTab === "vocabulary"   && <VocabularyTab />}
+        {activeTab === "vocabulary"   && (
+          <VocabularyTab
+            profile={profile} pageText={pageText}
+            bookTitle={bookTitle} currentPage={currentPage}
+          />
+        )}
         {activeTab === "games"        && <GamesTab rewards={rewards} />}
         {activeTab === "challenge"    && (
           <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
