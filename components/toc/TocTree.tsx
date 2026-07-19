@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TocNode } from "@/lib/readerContracts";
 import { normalizeDisplayTitle } from "@/lib/learningHub/titleNormalizer";
 
@@ -7,6 +7,8 @@ interface TocTreeProps {
   activePage: number;
   onJump: (node: TocNode) => void;
   onStudy?: (node: TocNode) => void;
+  /** Passed to persist expand state across remounts */
+  bookId?: string;
 }
 
 const KIND_LABEL: Record<TocNode["kind"], string> = {
@@ -23,14 +25,69 @@ const KIND_LABEL: Record<TocNode["kind"], string> = {
   frontmatter: "Frontmatter",
 };
 
-export default function TocTree({ toc, activePage, onJump, onStudy }: TocTreeProps) {
+const STORAGE_KEY = (bookId: string) => `toc-expanded:${bookId}`;
+
+/** Find the node id whose page is the largest value ≤ activePage (active chapter). */
+function findActiveId(nodes: TocNode[], activePage: number): string | null {
+  let bestId: string | null = null;
+  let bestPage = -1;
+
+  const walk = (list: TocNode[]) => {
+    for (const n of list) {
+      if (n.page <= activePage && n.page > bestPage) {
+        bestPage = n.page;
+        bestId = n.id;
+      }
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return bestId;
+}
+
+/** Collect the ids of all ancestors of the target node. */
+function ancestorIds(nodes: TocNode[], targetId: string, acc: string[] = []): string[] {
+  for (const n of nodes) {
+    if (n.id === targetId) return acc;
+    if (n.children?.length) {
+      const found = ancestorIds(n.children, targetId, [...acc, n.id]);
+      if (found.length > acc.length) return found;
+    }
+  }
+  return [];
+}
+
+/** Remove duplicate titles at the same level (e.g. heuristic TOC duplicate entries). */
+function dedup(nodes: TocNode[]): TocNode[] {
+  const seen = new Set<string>();
+  return nodes
+    .filter((n) => {
+      const key = `${n.title.trim().toLowerCase()}:${n.page}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((n) => ({ ...n, children: n.children?.length ? dedup(n.children) : n.children }));
+}
+
+export default function TocTree({ toc, activePage, onJump, onStudy, bookId }: TocTreeProps) {
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    if (!bookId || typeof window === "undefined") return {};
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY(bookId));
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
   const normalizedQuery = query.trim().toLowerCase();
 
+  const dedupedToc = useMemo(() => dedup(toc), [toc]);
+
   const filtered = useMemo(() => {
-    if (!normalizedQuery) return toc;
+    if (!normalizedQuery) return dedupedToc;
 
     const filterNodes = (nodes: TocNode[]): TocNode[] => {
       const out: TocNode[] = [];
@@ -44,8 +101,35 @@ export default function TocTree({ toc, activePage, onJump, onStudy }: TocTreePro
       return out;
     };
 
-    return filterNodes(toc);
-  }, [toc, normalizedQuery]);
+    return filterNodes(dedupedToc);
+  }, [dedupedToc, normalizedQuery]);
+
+  const activeId = useMemo(() => findActiveId(dedupedToc, activePage), [dedupedToc, activePage]);
+
+  // Auto-expand ancestors of active node on initial mount and when activePage changes
+  useEffect(() => {
+    if (!activeId) return;
+    const ancestors = ancestorIds(dedupedToc, activeId);
+    if (!ancestors.length) return;
+    setExpanded((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const id of ancestors) {
+        if (!next[id]) { next[id] = true; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [activeId, dedupedToc]);
+
+  // Persist expand state to localStorage
+  useEffect(() => {
+    if (!bookId || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_KEY(bookId), JSON.stringify(expanded));
+    } catch {
+      // quota — ignore
+    }
+  }, [bookId, expanded]);
 
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -55,22 +139,24 @@ export default function TocTree({ toc, activePage, onJump, onStudy }: TocTreePro
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search chapters, sections, weeks..."
-          className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
+          placeholder="Search chapters, sections…"
+          className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50"
         />
       </div>
 
       <div className="max-h-[55vh] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-400">No matching TOC entries.</p>
+          <p className="text-xs text-slate-400 py-4 text-center">
+            {normalizedQuery ? "No matching chapters." : "No TOC available."}
+          </p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {filtered.map((node) => (
               <TocRow
                 key={node.id}
                 node={node}
                 depth={0}
-                activePage={activePage}
+                activeId={activeId}
                 expanded={expanded}
                 onToggle={toggle}
                 onJump={onJump}
@@ -87,7 +173,7 @@ export default function TocTree({ toc, activePage, onJump, onStudy }: TocTreePro
 function TocRow({
   node,
   depth,
-  activePage,
+  activeId,
   expanded,
   onToggle,
   onJump,
@@ -95,7 +181,7 @@ function TocRow({
 }: {
   node: TocNode;
   depth: number;
-  activePage: number;
+  activeId: string | null;
   expanded: Record<string, boolean>;
   onToggle: (id: string) => void;
   onJump: (node: TocNode) => void;
@@ -103,37 +189,40 @@ function TocRow({
 }) {
   const hasChildren = !!node.children?.length;
   const isOpen = expanded[node.id] ?? depth < 1;
-  const isActive = node.page === activePage;
+  const isActive = node.id === activeId;
 
   return (
     <li>
       <div
-        className={`group flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
+        className={`group flex items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors ${
           isActive
             ? "border-indigo-400/60 bg-indigo-500/20 text-white"
-            : "border-transparent text-slate-200 hover:border-white/10 hover:bg-white/5"
+            : "border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5"
         }`}
-        style={{ marginLeft: `${depth * 14}px` }}
+        style={{ marginLeft: `${depth * 12}px` }}
       >
         {hasChildren ? (
           <button
             onClick={() => onToggle(node.id)}
-            className="h-5 w-5 rounded border border-white/10 text-xs text-slate-300"
+            className="h-4 w-4 rounded border border-white/10 text-[10px] text-slate-400 flex items-center justify-center shrink-0 hover:bg-white/10"
             aria-label={isOpen ? "Collapse" : "Expand"}
           >
             {isOpen ? "−" : "+"}
           </button>
         ) : (
-          <span className="inline-block h-5 w-5" />
+          <span className="inline-block h-4 w-4 shrink-0" />
         )}
 
-        <button onClick={() => onJump(node)} className="flex-1 text-left">
-          <span className="font-medium">{normalizeDisplayTitle(node.title, { source: "toc" }).cleanedTitle}</span>
-          <span className="ml-2 text-xs text-slate-400">{KIND_LABEL[node.kind]} · p.{node.page}</span>
-          {node.source && (
-            <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${node.source === "fallback" ? "bg-amber-300/20 text-amber-100" : "bg-emerald-300/20 text-emerald-100"}`}>
-              {node.source === "fallback" ? "Fallback" : node.source[0].toUpperCase() + node.source.slice(1)}
-              {typeof node.confidence === "number" ? ` ${Math.round(node.confidence * 100)}%` : ""}
+        <button onClick={() => onJump(node)} className="flex-1 text-left min-w-0">
+          <span className={`text-xs font-medium leading-snug ${isActive ? "text-white" : "text-slate-200"}`}>
+            {normalizeDisplayTitle(node.title, { source: "toc" }).cleanedTitle}
+          </span>
+          <span className="ml-2 text-[10px] text-slate-500">
+            {KIND_LABEL[node.kind]} · p.{node.page}
+          </span>
+          {node.source === "fallback" && (
+            <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] bg-amber-300/15 text-amber-300">
+              Estimated
             </span>
           )}
         </button>
@@ -141,7 +230,7 @@ function TocRow({
         {onStudy && (
           <button
             onClick={() => onStudy(node)}
-            className="rounded bg-blue-600 px-2 py-1 text-xs text-white opacity-80 hover:opacity-100"
+            className="rounded-md bg-indigo-600/50 px-2 py-0.5 text-[10px] text-white opacity-70 hover:opacity-100 transition-opacity shrink-0"
           >
             Study
           </button>
@@ -149,13 +238,13 @@ function TocRow({
       </div>
 
       {hasChildren && isOpen && (
-        <ul className="mt-1 space-y-1">
+        <ul className="mt-0.5 space-y-0.5">
           {node.children!.map((child) => (
             <TocRow
               key={child.id}
               node={child}
               depth={depth + 1}
-              activePage={activePage}
+              activeId={activeId}
               expanded={expanded}
               onToggle={onToggle}
               onJump={onJump}

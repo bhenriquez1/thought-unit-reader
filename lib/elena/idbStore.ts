@@ -47,7 +47,10 @@ function openDb(): Promise<IDBDatabase> {
     req.onerror   = () => reject(req.error);
     // Fired when another tab holds a v1 connection open. Reloading that tab
     // will close the connection so the upgrade can proceed.
-    req.onblocked = () => console.warn("[IDB] upgrade blocked by an open connection in another tab");
+    req.onblocked = () => {
+      console.warn("[IDB] upgrade blocked by an open connection in another tab");
+      reject(new Error("IDB upgrade blocked — close other tabs and reload"));
+    };
   });
 }
 

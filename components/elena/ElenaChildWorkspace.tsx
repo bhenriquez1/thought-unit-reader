@@ -1341,10 +1341,13 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   const handleSave = useCallback(async (p: ChildProfile) => {
     localStorage.setItem(STORAGE_KEY, p.id);
     const defaultRewards = makeDefaultRewards(p.id);
-    await saveRewardState(defaultRewards);
+    // Update React state immediately so the workspace renders without waiting
+    // for the IDB write. The write is best-effort; on remount we fall back to
+    // makeDefaultRewards() anyway if the record is missing.
     setProfile(p);
     setRewards(defaultRewards);
     setProgress(null);
+    saveRewardState(defaultRewards).catch(() => {});
   }, []);
 
   const handleReset = useCallback(() => {
