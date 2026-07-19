@@ -15,7 +15,9 @@ import type { DifficultyLevel, EngineQuestion } from "@/lib/examEngine/types";
 const ANSWER_LETTERS = ["A", "B", "C", "D", "E"] as const;
 
 export function difficultyToLegacy(d: DifficultyLevel): "easy" | "medium" | "hard" {
-  return d === "foundation" ? "easy" : d === "mastery" ? "hard" : "medium";
+  if (d === "foundation") return "easy";
+  if (d === "mastery") return "hard";
+  return "medium"; // simulation and advanced both map to medium
 }
 
 export function legacyToDifficulty(d: "easy" | "medium" | "hard"): DifficultyLevel {
@@ -57,7 +59,11 @@ export function engineQuestionToDATQuestion(q: EngineQuestion): DATQuestion {
 /** Converts an AI-built exam into the legacy GeneratedExam shape the proctor
  *  and results pages already render — the only thing that's changed is
  *  where the questions came from. */
-export function builtExamToGeneratedExam(built: BuiltExam, totalTimeLimitMinutes: number): GeneratedExam {
+export function builtExamToGeneratedExam(
+  built: BuiltExam,
+  totalTimeLimitMinutes: number,
+  practiceMode?: 'practice' | 'practice-exam' | 'full-dat',
+): GeneratedExam {
   const questions = built.questions.map(engineQuestionToDATQuestion);
 
   const sectionIds = Array.from(new Set(questions.map((q) => q.sectionId)));
@@ -77,16 +83,16 @@ export function builtExamToGeneratedExam(built: BuiltExam, totalTimeLimitMinutes
     description: `AI-generated ${built.difficulty} exam grounded in your notes — ${questions.length} questions`,
     sections,
     totalTimeLimit: totalTimeLimitMinutes,
-    allowPause: built.difficulty !== "simulation",
-    showTimer: true,
+    allowPause: practiceMode === 'practice' || built.difficulty === "foundation",
+    showTimer: practiceMode !== 'practice',
     showProgress: true,
     randomizeQuestions: false,
     randomizeOptions: false,
-    immediateReview: built.difficulty === "foundation",
+    immediateReview: practiceMode === 'practice' || built.difficulty === "foundation",
     showExplanations: true,
     enableTUExplanations: true,
-    strictMode: built.difficulty === "simulation",
-    autoSubmit: built.difficulty === "simulation",
+    strictMode: practiceMode === 'full-dat',
+    autoSubmit: practiceMode === 'full-dat',
     warningThresholds: { timeRemaining: 5, questionsRemaining: 5 },
   };
 

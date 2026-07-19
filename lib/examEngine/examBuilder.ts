@@ -9,6 +9,7 @@ import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from "@/lib/examEngine/types";
+import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -19,6 +20,9 @@ export interface ExamBuildOptions {
   sectionIds?: string[];          // subset of profile.sections to include; default all
   questionTypes?: QuestionType[]; // default profile.questionTypes
   randomize?: boolean;
+  /** Filter notes to these inclusive page ranges (chapter selection). */
+  chapterPageRanges?: { start: number; end: number }[];
+  practiceMode?: 'practice' | 'practice-exam' | 'full-dat';
 }
 
 export interface BuiltExam {
@@ -47,6 +51,23 @@ function shuffle<T>(arr: T[]): T[] {
 
 function genId(): string {
   return `exam-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Normalise a question stem to a short fingerprint for duplicate detection.
+ *  Strip punctuation, collapse whitespace, lowercase, take first 80 chars. */
+function stemFingerprint(stem: string): string {
+  return stem.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+/** Remove questions whose stems are too similar to an earlier one. */
+function deduplicateQuestions(questions: EngineQuestion[]): EngineQuestion[] {
+  const seen = new Set<string>();
+  return questions.filter((q) => {
+    const fp = stemFingerprint(q.stem);
+    if (seen.has(fp)) return false;
+    seen.add(fp);
+    return true;
+  });
 }
 
 /** Aggregates one UltraNote's teaching content into grounding text for the
@@ -85,7 +106,18 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   const questionTypes = opts.questionTypes?.length ? opts.questionTypes : opts.profile.questionTypes;
 
   const eligibleNotes = notes.filter((n) => sectionIds.includes(matchSection(n, opts.profile)));
-  const pool = eligibleNotes.length > 0 ? eligibleNotes : notes;
+  let pool = eligibleNotes.length > 0 ? eligibleNotes : notes;
+
+  // Narrow to selected chapters when the generator provided page ranges.
+  if (opts.chapterPageRanges?.length) {
+    const normalizedRanges = normalizePageRanges(opts.chapterPageRanges);
+    const chapterFiltered = pool.filter((n) =>
+      normalizedRanges.some(
+        (r) => n.pageNumber >= r.start && n.pageNumber <= r.end,
+      ),
+    );
+    if (chapterFiltered.length > 0) pool = chapterFiltered;
+  }
 
   if (pool.length === 0) {
     return {
@@ -127,7 +159,7 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
     }),
   );
 
-  let questions = batches.flat();
+  let questions = deduplicateQuestions(batches.flat());
   if (opts.randomize ?? true) questions = shuffle(questions);
   questions = questions.slice(0, opts.questionCount);
 
