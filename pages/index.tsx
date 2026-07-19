@@ -4514,17 +4514,17 @@ export default function ThoughtUnitReader() {
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
           <div className="border-b border-white/10 px-4 py-2 flex-shrink-0 flex items-center gap-2">
             <div className="flex-1">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1">
               {(["notes", "studyguide", "podcast"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     notesSubTab === v
                       ? "bg-emerald-600/20 text-emerald-300 border border-emerald-600/30"
-                      : "text-slate-400 hover:bg-white/10 hover:text-white"
+                      : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
                   {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🎧 Listen"}
@@ -4608,7 +4608,7 @@ export default function ThoughtUnitReader() {
 
             {/* Right: Study Tools + Export for the active note */}
             <div className="w-[200px] flex-shrink-0 overflow-y-auto border-l border-white/10 px-3 py-3 flex flex-col gap-2">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">Study Tools</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Study Tools</span>
               {notelabActiveNote ? (
                 <>
                   <button
@@ -4620,9 +4620,19 @@ export default function ThoughtUnitReader() {
                       setRecallLabRefreshKey((k) => k + 1);
                       trySwitchShellTab("study", "study");
                     }}
-                    className="rounded-md border border-indigo-400/20 bg-indigo-400/10 px-2 py-1.5 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-400/15"
+                    className="rounded-md border border-indigo-400/20 bg-indigo-400/10 px-2 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-400/15"
                   >
                     🎯 Generate Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      syncToPage(notelabActiveNote.pageNumber);
+                      setNotesSubTab("studyguide");
+                    }}
+                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/15"
+                  >
+                    📑 Study Sheet
                   </button>
                   <button
                     type="button"
@@ -4631,44 +4641,44 @@ export default function ThoughtUnitReader() {
                       setWbContext(notelabActiveNote.coreIdea || "");
                       setShowWhiteboardPanel(true);
                     }}
-                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-400/15"
+                    className="rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-400/15"
                   >
                     🖼️ Whiteboard
                   </button>
                   <button
                     type="button"
                     onClick={() => { syncToPage(notelabActiveNote.pageNumber); trySwitchShellTab("reader", "reader"); }}
-                    className="rounded-md border border-blue-400/20 bg-blue-400/10 px-2 py-1.5 text-[11px] font-semibold text-blue-300 hover:bg-blue-400/15"
+                    className="rounded-md border border-blue-400/20 bg-blue-400/10 px-2 py-2 text-xs font-semibold text-blue-300 hover:bg-blue-400/15"
                   >
-                    📍 Go to page {notelabActiveNote.pageNumber}
+                    📍 Go to p.{notelabActiveNote.pageNumber}
                   </button>
-                  <div className="mt-2 h-px bg-white/8" />
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">Export</span>
+                  <div className="mt-1 h-px bg-white/8" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Export</span>
                   <button
                     type="button"
                     onClick={() => downloadNoteMarkdown(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
                   >
                     📄 Markdown
                   </button>
                   <button
                     type="button"
                     onClick={() => downloadNotePdf(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
                   >
                     📑 PDF
                   </button>
                   <button
                     type="button"
                     onClick={() => downloadNoteDocx(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10"
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
                   >
                     📝 DOCX
                   </button>
                 </>
               ) : (
-                <div className="text-[11px] leading-relaxed text-slate-500">
-                  Open a note to generate cards, open it in the whiteboard, or export it.
+                <div className="text-xs leading-relaxed text-slate-500">
+                  Open a note to generate cards, build a study sheet, or export.
                 </div>
               )}
             </div>
@@ -4707,25 +4717,25 @@ export default function ThoughtUnitReader() {
         <div className="h-full flex flex-col overflow-hidden" data-testid="syllabus-view-container">
           {/* Sub-tab bar */}
           <div className="border-b border-white/10 px-3 py-2 flex-shrink-0 flex items-center gap-1 bg-slate-950/60 overflow-x-auto">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mr-2 shrink-0">Learning Hub</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-indigo-400 mr-3 shrink-0">Learning Hub</span>
             {([
               { id: "overview",  label: "Overview" },
               { id: "today",     label: "Today" },
-              { id: "roadmap",   label: "Book Roadmap" },
+              { id: "roadmap",   label: "Roadmap" },
               { id: "studyplan", label: "Study Plan" },
               { id: "mastery",   label: "Mastery" },
               { id: "weak",      label: "Weak Areas" },
-              { id: "exam",      label: "Exam Readiness" },
-              { id: "graph",     label: "Knowledge Graph" },
+              { id: "exam",      label: "Exam Ready" },
+              { id: "graph",     label: "Knowledge" },
               { id: "coach",     label: "AI Coach" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
                 onClick={() => setHubSubTab(id)}
-                className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   hubSubTab === id
-                    ? "bg-indigo-600/20 text-indigo-300 border border-indigo-600/30"
-                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                    ? "bg-indigo-600/25 text-indigo-200 border border-indigo-500/40"
+                    : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                 }`}
               >
                 {label}
@@ -4735,7 +4745,7 @@ export default function ThoughtUnitReader() {
 
           {/* Overview — learning dashboard */}
           {hubSubTab === "overview" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
                   {/* Continue Learning CTA */}
@@ -4743,9 +4753,9 @@ export default function ThoughtUnitReader() {
                     onClick={() => { trySwitchShellTab("reader", "reader"); }}
                     className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
                   >
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
+                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
                     <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
-                    <div className="mt-2 text-[11px] text-indigo-300 font-medium">
+                    <div className="mt-2 text-xs text-indigo-300 font-medium">
                       {nextTopicRecommendation
                         ? `→ ${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
                         : `p.${currentPage} of ${pdfPageCount}`}
@@ -4764,10 +4774,10 @@ export default function ThoughtUnitReader() {
                             : `${courseProgress.estimatedRemainingMinutes}m`,
                           sub: "estimated" },
                       ].map(({ label, value, sub }) => (
-                        <div key={label} className="rounded-lg border border-white/10 bg-slate-900/60 p-2.5 text-center">
+                        <div key={label} className="rounded-lg border border-white/10 bg-slate-900/60 p-3 text-center">
                           <div className="text-base font-bold text-white">{value}</div>
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400">{label}</div>
-                          <div className="text-[9px] text-slate-500">{sub}</div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mt-0.5">{label}</div>
+                          <div className="text-[10px] text-slate-500">{sub}</div>
                         </div>
                       ))}
                     </div>
@@ -4777,21 +4787,21 @@ export default function ThoughtUnitReader() {
                   {courseWeakAreas && courseWeakAreas.length > 0 && (
                     <button
                       onClick={() => setHubSubTab("weak")}
-                      className="w-full flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 hover:bg-rose-950/30 px-3 py-2.5 text-left transition-colors"
+                      className="w-full flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 hover:bg-rose-950/30 px-3 py-3 text-left transition-colors"
                     >
                       <span className="text-base">⚠️</span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-semibold text-rose-300 truncate">{courseWeakAreas[0]}</div>
-                        {courseWeakAreas.length > 1 && <div className="text-[10px] text-slate-500">+{courseWeakAreas.length - 1} more weak areas</div>}
+                        <div className="text-xs font-semibold text-rose-300 truncate">{courseWeakAreas[0]}</div>
+                        {courseWeakAreas.length > 1 && <div className="text-[11px] text-slate-500">+{courseWeakAreas.length - 1} more weak areas</div>}
                       </div>
-                      <span className="text-[10px] text-slate-500 shrink-0">View →</span>
+                      <span className="text-xs text-slate-400 shrink-0 font-medium">View →</span>
                     </button>
                   )}
 
                   {/* Quick nav grid */}
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2.5">
                     {([
-                      { id: "today",     label: "Today",          icon: "📅", sub: "What to study now" },
+                      { id: "today",     label: "Today's Goal",   icon: "📅", sub: "What to study now" },
                       { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
                       { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
                       { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
@@ -4799,12 +4809,12 @@ export default function ThoughtUnitReader() {
                       <button
                         key={id}
                         onClick={() => setHubSubTab(id)}
-                        className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
+                        className="flex items-start gap-3 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-3 text-left hover:bg-slate-800/60 transition-colors"
                       >
-                        <span className="text-base mt-0.5">{icon}</span>
+                        <span className="text-lg mt-0.5">{icon}</span>
                         <div>
-                          <div className="text-[12px] font-medium text-slate-200">{label}</div>
-                          <div className="text-[10px] text-slate-500">{sub}</div>
+                          <div className="text-xs font-semibold text-slate-200">{label}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>
                         </div>
                       </button>
                     ))}
@@ -4821,7 +4831,7 @@ export default function ThoughtUnitReader() {
 
           {/* Today — command center for the current session */}
           {hubSubTab === "today" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
                   {/* Primary CTA — continue where I left off */}
@@ -4830,15 +4840,15 @@ export default function ThoughtUnitReader() {
                       if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
                       trySwitchShellTab("reader", "reader");
                     }}
-                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
+                    className="w-full rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-600/25 to-indigo-800/20 hover:from-indigo-600/35 hover:to-indigo-800/30 transition-colors p-5 text-left"
                   >
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">
+                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1.5">
                       {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
                     </div>
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-white leading-snug">
                       {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
                     </div>
-                    <div className="mt-1 text-[11px] text-indigo-300">
+                    <div className="mt-1.5 text-xs text-indigo-300">
                       {nextTopicRecommendation
                         ? `p.${nextTopicRecommendation.page} · ${nextTopicRecommendation.reason}`
                         : `p.${currentPage}`}
@@ -4857,14 +4867,14 @@ export default function ThoughtUnitReader() {
                       </div>
                     );
                     return (
-                      <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Today&apos;s Session</div>
-                        <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
+                      <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 p-4">
+                        <div className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">Today&apos;s Goal</div>
+                        <div className="text-sm font-semibold text-white">{todaySession.topics[0] ?? "Study session"}</div>
                         {todaySession.topics.length > 1 && (
-                          <div className="text-[11px] text-slate-500 mt-0.5">+{todaySession.topics.length - 1} more topics</div>
+                          <div className="text-xs text-slate-500 mt-0.5">+{todaySession.topics.length - 1} more topics</div>
                         )}
-                        <div className="mt-2 flex items-center justify-between">
-                          <div className="flex gap-3 text-[10px] text-slate-400">
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex gap-3 text-xs text-slate-400">
                             {todaySession.date && <span>📅 {todaySession.date}</span>}
                             <span>⏱ ~{todaySession.estimatedMinutes} min</span>
                           </div>
@@ -4873,7 +4883,7 @@ export default function ThoughtUnitReader() {
                               const page = todaySession.pages[0]?.start;
                               if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
                             }}
-                            className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200"
+                            className="text-xs font-bold text-amber-300 hover:text-amber-200 px-3 py-1 rounded-lg bg-amber-900/30 border border-amber-500/20 hover:bg-amber-900/50 transition-colors"
                           >
                             Start →
                           </button>
@@ -4888,9 +4898,9 @@ export default function ThoughtUnitReader() {
                     const upcoming = syllabusStudyPlan.filter((d: StudyDay) => d.date >= todayStr).slice(0, 7);
                     if (!upcoming.length) return null;
                     return (
-                      <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">This Week</div>
-                        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                      <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                        <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">This Week</div>
+                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                           {upcoming.map((day: StudyDay) => {
                             const d = new Date(day.date + "T12:00:00");
                             const dayLabel = d.toLocaleDateString(undefined, { weekday: "short" });
@@ -4903,7 +4913,7 @@ export default function ThoughtUnitReader() {
                                   const page = day.pages[0]?.start;
                                   if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
                                 }}
-                                className={`flex-shrink-0 flex flex-col items-center rounded-lg px-2 py-1.5 min-w-[38px] transition-colors ${
+                                className={`flex-shrink-0 flex flex-col items-center rounded-lg px-2.5 py-2 min-w-[42px] transition-colors ${
                                   day.isExamDay
                                     ? "bg-rose-900/40 border border-rose-500/30 hover:bg-rose-900/60"
                                     : isToday
@@ -4911,15 +4921,15 @@ export default function ThoughtUnitReader() {
                                     : "bg-slate-800/60 border border-white/10 hover:bg-slate-700/60"
                                 }`}
                               >
-                                <div className={`text-[9px] font-medium ${isToday ? "text-indigo-300" : "text-slate-400"}`}>{dayLabel}</div>
-                                <div className={`text-[12px] font-bold ${isToday ? "text-white" : "text-slate-300"}`}>{dateNum}</div>
-                                <div className={`w-1.5 h-1.5 rounded-full mt-1 ${day.isExamDay ? "bg-rose-400" : "bg-indigo-400"}`} />
+                                <div className={`text-[10px] font-medium ${isToday ? "text-indigo-300" : "text-slate-400"}`}>{dayLabel}</div>
+                                <div className={`text-xs font-bold mt-0.5 ${isToday ? "text-white" : "text-slate-300"}`}>{dateNum}</div>
+                                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${day.isExamDay ? "bg-rose-400" : "bg-indigo-400"}`} />
                               </button>
                             );
                           })}
                         </div>
                         {upcoming.find((d: StudyDay) => d.isExamDay) && (
-                          <div className="text-[9px] text-rose-400 mt-1.5">● = Exam day</div>
+                          <div className="text-[10px] text-rose-400 mt-2">● = Exam day</div>
                         )}
                       </div>
                     );
@@ -4927,9 +4937,9 @@ export default function ThoughtUnitReader() {
 
                   {/* Estimated time remaining */}
                   {courseProgress && courseProgress.estimatedRemainingMinutes > 0 && (
-                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2">
-                      <span className="text-[11px] text-slate-400">Estimated time to complete book</span>
-                      <span className="text-[12px] font-semibold text-white">
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/40 px-4 py-3">
+                      <span className="text-xs text-slate-400">Estimated time to complete book</span>
+                      <span className="text-xs font-semibold text-white">
                         {courseProgress.estimatedRemainingMinutes >= 60
                           ? `${Math.round(courseProgress.estimatedRemainingMinutes / 60)}h ${courseProgress.estimatedRemainingMinutes % 60}m`
                           : `${courseProgress.estimatedRemainingMinutes}m`}
@@ -4939,12 +4949,12 @@ export default function ThoughtUnitReader() {
 
                   {/* Weak areas to focus on today */}
                   {courseWeakAreas && courseWeakAreas.length > 0 && (
-                    <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-rose-400 mb-2">Review These Today</div>
-                      <div className="space-y-1">
+                    <div className="rounded-xl border border-rose-500/25 bg-rose-950/20 p-4">
+                      <div className="text-xs font-bold uppercase tracking-widest text-rose-400 mb-3">Review These Today</div>
+                      <div className="space-y-2">
                         {courseWeakAreas.slice(0, 3).map((area: string, i: number) => (
-                          <div key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
-                            <span className="text-rose-400 mt-0.5">•</span>{area}
+                          <div key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                            <span className="text-rose-400 mt-0.5 shrink-0">•</span>{area}
                           </div>
                         ))}
                       </div>
@@ -5028,6 +5038,7 @@ export default function ThoughtUnitReader() {
                   activePage={currentPage}
                   onJump={handleSyllabusNodeClick}
                   onStudy={handleStudyTopic}
+                  bookId={bookId}
                 />
               </div>
             )}
@@ -5053,20 +5064,20 @@ export default function ThoughtUnitReader() {
 
           {/* Mastery — chapter-level mastery breakdown */}
           {hubSubTab === "mastery" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Mastery</div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
               {chapterProgressList.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {chapterProgressList.map((ch, idx) => {
                     const pct = ch.progress.masteryPct ?? 0;
                     const color = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-rose-500";
                     return (
-                      <div key={idx} className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[12px] font-medium text-white truncate">{ch.chapter.title ?? `Chapter ${idx + 1}`}</span>
-                          <span className="text-[11px] text-slate-400 ml-2 shrink-0">{Math.round(pct)}%</span>
+                      <div key={idx} className="rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-white truncate">{ch.chapter.title ?? `Chapter ${idx + 1}`}</span>
+                          <span className="text-xs font-semibold text-slate-300 ml-2 shrink-0">{Math.round(pct)}%</span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
+                        <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
                           <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
                       </div>
@@ -5081,14 +5092,14 @@ export default function ThoughtUnitReader() {
 
           {/* Weak Areas */}
           {hubSubTab === "weak" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-rose-400">Weak Areas</div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
               {courseWeakAreas && courseWeakAreas.length > 0 ? (
                 <div className="space-y-2">
                   {courseWeakAreas.map((area: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 px-3 py-2">
-                      <span className="text-rose-400 text-sm mt-0.5">⚠️</span>
-                      <span className="text-[12px] text-slate-200">{area}</span>
+                    <div key={idx} className="flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3">
+                      <span className="text-rose-400 shrink-0">⚠️</span>
+                      <span className="text-xs text-slate-200">{area}</span>
                     </div>
                   ))}
                 </div>
@@ -5101,25 +5112,25 @@ export default function ThoughtUnitReader() {
           {/* Exam Readiness */}
           {hubSubTab === "exam" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Exam Readiness</div>
+              <div className="text-sm font-bold text-indigo-300">🎯 Exam Readiness</div>
               {courseProgress ? (
-                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4 space-y-2">
-                  <div className="flex justify-between text-sm">
+                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4 space-y-3">
+                  <div className="flex justify-between text-xs">
                     <span className="text-slate-400">Chapters completed</span>
-                    <span className="text-white font-medium">{courseProgress.completedChapters} / {courseProgress.totalChapters}</span>
+                    <span className="text-white font-semibold">{courseProgress.completedChapters} / {courseProgress.totalChapters}</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
                     <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.round((courseProgress.completedChapters / Math.max(courseProgress.totalChapters, 1)) * 100)}%` }} />
                   </div>
                 </div>
               ) : null}
-              <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4 text-center">
-                <div className="text-2xl mb-2">🎯</div>
-                <div className="text-sm text-slate-300 font-medium">DAT Apex Practice Exams</div>
-                <div className="text-[11px] text-slate-500 mt-1">Full-length simulations with section scoring</div>
+              <div className="rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/50 to-slate-900/60 p-5 text-center">
+                <div className="text-3xl mb-3">🎯</div>
+                <div className="text-sm font-semibold text-slate-200">DAT Apex Practice Exams</div>
+                <div className="text-xs text-slate-500 mt-1">Full-length simulations with section scoring</div>
                 <button
                   onClick={() => { router.push("/apex"); }}
-                  className="mt-3 px-4 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-500/30 text-indigo-200 text-[12px] font-medium hover:bg-indigo-600/50 transition-colors"
+                  className="mt-4 px-5 py-2 rounded-lg bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 text-xs font-semibold hover:bg-indigo-600/60 transition-colors"
                 >
                   Open DAT Apex →
                 </button>
@@ -5129,18 +5140,18 @@ export default function ThoughtUnitReader() {
 
           {/* AI Coach — personalized coaching via the student's progress context */}
           {hubSubTab === "coach" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {/* Coach header */}
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🤖</span>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Coach header — prominent card */}
+              <div className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-900/40 to-indigo-900/30 p-4 flex items-center gap-3">
+                <span className="text-2xl">🤖</span>
                 <div>
-                  <div className="text-sm font-semibold text-white">AI Study Coach</div>
-                  <div className="text-[10px] text-slate-400">Personalized advice based on your progress</div>
+                  <div className="text-sm font-bold text-white">AI Study Coach</div>
+                  <div className="text-xs text-violet-300">Personalized advice based on your progress</div>
                 </div>
               </div>
 
               {/* Quick prompts */}
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {[
                   "What should I focus on today?",
                   "How's my progress?",
@@ -5150,7 +5161,7 @@ export default function ThoughtUnitReader() {
                   <button
                     key={prompt}
                     onClick={() => setCoachQuestion(prompt)}
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800 border border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white hover:border-violet-500/30 transition-colors"
                   >
                     {prompt}
                   </button>
@@ -5158,7 +5169,7 @@ export default function ThoughtUnitReader() {
               </div>
 
               {/* Text input */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <textarea
                   value={coachQuestion}
                   onChange={e => setCoachQuestion(e.target.value)}
@@ -5170,12 +5181,12 @@ export default function ThoughtUnitReader() {
                   }}
                   placeholder="Ask your coach anything about your study plan, weak areas, exam strategy…"
                   rows={3}
-                  className="w-full rounded-xl border border-white/10 bg-slate-900/60 text-slate-200 text-[12px] px-3 py-2 resize-none focus:outline-none focus:border-indigo-500/60 placeholder:text-slate-600"
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/60 text-slate-200 text-xs px-4 py-3 resize-none focus:outline-none focus:border-violet-500/60 placeholder:text-slate-600"
                 />
                 <button
                   disabled={!coachQuestion.trim() || coachLoading}
                   onClick={handleAskCoach}
-                  className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-semibold transition-colors"
+                  className="w-full py-2.5 rounded-xl bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors"
                 >
                   {coachLoading ? "Thinking…" : "Ask Coach  ⌘↵"}
                 </button>
@@ -5183,24 +5194,24 @@ export default function ThoughtUnitReader() {
 
               {/* Coach response */}
               {coachResponse && (
-                <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2">Coach Says</div>
-                  <div className="text-[12px] text-slate-200 whitespace-pre-wrap leading-relaxed">{coachResponse}</div>
+                <div className="rounded-xl border border-violet-500/25 bg-violet-950/30 p-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-violet-400 mb-3">Coach Says</div>
+                  <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{coachResponse}</div>
                 </div>
               )}
 
               {/* Context snapshot shown to the coach */}
               {bookId && courseProgress && (
-                <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Your Progress Snapshot</div>
-                  <div className="space-y-1">
+                <div className="rounded-xl border border-white/5 bg-slate-900/40 p-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Your Progress Snapshot</div>
+                  <div className="space-y-2">
                     {[
                       [`📖 Read`, `${Math.round(courseProgress.overallReadPct)}%`],
                       [`🏆 Mastery`, `${Math.round(courseProgress.overallMasteryPct)}%`],
                       [`🔴 Weak areas`, courseWeakAreas?.length ? courseWeakAreas.slice(0, 2).join(", ") : "None yet"],
                       [`📍 Next topic`, nextTopicRecommendation?.chapterTitle ?? "—"],
                     ].map(([label, value]) => (
-                      <div key={label} className="flex items-center justify-between text-[11px]">
+                      <div key={label} className="flex items-center justify-between text-xs">
                         <span className="text-slate-500">{label}</span>
                         <span className="text-slate-300 font-medium truncate max-w-[55%] text-right">{value}</span>
                       </div>
@@ -5232,8 +5243,8 @@ export default function ThoughtUnitReader() {
               ) : (
                 <>
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">
-                      {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
+                    <div className="text-xs font-bold text-indigo-300">
+                      🕸 {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
                     </div>
                     <div className="text-[10px] text-slate-500">Click to navigate</div>
                   </div>
