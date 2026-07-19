@@ -281,8 +281,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ? (rawProfileId as ProfileId)
       : detectedResult.profileId;
 
+  // Cap anchors server-side to prevent oversized prompts
+  const MAX_ANCHORS = 15;
+  const clampedAnchors = Array.isArray(rawAnchors) ? rawAnchors.slice(0, MAX_ANCHORS) : rawAnchors;
+
   // Assign stable anchor IDs before prompt construction
-  const stableAnchors  = assignStableIds(rawAnchors);
+  const stableAnchors  = assignStableIds(clampedAnchors);
   const anchorMap      = new Map(stableAnchors.map(a => [a.stableId, a]));
 
   console.log("[ADAPTIVE_SHEET:start]", {

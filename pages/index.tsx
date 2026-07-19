@@ -31,8 +31,8 @@ import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore"
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
-import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
+import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
@@ -449,6 +449,8 @@ function applyHighlightBudget<T extends BudgetAnchor>(
 }
 
 
+const ELENA_ENABLED = resolveElenaModeFlagsFromEnv().ELENA_MODE_ENABLED;
+
 export default function ThoughtUnitReader() {
   const router = useRouter();
   /* =========================================================================
@@ -618,7 +620,10 @@ export default function ThoughtUnitReader() {
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "podcast">("notes");
-  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph">("overview");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
+  const [coachQuestion, setCoachQuestion] = useState("");
+  const [coachResponse, setCoachResponse] = useState<string | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
   // NoteLab 3-column dashboard: which note's thought units/export tools the
   // left/right rails are currently bound to (the note currently expanded in
   // the center column's list) and which of its anchors was just clicked.
@@ -654,6 +659,9 @@ export default function ThoughtUnitReader() {
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
   const speechPanelRef = useRef<StudySpeechPanelHandle>(null);
+  // Guards scroll-debounce from overwriting a card-click selection for 1.5 s after
+  // the user explicitly focuses an evidence item (RC-3 highlighting race).
+  const userFocusLockedUntilRef = useRef<number>(0);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
@@ -1903,6 +1911,9 @@ export default function ThoughtUnitReader() {
   // PDF overlay glow/scroll) and re-fires focusSnippet (drives the text-search yellow
   // flash + scrollIntoView), and auto-zooms so the target paragraph fills the screen.
   const focusEvidence = useCallback((snippet: string, evidenceId?: string) => {
+    // Lock out scroll-debounce overwrites for 1.5 s so the card-click selection
+    // survives the setTimeout(0) gap and any concurrent scroll events (RC-2, RC-3).
+    userFocusLockedUntilRef.current = Date.now() + 1500;
     setFocusSnippet(null);
     setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
     const { zoom: currentZoom, setZoom } = useZoomStore.getState();
@@ -1926,8 +1937,6 @@ export default function ThoughtUnitReader() {
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
     const text = anchor?.text ?? activeUnit?.exactText ?? null;
     if (text) setFocusSnippet(text);
-    // Re-affirm focus so the active style stays visible if any internal reset fired.
-    setFocusedEvidenceId(id);
   }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
 
   useEffect(() => {
@@ -3034,8 +3043,14 @@ export default function ThoughtUnitReader() {
 
     // Scroll → active anchor: resolve the viewport-center snippet to the closest
     // thought-unit anchor and keep the Expert Brain / LeftPanel card in sync.
-    // Only runs when speech is not playing (speech owns the anchor during playback).
-    if (snippet && useReadingFocusStore.getState().playbackState === 'idle') {
+    // Only runs when speech is not playing (speech owns the anchor during playback)
+    // and when no explicit card-click focus is locked (RC-3: prevents overwriting
+    // a user-selected card in the gap after focusEvidence fires).
+    if (
+      snippet &&
+      useReadingFocusStore.getState().playbackState === 'idle' &&
+      Date.now() > userFocusLockedUntilRef.current
+    ) {
       const resolved = resolveEvidenceId(snippet);
       if (resolved) setFocusedEvidenceId(resolved);
     }
@@ -4221,6 +4236,39 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
+  const handleAskCoach = useCallback(async () => {
+    if (!coachQuestion.trim() || coachLoading) return;
+    setCoachLoading(true);
+    setCoachResponse(null);
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayPlan = syllabusStudyPlan.find((d: StudyDay) => d.date === todayStr);
+    try {
+      const res = await fetch("/api/ai-coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: coachQuestion.trim(),
+          context: {
+            bookTitle: uploadedFile?.name ?? "Unknown",
+            masteryPct: courseProgress?.overallMasteryPct ?? 0,
+            readPct: courseProgress?.overallReadPct ?? 0,
+            weakAreas: courseWeakAreas ?? [],
+            nextTopic: nextTopicRecommendation?.chapterTitle ?? null,
+            currentPage,
+            totalPages: pdfPageCount,
+            todayTopics: todayPlan?.topics ?? [],
+          },
+        }),
+      });
+      const data = await res.json();
+      setCoachResponse(data.response ?? data.error ?? "No response.");
+    } catch {
+      setCoachResponse("Coach unavailable. Check your connection and try again.");
+    } finally {
+      setCoachLoading(false);
+    }
+  }, [coachQuestion, coachLoading, syllabusStudyPlan, uploadedFile, courseProgress, courseWeakAreas, nextTopicRecommendation, currentPage, pdfPageCount]);
+
   /* =========================================================================
      🔹 Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
@@ -4639,6 +4687,7 @@ export default function ThoughtUnitReader() {
               { id: "weak",      label: "Weak Areas" },
               { id: "exam",      label: "Exam Readiness" },
               { id: "graph",     label: "Knowledge Graph" },
+              { id: "coach",     label: "AI Coach" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
@@ -4654,43 +4703,79 @@ export default function ThoughtUnitReader() {
             ))}
           </div>
 
-          {/* Overview — quick summary dashboard */}
+          {/* Overview — learning dashboard */}
           {hubSubTab === "overview" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {bookId ? (
                 <>
-                  <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Active Book</div>
+                  {/* Continue Learning CTA */}
+                  <button
+                    onClick={() => { trySwitchShellTab("reader", "reader"); }}
+                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
                     <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
-                    <div className="mt-2 flex gap-4 text-[11px] text-slate-400">
-                      <span>{chapterProgressList.length} chapters</span>
-                      <span>p.{currentPage} / {pdfPageCount}</span>
-                      {courseProgress && <span>{Math.round((courseProgress.completedChapters / Math.max(courseProgress.totalChapters, 1)) * 100)}% complete</span>}
+                    <div className="mt-2 text-[11px] text-indigo-300 font-medium">
+                      {nextTopicRecommendation
+                        ? `→ ${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
+                        : `p.${currentPage} of ${pdfPageCount}`}
                     </div>
-                  </div>
-                  {nextTopicRecommendation && (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Up Next</div>
-                      <div className="text-sm text-white">{nextTopicRecommendation.chapterTitle}</div>
-                      <button onClick={() => setHubSubTab("today")} className="mt-2 text-[11px] text-emerald-300 hover:text-emerald-200">View today's plan →</button>
+                  </button>
+
+                  {/* Stats row */}
+                  {courseProgress && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "Mastery",   value: `${Math.round(courseProgress.overallMasteryPct)}%`,  sub: "overall" },
+                        { label: "Read",      value: `${Math.round(courseProgress.overallReadPct)}%`,     sub: "of book" },
+                        { label: "Chapters",  value: `${courseProgress.completedChapters}/${courseProgress.totalChapters}`, sub: "done" },
+                        { label: "Time Left", value: courseProgress.estimatedRemainingMinutes >= 60
+                            ? `${Math.round(courseProgress.estimatedRemainingMinutes / 60)}h`
+                            : `${courseProgress.estimatedRemainingMinutes}m`,
+                          sub: "estimated" },
+                      ].map(({ label, value, sub }) => (
+                        <div key={label} className="rounded-lg border border-white/10 bg-slate-900/60 p-2.5 text-center">
+                          <div className="text-base font-bold text-white">{value}</div>
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400">{label}</div>
+                          <div className="text-[9px] text-slate-500">{sub}</div>
+                        </div>
+                      ))}
                     </div>
                   )}
+
+                  {/* Weak areas alert */}
+                  {courseWeakAreas && courseWeakAreas.length > 0 && (
+                    <button
+                      onClick={() => setHubSubTab("weak")}
+                      className="w-full flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-950/20 hover:bg-rose-950/30 px-3 py-2.5 text-left transition-colors"
+                    >
+                      <span className="text-base">⚠️</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-rose-300 truncate">{courseWeakAreas[0]}</div>
+                        {courseWeakAreas.length > 1 && <div className="text-[10px] text-slate-500">+{courseWeakAreas.length - 1} more weak areas</div>}
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0">View →</span>
+                    </button>
+                  )}
+
+                  {/* Quick nav grid */}
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { id: "today",     label: "Today's Plan",     icon: "📅" },
-                      { id: "roadmap",   label: "Book Roadmap",     icon: "🗺" },
-                      { id: "studyplan", label: "Study Plan",       icon: "🧪" },
-                      { id: "mastery",   label: "Mastery",          icon: "🏆" },
-                      { id: "weak",      label: "Weak Areas",       icon: "⚠️" },
-                      { id: "exam",      label: "Exam Readiness",   icon: "🎯" },
-                    ] as const).map(({ id, label, icon }) => (
+                      { id: "today",     label: "Today",          icon: "📅", sub: "What to study now" },
+                      { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
+                      { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
+                      { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
+                    ] as const).map(({ id, label, icon, sub }) => (
                       <button
                         key={id}
                         onClick={() => setHubSubTab(id)}
-                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
+                        className="flex items-start gap-2.5 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2.5 text-left hover:bg-slate-800/60 transition-colors"
                       >
-                        <span className="text-base">{icon}</span>
-                        <span className="text-[12px] font-medium text-slate-200">{label}</span>
+                        <span className="text-base mt-0.5">{icon}</span>
+                        <div>
+                          <div className="text-[12px] font-medium text-slate-200">{label}</div>
+                          <div className="text-[10px] text-slate-500">{sub}</div>
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -4704,51 +4789,143 @@ export default function ThoughtUnitReader() {
             </div>
           )}
 
-          {/* Today — next session focus */}
+          {/* Today — command center for the current session */}
           {hubSubTab === "today" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Today&apos;s Focus</div>
-              {nextTopicRecommendation && (
-                <div className="rounded-xl border border-indigo-500/20 bg-slate-900/60 p-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Recommended Next</div>
-                  <div className="text-sm font-medium text-white">{nextTopicRecommendation.chapterTitle}</div>
-                  {nextTopicRecommendation.page && (
-                    <button
-                      onClick={() => { syncToPage(nextTopicRecommendation.page); trySwitchShellTab("reader", "reader"); }}
-                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
-                    >
-                      Jump to p.{nextTopicRecommendation.page} →
-                    </button>
-                  )}
-                </div>
-              )}
-              {syllabusStudyPlan.length > 0 && (() => {
-                const todaySession = syllabusStudyPlan.find(day => !day.pages.some((p: { start: number; end: number }) =>
-                  Array.from(syllabusStudiedPages).some((sp: number) => sp >= p.start && sp <= p.end)
-                ));
-                if (!todaySession) return null;
-                return (
-                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
-                    <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Next Study Session</div>
-                    <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
-                    <div className="mt-1 flex gap-3 text-[10px] text-slate-400">
-                      <span>{todaySession.date}</span>
-                      <span>~{todaySession.estimatedMinutes} min</span>
+              {bookId ? (
+                <>
+                  {/* Primary CTA — continue where I left off */}
+                  <button
+                    onClick={() => {
+                      if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1">
+                      {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
                     </div>
-                    <button
-                      onClick={() => {
-                        const page = todaySession.pages[0]?.start;
-                        if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
-                      }}
-                      className="mt-2 text-[11px] text-indigo-300 hover:text-indigo-200"
-                    >
-                      Start reading →
-                    </button>
-                  </div>
-                );
-              })()}
-              {!nextTopicRecommendation && !syllabusStudyPlan.length && (
-                <div className="text-center text-slate-500 text-sm py-10">No plan yet. Upload a syllabus or load a book to generate one.</div>
+                    <div className="text-sm font-semibold text-white">
+                      {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
+                    </div>
+                    <div className="mt-1 text-[11px] text-indigo-300">
+                      {nextTopicRecommendation
+                        ? `p.${nextTopicRecommendation.page} · ${nextTopicRecommendation.reason}`
+                        : `p.${currentPage}`}
+                    </div>
+                  </button>
+
+                  {/* Study session from plan */}
+                  {syllabusStudyPlan.length > 0 && (() => {
+                    const todaySession = syllabusStudyPlan.find(day => !day.pages.some((p: { start: number; end: number }) =>
+                      Array.from(syllabusStudiedPages).some((sp: number) => sp >= p.start && sp <= p.end)
+                    ));
+                    if (!todaySession) return (
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3 text-center">
+                        <div className="text-emerald-400 text-sm font-semibold">All sessions complete 🎉</div>
+                        <div className="text-[11px] text-slate-500 mt-1">Consider reviewing your weakest chapters.</div>
+                      </div>
+                    );
+                    return (
+                      <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Today&apos;s Session</div>
+                        <div className="text-sm font-medium text-white">{todaySession.topics[0] ?? "Study session"}</div>
+                        {todaySession.topics.length > 1 && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">+{todaySession.topics.length - 1} more topics</div>
+                        )}
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex gap-3 text-[10px] text-slate-400">
+                            {todaySession.date && <span>📅 {todaySession.date}</span>}
+                            <span>⏱ ~{todaySession.estimatedMinutes} min</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const page = todaySession.pages[0]?.start;
+                              if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
+                            }}
+                            className="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200"
+                          >
+                            Start →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 7-day calendar strip — only when a study schedule exists */}
+                  {syllabusStudyPlan.length > 0 && (() => {
+                    const todayStr = new Date().toISOString().split("T")[0];
+                    const upcoming = syllabusStudyPlan.filter((d: StudyDay) => d.date >= todayStr).slice(0, 7);
+                    if (!upcoming.length) return null;
+                    return (
+                      <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">This Week</div>
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                          {upcoming.map((day: StudyDay) => {
+                            const d = new Date(day.date + "T12:00:00");
+                            const dayLabel = d.toLocaleDateString(undefined, { weekday: "short" });
+                            const dateNum = d.getDate();
+                            const isToday = day.date === todayStr;
+                            return (
+                              <button
+                                key={day.date}
+                                onClick={() => {
+                                  const page = day.pages[0]?.start;
+                                  if (page) { syncToPage(page); trySwitchShellTab("reader", "reader"); }
+                                }}
+                                className={`flex-shrink-0 flex flex-col items-center rounded-lg px-2 py-1.5 min-w-[38px] transition-colors ${
+                                  day.isExamDay
+                                    ? "bg-rose-900/40 border border-rose-500/30 hover:bg-rose-900/60"
+                                    : isToday
+                                    ? "bg-indigo-600/30 border border-indigo-500/40 hover:bg-indigo-600/40"
+                                    : "bg-slate-800/60 border border-white/10 hover:bg-slate-700/60"
+                                }`}
+                              >
+                                <div className={`text-[9px] font-medium ${isToday ? "text-indigo-300" : "text-slate-400"}`}>{dayLabel}</div>
+                                <div className={`text-[12px] font-bold ${isToday ? "text-white" : "text-slate-300"}`}>{dateNum}</div>
+                                <div className={`w-1.5 h-1.5 rounded-full mt-1 ${day.isExamDay ? "bg-rose-400" : "bg-indigo-400"}`} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {upcoming.find((d: StudyDay) => d.isExamDay) && (
+                          <div className="text-[9px] text-rose-400 mt-1.5">● = Exam day</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Estimated time remaining */}
+                  {courseProgress && courseProgress.estimatedRemainingMinutes > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2">
+                      <span className="text-[11px] text-slate-400">Estimated time to complete book</span>
+                      <span className="text-[12px] font-semibold text-white">
+                        {courseProgress.estimatedRemainingMinutes >= 60
+                          ? `${Math.round(courseProgress.estimatedRemainingMinutes / 60)}h ${courseProgress.estimatedRemainingMinutes % 60}m`
+                          : `${courseProgress.estimatedRemainingMinutes}m`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Weak areas to focus on today */}
+                  {courseWeakAreas && courseWeakAreas.length > 0 && (
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-rose-400 mb-2">Review These Today</div>
+                      <div className="space-y-1">
+                        {courseWeakAreas.slice(0, 3).map((area: string, i: number) => (
+                          <div key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                            <span className="text-rose-400 mt-0.5">•</span>{area}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
+                  <div className="text-3xl mb-3">📅</div>
+                  <div className="text-sm">Load a book to plan today&apos;s session</div>
+                </div>
               )}
             </div>
           )}
@@ -4920,14 +5097,170 @@ export default function ThoughtUnitReader() {
             </div>
           )}
 
+          {/* AI Coach — personalized coaching via the student's progress context */}
+          {hubSubTab === "coach" && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Coach header */}
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🤖</span>
+                <div>
+                  <div className="text-sm font-semibold text-white">AI Study Coach</div>
+                  <div className="text-[10px] text-slate-400">Personalized advice based on your progress</div>
+                </div>
+              </div>
+
+              {/* Quick prompts */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "What should I focus on today?",
+                  "How's my progress?",
+                  "Help me tackle my weakest area",
+                  "Give me a 30-min study plan",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setCoachQuestion(prompt)}
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800 border border-white/10 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              {/* Text input */}
+              <div className="space-y-2">
+                <textarea
+                  value={coachQuestion}
+                  onChange={e => setCoachQuestion(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleAskCoach();
+                    }
+                  }}
+                  placeholder="Ask your coach anything about your study plan, weak areas, exam strategy…"
+                  rows={3}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/60 text-slate-200 text-[12px] px-3 py-2 resize-none focus:outline-none focus:border-indigo-500/60 placeholder:text-slate-600"
+                />
+                <button
+                  disabled={!coachQuestion.trim() || coachLoading}
+                  onClick={handleAskCoach}
+                  className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[12px] font-semibold transition-colors"
+                >
+                  {coachLoading ? "Thinking…" : "Ask Coach  ⌘↵"}
+                </button>
+              </div>
+
+              {/* Coach response */}
+              {coachResponse && (
+                <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2">Coach Says</div>
+                  <div className="text-[12px] text-slate-200 whitespace-pre-wrap leading-relaxed">{coachResponse}</div>
+                </div>
+              )}
+
+              {/* Context snapshot shown to the coach */}
+              {bookId && courseProgress && (
+                <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Your Progress Snapshot</div>
+                  <div className="space-y-1">
+                    {[
+                      [`📖 Read`, `${Math.round(courseProgress.overallReadPct)}%`],
+                      [`🏆 Mastery`, `${Math.round(courseProgress.overallMasteryPct)}%`],
+                      [`🔴 Weak areas`, courseWeakAreas?.length ? courseWeakAreas.slice(0, 2).join(", ") : "None yet"],
+                      [`📍 Next topic`, nextTopicRecommendation?.chapterTitle ?? "—"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">{label}</span>
+                        <span className="text-slate-300 font-medium truncate max-w-[55%] text-right">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!bookId && (
+                <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
+                  <div className="text-3xl mb-3">🤖</div>
+                  <div className="text-sm">Load a book to get personalized coaching</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Knowledge Graph — scaffold */}
           {hubSubTab === "graph" && (
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center gap-4 text-center">
-              <div className="text-4xl">🕸</div>
-              <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
-              <div className="text-[12px] text-slate-500 max-w-xs">
-                Visual map of concepts, their relationships, and your mastery across chapters. Coming soon.
-              </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {kgNodes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <div className="text-4xl">🕸</div>
+                  <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
+                  <div className="text-[12px] text-slate-500 max-w-xs">
+                    Concepts extracted from the book will appear here as you read pages and generate study materials.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">
+                      {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
+                    </div>
+                    <div className="text-[10px] text-slate-500">Click to navigate</div>
+                  </div>
+                  <div className="space-y-2">
+                    {[...kgNodes]
+                      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+                      .map((node) => {
+                        const relatedTitles = kgNodes
+                          .filter(n => node.relatedNodeIds.includes(n.id))
+                          .map(n => n.title)
+                          .slice(0, 3);
+                        return (
+                          <button
+                            key={node.id}
+                            onClick={() => {
+                              if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
+                              if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
+                            }}
+                            className="w-full text-left rounded-xl border border-white/10 bg-slate-900/60 p-3 hover:border-indigo-500/40 hover:bg-slate-800/60 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12px] font-semibold text-slate-100 truncate">{node.title}</div>
+                                {node.summary && (
+                                  <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{node.summary}</div>
+                                )}
+                                {relatedTitles.length > 0 && (
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {relatedTitles.map((t, i) => (
+                                      <span key={i} className="text-[9px] rounded-full bg-slate-800 px-2 py-0.5 text-slate-400 border border-white/10">
+                                        {t}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                {node.sourcePages[0] && (
+                                  <span className="text-[9px] text-slate-500">p.{node.sourcePages[0]}</span>
+                                )}
+                                {node.importance != null && (
+                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                                    node.importance >= 80 ? "bg-yellow-500/20 text-yellow-300" :
+                                    node.importance >= 50 ? "bg-indigo-500/20 text-indigo-300" :
+                                    "bg-slate-700/40 text-slate-400"
+                                  }`}>
+                                    {node.importance >= 80 ? "★ High" : node.importance >= 50 ? "Med" : "Low"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -4968,7 +5301,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    if (activeShellTab === "elena") {
+    if (activeShellTab === "elena" && ELENA_ENABLED) {
       return <ElenaChildWorkspace />;
     }
 
@@ -5123,7 +5456,7 @@ export default function ThoughtUnitReader() {
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🎯 Recall
+            🧠 Recall
           </button>
           <button
             onClick={() => {
@@ -5138,6 +5471,7 @@ export default function ThoughtUnitReader() {
           >
             🎯 DAT Apex
           </button>
+          {ELENA_ENABLED && (
           <button
             onClick={() => trySwitchShellTab("elena", "elena")}
             data-testid="nav-elena"
@@ -5150,6 +5484,7 @@ export default function ThoughtUnitReader() {
           >
             ✨ Elena Mode
           </button>
+          )}
                   </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}

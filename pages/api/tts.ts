@@ -168,9 +168,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     // If client asked JSON, return base64 + mime (handy for fetch(...).json())
-    const wantsJSON =
-      req.headers.accept?.includes("application/json") ||
-      (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
+    const wantsJSON = req.headers.accept?.includes("application/json");
 
     if (wantsJSON) {
       return res

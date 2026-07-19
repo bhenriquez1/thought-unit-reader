@@ -293,6 +293,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
   const [speed, setSpeed]     = useState(1.0);
+  // Ref mirrors — readable inside async callbacks and event handlers without stale closures.
+  const speedRef   = useRef(1.0);
+  const segIdxRef  = useRef(0);
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   // Mirror of segments state kept in a ref for imperative handle access (seekToCursor).
   const segmentsRef = useRef<SpeechSegment[]>([]);
@@ -300,6 +303,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   type PlayState = "idle" | "loading" | "playing" | "paused" | "error";
   const [playState, setPlayState] = useState<PlayState>("idle");
+  // Bridge local PlayState → shared ReadingFocusStore so PDF overlay, ThoughtUnitNavigator,
+  // and scroll guards can read playback state without subscribing to this component's local state.
+  function updatePlayState(state: PlayState) {
+    setPlayState(state);
+    const storeState: 'idle' | 'playing' | 'paused' | 'loading' =
+      state === 'playing' ? 'playing'
+      : state === 'loading' ? 'loading'
+      : state === 'paused'  ? 'paused'
+      : 'idle';
+    useReadingFocusStore.getState().setPlaybackState(storeState);
+  }
   const [errorMsg, setErrorMsg]   = useState<string | null>(null);
 
   // Eye Guide: tracks the snippet currently being spoken
@@ -547,6 +561,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Pending play intent for fullPage mode: set when Play is pressed before page text
   // has been extracted. Cleared and auto-played once fpSentences populates.
   const pendingFullPagePlayRef = useRef<number | null>(null);
+  // AbortController for the background OCR repair fetch — canceled on page/book change
+  // to prevent stale sentences from landing on the wrong page (H2 fix).
+  const repairAbortRef = useRef<AbortController | null>(null);
+  // Timeout ref for the pendingFullPagePlay auto-resume — canceled in stopAudio()
+  // to prevent the unmounted-component state-update warning (M1 fix).
+  const pendingFullPagePlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Always-current reference to play() — lets effects call it without stale closures.
   const playRef = useRef<(fromIdx?: number) => void>(() => {});
 
@@ -565,6 +585,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
     stopAudio();
+    // Flush blob URL cache so previous book's audio doesn't linger in memory (M4 fix).
+    audioCacheRef.current.clear();
     console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
@@ -580,9 +602,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
     stopAudio();
+    // Flush blob URL cache — previous page's audio is invalid on the new page (M4 fix).
+    audioCacheRef.current.clear();
     console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
+
+  // Keep refs in sync with state so async handlers always see the latest values.
+  useEffect(() => { speedRef.current  = speed;  }, [speed]);
+  useEffect(() => { segIdxRef.current = segIdx; }, [segIdx]);
 
   // Reset on mode switch so playback always starts at the first segment of the new mode.
   useEffect(() => {
@@ -710,9 +738,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const idx = pendingFullPagePlayRef.current;
         pendingFullPagePlayRef.current = null;
         setErrorMsg(null);
-        // Use setTimeout so setFpSentences commits before play() reads fpSentences state.
-        // playRef always holds the current render's play closure so activePageText is fresh.
-        setTimeout(() => playRef.current(idx), 16);
+        // Store the timer ref so stopAudio() can cancel it on unmount/page-change (M1 fix).
+        pendingFullPagePlayTimerRef.current = setTimeout(() => {
+          pendingFullPagePlayTimerRef.current = null;
+          playRef.current(idx);
+        }, 16);
       }
 
       // ── Step 2: background OCR repair if corruption is detected ──────────
@@ -733,10 +763,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       if (corruptionScore > 0.08 && mode === "fullPage") {
         const textToRepair = quickSents.join(" ").slice(0, 3000);
+        // AbortController so a page turn cancels the in-flight repair and prevents
+        // stale sentences from overwriting the new page's content (H2 fix).
+        const ocrRepairController = new AbortController();
+        repairAbortRef.current = ocrRepairController;
         fetch("/api/speech-preprocess", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: textToRepair }),
+          signal: ocrRepairController.signal,
         })
           .then(r => r.json())
           .then((data: { cleaned: string; wasRepaired: boolean }) => {
@@ -769,6 +804,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             }
           })
           .catch((err: unknown) => {
+            if (err instanceof Error && err.name === "AbortError") return;
             const message = err instanceof Error ? err.message : String(err);
             console.warn("[SPEECH_OCR_REPAIR]", { page: pageNumber, error: message });
           });
@@ -864,6 +900,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (providerRef.current) {
       console.log("[SPEECH_CANCEL_PREVIOUS]", { provider: providerRef.current, mode, segIdx });
     }
+    // Cancel pending auto-continue timer — page-change calls stopAudio() directly,
+    // bypassing resolveContinue(), so the timer must be cleared here (M2 fix).
+    if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
+    // Cancel pending auto-resume timer to prevent state updates on unmounted component (M1 fix).
+    if (pendingFullPagePlayTimerRef.current) { clearTimeout(pendingFullPagePlayTimerRef.current); pendingFullPagePlayTimerRef.current = null; }
+    // Cancel any in-flight OCR repair fetch (H2 fix).
+    if (repairAbortRef.current) { repairAbortRef.current.abort(); repairAbortRef.current = null; }
     abortRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
@@ -879,7 +922,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       window.speechSynthesis.cancel();
     }
     providerRef.current = null;
-    setPlayState("idle");
+    updatePlayState("idle");
     setEyeText(null);
     setEyeRole(null);
     setEyeTier(null);
@@ -998,7 +1041,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       onSpokenWordIndex(wordIndexForFraction(cumulativeWeightsRef.current, frac));
     };
     return new Promise((resolve, reject) => {
-      audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+      audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); updatePlayState("playing"); };
       // Do NOT notifySpeechEnd here — a multi-segment session (Study/Full/Focus/
       // Highlights modes) claims one token for the whole sequence and reuses it
       // across segments via registerActiveAudio. Releasing it after the first
@@ -1021,7 +1064,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   function playBrowserSpeech(text: string, onDone?: () => void, session?: number) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      setPlayState("error");
+      updatePlayState("error");
       setErrorMsg("Speech not available in this browser.");
       onDone?.();
       return;
@@ -1040,7 +1083,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       .replace(/,\s*,/g, ",")
       .trim();
     const utt = new SpeechSynthesisUtterance(normalized);
-    utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
+    utt.rate  = Math.min(speedRef.current * 1.05, 1.8); // uses ref so rate is correct after mid-playback speed change
     const token = globalTokenRef.current;
     registerActiveUtterance(token, utt, () => stopAudio());
 
@@ -1051,12 +1094,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     let watchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       console.warn("[SPEECH_WATCHDOG]", { source: "browser", charCount: normalized.length, timeoutMs });
       window.speechSynthesis.cancel();
-      if (!superseded()) setPlayState("idle");
+      if (!superseded()) updatePlayState("idle");
       onDone?.();
     }, timeoutMs);
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
-    utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) setPlayState("playing"); };
+    utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) updatePlayState("playing"); };
     // Word-by-word karaoke sync: browser TTS fires real boundary events with an
     // exact charIndex into `normalized` — no estimation needed. `normalized`
     // only substitutes punctuation (never adds/removes words), so its word
@@ -1068,7 +1111,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     };
     // See the comment on fetchAndPlayAudio's audio.onended — same reasoning:
     // don't release the shared session token after just one segment.
-    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) setPlayState("idle"); onDone?.(); };
+    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) updatePlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.
@@ -1077,7 +1120,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (superseded()) { onDone?.(); return; }
       notifySpeechError(token, SPEECH_OWNER, e.error);
       console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
-      setPlayState("error");
+      updatePlayState("error");
       setErrorMsg("Speech is temporarily unavailable. Please try again.");
       onDone?.();
     };
@@ -1091,7 +1134,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── Full Page: sentence-by-sentence playback ──────────────────────────────
 
   async function playFullPageSequential(sentences: string[], fromIdx: number, session: number) {
-    setPlayState("loading");
+    updatePlayState("loading");
     const _nowPlay = Date.now();
     if (_nowPlay - lastPlayStateWriteRef.current < 16) {
       console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowPlay - lastPlayStateWriteRef.current });
@@ -1230,7 +1273,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
-      setPlayState("idle");
+      updatePlayState("idle");
       onSnippetFocus?.(null);
       // Clear word-level sync so the yellow word-box disappears; preserve evidence
       // focus so the last-read TU stays highlighted in LeftPanel/PDF/Expert Brain.
@@ -1243,7 +1286,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── Per-segment sequential playback (highlights mode) ─────────────────────
 
   async function playHighlightsSequential(segs: SpeechSegment[], fromIdx: number, session: number) {
-    setPlayState("loading");
+    updatePlayState("loading");
 
     for (let i = fromIdx; i < segs.length; i++) {
       if (isStale(session)) break;
@@ -1273,10 +1316,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i === fromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
+          // Always clear the cursor — if text doesn't match, we still consume it
+          // rather than letting it poison the next play() call (H3 fix).
+          pendingSeekCursorRef.current = null;
           const srcText = seg.rawText ?? seg.text;
           const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
           if (srcText.toLowerCase().includes(needle)) {
-            pendingSeekCursorRef.current = null;
             const rawWords = tokenizeWords(srcText);
             const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
             seekWordStartRef.current = wordIdx;
@@ -1328,7 +1373,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
-      setPlayState("idle");
+      updatePlayState("idle");
       useReadingFocusStore.getState().clearWord();
     }
   }
@@ -1342,7 +1387,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
     if (!sents.length) {
       setErrorMsg("No page text available.");
-      setPlayState("idle");
+      updatePlayState("idle");
       return;
     }
     console.log("[SPEECH_FALLBACK_USED]", { provider: "page-text", reason, mode, sentenceCount: sents.length });
@@ -1383,7 +1428,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         } else {
           setErrorMsg("No page text available.");
         }
-        setPlayState("idle");
+        updatePlayState("idle");
         return;
       }
       // When Play is pressed with no explicit sentence chosen (fromIdx === 0),
@@ -1458,7 +1503,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       anchorIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
     });
 
-    setPlayState("loading");
+    updatePlayState("loading");
 
     for (let i = fromIdx; i < segsToPlay.length; i++) {
       if (isStale(session)) break;
@@ -1490,10 +1535,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (i === fromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
+          // Always clear the cursor — if text doesn't match, we still consume it
+          // rather than letting it poison the next play() call (H3 fix).
+          pendingSeekCursorRef.current = null;
           const srcText = seg.rawText ?? seg.text;
           const needle = seekCursor.sourceText.slice(0, 40).toLowerCase();
           if (srcText.toLowerCase().includes(needle)) {
-            pendingSeekCursorRef.current = null;
             const rawWords = tokenizeWords(srcText);
             const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
             seekWordStartRef.current = wordIdx;
@@ -1549,7 +1596,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     if (!isStale(session)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
-      setPlayState("idle");
+      updatePlayState("idle");
       useReadingFocusStore.getState().clearWord();
     }
   }
@@ -1575,15 +1622,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function resume() {
     if (audioRef.current && audioRef.current.paused) {
       audioRef.current.play().catch(() => {});
-      setPlayState("playing");
+      updatePlayState("playing");
     } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.resume();
-      setPlayState("playing");
+      updatePlayState("playing");
     }
   }
 
   function stop() {
     console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
+    // Reset starting guard so a Stop → Play within 400 ms isn't silently blocked (L1 fix).
+    isStartingRef.current = false;
     stopAudio();
     resolveContinue();
     setSegIdx(0);
@@ -1609,7 +1658,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     setOpen(true);
     setMode("fullPage");
     stop();
+    // Reset the starting guard so the next play attempt isn't blocked by stop()'s
+    // side-effects — stop() doesn't reset isStartingRef.current (H1 / L1 fix).
+    isStartingRef.current = false;
     setSegIdx(idx);
+    // Claim the speech controller so fetchAndPlayAudio's isSpeechStale() check
+    // passes — without this the global token is stale after stop() and audio silently
+    // returns "done" without playing (H1 fix).
+    globalTokenRef.current = claimSpeech(SPEECH_OWNER);
     const session = beginSession();
     setTimeout(() => playFullPageSequential(sents, idx, session), 80);
   }
@@ -1822,7 +1878,21 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
               <span style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>{speed.toFixed(1)}×</span>
               <input type="range" min={0.5} max={2.5} step={0.1} value={speed}
-                onChange={e => { const v = Number(e.target.value); setSpeed(v); if (audioRef.current) audioRef.current.playbackRate = v; }}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  speedRef.current = v;   // update ref before any restart
+                  setSpeed(v);
+                  if (audioRef.current) audioRef.current.playbackRate = v;
+                  // Browser SpeechSynthesis rate can't be changed mid-utterance —
+                  // cancel and restart from the current segment with the new rate.
+                  if (
+                    providerRef.current === "browser" &&
+                    typeof window !== "undefined" &&
+                    window.speechSynthesis?.speaking
+                  ) {
+                    playRef.current(segIdxRef.current);
+                  }
+                }}
                 style={{ width: 60, accentColor: "#818cf8" }} title="Playback speed" />
             </div>
           </div>

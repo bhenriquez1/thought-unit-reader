@@ -98,7 +98,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "concept and subjectArea are required" });
   }
 
-  console.log("[DAT_SHEET:start]", { noteId, concept, subjectArea, anchors: anchors?.length ?? 0 });
+  const clampedAnchors = Array.isArray(anchors) ? anchors.slice(0, 15) : anchors;
+
+  console.log("[DAT_SHEET:start]", { noteId, concept, subjectArea, anchors: clampedAnchors?.length ?? 0 });
 
   try {
     const response = await openai.responses.parse({
@@ -106,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       max_output_tokens:  2000,
       input: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user",   content: buildUserPrompt({ concept, subjectArea, coreIdea, anchors, pageText }) },
+        { role: "user",   content: buildUserPrompt({ concept, subjectArea, coreIdea, anchors: clampedAnchors, pageText }) },
       ],
       text: { format: FORMAT },
     });

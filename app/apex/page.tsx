@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
+import { ExamGenerator, examGeneratorUtils } from "@/lib/apex/examGenerator";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 
 /* ─── Tab config ──────────────────────────────────────────────────────────── */
@@ -45,7 +48,27 @@ const BAND_INFO: Record<string, { label: string; color: string; bg: string }> = 
 /* ─── Today tab ───────────────────────────────────────────────────────────── */
 
 function TodayTab() {
-  const { sessions, scores, patterns, projection, currentRecommendation, insights } = useApexEngineStore();
+  const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
+  const router = useRouter();
+  const [launching, setLaunching] = useState(false);
+
+  const handleStartRecommended = useCallback(async () => {
+    if (!currentRecommendation) return;
+    setLaunching(true);
+    try {
+      const gen = await ExamGenerator.fromQuestionBank();
+      const baseOpts = examGeneratorUtils.createWeakTopicsPractice(
+        patterns,
+        currentRecommendation.targetPatterns,
+        20,
+      );
+      const exam = gen.generateExam({ ...baseOpts, difficulty: adaptiveDifficulty });
+      localStorage.setItem("currentExam", JSON.stringify(exam));
+      router.push("/apex/proctor");
+    } catch {
+      setLaunching(false);
+    }
+  }, [currentRecommendation, patterns, adaptiveDifficulty, router]);
 
   const bp         = ACTIVE_DAT_BLUEPRINT;
   const totalItems = totalBlueprintItems(bp);
@@ -117,16 +140,28 @@ function TodayTab() {
         <div className="bg-gradient-to-r from-indigo-600/20 to-purple-600/20 rounded-xl p-4 border border-indigo-500/30">
           <div className="flex items-start gap-3">
             <span className="text-yellow-400 text-lg mt-0.5">⚡</span>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-white font-semibold text-sm">Next Best Action</p>
               <p className="text-gray-300 text-sm mt-1">{currentRecommendation.reason}</p>
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded">
                   {SECTION_DISPLAY[currentRecommendation.section]?.short ?? currentRecommendation.section}
                 </span>
                 <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded">
                   {currentRecommendation.mode}
                 </span>
+                {adaptiveDifficulty !== 'mixed' && (
+                  <span className="text-xs bg-orange-600/30 text-orange-300 px-2 py-0.5 rounded">
+                    {adaptiveDifficulty}
+                  </span>
+                )}
+                <button
+                  onClick={handleStartRecommended}
+                  disabled={launching}
+                  className="ml-auto px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors"
+                >
+                  {launching ? "Loading…" : "Start Now"}
+                </button>
               </div>
             </div>
           </div>
@@ -271,6 +306,23 @@ function PracticeTab() {
 
 function FullExamsTab() {
   const bp = ACTIVE_DAT_BLUEPRINT;
+  const router = useRouter();
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  const handleStartSimulation = useCallback(async () => {
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      const gen = await ExamGenerator.fromQuestionBank();
+      const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
+      localStorage.setItem("currentExam", JSON.stringify(exam));
+      router.push("/apex/proctor");
+    } catch (err) {
+      setSeedError("Could not prepare the exam. Please try again.");
+      setSeeding(false);
+    }
+  }, [router]);
 
   return (
     <div className="space-y-6">
@@ -292,12 +344,14 @@ function FullExamsTab() {
             </div>
           ))}
         </div>
-        <Link
-          href="/apex/proctor?config=full-dat"
-          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 text-white font-semibold rounded-lg transition-opacity"
+        {seedError && <p className="mb-3 text-sm text-red-400">{seedError}</p>}
+        <button
+          onClick={handleStartSimulation}
+          disabled={seeding}
+          className="block w-full text-center py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-opacity"
         >
-          ⏰ Start Full DAT Simulation
-        </Link>
+          {seeding ? "⏳ Preparing simulation…" : "⏰ Start Full DAT Simulation"}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -660,7 +714,9 @@ export default function DatApexPage() {
             <p className="text-sm text-gray-400 mb-4">
               Study recognition patterns, decision rules, mechanisms, and traps for each DAT section.
             </p>
-            <TrainingArena />
+            <ErrorBoundary>
+              <TrainingArena />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === "practice"  && <PracticeTab />}

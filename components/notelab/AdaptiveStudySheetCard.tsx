@@ -1093,6 +1093,7 @@ export default function AdaptiveStudySheetCard({
   onNavigateToPage,
 }: AdaptiveStudySheetCardProps) {
   const [regenerating, setRegenerating] = useState(false);
+  const [regenError,   setRegenError]   = useState<string | null>(null);
   const [activeView, setActiveView]     = useState<SheetView>("sheet");
 
   const profileId = ((sheet?.selectedProfileId ?? sheet?.profileId) as ProfileId | undefined)
@@ -1105,6 +1106,7 @@ export default function AdaptiveStudySheetCard({
   const handleRegenerate = useCallback(async () => {
     if (regenerating) return;
     setRegenerating(true);
+    setRegenError(null);
     try {
       const body = {
         concept:           note.topic,
@@ -1121,11 +1123,14 @@ export default function AdaptiveStudySheetCard({
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
       const { sheet: newSheet } = await res.json();
       onSheet(newSheet);
     } catch (e) {
-      console.error("[ADAPTIVE_SHEET:regen-fail]", e);
+      setRegenError(e instanceof Error ? e.message : "Regeneration failed. Please try again.");
     } finally {
       setRegenerating(false);
     }
@@ -1166,6 +1171,13 @@ export default function AdaptiveStudySheetCard({
           {regenerating ? "…" : "↺ Regenerate"}
         </button>
       </div>
+
+      {/* Regen error */}
+      {regenError && (
+        <div style={{ fontSize: 11.5, color: "#f87171", padding: "6px 10px", borderRadius: 6, background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+          ⚠️ {regenError}
+        </div>
+      )}
 
       {/* Completeness meter — always visible */}
       <CompletnessMeter sheet={sheet} profileId={profileId} accentColor={accentColor} />

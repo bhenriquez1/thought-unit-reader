@@ -480,7 +480,44 @@ export const examGeneratorUtils = {
     timeLimit,
     difficulty: 'mixed',
     randomize: true
-  })
+  }),
+
+  // Create adaptive weak-topics practice from engine pattern performance data.
+  // targetPatternIds: IDs from currentRecommendation.targetPatterns; falls back
+  // to the 5 weakest seen patterns when empty.
+  createWeakTopicsPractice: (
+    patterns: Array<{ id: string; section: string; name: string; readiness: number; timesSeen: number }>,
+    targetPatternIds: string[],
+    questionCount: number = 20,
+  ): GeneratorOptions => {
+    const APEX_TO_DAT_SECTION: Record<string, string> = {
+      bio:   'survey-natural-sciences',
+      gc:    'survey-natural-sciences',
+      orgo:  'survey-natural-sciences',
+      pat:   'perceptual-ability',
+      rc:    'reading-comprehension',
+      qr:    'quantitative-reasoning',
+    };
+
+    const candidates = targetPatternIds.length > 0
+      ? patterns.filter(p => targetPatternIds.includes(p.id))
+      : patterns.filter(p => p.timesSeen > 0).sort((a, b) => a.readiness - b.readiness).slice(0, 5);
+
+    const topics = [...new Set(candidates.map(p => p.name))];
+    const datSections = [...new Set(
+      candidates.map(p => APEX_TO_DAT_SECTION[p.section] ?? 'survey-natural-sciences')
+    )];
+
+    return {
+      mode: 'weak-topics',
+      sections: datSections.length > 0 ? datSections : undefined,
+      topics: topics.length > 0 ? topics : undefined,
+      questionCount,
+      timeLimit: Math.round(questionCount * 2),
+      difficulty: 'mixed',
+      randomize: true,
+    };
+  },
 };
 
 export default ExamGenerator;

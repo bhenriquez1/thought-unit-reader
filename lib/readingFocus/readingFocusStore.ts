@@ -83,7 +83,9 @@ export const useReadingFocusStore = create<ReadingFocusStore>((set) => ({
   setWord: (anchorId, wordIndex, word, sentenceText) => {
     if (anchorId) console.log("[FOCUS_STORE_WRITE] setWord anchorId", anchorId, "wordIdx", wordIndex);
     set((s) => ({
-      thoughtUnitId: anchorId ?? s.thoughtUnitId,
+      // Only update thoughtUnitId when the anchor actually changes — skipping same-anchor
+      // word updates reduces re-renders from karaoke rate (4-30 Hz) to anchor boundaries.
+      thoughtUnitId: (anchorId != null && anchorId !== s.thoughtUnitId) ? anchorId : s.thoughtUnitId,
       wordIndex,
       word,
       sentenceText: sentenceText ?? s.sentenceText,

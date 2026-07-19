@@ -133,6 +133,7 @@ export default function PodcastLab({
   const [segDuration, setSegDuration]       = useState(0);
 
   const abortRef        = useRef(false);
+  const scriptFetchAbortRef = useRef<AbortController | null>(null);
   const audioRef        = useRef<HTMLAudioElement | null>(null);
   const countdownRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCacheRef   = useRef<Map<string, Blob>>(new Map());
@@ -155,6 +156,8 @@ export default function PodcastLab({
     setSegDuration(0);
     audioCacheRef.current.clear();
     abortRef.current = true;
+    scriptFetchAbortRef.current?.abort();
+    scriptFetchAbortRef.current = null;
     if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
     }
@@ -192,10 +195,16 @@ export default function PodcastLab({
     console.log("[PODCAST_SOURCE]",    { page: pageNumber, bookId, mode, visualAnchors: studyModel.visualAnchors.length, noteLab: noteLab.length, recallLab: recallLab.length });
     console.log("[PODCAST_MODE_STYLE]", { mode, title: cfg.headerTitle, sub: cfg.headerSub, subject });
 
+    // Cancel any in-flight script request before starting a new one.
+    scriptFetchAbortRef.current?.abort();
+    const scriptAbort = new AbortController();
+    scriptFetchAbortRef.current = scriptAbort;
+
     try {
       const res = await fetch("/api/podcast-script", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
+        signal: scriptAbort.signal,
         body: JSON.stringify({
           context: {
             pageNumber, bookId,
@@ -214,10 +223,12 @@ export default function PodcastLab({
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data: PodcastScript = await res.json();
+      if (scriptAbort.signal.aborted) return;
       setScript(data);
       console.log("[PODCAST_SCRIPT_CREATED]", { page: pageNumber, mode, segments: data.totalSegments, seededFromExplainIt: !!explainItSeed });
       prebufferSegments(data.segments);
     } catch (err: any) {
+      if (err?.name === "AbortError") return;
       setGenError(err?.message ?? "Failed to generate script");
     } finally {
       setGenerating(false);
@@ -244,13 +255,17 @@ export default function PodcastLab({
   const prebufferSegments = useCallback(async (segs: PodcastSegment[]) => {
     setAudioReady(false);
     const modeInfo = PODCAST_MODES.find((m) => m.id === mode)!;
+    // Snapshot abort state at call time — if aborted mid-buffer, skip writing to the cache.
     await Promise.all(segs.map(async (s) => {
+      if (abortRef.current) return;
       const voice = s.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
       const blob  = await fetchBlob(prepareSegmentForTTS(s.text), voice);
-      if (blob) audioCacheRef.current.set(s.id, blob);
+      if (!abortRef.current && blob) audioCacheRef.current.set(s.id, blob);
     }));
-    setAudioReady(true);
-    console.log("[PODCAST_AUDIO_PLAYER_READY]", { mode, segments: segs.length, cached: audioCacheRef.current.size });
+    if (!abortRef.current) {
+      setAudioReady(true);
+      console.log("[PODCAST_AUDIO_PLAYER_READY]", { mode, segments: segs.length, cached: audioCacheRef.current.size });
+    }
   }, [mode, fetchBlob]);
 
   // ── Stop ──────────────────────────────────────────────────────────────
@@ -583,18 +598,19 @@ export default function PodcastLab({
             <div className="flex items-center justify-center gap-4 mb-3">
               <button onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))} disabled={segIdx === 0}
                 className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 disabled:opacity-30 transition-all" title="Previous">⏮</button>
-              <button onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip back">⟨10</button>
-              <button onClick={handlePlay}
-                className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white ${playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accent} hover:opacity-90`}`}>
-                {playState === "playing" ? "⏸" : "▶"}
+              <button onClick={() => { if (audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 10); }}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Rewind 10s">⟨10</button>
+              <button onClick={handlePlay} disabled={!audioReady && playState !== "playing"}
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white disabled:opacity-50 ${playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accent} hover:opacity-90`}`}
+                title={!audioReady && playState !== "playing" ? "Buffering audio…" : undefined}>
+                {!audioReady && playState !== "playing" ? "⏳" : playState === "playing" ? "⏸" : "▶"}
               </button>
               {playState === "paused" && (
                 <button onClick={stop}
                   className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 transition-all" title="Stop">■</button>
               )}
-              <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip forward">10⟩</button>
+              <button onClick={() => { if (audioRef.current) audioRef.current.currentTime = audioRef.current.currentTime + 10; }}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip 10s">10⟩</button>
               <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))} disabled={segIdx >= script.totalSegments - 1}
                 className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 disabled:opacity-30 transition-all" title="Next">⏭</button>
             </div>
@@ -662,16 +678,17 @@ export default function PodcastLab({
             })}
           </div>
         )}
-        <div className="flex-1" />
+        {/* Empty state — inside the scrollable flex-1 container so it fills the space */}
+        {!script && !generating && !studyModel && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <span className="text-3xl">🎧</span>
+            <p className="text-[12px] text-white/35 leading-relaxed">Open a page in the Reader to activate Listen. The Right Panel must synthesize first.</p>
+          </div>
+        )}
+        {!script && !generating && studyModel && (
+          <div className="flex-1" />
+        )}
       </div>
-
-      {/* Empty state */}
-      {!script && !generating && !studyModel && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-          <span className="text-3xl">🎧</span>
-          <p className="text-[12px] text-white/35 leading-relaxed">Open a page in the Reader to activate Listen. The Right Panel must synthesize first.</p>
-        </div>
-      )}
     </div>
   );
 }

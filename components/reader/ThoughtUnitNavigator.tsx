@@ -209,15 +209,20 @@ export default function ThoughtUnitNavigator({
   // this, a focused entry only changed its border color and could sit off-screen.
   const activeEntryRef = useRef<HTMLDivElement | null>(null);
       useEffect(() => {
-        if (focusedId) activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         if (focusedId && bookId && pageNumber) {
           markProgress(bookId, pageNumber, focusedId, "read");
-          // Re-read progress after marking
           setProgressMap(getPageProgress(bookId, pageNumber, entries.map((e) => e.id)));
+        }
+        // Don't scroll during active speech — the speech anchor effect below owns
+        // scrolling then and uses block:"center" which is more appropriate (RC-scroll).
+        if (focusedId && useReadingFocusStore.getState().playbackState === 'idle') {
+          activeEntryRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         }
       }, [focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
       useEffect(() => {
         if (!activeSpokenWord?.anchorId) return;
+        // Only scroll during active speech; manual focus handled by the focusedId effect.
+        if (useReadingFocusStore.getState().playbackState === 'idle') return;
         const matchedEntry = entries.find((e) => matchesAnchor(activeSpokenWord.anchorId, e));
         console.log("[LEFT_PANEL_WORD_SYNC_VISIBLE]", {
           activeAnchorId: activeSpokenWord.anchorId,
