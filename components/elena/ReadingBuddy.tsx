@@ -11,10 +11,14 @@ import { QUICK_PROMPTS } from "@/lib/elena/readingBuddy";
 /* ─── Props ──────────────────────────────────────────────────────────────────── */
 
 interface ReadingBuddyProps {
-  profile:      ChildProfile;
-  pageText?:    string;
-  bookTitle?:   string;
-  currentPage?: number;
+  profile:          ChildProfile;
+  pageText?:        string;
+  bookTitle?:       string;
+  currentPage?:     number;
+  /** Start in open state (used by AskPagePanel which controls open/close externally) */
+  defaultOpen?:     boolean;
+  /** Called when the close button is clicked in defaultOpen mode */
+  onRequestClose?:  () => void;
 }
 
 /* ─── Helpers ────────────────────────────────────────────────────────────────── */
@@ -33,12 +37,14 @@ export default function ReadingBuddy({
   pageText,
   bookTitle,
   currentPage,
+  defaultOpen,
+  onRequestClose,
 }: ReadingBuddyProps) {
   const [messages,  setMessages]  = useState<BuddyMessage[]>([]);
   const [input,     setInput]     = useState("");
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
-  const [open,      setOpen]      = useState(false);
+  const [open,      setOpen]      = useState(defaultOpen ?? false);
   const bottomRef   = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
@@ -166,7 +172,7 @@ export default function ReadingBuddy({
           </div>
         </div>
         <button
-          onClick={() => setOpen(false)}
+          onClick={() => { setOpen(false); onRequestClose?.(); }}
           className="text-indigo-400 hover:text-indigo-200 transition-colors text-lg leading-none p-1"
           aria-label="Close Reading Buddy"
         >

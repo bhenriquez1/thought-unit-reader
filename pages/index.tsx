@@ -32,6 +32,7 @@ import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommen
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
+import AskPagePanel        from "@/components/elena/AskPagePanel";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
@@ -4360,7 +4361,7 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
+              <div className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
                 {console.log("[LEFT_PANEL_INPUT_SOURCES]", {
                   source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
@@ -4418,6 +4419,17 @@ export default function ThoughtUnitReader() {
                   onEffectivePresetChange={setSharedPresetId}
                   bookTitle={uploadedFile?.name}
                 />
+
+                {/* Ask About This Page — floats over PDF when Elena mode is active */}
+                {ELENA_ENABLED && (
+                  <div className="absolute bottom-4 right-4 z-20">
+                    <AskPagePanel
+                      pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || undefined}
+                      bookTitle={uploadedFile?.name}
+                      currentPage={currentPage}
+                    />
+                  </div>
+                )}
               </div>
             )}
 
