@@ -5302,7 +5302,13 @@ export default function ThoughtUnitReader() {
     }
 
     if (activeShellTab === "elena" && ELENA_ENABLED) {
-      return <ElenaChildWorkspace />;
+      return (
+        <ElenaChildWorkspace
+          bookTitle={uploadedFile?.name}
+          currentPage={currentPage}
+          totalPages={pdfPageCount}
+        />
+      );
     }
 
     if (activeShellTab === "podcast") {
