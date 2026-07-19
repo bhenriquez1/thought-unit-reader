@@ -30,6 +30,46 @@ describe("Elena Mode nav — permanent visibility", () => {
   });
 });
 
+describe("Elena click path — auth gate bypass", () => {
+  it('Elena render branch appears before the !user auth gate in renderContent', () => {
+    const renderStart = PAGE_SRC.indexOf("const renderContent = ()");
+    const elenaIdx    = PAGE_SRC.indexOf('activeShellTab === "elena"', renderStart);
+    const authGateIdx = PAGE_SRC.indexOf('if (!user)', renderStart);
+    expect(elenaIdx).toBeGreaterThan(-1);
+    expect(authGateIdx).toBeGreaterThan(-1);
+    // Elena check must come before the auth gate so unauthenticated users can access it
+    expect(elenaIdx).toBeLessThan(authGateIdx);
+  });
+
+  it('Elena workspace does not depend on user being signed in', () => {
+    const renderStart = PAGE_SRC.indexOf("const renderContent = ()");
+    const elenaBlock  = PAGE_SRC.indexOf('activeShellTab === "elena"', renderStart);
+    // Grab the 200 chars inside the elena block — should not reference !user guard
+    const snippet = PAGE_SRC.slice(elenaBlock, elenaBlock + 200);
+    expect(snippet).not.toMatch(/if\s*\(\s*!user\s*\)/);
+  });
+
+  it('shell tab preference is persisted to localStorage', () => {
+    expect(PAGE_SRC).toContain('avrrio-shell-tab');
+  });
+});
+
+describe("NoteLab tab state preservation", () => {
+  it('Study Sheet is always mounted (display:none not conditional)', () => {
+    const notelab = PAGE_SRC.indexOf('activeShellTab === "notelab"');
+    const studySection = PAGE_SRC.indexOf('notesSubTab === "studyguide"', notelab);
+    // Should use display:none style, not {notesSubTab === "studyguide" && (
+    const snippet = PAGE_SRC.slice(studySection, studySection + 120);
+    expect(snippet).not.toMatch(/&&\s*\(\s*$/m);
+    expect(PAGE_SRC).toContain('display: notesSubTab === "studyguide"');
+  });
+
+  it('Listen tab is always mounted (display:none not conditional)', () => {
+    const notelab = PAGE_SRC.indexOf('activeShellTab === "notelab"');
+    expect(PAGE_SRC.indexOf('display: notesSubTab === "podcast"', notelab)).toBeGreaterThan(-1);
+  });
+});
+
 describe("Elena Mode feature flags", () => {
   it('resolveElenaModeFlags merges overrides with safe defaults', () => {
     const flags = resolveElenaModeFlags({ ELENA_MODE_ENABLED: true });

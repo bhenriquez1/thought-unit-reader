@@ -53,6 +53,18 @@ interface UltraNotesListProps {
   focusedKnowledgeNodeId?: string | null;
 }
 
+const TOOL_BTN: React.CSSProperties = {
+  padding: "3px 10px",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(255,255,255,0.04)",
+  color: "rgba(203,213,225,0.85)",
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: "pointer",
+  whiteSpace: "nowrap" as const,
+};
+
 const SUBJECT_ORDER: NoteSubject[] = [
   "Biology",
   "Calculus",
@@ -90,8 +102,10 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [confirmDelete, setConfirmDelete] = useState<UltraNote | null>(null);
   const [mode, setMode] = useState<ProfessionMode>(() => getStoredProfessionMode());
   const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const mountedRef = useRef(true);
   const noteRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const searchRef = useRef<HTMLInputElement>(null);
 
   function handleModeChange(next: ProfessionMode) {
     setMode(next);
@@ -164,6 +178,20 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       setCopiedId(note.id);
       setTimeout(() => setCopiedId(null), 1800);
     } catch { /* silently skip */ }
+  }
+
+  // ── Duplicate ────────────────────────────────────────────────────────────
+
+  async function handleDuplicate(note: UltraNote) {
+    const now = Date.now();
+    const copy: UltraNote = { ...note, id: `note-${now}`, topic: `${note.topic} (copy)`, createdAt: now };
+    setNotes((prev) => [copy, ...prev]);
+    try {
+      await saveUltraNote(copy);
+    } catch (e) {
+      console.error("[NOTELAB_DUPLICATE_FAILED]", String(e));
+      await reload();
+    }
   }
 
   // ── Concept star toggle ──────────────────────────────────────────────────
@@ -251,6 +279,16 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const q = searchQuery.trim().toLowerCase();
+  const filteredNotes = q
+    ? notes.filter((n) =>
+        n.topic.toLowerCase().includes(q) ||
+        (n.coreIdea ?? "").toLowerCase().includes(q) ||
+        n.concepts.some((c) => c.title.toLowerCase().includes(q) || c.pattern.toLowerCase().includes(q)) ||
+        (n.bookTitle ?? "").toLowerCase().includes(q)
+      )
+    : notes;
+
   if (notes.length === 0) {
     return (
       <>
@@ -271,7 +309,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   // Group: subject → bookId → notes (newest first per group)
   const bySubject = new Map<NoteSubject, Map<string, UltraNote[]>>();
-  for (const note of notes) {
+  for (const note of filteredNotes) {
     const subject: NoteSubject = note.subject ?? "General Notes";
     if (!bySubject.has(subject)) bySubject.set(subject, new Map());
     const byBook = bySubject.get(subject)!;
@@ -285,36 +323,68 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       {confirmDelete && (
         <DeleteModal note={confirmDelete} onConfirm={executeDelete} onCancel={() => setConfirmDelete(null)} />
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px" }}>
+      {/* Search bar */}
+      <div style={{ padding: "10px 14px 4px", display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "5px 10px" }}>
+          <span style={{ fontSize: 13, color: "rgba(148,163,184,0.5)" }}>🔍</span>
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={`Search ${notes.length} note${notes.length !== 1 ? "s" : ""}…`}
+            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "rgba(255,255,255,0.85)", fontSize: 12, caretColor: "#818cf8" }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(""); searchRef.current?.focus(); }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.5)", fontSize: 13, padding: 0, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* No search results */}
+      {q && filteredNotes.length === 0 && (
+        <div style={{ padding: "32px 24px", textAlign: "center", color: "rgba(148,163,184,0.6)" }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>No notes match "{searchQuery}"</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 14px 14px" }}>
         {usedSubjects.map((subject) => {
           const byBook = bySubject.get(subject)!;
-          const isCollapsed = collapsedSubjects.has(subject);
+          const isCollapsed = !q && collapsedSubjects.has(subject);
           const totalCount = [...byBook.values()].reduce((n, arr) => n + arr.length, 0);
 
           return (
             <div key={subject} style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden", background: "rgba(8,16,32,0.6)" }}>
               {/* Subject header */}
               <div
-                onClick={() => toggleSubject(subject)}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.04)" }}
+                onClick={() => !q && toggleSubject(subject)}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", cursor: q ? "default" : "pointer", userSelect: "none", background: "rgba(255,255,255,0.04)" }}
               >
                 <span style={{ fontSize: 17 }}>{SUBJECT_ICON[subject]}</span>
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{subject}</span>
                 <span style={{ fontSize: 11, color: "rgba(148,163,184,0.55)" }}>{totalCount} note{totalCount !== 1 ? "s" : ""}</span>
-                <span style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", marginLeft: 4 }}>{isCollapsed ? "▶" : "▼"}</span>
+                {!q && <span style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", marginLeft: 4 }}>{isCollapsed ? "▶" : "▼"}</span>}
               </div>
 
               {!isCollapsed && [...byBook.entries()].map(([bid, bookNotes]) => {
                 const bookKey = `${subject}:${bid}`;
-                const isBookCollapsed = collapsedBooks.has(bookKey);
+                const isBookCollapsed = !q && collapsedBooks.has(bookKey);
 
                 return (
                   <div key={bid} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     {!bookId && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 18px" }}>
                         <div
-                          onClick={() => toggleBook(bookKey)}
-                          style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, cursor: "pointer", userSelect: "none" }}
+                          onClick={() => !q && toggleBook(bookKey)}
+                          style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, cursor: q ? "default" : "pointer", userSelect: "none" }}
                         >
                           <span style={{ fontSize: 13 }}>📖</span>
                           <span style={{ flex: 1, fontSize: 12, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -322,7 +392,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                           </span>
                         </div>
                         <ExportAllMenu notes={bookNotes} title={bookNotes[0]?.bookTitle || bid} mode={mode} />
-                        <span onClick={() => toggleBook(bookKey)} style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", cursor: "pointer", userSelect: "none" }}>{isBookCollapsed ? "▶" : "▼"}</span>
+                        {!q && <span onClick={() => toggleBook(bookKey)} style={{ fontSize: 11, color: "rgba(148,163,184,0.35)", cursor: "pointer", userSelect: "none" }}>{isBookCollapsed ? "▶" : "▼"}</span>}
                       </div>
                     )}
 
@@ -350,6 +420,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               }}
                               onCopy={() => handleCopy(note)}
                               onDelete={() => requestDelete(note)}
+                              onDuplicate={() => handleDuplicate(note)}
                               onNavigate={onNavigateToPage}
                               onCardsGenerated={onCardsGenerated}
                               onOpenWhiteboard={onOpenWhiteboard}
@@ -449,7 +520,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -461,6 +532,7 @@ function NoteCard({
   onToggle: () => void;
   onCopy: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onNavigate?: (page: number) => void;
   onCardsGenerated?: (setId: string) => void;
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
@@ -535,15 +607,43 @@ function NoteCard({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.07)", color: "#f87171", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-        >
-          🗑
-        </button>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={onDuplicate}
+            title="Duplicate note"
+            style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(99,102,241,0.25)", background: "rgba(99,102,241,0.07)", color: "#a5b4fc", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+          >
+            ⊕
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete note"
+            style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.07)", color: "#f87171", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+          >
+            🗑
+          </button>
+        </div>
         <span style={{ fontSize: 11, color: "rgba(148,163,184,0.4)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
       </div>
+
+      {/* Note toolbar — visible when expanded */}
+      {isExpanded && (
+        <div style={{ display: "flex", gap: 6, padding: "0 16px 10px", flexWrap: "wrap" }}>
+          {onOpenWhiteboard && (
+            <button type="button" onClick={() => onOpenWhiteboard(note)} style={TOOL_BTN}>🖼️ Whiteboard</button>
+          )}
+          <button type="button" onClick={onCopy} style={TOOL_BTN}>
+            {copiedId === note.id ? "✅ Copied" : "📋 Copy"}
+          </button>
+          <button type="button" onClick={() => onNavigate?.(note.pageNumber)} style={TOOL_BTN}>📍 p.{note.pageNumber}</button>
+          <button type="button" onClick={handleGenerateCards} disabled={cardsSaving} style={TOOL_BTN}>
+            {cardsSaving ? "⏳" : cardsSaved ? "✅ Cards saved" : "🎯 Recall cards"}
+          </button>
+          <button type="button" onClick={() => downloadNoteMarkdown(note, mode)} style={TOOL_BTN}>⬇️ Export</button>
+        </div>
+      )}
 
       {/* Expanded body */}
       {isExpanded && (
@@ -736,41 +836,8 @@ function NoteCard({
 
           </> /* end noteView === "notes" */}
 
-          {/* Action buttons — always visible regardless of tab */}
-          <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-            <button
-              type="button"
-              onClick={handleGenerateCards}
-              disabled={cardsSaving}
-              style={{
-                flex: 2,
-                padding: "9px 0",
-                borderRadius: 8,
-                border: cardsSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)",
-                background: cardsSaved ? "rgba(99,102,241,0.14)" : "rgba(99,102,241,0.06)",
-                color: cardsSaved ? "#a5b4fc" : "#818cf8",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: cardsSaving ? "wait" : "pointer",
-                opacity: cardsSaving ? 0.6 : 1,
-                transition: "all 0.18s",
-              }}
-            >
-              {cardsSaving ? "Saving…" : cardsSaved ? "✓ Cards saved to Recall Lab" : "🎯 Generate Cards from Note"}
-            </button>
-            {onOpenWhiteboard && (
-              <button type="button" onClick={() => onOpenWhiteboard(note)} style={actionBtn("#6ee7b7")}>
-                🖼️ Whiteboard
-              </button>
-            )}
-            {onNavigate && (
-              <button type="button" onClick={() => onNavigate(note.pageNumber)} style={actionBtn("#3b82f6")}>
-                Go to page {note.pageNumber}
-              </button>
-            )}
-            <button type="button" onClick={onCopy} style={actionBtn(copiedId === note.id ? "#10b981" : "#6b7280")}>
-              {copiedId === note.id ? "✓ Copied" : "Copy"}
-            </button>
+          {/* Export options */}
+          <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
             <ExportMenu
               onMarkdown={() => downloadNoteMarkdown(note, mode)}
               onPdf={() => downloadNotePdf(note, mode)}

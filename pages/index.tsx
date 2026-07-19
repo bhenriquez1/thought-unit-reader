@@ -616,7 +616,13 @@ export default function ThoughtUnitReader() {
   const [syllabusStudyPlan, setSyllabusStudyPlan] = useState<StudyDay[]>(() => {
     try { return JSON.parse(localStorage.getItem("syllabus_plan") ?? "[]"); } catch { return []; }
   });
-  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
+  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("avrrio-shell-tab");
+      if (saved === "elena") return "elena" as WorkspaceMode;
+    }
+    return "reader" as WorkspaceMode;
+  });
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
@@ -1660,6 +1666,12 @@ export default function ThoughtUnitReader() {
     if (nextViewMode) setViewMode(nextViewMode);
     setActiveShellTab(tab);
   }, [focusSoftLock, focusState.running]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("avrrio-shell-tab", activeShellTab);
+    }
+  }, [activeShellTab]);
 
   const focusModeLabel = focusState.mode === "focus" ? "Focus" : focusState.mode === "short_break" ? "Short Break" : "Long Break";
 
@@ -4291,7 +4303,19 @@ export default function ThoughtUnitReader() {
       currentPriorityHighlights, currentNormResult, currentPageRole]);
 
   const renderContent = () => {
-    // 🔐 Gate the app: must be signed in before doing anything
+    // Elena Mode uses browser-local IndexedDB — no Firebase auth required
+    if (activeShellTab === "elena") {
+      return (
+        <ElenaChildWorkspace
+          bookTitle={uploadedFile?.name}
+          currentPage={currentPage}
+          totalPages={pdfPageCount}
+          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || undefined}
+        />
+      );
+    }
+
+    // 🔐 All other tabs require sign-in
     if (!user) {
       return (
         <div className="flex items-center justify-center h-full">
@@ -4509,9 +4533,8 @@ export default function ThoughtUnitReader() {
             </div>
           </div>
 
-          {/* Study Sheet sub-tab */}
-          {notesSubTab === "studyguide" && (
-            <div className="flex-1 overflow-hidden">
+          {/* Study Sheet sub-tab — always mounted to preserve generation state */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
               <StudyGuideLab
                 bookId={bookId}
                 bookTitle={uploadedFile?.name ?? undefined}
@@ -4523,12 +4546,10 @@ export default function ThoughtUnitReader() {
                 onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
                 onPodcastScript={(script) => setStudyGuideScript(script)}
               />
-            </div>
-          )}
+          </div>
 
-          {/* Listen sub-tab */}
-          {notesSubTab === "podcast" && (
-            <div className="flex-1 overflow-hidden">
+          {/* Listen sub-tab — always mounted so audio continues across tab switches */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "podcast" ? "flex" : "none", flexDirection: "column" }}>
               <PodcastLab
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
@@ -4539,12 +4560,10 @@ export default function ThoughtUnitReader() {
                 explainItSeed={explainItPodcastSeed}
                 onDiscussSegment={handleDiscussPodcastSegment}
               />
-            </div>
-          )}
+          </div>
 
-          {/* Notes sub-tab */}
-          {notesSubTab === "notes" && (
-          <div className="flex-1 flex overflow-hidden">
+          {/* Notes sub-tab — always mounted to preserve selected note and edits */}
+          <div className="flex-1 flex overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none" }}>
             {/* Left: Thought Unit navigation for the currently open note */}
             <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
               {notelabNavEntries.length > 0 ? (
@@ -4654,7 +4673,6 @@ export default function ThoughtUnitReader() {
               )}
             </div>
           </div>
-          )}
         </div>
       );
     }
@@ -5310,17 +5328,6 @@ export default function ThoughtUnitReader() {
             </ErrorBoundary>
           </div>
         </div>
-      );
-    }
-
-    if (activeShellTab === "elena") {
-      return (
-        <ElenaChildWorkspace
-          bookTitle={uploadedFile?.name}
-          currentPage={currentPage}
-          totalPages={pdfPageCount}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || undefined}
-        />
       );
     }
 

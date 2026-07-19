@@ -131,6 +131,7 @@ export default function PodcastLab({
   const [playbackSpeed, setPlaybackSpeed]   = useState(1.0);
   const [elapsed, setElapsed]               = useState(0);
   const [segDuration, setSegDuration]       = useState(0);
+  const [userVoice, setUserVoice]           = useState<string | null>(null);
 
   const abortRef        = useRef(false);
   const scriptFetchAbortRef = useRef<AbortController | null>(null);
@@ -409,7 +410,7 @@ export default function PodcastLab({
       }
       if (abortRef.current || isSpeechStale(token)) break;
 
-      const voice = seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
+      const voice = userVoice ?? (seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice);
       await fetchAndPlay(prepareSegmentForTTS(seg.text), voice, token, seg.id);
 
       if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
@@ -615,9 +616,9 @@ export default function PodcastLab({
                 className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 disabled:opacity-30 transition-all" title="Next">⏭</button>
             </div>
 
-            {/* Speed + secondary */}
-            <div className="flex items-center justify-between">
-              <div className="flex gap-1">
+            {/* Speed + voice + secondary */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-1 items-center">
                 {[0.75, 1, 1.25, 1.5].map((s) => (
                   <button key={s}
                     onClick={() => { setPlaybackSpeed(s); if (audioRef.current) audioRef.current.playbackRate = s; }}
@@ -627,6 +628,18 @@ export default function PodcastLab({
                     {s}×
                   </button>
                 ))}
+                <span className="text-white/20 text-[10px] mx-1">|</span>
+                <select
+                  value={userVoice ?? ""}
+                  onChange={(e) => setUserVoice(e.target.value || null)}
+                  className="bg-white/8 border border-white/10 text-white/70 text-[10px] rounded px-1 py-0.5 cursor-pointer"
+                  title="Voice"
+                >
+                  <option value="">Auto voice</option>
+                  {["alloy", "echo", "fable", "nova", "onyx", "shimmer"].map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex gap-2 items-center">
                 <button onClick={() => setShowTranscript((v) => !v)}

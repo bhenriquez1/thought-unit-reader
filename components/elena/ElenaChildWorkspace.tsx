@@ -1307,7 +1307,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   if (!profile || !rewards) return <SetupForm onSave={handleSave} />;
 
   return (
-    <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950">
+    <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 overflow-hidden">
       {/* Parent Dashboard overlay */}
       {showParent && (
         <ParentDashboard
@@ -1318,71 +1318,88 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         />
       )}
 
-      {/* Persistent 👤 parent button — visible on all tabs */}
-      <div className="flex-shrink-0 flex justify-end px-3 pt-2">
-        <button
-          onClick={() => setShowParent(true)}
-          className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1"
-          aria-label="Open parent dashboard"
-        >
-          <span>👤</span>
-          <span>Parent</span>
-        </button>
+      {/* Header */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/8 bg-slate-950/40 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xl leading-none">✨</span>
+          <div>
+            <div className="text-white font-bold text-sm leading-tight">Elena Mode</div>
+            <div className="text-indigo-400 text-[10px] leading-tight">{profile.displayName}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
+            <span>⭐</span>
+            <span className="font-bold tabular-nums">{rewards.totalStars}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-300">
+            <span>🔥</span>
+            <span className="font-bold tabular-nums">{rewards.currentStreak}d</span>
+          </div>
+          <button
+            onClick={() => setShowParent(true)}
+            className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/5"
+            aria-label="Open parent dashboard"
+          >
+            <span>👤</span>
+            <span>Parent</span>
+          </button>
+        </div>
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === "home" && (
-          <HomeTab
-            profile={profile} rewards={rewards} progress={progress}
-            onReset={handleReset} onLogSession={handleLogSession}
-            onNav={setActiveTab}
-          />
-        )}
-        {activeTab === "reading" && (
-          <ContinueReadingTab
-            profile={profile}
-            bookTitle={bookTitle} currentPage={currentPage} totalPages={totalPages}
-            pageText={pageText} progress={progress} onLogSession={handleLogSession}
-          />
-        )}
-        {activeTab === "today" && (
-          <TodayGoalTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
-        )}
-        {activeTab === "adventures"   && <AdventuresTab rewards={rewards} progress={progress} />}
-        {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
-        {activeTab === "library"      && <LibraryTab profile={profile} progress={progress} />}
-        {activeTab === "vocabulary"   && (
-          <VocabularyTab
-            profile={profile} pageText={pageText}
-            bookTitle={bookTitle} currentPage={currentPage}
-          />
-        )}
-        {activeTab === "games"        && (
-          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleAwardStar} />
-        )}
-        {activeTab === "challenge"    && (
-          <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
-        )}
+      {/* Tab content — centered with max-width and responsive padding */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="h-full max-w-2xl mx-auto w-full px-4 py-4">
+          {activeTab === "home" && (
+            <HomeTab
+              profile={profile} rewards={rewards} progress={progress}
+              onReset={handleReset} onLogSession={handleLogSession}
+              onNav={setActiveTab}
+            />
+          )}
+          {activeTab === "reading" && (
+            <ContinueReadingTab
+              profile={profile}
+              bookTitle={bookTitle} currentPage={currentPage} totalPages={totalPages}
+              pageText={pageText} progress={progress} onLogSession={handleLogSession}
+            />
+          )}
+          {activeTab === "today" && (
+            <TodayGoalTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
+          )}
+          {activeTab === "adventures"   && <AdventuresTab rewards={rewards} progress={progress} />}
+          {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
+          {activeTab === "library"      && <LibraryTab profile={profile} progress={progress} />}
+          {activeTab === "vocabulary"   && (
+            <VocabularyTab
+              profile={profile} pageText={pageText}
+              bookTitle={bookTitle} currentPage={currentPage}
+            />
+          )}
+          {activeTab === "games"        && (
+            <GamesTab profile={profile} rewards={rewards} onAwardStar={handleAwardStar} />
+          )}
+          {activeTab === "challenge"    && (
+            <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
+          )}
+        </div>
       </div>
 
-      {/* Bottom nav — horizontally scrollable for 9 tabs */}
-      <div className="flex-shrink-0 border-t border-white/10 bg-slate-950/80 backdrop-blur-sm">
-        <div className="flex overflow-x-auto scrollbar-hide">
+      {/* Bottom nav — clearly separated from content, horizontally scrollable */}
+      <div className="flex-shrink-0 border-t-2 border-white/10 bg-slate-950/90 backdrop-blur-md">
+        <div className="flex overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
           {ELENA_TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-none flex flex-col items-center px-3 py-2 gap-0.5 min-w-[56px] transition-colors ${
+              className={`flex-none flex flex-col items-center px-4 py-2.5 gap-1 min-w-[60px] transition-all ${
                 activeTab === tab.id
-                  ? "text-indigo-300 border-t-2 border-indigo-400"
-                  : "text-slate-500 hover:text-slate-300 border-t-2 border-transparent"
+                  ? "text-indigo-300 border-t-2 border-indigo-400 bg-indigo-500/10"
+                  : "text-slate-500 hover:text-slate-300 border-t-2 border-transparent hover:bg-white/5"
               }`}
             >
-              <span className="text-lg leading-none">{tab.icon}</span>
-              <span className={`font-medium leading-none ${activeTab === tab.id ? "text-[9px]" : "text-[9px]"}`}>
-                {tab.label}
-              </span>
+              <span className="text-base leading-none">{tab.icon}</span>
+              <span className="text-[9px] font-medium leading-none">{tab.label}</span>
             </button>
           ))}
         </div>
