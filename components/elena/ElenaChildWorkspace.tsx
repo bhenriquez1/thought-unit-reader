@@ -134,8 +134,11 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
     );
   }
 
-  async function handleSave() {
-    if (!displayName.trim()) { setError("Please enter a name."); return; }
+  function handleSave() {
+    if (!displayName.trim() || saving) {
+      if (!displayName.trim()) setError("Please enter a name.");
+      return;
+    }
     setSaving(true);
     setError("");
     const now = new Date().toISOString();
@@ -153,19 +156,12 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
       createdAt: now,
       updatedAt: now,
     };
-    try {
-      await saveChildProfile(profile);
-      onSave(profile);
-    } catch (err) {
-      const blocked = String(err).includes("blocked");
-      setError(
-        blocked
-          ? "Elena Mode needs a storage update. Close other Avrrio Reader tabs and try again."
-          : "Couldn't save the profile. Please try again.",
-      );
-    } finally {
-      setSaving(false);
-    }
+    // Open the workspace immediately — do NOT await IDB before calling onSave.
+    // ElenaChildWorkspace.handleSave handles all persistence from here.
+    onSave(profile);
+    // Component will unmount as soon as React processes the state update above,
+    // so setSaving(false) is a no-op but harmless.
+    setSaving(false);
   }
 
   return (
@@ -247,6 +243,7 @@ function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || !displayName.trim()}
             className="w-full rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 font-semibold text-white transition-colors"
@@ -1329,11 +1326,12 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   const [profile,     setProfile]     = useState<ChildProfile | null>(null);
   const [rewards,     setRewards]     = useState<ChildRewardState | null>(null);
   const [progress,    setProgress]    = useState<ChildProgress | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [idbError,    setIdbError]    = useState<string | null>(null);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const [activeTab,   setActiveTab]   = useState<ElenaTab>("home");
-  const [showParent,  setShowParent]  = useState(false);
+  const [loading,            setLoading]            = useState(true);
+  const [idbError,           setIdbError]           = useState<string | null>(null);
+  const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
+  const [loadAttempt,        setLoadAttempt]        = useState(0);
+  const [activeTab,          setActiveTab]          = useState<ElenaTab>("home");
+  const [showParent,         setShowParent]         = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -1361,15 +1359,32 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   }, [loadAttempt]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
+    // Write the active profile ID synchronously so the next mount can load it.
     localStorage.setItem(STORAGE_KEY, p.id);
     const defaultRewards = makeDefaultRewards(p.id);
-    // Update React state immediately so the workspace renders without waiting
-    // for the IDB write. The write is best-effort; on remount we fall back to
-    // makeDefaultRewards() anyway if the record is missing.
+
+    // Open the workspace immediately — state updates happen before any IDB await.
     setProfile(p);
     setRewards(defaultRewards);
     setProgress(null);
-    saveRewardState(defaultRewards).catch(() => {});
+    setIdbError(null);
+    setPersistenceWarning(null);
+    setActiveTab("home");
+
+    // Persist profile + rewards in the background.
+    // Both writes are independent; a failure is non-blocking but visible.
+    const [profileErr, rewardErr] = await Promise.all([
+      saveChildProfile(p).then(() => null).catch((e: unknown) => e),
+      saveRewardState(defaultRewards).then(() => null).catch((e: unknown) => e),
+    ]);
+    if (profileErr || rewardErr) {
+      const blocked = String(profileErr ?? rewardErr).includes("blocked");
+      setPersistenceWarning(
+        blocked
+          ? "Your profile is open but couldn't be saved. Close other Avrrio tabs to allow storage access."
+          : "Your profile is open but couldn't be saved to storage. It will not persist after a refresh.",
+      );
+    }
   }, []);
 
   const handleReset = useCallback(() => {
@@ -1462,6 +1477,21 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
           </button>
         </div>
       </div>
+
+      {/* Persistence warning — soft, dismissible, non-blocking */}
+      {persistenceWarning && (
+        <div className="flex-shrink-0 flex items-start gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-400/25 text-amber-200 text-xs">
+          <span className="mt-px flex-shrink-0">⚠️</span>
+          <span className="flex-1">{persistenceWarning}</span>
+          <button
+            onClick={() => setPersistenceWarning(null)}
+            className="flex-shrink-0 text-amber-400/60 hover:text-amber-200 transition-colors ml-1"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Tab content — centered with max-width and responsive padding */}
       <div className="flex-1 min-h-0 overflow-y-auto">
