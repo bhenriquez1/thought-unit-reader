@@ -1276,6 +1276,13 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
     setProfile(null); setRewards(null); setProgress(null);
   }, []);
 
+  const handleAwardStar = useCallback(async () => {
+    if (!profile || !rewards) return;
+    const updated = awardStar(rewards);
+    await saveRewardState(updated);
+    setRewards(updated);
+  }, [profile, rewards]);
+
   const handleLogSession = useCallback(async () => {
     if (!profile || !rewards) return;
     const updated = awardStar(rewards);
@@ -1352,7 +1359,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
           />
         )}
         {activeTab === "games"        && (
-          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleLogSession} />
+          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleAwardStar} />
         )}
         {activeTab === "challenge"    && (
           <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />

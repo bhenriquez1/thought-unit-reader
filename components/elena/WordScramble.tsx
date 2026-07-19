@@ -18,7 +18,7 @@ function scramble(word: string): string[] {
     }
     if (letters.join("") !== word.toUpperCase()) break;
   }
-  return letters.map((l, i) => `${l}-${i}`); // "A-0", "B-1" — unique IDs for tapping
+  return letters.map((l, i) => `${l}-${i}`); // "A-0", "B-1", "--3" for hyphens — decode with lastIndexOf
 }
 
 /* ─── Props ──────────────────────────────────────────────────────────────────── */
@@ -56,7 +56,7 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
 
   const currentWord = words[wordIdx] ?? null;
   const answer      = currentWord?.word.toUpperCase() ?? "";
-  const chosenLetters = chosen.map(id => id.split("-")[0]);
+  const chosenLetters = chosen.map(id => id.slice(0, id.lastIndexOf("-")));
 
   const pickTile = useCallback((tileId: string) => {
     if (feedback) return;
