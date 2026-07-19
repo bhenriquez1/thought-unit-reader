@@ -198,7 +198,7 @@ export const useApexEngineStore = create<ApexEngineStore>()(
       // Initial state
       sessions: [],
       scores: [],
-      patterns: typeof window !== "undefined" ? buildSeedPatterns() : [],
+      patterns: [] as UserPattern[],
       patternReadiness: [],
       mistakes: [],
       traps: [],
@@ -449,6 +449,15 @@ export const useApexEngineStore = create<ApexEngineStore>()(
         insights: s.insights,
       }),
       skipHydration: typeof window === "undefined",
+      // Seed pattern modules when localStorage has no prior pattern data so
+      // the dashboard shows meaningful content on first visit without
+      // triggering a server/client hydration mismatch (server always starts
+      // with [] ; client seeding happens post-mount via rehydrate callback).
+      onRehydrateStorage: () => (state) => {
+        if (state && state.patterns.length === 0) {
+          state.patterns = buildSeedPatterns();
+        }
+      },
     },
   ),
 );

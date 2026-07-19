@@ -3,7 +3,7 @@
 // DAT Training Arena — Learn → Practice → Generate → Review
 // Each subject panel: Learn (PDRM accordion) | Practice | Generate | Review
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import { DAT_PATTERN_MODULES, PatSubtype, PatternModule, getModulesBySection } from "@/lib/apex/datApex.seed";
 import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
@@ -109,8 +109,12 @@ type TabId = "learn" | "practice" | "generate" | "review";
 
 function LearnTab({ subject }: { subject: Subject }) {
   const modules = getModulesBySection(subject.id as ApexSection);
-  const storePatterns = useApexEngineStore((s) =>
-    s.patterns.filter((p) => p.section === subject.id),
+  const allPatterns = useApexEngineStore((s) => s.patterns);
+  // useMemo prevents a new array reference on every render (inline .filter() inside
+  // a Zustand selector causes an infinite re-render loop via useSyncExternalStore).
+  const storePatterns = useMemo(
+    () => allPatterns.filter((p) => p.section === subject.id),
+    [allPatterns, subject.id],
   );
   const [openId, setOpenId] = useState<string | null>(null);
 

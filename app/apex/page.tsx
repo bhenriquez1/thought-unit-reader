@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
@@ -713,7 +714,9 @@ export default function DatApexPage() {
             <p className="text-sm text-gray-400 mb-4">
               Study recognition patterns, decision rules, mechanisms, and traps for each DAT section.
             </p>
-            <TrainingArena />
+            <ErrorBoundary>
+              <TrainingArena />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === "practice"  && <PracticeTab />}
