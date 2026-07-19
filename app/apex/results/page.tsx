@@ -83,19 +83,24 @@ export default function ExamResultsPage() {
     const loadResults = () => {
       try {
         const examResultsData = localStorage.getItem('examResults');
-        const examData = localStorage.getItem('currentExam');
-        
+
         if (!examResultsData) {
           setLoading(false);
           return;
         }
 
-        const attempt: ExamAttempt = JSON.parse(examResultsData);
+        // Proctor embeds the exam in examResults (_exam) after clearing currentExam,
+        // so we always have the questions available even after submit clears localStorage.
+        const parsed = JSON.parse(examResultsData);
+        const attempt: ExamAttempt = parsed;
         let exam: GeneratedExam | null = null;
-        
-        // Try to get exam from localStorage or reconstruct from attempt
-        if (examData) {
-          exam = JSON.parse(examData);
+
+        // Priority: embedded exam → currentExam fallback (resume flow)
+        if (parsed._exam) {
+          exam = parsed._exam as GeneratedExam;
+        } else {
+          const examData = localStorage.getItem('currentExam');
+          if (examData) exam = JSON.parse(examData);
         }
 
         if (!exam) {
