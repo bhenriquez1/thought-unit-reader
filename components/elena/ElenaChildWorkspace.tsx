@@ -3,10 +3,11 @@
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import ReadingBuddy from "@/components/elena/ReadingBuddy";
-import MemoryMatch  from "@/components/elena/MemoryMatch";
-import WordScramble from "@/components/elena/WordScramble";
-import AdventureMap from "@/components/elena/AdventureMap";
+import ReadingBuddy    from "@/components/elena/ReadingBuddy";
+import MemoryMatch     from "@/components/elena/MemoryMatch";
+import WordScramble    from "@/components/elena/WordScramble";
+import AdventureMap    from "@/components/elena/AdventureMap";
+import ParentDashboard from "@/components/elena/ParentDashboard";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
 import {
   saveChildProfile,
@@ -448,13 +449,13 @@ function ContinueReadingTab({
   progress,
   onLogSession,
 }: {
-  profile:       ChildProfile;
-  bookTitle?:    string;
-  currentPage?:  number;
-  totalPages?:   number;
-  pageText?:     string;
-  progress:      ChildProgress | null;
-  onLogSession:  () => Promise<void>;
+  profile:      ChildProfile;
+  bookTitle?:   string;
+  currentPage?: number;
+  totalPages?:  number;
+  pageText?:    string;
+  progress:     ChildProgress | null;
+  onLogSession: () => Promise<void>;
 }) {
   const pct = currentPage && totalPages && totalPages > 0
     ? Math.round((currentPage / totalPages) * 100)
@@ -496,12 +497,12 @@ function ContinueReadingTab({
           <div className="rounded-2xl border border-white/10 bg-white/3 p-5 text-center">
             <div className="text-4xl mb-2">📚</div>
             <h3 className="text-white font-bold text-base mb-1">No book open yet</h3>
-            <p className="text-slate-400 text-sm">Switch to the Reader tab and open a PDF to track your progress.</p>
+            <p className="text-slate-400 text-sm">Switch to the Reader tab and open a PDF to start reading.</p>
           </div>
         )}
       </div>
 
-      {/* Reading Buddy — fills remaining space */}
+      {/* Reading Buddy — fills remaining height */}
       <div className="flex-1 min-h-0 px-4 pb-4">
         <ReadingBuddy
           profile={profile}
@@ -1239,11 +1240,12 @@ interface ElenaChildWorkspaceProps {
 }
 
 export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages, pageText }: ElenaChildWorkspaceProps) {
-  const [profile,   setProfile]   = useState<ChildProfile | null>(null);
-  const [rewards,   setRewards]   = useState<ChildRewardState | null>(null);
-  const [progress,  setProgress]  = useState<ChildProgress | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [activeTab, setActiveTab] = useState<ElenaTab>("home");
+  const [profile,     setProfile]     = useState<ChildProfile | null>(null);
+  const [rewards,     setRewards]     = useState<ChildRewardState | null>(null);
+  const [progress,    setProgress]    = useState<ChildProgress | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [activeTab,   setActiveTab]   = useState<ElenaTab>("home");
+  const [showParent,  setShowParent]  = useState(false);
 
   useEffect(() => {
     const savedId = localStorage.getItem(STORAGE_KEY);
@@ -1274,6 +1276,13 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
     setProfile(null); setRewards(null); setProgress(null);
   }, []);
 
+  const handleAwardStar = useCallback(async () => {
+    if (!profile || !rewards) return;
+    const updated = awardStar(rewards);
+    await saveRewardState(updated);
+    setRewards(updated);
+  }, [profile, rewards]);
+
   const handleLogSession = useCallback(async () => {
     if (!profile || !rewards) return;
     const updated = awardStar(rewards);
@@ -1299,6 +1308,28 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
 
   return (
     <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950">
+      {/* Parent Dashboard overlay */}
+      {showParent && (
+        <ParentDashboard
+          profile={profile}
+          rewards={rewards}
+          progress={progress}
+          onClose={() => setShowParent(false)}
+        />
+      )}
+
+      {/* Persistent 👤 parent button — visible on all tabs */}
+      <div className="flex-shrink-0 flex justify-end px-3 pt-2">
+        <button
+          onClick={() => setShowParent(true)}
+          className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1"
+          aria-label="Open parent dashboard"
+        >
+          <span>👤</span>
+          <span>Parent</span>
+        </button>
+      </div>
+
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "home" && (
@@ -1328,7 +1359,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
           />
         )}
         {activeTab === "games"        && (
-          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleLogSession} />
+          <GamesTab profile={profile} rewards={rewards} onAwardStar={handleAwardStar} />
         )}
         {activeTab === "challenge"    && (
           <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />

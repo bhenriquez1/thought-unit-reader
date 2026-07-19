@@ -21,7 +21,7 @@ const STORE_VOCAB    = "vocabulary";
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (event) => {
+    req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_PROFILES)) {
         db.createObjectStore(STORE_PROFILES, { keyPath: "id" });
@@ -36,10 +36,18 @@ function openDb(): Promise<IDBDatabase> {
         const vocabStore = db.createObjectStore(STORE_VOCAB, { keyPath: "id" });
         vocabStore.createIndex("byChild", "childProfileId", { unique: false });
       }
-      void event;
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Close this connection if another tab opens a newer version, preventing
+      // it from blocking that tab's upgrade indefinitely.
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     req.onerror   = () => reject(req.error);
+    // Fired when another tab holds a v1 connection open. Reloading that tab
+    // will close the connection so the upgrade can proceed.
+    req.onblocked = () => console.warn("[IDB] upgrade blocked by an open connection in another tab");
   });
 }
 
