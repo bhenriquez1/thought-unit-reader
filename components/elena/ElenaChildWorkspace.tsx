@@ -301,6 +301,79 @@ interface HomeTabProps {
   onNav:        (tab: ElenaTab) => void;
 }
 
+function TodayAdventureCard({
+  rewards, progress, readToday, onNav,
+}: {
+  rewards: ChildRewardState;
+  progress: ChildProgress | null;
+  readToday: boolean;
+  onNav: (tab: ElenaTab) => void;
+}) {
+  const wordsLearned = (progress?.totalSessions ?? 0) > 0;
+  const task1Done    = readToday;
+  const task2Done    = wordsLearned;
+  const allDone      = task1Done && task2Done;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-500/8 to-orange-500/5 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🌟</span>
+          <span className="text-amber-200 font-bold text-sm">Today's Adventure</span>
+        </div>
+        <div className="flex items-center gap-1 bg-amber-400/15 border border-amber-400/25 rounded-lg px-2 py-0.5">
+          <span className="text-xs">Reward:</span>
+          <span className="text-amber-200 text-xs font-bold">⭐⭐</span>
+        </div>
+      </div>
+
+      <div className="space-y-2 mb-3">
+        <button
+          onClick={() => !task1Done && onNav("reading")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors ${
+            task1Done ? "bg-emerald-500/10 border border-emerald-400/25" : "bg-white/5 border border-white/10 hover:bg-white/8"
+          }`}
+        >
+          <span className={`text-lg flex-shrink-0 ${task1Done ? "" : "opacity-40"}`}>{task1Done ? "✅" : "📖"}</span>
+          <div className="min-w-0">
+            <div className={`text-sm font-medium ${task1Done ? "text-emerald-300 line-through opacity-70" : "text-white"}`}>
+              Read for 10 minutes
+            </div>
+            {!task1Done && <div className="text-[10px] text-slate-500">Tap to open Reading tab</div>}
+          </div>
+        </button>
+
+        <button
+          onClick={() => !task2Done && onNav("vocabulary")}
+          className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors ${
+            task2Done ? "bg-emerald-500/10 border border-emerald-400/25" : "bg-white/5 border border-white/10 hover:bg-white/8"
+          }`}
+        >
+          <span className={`text-lg flex-shrink-0 ${task2Done ? "" : "opacity-40"}`}>{task2Done ? "✅" : "🔤"}</span>
+          <div className="min-w-0">
+            <div className={`text-sm font-medium ${task2Done ? "text-emerald-300 line-through opacity-70" : "text-white"}`}>
+              Learn 3 new words
+            </div>
+            {!task2Done && <div className="text-[10px] text-slate-500">Tap to open Words tab</div>}
+          </div>
+        </button>
+      </div>
+
+      {allDone ? (
+        <div className="rounded-xl bg-emerald-500/15 border border-emerald-400/25 px-3 py-2 text-center">
+          <span className="text-emerald-300 font-bold text-sm">🎉 Adventure complete! ⭐⭐ earned</span>
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          {[task1Done, task2Done].map((done, i) => (
+            <div key={i} className={`flex-1 h-1.5 rounded-full ${done ? "bg-emerald-400" : "bg-white/10"}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: HomeTabProps) {
   const copy       = getChildDisplayCopy(profile);
   const earned     = ACHIEVEMENTS.filter(a => a.test(rewards));
@@ -380,6 +453,9 @@ function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: H
           </div>
         ))}
       </div>
+
+      {/* Today's Adventure */}
+      <TodayAdventureCard rewards={rewards} progress={progress} readToday={readToday} onNav={onNav} />
 
       {/* Quick nav grid */}
       <div className="mb-5">
