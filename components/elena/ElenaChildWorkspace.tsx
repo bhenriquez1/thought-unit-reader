@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReadingBuddy from "@/components/elena/ReadingBuddy";
 import MemoryMatch  from "@/components/elena/MemoryMatch";
 import WordScramble from "@/components/elena/WordScramble";
+import AdventureMap from "@/components/elena/AdventureMap";
 import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
 import {
   saveChildProfile,
@@ -622,72 +623,14 @@ function TodayGoalTab({
 
 /* ─── Adventures tab (placeholder — PR #5) ──────────────────────────────────── */
 
-function AdventuresTab({ rewards }: { rewards: ChildRewardState }) {
-  const WORLDS = [
-    { emoji: "🌲", name: "Reading Forest",   starsNeeded: 0,  desc: "Every adventure begins here!" },
-    { emoji: "🏔️", name: "Science Mountain", starsNeeded: 10, desc: "Discover how the world works!" },
-    { emoji: "🌊", name: "Ocean Explorer",   starsNeeded: 25, desc: "Dive into deep-sea mysteries!" },
-    { emoji: "🏰", name: "History Castle",   starsNeeded: 50, desc: "Travel back in time!" },
-    { emoji: "🚀", name: "Space Station",    starsNeeded: 100,desc: "Reach for the stars!" },
-  ];
-
-  return (
-    <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-1">🗺️ Adventures</h2>
-      <p className="text-indigo-300 text-sm mb-5">Read to unlock new worlds!</p>
-
-      <div className="space-y-3">
-        {WORLDS.map((world, i) => {
-          const unlocked = rewards.totalStars >= world.starsNeeded;
-          return (
-            <div
-              key={world.name}
-              className={`rounded-2xl border p-4 flex items-center gap-4 ${
-                unlocked
-                  ? "border-indigo-400/40 bg-indigo-500/10"
-                  : "border-white/8 bg-white/3 opacity-60"
-              }`}
-            >
-              <div className={`text-4xl ${unlocked ? "" : "grayscale"}`}>{world.emoji}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-bold text-sm ${unlocked ? "text-white" : "text-slate-400"}`}>
-                    {world.name}
-                  </h3>
-                  {i === 0 && (
-                    <span className="text-[10px] bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 py-0.5 rounded-full">
-                      Active
-                    </span>
-                  )}
-                </div>
-                <p className={`text-xs mt-0.5 ${unlocked ? "text-indigo-300" : "text-slate-500"}`}>
-                  {world.desc}
-                </p>
-                {!unlocked && (
-                  <p className="text-[11px] text-yellow-400/60 mt-1">
-                    🔒 Unlock at {world.starsNeeded} ⭐ stars ({Math.max(0, world.starsNeeded - rewards.totalStars)} more to go)
-                  </p>
-                )}
-              </div>
-              {unlocked && i === 0 && (
-                <span className="text-green-400 text-lg flex-shrink-0">▶</span>
-              )}
-              {!unlocked && (
-                <span className="text-slate-600 text-lg flex-shrink-0">🔒</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-blue-400/20 bg-blue-500/5 p-4 text-center">
-        <p className="text-blue-300 text-sm font-semibold mb-1">Adventure Map — Coming Soon! 🗺️</p>
-        <p className="text-blue-400/60 text-xs">
-          Full interactive adventure map with quests, treasure chests, and daily challenges is on the way!
-        </p>
-      </div>
-    </div>
-  );
+function AdventuresTab({
+  rewards,
+  progress,
+}: {
+  rewards:  ChildRewardState;
+  progress: ChildProgress | null;
+}) {
+  return <AdventureMap rewards={rewards} progress={progress} />;
 }
 
 /* ─── Achievements tab ───────────────────────────────────────────────────────── */
@@ -1375,7 +1318,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         {activeTab === "today" && (
           <TodayGoalTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
         )}
-        {activeTab === "adventures"   && <AdventuresTab rewards={rewards} />}
+        {activeTab === "adventures"   && <AdventuresTab rewards={rewards} progress={progress} />}
         {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
         {activeTab === "library"      && <LibraryTab profile={profile} progress={progress} />}
         {activeTab === "vocabulary"   && (
