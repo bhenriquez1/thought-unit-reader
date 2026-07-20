@@ -275,6 +275,20 @@ export function getNotesByBook(bookId: string): UltraNote[] {
   return lsRead().filter((n) => n.bookId === bookId);
 }
 
+/** Async version that reads from IDB (authoritative), falling back to the LS
+ *  mirror when IDB is unavailable or throws.  Use this in any code-path where
+ *  correctness matters (exam generation); the sync version is fine for
+ *  display-only note counts that run inside useMemo. */
+export async function getNotesByBookAsync(bookId: string): Promise<UltraNote[]> {
+  try {
+    const notes = await idbGetAllNotes();
+    return notes.filter((n) => n.bookId === bookId);
+  } catch (e) {
+    console.warn("[NOTELAB] getNotesByBookAsync IDB read failed, using LS mirror:", String(e));
+    return lsRead().filter((n) => n.bookId === bookId);
+  }
+}
+
 export async function isUltraNotePersisted(id: string): Promise<boolean> {
   try {
     const notes = await idbGetAllNotes();

@@ -102,6 +102,11 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
       }),
     });
     const data = await resp.json();
+    // Surface server-reported errors (missing API key, OpenAI 4xx, timeout) so
+    // the caller sees a meaningful message instead of an empty question pool.
+    if (data.error && (!Array.isArray(data.questions) || data.questions.length === 0)) {
+      throw new Error(data.error);
+    }
     const generated: EngineQuestion[] = Array.isArray(data?.questions) ? data.questions : [];
 
     if (generated.length > 0) {

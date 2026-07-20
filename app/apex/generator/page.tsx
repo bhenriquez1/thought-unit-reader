@@ -175,9 +175,12 @@ export default function ExamGeneratorPage() {
         practiceMode,
       );
       setGeneratedExam(exam);
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : null;
       setGenerationError(
-        'Question generation failed — check that an AI key is configured for /api/exam-question-gen.',
+        msg
+          ? `Generation failed: ${msg}`
+          : 'Question generation failed — check that an AI key is configured for /api/exam-question-gen.',
       );
     } finally {
       setIsGenerating(false);

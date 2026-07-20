@@ -5,7 +5,7 @@
 // count) but sources EngineQuestions from the AI-generated, IndexedDB-cached
 // pool (questionGenerator.ts) instead of a static question bank.
 
-import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
+import { getNotesByBookAsync } from "@/lib/notelab/ultraNoteStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from "@/lib/examEngine/types";
@@ -101,7 +101,7 @@ function matchSection(note: UltraNote, profile: ExamProfile): string {
 }
 
 export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
-  const notes = getNotesByBook(opts.bookId);
+  const notes = await getNotesByBookAsync(opts.bookId);
   const sectionIds = opts.sectionIds?.length ? opts.sectionIds : opts.profile.sections.map((s) => s.id);
   const questionTypes = opts.questionTypes?.length ? opts.questionTypes : opts.profile.questionTypes;
 
