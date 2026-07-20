@@ -2328,17 +2328,27 @@ function UltraViewBase({
 
   const [resolvedResources, setResolvedResources] = useState<{ articles: ResolvedArticle[]; videos: ResolvedVideo[]; resolved: boolean }>({ articles: [], videos: [], resolved: false });
   const [cohereQueries, setCohereQueries] = useState<{ readings: string[]; videos: string[] }>({ readings: [], videos: [] });
+  // Dedup guard: prevents Stage 1→Stage 2 synthesis updates from triggering two
+  // identical resource fetch cycles when the topic and mechanism haven't changed.
+  const lastResourceFetchKeyRef = useRef<string>("");
 
   useEffect(() => {
+    const currentTopic = (selectedBlock?.pattern || selectedBlock?.title || "").trim();
+    const thesis = (currentTopic || view.pageThesis || view.coreIdea || "").trim();
+    if (!thesis || !hasSynth) { setResolvedResources(r => ({ ...r, resolved: true })); return; }
+
+    // Skip if the inputs to both API calls haven't actually changed.
+    const fetchKey = `${thesis.slice(0, 100)}::${synth?.keyMechanism?.slice(0, 50) ?? ""}::${domain ?? ""}`;
+    if (lastResourceFetchKeyRef.current === fetchKey) return;
+    lastResourceFetchKeyRef.current = fetchKey;
+
     setResolvedResources({ articles: [], videos: [], resolved: false });
     setCohereQueries({ readings: [], videos: [] });
+
     // "Current topic" = the concept card the student actually has open, when one
     // exists — falls back to the page-level thesis only when no block is
     // selected. Without this, Related Reading/Videos stayed pinned to the whole
     // page's broad topic regardless of which concept the student was reading.
-    const currentTopic = (selectedBlock?.pattern || selectedBlock?.title || "").trim();
-    const thesis = (currentTopic || view.pageThesis || view.coreIdea || "").trim();
-    if (!thesis || !hasSynth) { setResolvedResources(r => ({ ...r, resolved: true })); return; }
     const controller = new AbortController();
     const conceptTitles = selectedBlock?.title
       ? [selectedBlock.title]
@@ -2346,7 +2356,7 @@ function UltraViewBase({
     const anchorTexts = selectedBlock?.anchorText
       ? [selectedBlock.anchorText]
       : view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
-    console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50), concepts: conceptTitles.length, scopedToSelectedBlock: !!currentTopic });
+    console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50) ?? null, concepts: conceptTitles.length, scopedToSelectedBlock: !!currentTopic });
 
     // OpenAI: specific article URLs + channel-targeted videos
     fetch("/api/resolveResources", {
@@ -2366,7 +2376,7 @@ function UltraViewBase({
     fetch("/api/cohere-retrieval", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: thesis, domain, mode: "both", pageText: "" }),
+      body: JSON.stringify({ topic: thesis, domain: domain ?? null, mode: "both", pageText: "" }),
       signal: controller.signal,
     })
       .then(r => r.json())
@@ -2379,8 +2389,7 @@ function UltraViewBase({
       .catch(() => {});
 
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.coreIdea, view.pageThesis, hasSynth, selectedBlock?.conceptId]);
+  }, [view.coreIdea, view.pageThesis, hasSynth, selectedBlock?.conceptId, synth?.keyMechanism, domain]);
 
   const exactArticles = resolvedResources.articles.filter((a) => a.score >= 70 && /^https?:\/\//i.test(a.url));
   const exactVideos = resolvedResources.videos.filter((v) => v.score >= 70 && (v.isVerified || v.searchUrl.includes("youtube.com/watch?v=")));
