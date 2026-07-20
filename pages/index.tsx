@@ -93,7 +93,7 @@ import {
 import type { SourceRef } from "@/lib/page-intelligence";
 
 // Store imports
-import { useTocStore } from "@/lib/stores/tocStore";
+import { useTocStore, isTocLowQuality } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
 import { usePdrmStore } from "@/lib/stores/pdrmStore";
 import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
@@ -2815,6 +2815,38 @@ export default function ThoughtUnitReader() {
     });
   }, [pdfPageCount, thoughtUnits, syllabusToc.length, uploadedFile?.name, syllabusUploadRequested]);
 
+  // Sync syllabusToc → tocStore whenever the buildAutoToc result is better
+  // than what tocStore already holds (absent, synthetic, or low-quality).
+  // This ensures DAT Apex chapter selection always reads real chapter data.
+  useEffect(() => {
+    if (!syllabusToc.length) return;
+    const docId = bookId || uploadedFile?.name?.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+    const stored = useTocStore.getState().getToc(docId);
+    if (stored && !isTocLowQuality(stored)) return;
+
+    const tocItems = syllabusToc.map((n) => ({
+      id: n.id,
+      title: n.title,
+      pageNumber: n.page,
+      level: n.kind === "chapter" ? 0 : n.kind === "section" ? 1 : 2,
+      children: n.children?.map((child) => ({
+        id: child.id,
+        title: child.title,
+        pageNumber: child.page,
+        level: 1,
+      })),
+    }));
+    useTocStore.getState().saveToc(docId, uploadedFile?.name || "Document", tocItems, "heuristic");
+  }, [syllabusToc, bookId, uploadedFile?.name]);
+
+  // Clears the stored TOC and resets state so buildAutoToc re-runs with fresh data.
+  const handleRegenerateToc = useCallback(() => {
+    const docId = bookId || uploadedFile?.name?.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+    useTocStore.getState().clearToc(docId);
+    setSyllabusToc([]);
+    setTableOfContents([]);
+  }, [bookId, uploadedFile?.name]);
+
   /* =========================================================================
      🔹 Highlight Paragraph — zoom to matching text in the PDF text layer
      Called when user clicks a priority item in SurgeonCockpit.
@@ -3303,22 +3335,9 @@ export default function ThoughtUnitReader() {
               level: 0,
               confidence: 0.6
             }));
-          } else {
-            // Create basic section-based TOC
-            const estimatedPages = Math.max(10, Math.ceil(normalized.length / 5));
-            const sectionsCount = Math.min(10, Math.max(3, Math.floor(estimatedPages / 5)));
-            const pagesPerSection = Math.ceil(estimatedPages / sectionsCount);
-            
-            for (let i = 0; i < sectionsCount; i++) {
-              const startPage = i * pagesPerSection + 1;
-              fallbackToc.push({
-                title: `Section ${i + 1}`,
-                pageNumber: startPage,
-                level: 0,
-                confidence: 0.3
-              });
-            }
           }
+          // No synthetic "Section N" fallback — let buildAutoToc (via the
+          // syllabus effect) produce real chapter data instead.
           
           if (fallbackToc.length > 0) {
             setTableOfContents(fallbackToc);
@@ -5039,6 +5058,15 @@ export default function ThoughtUnitReader() {
                   onJump={handleSyllabusNodeClick}
                   onStudy={handleStudyTopic}
                   bookId={bookId}
+                  isLowQuality={
+                    syllabusToc.length > 0 && (
+                      syllabusToc.length <= 1 ||
+                      syllabusToc.every((n) => n.page <= 1) ||
+                      syllabusToc.every((n) => /^section\s+\d+$/i.test(n.title.trim())) ||
+                      syllabusToc.every((n) => /^pages?\s+\d+[–—-]\d+$/i.test(n.title.trim()))
+                    )
+                  }
+                  onRegenerate={handleRegenerateToc}
                 />
               </div>
             )}
