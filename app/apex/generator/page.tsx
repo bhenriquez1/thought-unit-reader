@@ -323,6 +323,17 @@ export default function ExamGeneratorPage() {
                     </div>
                   )}
 
+                  {/* No-TOC notice — shown when a book is selected but no chapters were detected */}
+                  {bookId && topLevelChapters.length === 0 && (
+                    <div className="mt-4 rounded-lg border border-gray-600/50 bg-gray-700/20 px-4 py-3 text-sm text-gray-400">
+                      No reliable chapter structure was detected for this book.
+                      <span className="ml-1 text-gray-300">The exam will use the entire book.</span>
+                      <span className="block mt-1 text-xs text-gray-500">
+                        To select specific chapters, open the book in the Reader, use Regenerate TOC in the Book Roadmap tab, then return here.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Chapter selector (only when a book is selected and has TOC) */}
                   {bookId && topLevelChapters.length > 0 && (
                     <div className="mt-4 border border-gray-600 rounded-lg overflow-hidden">

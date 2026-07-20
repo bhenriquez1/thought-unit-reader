@@ -167,9 +167,18 @@ export default function TocTree({ toc, activePage, onJump, onStudy, bookId, isLo
 
       <div className="max-h-[55vh] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="text-xs text-slate-400 py-4 text-center">
-            {normalizedQuery ? "No matching chapters." : "No TOC available."}
-          </p>
+          normalizedQuery ? (
+            <p className="text-xs text-slate-400 py-4 text-center">No matching chapters.</p>
+          ) : (
+            <div className="py-4 text-center space-y-2">
+              <p className="text-xs text-slate-400">No reliable chapter structure was detected.</p>
+              <p className="text-[11px] text-slate-500">
+                {onRegenerate
+                  ? "Click Regenerate above, add chapters manually, or continue using the full book."
+                  : "Add chapters manually or continue using the full book."}
+              </p>
+            </div>
+          )
         ) : (
           <ul className="space-y-0.5">
             {filtered.map((node) => (
