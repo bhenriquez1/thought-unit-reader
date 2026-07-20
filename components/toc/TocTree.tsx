@@ -9,6 +9,10 @@ interface TocTreeProps {
   onStudy?: (node: TocNode) => void;
   /** Passed to persist expand state across remounts */
   bookId?: string;
+  /** When true, shows an amber banner indicating the TOC was auto-estimated */
+  isLowQuality?: boolean;
+  /** Called when the user clicks Regenerate in the low-quality banner */
+  onRegenerate?: () => void;
 }
 
 const KIND_LABEL: Record<TocNode["kind"], string> = {
@@ -70,7 +74,7 @@ function dedup(nodes: TocNode[]): TocNode[] {
     .map((n) => ({ ...n, children: n.children?.length ? dedup(n.children) : n.children }));
 }
 
-export default function TocTree({ toc, activePage, onJump, onStudy, bookId }: TocTreeProps) {
+export default function TocTree({ toc, activePage, onJump, onStudy, bookId, isLowQuality, onRegenerate }: TocTreeProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     if (!bookId || typeof window === "undefined") return {};
@@ -137,6 +141,21 @@ export default function TocTree({ toc, activePage, onJump, onStudy, bookId }: To
 
   return (
     <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+      {isLowQuality && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <span className="flex-1 text-xs text-amber-300">
+            Chapter detection is approximate for this book.
+          </span>
+          {onRegenerate && (
+            <button
+              onClick={onRegenerate}
+              className="shrink-0 rounded-md bg-amber-500/20 px-2 py-1 text-xs text-amber-300 transition-colors hover:bg-amber-500/30"
+            >
+              Regenerate
+            </button>
+          )}
+        </div>
+      )}
       <div className="mb-3">
         <input
           value={query}

@@ -399,4 +399,19 @@ export const useTocStore = create<TocState>()(
   )
 );
 
+/** Returns true when a stored TOC is synthetic / low-quality and should be
+ *  replaced if a better extraction becomes available. Detects: single-item
+ *  tables, all items on page 1, all "Section N" titles, all "Pages N–M"
+ *  page-range titles, and all-identical titles. */
+export function isTocLowQuality(toc: DocumentToc): boolean {
+  const items = toc.items;
+  if (items.length <= 1) return true;
+  if (items.every((it) => it.pageNumber <= 1)) return true;
+  if (items.every((it) => /^section\s+\d+$/i.test(it.title.trim()))) return true;
+  if (items.every((it) => /^pages?\s+\d+[–—-]\d+$/i.test(it.title.trim()))) return true;
+  const unique = new Set(items.map((it) => it.title.trim().toLowerCase()));
+  if (unique.size === 1) return true;
+  return false;
+}
+
 export default useTocStore;
