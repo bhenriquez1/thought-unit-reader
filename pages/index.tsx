@@ -4720,13 +4720,13 @@ export default function ThoughtUnitReader() {
             <span className="text-xs font-bold uppercase tracking-widest text-indigo-400 mr-3 shrink-0">Learning Hub</span>
             {([
               { id: "overview",  label: "Overview" },
-              { id: "today",     label: "Today" },
-              { id: "roadmap",   label: "Roadmap" },
+              { id: "today",     label: "Today's Plan" },
+              { id: "roadmap",   label: "Book Roadmap" },
               { id: "studyplan", label: "Study Plan" },
               { id: "mastery",   label: "Mastery" },
               { id: "weak",      label: "Weak Areas" },
-              { id: "exam",      label: "Exam Ready" },
-              { id: "graph",     label: "Knowledge" },
+              { id: "exam",      label: "Exam Readiness" },
+              { id: "graph",     label: "Knowledge Graph" },
               { id: "coach",     label: "AI Coach" },
             ] as const).map(({ id, label }) => (
               <button
@@ -4801,7 +4801,7 @@ export default function ThoughtUnitReader() {
                   {/* Quick nav grid */}
                   <div className="grid grid-cols-2 gap-2.5">
                     {([
-                      { id: "today",     label: "Today's Goal",   icon: "📅", sub: "What to study now" },
+                      { id: "today",     label: "Today's Plan",   icon: "📅", sub: "What to study now" },
                       { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
                       { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
                       { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
@@ -4868,7 +4868,7 @@ export default function ThoughtUnitReader() {
                     );
                     return (
                       <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 p-4">
-                        <div className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">Today&apos;s Goal</div>
+                        <div className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">Today&apos;s Plan</div>
                         <div className="text-sm font-semibold text-white">{todaySession.topics[0] ?? "Study session"}</div>
                         {todaySession.topics.length > 1 && (
                           <div className="text-xs text-slate-500 mt-0.5">+{todaySession.topics.length - 1} more topics</div>
