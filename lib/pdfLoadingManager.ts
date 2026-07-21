@@ -3,12 +3,22 @@ import { pdfjs } from "react-pdf";
 import * as pdfjsLib from "pdfjs-dist/build/pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 
-// Configure PDF.js worker
+// Configure PDF.js worker — set on BOTH the react-pdf re-export and the direct
+// pdfjs-dist import. Webpack may deduplicate them to one module, but if the
+// bundler keeps them as separate instances (different chunk paths) both need the
+// workerSrc set so neither falls back to a fake-worker that can't stream blobs.
 if (typeof window !== 'undefined') {
   try {
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   } catch (error) {
     console.warn("PDF.js worker configuration failed, will use fallback:", error);
+  }
+  try {
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    }
+  } catch {
+    // non-fatal
   }
 }
 
@@ -92,9 +102,29 @@ export class PDFLoadingManager {
 
       console.log(`📄 PDFLoadingManager: Loading attempt ${attempt}/${maxRetries} for ${url.slice(0, 50)}...`);
 
+      // Blob URLs don't support HTTP range requests — the browser returns status 0
+      // for range requests on blob: URLs in some environments, which PDF.js v3
+      // interprets as "Unexpected server response (0)". Fix: read the blob into a
+      // Uint8Array and pass it as {data} instead of {url}. This bypasses the
+      // range-request layer entirely and matches how pdfjs-handler.ts loads files.
+      let documentSource: { url: string } | { data: Uint8Array };
+      if (url.startsWith('blob:')) {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`Blob fetch failed: ${resp.status}`);
+          const buf = await resp.arrayBuffer();
+          documentSource = { data: new Uint8Array(buf) };
+          console.log(`📄 PDFLoadingManager: Blob URL converted to ArrayBuffer (${buf.byteLength} bytes)`);
+        } catch (fetchErr) {
+          throw new Error(`Failed to read blob URL: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
+        }
+      } else {
+        documentSource = { url };
+      }
+
       // Create loading task with timeout
       const loadingTask = pdfjsLib.getDocument({
-        url,
+        ...documentSource,
         cMapUrl: '/cmaps/',
         cMapPacked: true,
         disableStream: false,
