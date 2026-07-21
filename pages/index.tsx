@@ -547,6 +547,11 @@ export default function ThoughtUnitReader() {
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
 
   const [currentPage, setCurrentPage] = useState(1);
+  // Stable ref that mirrors currentPage — lets syncToPage read the latest page
+  // inside a useCallback without listing currentPage as a dep (which would
+  // recreate the callback and cascade re-renders into TocTree on every page flip).
+  const currentPageRef = useRef(1);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
   const [pdfLoadingState, setPdfLoadingState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -4003,23 +4008,25 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
-  // Simplified navigation function - single source of truth
-  const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
+  // Stable navigation function — reads currentPage via ref so useCallback deps don't
+  // include currentPage, preventing cascade re-renders of TocTree on every page flip.
+  const syncToPage = useCallback((page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
     const reason = opts?.reason || 'PROGRAMMATIC';
-    console.log(`📄 syncToPage: ${page} (current: ${currentPage}) reason: ${reason}`);
-    
+    const curPage = currentPageRef.current;
+    console.log(`📄 syncToPage: ${page} (current: ${curPage}) reason: ${reason}`);
+
     // Validate page bounds
     if (page < 1 || (pdfPageCount > 0 && page > pdfPageCount)) {
       console.warn(`📄 Invalid page ${page}, bounds: 1-${pdfPageCount}`);
       return;
     }
-    
+
     // Skip if already on the page (unless it's a scroll event)
-    if (page === currentPage && reason !== 'SCROLL') {
+    if (page === curPage && reason !== 'SCROLL') {
       console.log(`📄 Already on page ${page}, skipping`);
       return;
     }
-    
+
     try {
       // For user-initiated jumps: freeze scroll-sync and clean up previous-page DOM
       // so stale IntersectionObserver/scroll events can't flip activeAnchorId.
@@ -4045,9 +4052,8 @@ export default function ThoughtUnitReader() {
           el => el.classList.remove('priority-paragraph-glow', 'priority-paragraph-pinned'),
         );
         clearTransientPriorityPreview();
-        const prevPage = currentPage - 1;
         useInsightsPanelStore.getState().clearPinnedTexts();
-        useHighlightStore.getState().clearPage(bookId || 'default-book', prevPage);
+        useHighlightStore.getState().clearPage(bookId || 'default-book', curPage - 1);
 
         // Reset the right-panel scroll to top (user is on a new page)
         requestAnimationFrame(() => {
@@ -4056,10 +4062,13 @@ export default function ThoughtUnitReader() {
             ?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
         });
 
-        // Unfreeze after PDF render has settled
+        // Unfreeze after PDF render has settled — must match navLockRef timeout (700 ms)
+        // so there is no window where syncFrozenRef is false but navLock is still true.
+        // A shorter unfreeze (was 600 ms) let scroll events slip through and bounce the
+        // TOC highlight during the 100 ms gap.
         syncFreezeTimerRef.current = setTimeout(() => {
           syncFrozenRef.current = false;
-        }, 600);
+        }, 700);
       }
 
       // Update local state immediately for responsive UI
@@ -4070,25 +4079,25 @@ export default function ThoughtUnitReader() {
         source: reason,
         documentId: bookId,
         visiblePage: page,
-        previousPage: currentPage,
+        previousPage: curPage,
         currentThoughtUnit: unit,
         pageTextWords: (pageTextByPage.get(`${bookId}:${page}`) || "").split(/\s+/).filter(Boolean).length,
       });
-      
+
       // Update global sync state
-      updateSync({ 
-        page, 
-        unitIndex: unit 
+      updateSync({
+        page,
+        unitIndex: unit
       }, reason === 'SCROLL' ? 'pdf' : 'manual');
-      
+
       // Auto-whiteboard trigger — legacy concept seeding removed; study model is source
       console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "conceptForPage disabled on page nav — study model is source", page });
-      
+
       console.log(`📄 Navigation successful: page ${page}, unit ${unit}`);
-      
+
     } catch (error) {
       console.error(`📄 Navigation error for page ${page}:`, error);
-      
+
       // Ensure state is consistent even on error
       try {
         setCurrentPage(page);
@@ -4098,7 +4107,7 @@ export default function ThoughtUnitReader() {
         console.error(`📄 Fallback navigation failed:`, fallbackError);
       }
     }
-  };
+  }, [pdfPageCount, thoughtUnits.length, bookId, pageTextByPage, clearTransientPriorityPreview, updateSync]);
 
   const handleParsedSyllabus = useCallback((result: {
     fileName: string;
