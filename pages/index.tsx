@@ -4198,10 +4198,6 @@ export default function ThoughtUnitReader() {
 
   const handleSyllabusNodeClick = useCallback((node: TocNode) => {
     syncToPage(node.page, { reason: "TOC_JUMP" });
-    setRightPanelResetKey((k) => k + 1);
-    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
-    setViewMode("reader");
-    setActiveShellTab("reader");
   }, [syncToPage]);
 
   // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
@@ -4730,8 +4726,8 @@ export default function ThoughtUnitReader() {
               currentPage={currentPage}
               pdfPageCount={pdfPageCount}
               onOpenChapter={(pageNumber) => {
-                syncToPage(pageNumber);
-                setViewMode("reader");
+                syncToPage(pageNumber, { reason: "TOC_JUMP" });
+                trySwitchShellTab("reader", "reader");
               }}
             />
           </ErrorBoundary>
