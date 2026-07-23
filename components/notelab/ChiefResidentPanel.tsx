@@ -1,0 +1,474 @@
+"use client";
+// components/notelab/ChiefResidentPanel.tsx
+// 🩺 Chief Resident — adaptive AI teaching mode in NoteLab.
+// Replaces the passive "Listen" experience with an interactive teaching session
+// that auto-detects subject, selects teaching persona, and teaches one concept at a time.
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
+import type { TeachingMode } from "@/pages/api/chief-resident-teaching";
+import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface TeachingTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface ChiefResidentPanelProps {
+  studyModel: CurrentPageStudyModel | null;
+  pageText: string;
+  bookId: string;
+  currentPage: number;
+  bookTitle?: string;
+  activeNote: UltraNote | null;
+  onRecallSaved?: (setId: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Mode definitions
+// ---------------------------------------------------------------------------
+
+const MODES: { key: TeachingMode; label: string; icon: string; description: string; needsNote?: boolean }[] = [
+  { key: "teach-page",        label: "Teach This Page",        icon: "📖", description: "Interactive lesson from the current reader page" },
+  { key: "teach-note",        label: "Teach This Note",        icon: "📝", description: "Teach from your active note", needsNote: true },
+  { key: "teach-study-sheet", label: "Teach This Study Sheet", icon: "📑", description: "Lesson based on the Study Sheet content" },
+  { key: "case-based",        label: "Case-Based Teaching",    icon: "🏥", description: "AI generates a case, you reason through it" },
+  { key: "rapid-fire",        label: "Rapid-Fire Questions",   icon: "⚡", description: "Fast Q&A — one question, one answer, move on" },
+  { key: "explain-mistake",   label: "Explain My Mistake",     icon: "🔍", description: "Describe what you got wrong; AI corrects your reasoning" },
+];
+
+// ---------------------------------------------------------------------------
+// Source text builders
+// ---------------------------------------------------------------------------
+
+function buildPageSourceText(studyModel: CurrentPageStudyModel | null, pageText: string): string {
+  const parts: string[] = [];
+  if (studyModel?.pageThesis) parts.push(`Thesis: ${studyModel.pageThesis}`);
+  if (studyModel?.studyNotes) {
+    const sn = studyModel.studyNotes;
+    if (sn.whyThisMatters) parts.push(`Why This Matters: ${sn.whyThisMatters}`);
+    if (sn.keyMechanism)    parts.push(`Key Mechanism: ${sn.keyMechanism}`);
+    if (sn.commonConfusion) parts.push(`Common Confusion: ${sn.commonConfusion}`);
+    if (sn.quickMemory)     parts.push(`Memory Anchor: ${sn.quickMemory}`);
+    if (sn.examSignal)      parts.push(`Exam Signal: ${sn.examSignal}`);
+  }
+  if (studyModel?.conceptBlocks?.length) {
+    parts.push("\nConcepts:");
+    studyModel.conceptBlocks.forEach((cb, i) => {
+      if (cb.title) parts.push(`${i + 1}. ${cb.title}${cb.mechanism ? ": " + cb.mechanism : ""}`);
+    });
+  }
+  if (!parts.length && pageText) parts.push(pageText.slice(0, 3000));
+  return parts.join("\n").trim() || pageText.slice(0, 3000);
+}
+
+function buildNoteSourceText(note: UltraNote): string {
+  const parts = [`Topic: ${note.topic}`, `Core Idea: ${note.coreIdea}`];
+  if (note.concepts?.length) {
+    parts.push("\nConcepts:");
+    note.concepts.forEach(c => {
+      parts.push(`\n${c.ordinal}. ${c.title}`);
+      if (c.pattern)        parts.push(`   Pattern: ${c.pattern}`);
+      if (c.surgicalReason) parts.push(`   Why it works: ${c.surgicalReason}`);
+      if (c.trap)           parts.push(`   Trap: ${c.trap}`);
+      if (c.rule)           parts.push(`   Rule: ${c.rule}`);
+    });
+  }
+  if (note.memoryShortcuts?.length) parts.push(`\nMemory Shortcuts: ${note.memoryShortcuts.join("; ")}`);
+  if (note.sections?.length) {
+    note.sections.forEach(s => { if (s.content) parts.push(`\n${s.label}:\n${s.content}`); });
+  }
+  return parts.join("\n").trim();
+}
+
+function buildStudySheetSourceText(studyModel: CurrentPageStudyModel | null, pageText: string): string {
+  // Uses the same model that StudyGuideLab generates from; delegates to page source
+  return buildPageSourceText(studyModel, pageText);
+}
+
+// ---------------------------------------------------------------------------
+// Streaming fetch utility
+// ---------------------------------------------------------------------------
+
+async function streamTeachingSession(
+  body: object,
+  onToken: (text: string) => void,
+  signal?: AbortSignal
+): Promise<string> {
+  const res = await fetch("/api/chief-resident-teaching", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let accumulated = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split("\n");
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") return accumulated;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.text) {
+          accumulated += parsed.text;
+          onToken(parsed.text);
+        }
+      } catch (e) {
+        if ((e as Error).message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+  return accumulated;
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function ChiefResidentPanel({
+  studyModel,
+  pageText,
+  bookId,
+  currentPage,
+  bookTitle,
+  activeNote,
+  onRecallSaved,
+}: ChiefResidentPanelProps) {
+  const [selectedMode, setSelectedMode] = useState<TeachingMode | null>(null);
+  const [sessionMessages, setSessionMessages] = useState<TeachingTurn[]>([]);
+  const [streamingBuffer, setStreamingBuffer] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [userInput, setUserInput] = useState("");
+  const [sessionDone, setSessionDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasStarted, setHasStarted] = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll on new content
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [sessionMessages, streamingBuffer]);
+
+  // Reset session when page/book changes
+  useEffect(() => {
+    abortRef.current?.abort();
+    setSelectedMode(null);
+    setSessionMessages([]);
+    setStreamingBuffer("");
+    setHasStarted(false);
+    setSessionDone(false);
+    setError(null);
+  }, [bookId, currentPage]);
+
+  const getSourceText = useCallback((mode: TeachingMode): string => {
+    if (mode === "teach-note") return activeNote ? buildNoteSourceText(activeNote) : "";
+    if (mode === "teach-study-sheet") return buildStudySheetSourceText(studyModel, pageText);
+    return buildPageSourceText(studyModel, pageText);
+  }, [studyModel, pageText, activeNote]);
+
+  const startSession = useCallback(async (mode: TeachingMode) => {
+    const src = getSourceText(mode);
+    if (!src.trim()) {
+      setError(mode === "teach-note" ? "Open a note in the Notes tab first." : "No content found for this page yet.");
+      return;
+    }
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    setSelectedMode(mode);
+    setSessionMessages([]);
+    setStreamingBuffer("");
+    setSessionDone(false);
+    setError(null);
+    setHasStarted(true);
+    setIsStreaming(true);
+
+    try {
+      let accumulated = "";
+      const full = await streamTeachingSession(
+        { sourceText: src, bookTitle, mode, messages: [] },
+        (token) => { accumulated += token; setStreamingBuffer(accumulated); },
+        abortRef.current.signal
+      );
+      setSessionMessages([{ role: "assistant", content: full }]);
+      setStreamingBuffer("");
+      if (full.includes("📋 Before Rounds") || full.includes("Before Rounds:")) setSessionDone(true);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    } finally {
+      setIsStreaming(false);
+    }
+  }, [getSourceText, bookTitle]);
+
+  const sendUserReply = useCallback(async () => {
+    const msg = userInput.trim();
+    if (!msg || isStreaming || !selectedMode) return;
+
+    const src = getSourceText(selectedMode);
+    const updatedMessages: TeachingTurn[] = [...sessionMessages, { role: "user", content: msg }];
+    setSessionMessages(updatedMessages);
+    setUserInput("");
+    setIsStreaming(true);
+    setError(null);
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    try {
+      let accumulated = "";
+      const full = await streamTeachingSession(
+        { sourceText: src, bookTitle, mode: selectedMode, messages: updatedMessages },
+        (token) => { accumulated += token; setStreamingBuffer(accumulated); },
+        abortRef.current.signal
+      );
+      setSessionMessages(prev => [...prev, { role: "assistant", content: full }]);
+      setStreamingBuffer("");
+      if (full.includes("📋 Before Rounds") || full.includes("Before Rounds:")) setSessionDone(true);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    } finally {
+      setIsStreaming(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [userInput, isStreaming, selectedMode, sessionMessages, getSourceText, bookTitle]);
+
+  const requestSummary = useCallback(async () => {
+    if (isStreaming || !selectedMode) return;
+    const src = getSourceText(selectedMode);
+    const updatedMessages: TeachingTurn[] = [
+      ...sessionMessages,
+      { role: "user", content: "Please give me the 📋 Before Rounds summary now." },
+    ];
+    setSessionMessages(updatedMessages);
+    setIsStreaming(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    try {
+      let accumulated = "";
+      const full = await streamTeachingSession(
+        { sourceText: src, bookTitle, mode: selectedMode, messages: updatedMessages },
+        (token) => { accumulated += token; setStreamingBuffer(accumulated); },
+        abortRef.current.signal
+      );
+      setSessionMessages(prev => [...prev, { role: "assistant", content: full }]);
+      setStreamingBuffer("");
+      setSessionDone(true);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    } finally {
+      setIsStreaming(false);
+    }
+  }, [isStreaming, selectedMode, sessionMessages, getSourceText, bookTitle]);
+
+  const sendToRecall = useCallback(async () => {
+    if (!activeNote) return;
+    const set = buildRecallSetFromNote(activeNote, { bookTitle });
+    await saveRecallSet(set);
+    onRecallSaved?.(set.id);
+  }, [activeNote, bookTitle, onRecallSaved]);
+
+  // ---------------------------------------------------------------------------
+  // Render — idle (mode picker)
+  // ---------------------------------------------------------------------------
+
+  if (!hasStarted) {
+    return (
+      <div className="flex flex-col h-full bg-[rgb(11,18,34)] overflow-y-auto">
+        <div className="p-5">
+          <div className="mb-5">
+            <h2 className="text-sm font-bold text-white/80">🩺 Chief Resident</h2>
+            <p className="mt-1 text-[11.5px] text-white/40 leading-relaxed">
+              An adaptive AI tutor that teaches from your content — not just reads it. Select a teaching mode to begin.
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-900/20 px-3 py-2 text-[11.5px] text-rose-300">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {MODES.map(m => {
+              const disabled = m.needsNote && !activeNote;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => !disabled && startSession(m.key)}
+                  disabled={disabled}
+                  className={`w-full text-left rounded-xl border px-4 py-3.5 transition-colors ${
+                    disabled
+                      ? "border-white/5 bg-white/2 opacity-40 cursor-not-allowed"
+                      : "border-white/10 bg-white/5 hover:bg-emerald-900/20 hover:border-emerald-600/30 cursor-pointer"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{m.icon}</span>
+                    <div>
+                      <div className="text-[12.5px] font-semibold text-white/85">{m.label}</div>
+                      <div className="text-[11px] text-white/40 mt-0.5">{m.description}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mt-5 text-[10.5px] text-white/25 leading-relaxed">
+            Teaching sessions use the current page, your active note, or the Study Sheet as the source.
+            After each session, you can send key concepts to Recall.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — active session
+  // ---------------------------------------------------------------------------
+
+  const activeModeMeta = MODES.find(m => m.key === selectedMode);
+
+  return (
+    <div className="flex flex-col h-full bg-[rgb(11,18,34)]">
+      {/* Session header */}
+      <div className="flex-shrink-0 border-b border-white/10 px-4 py-2.5 flex items-center gap-2">
+        <span className="text-base">{activeModeMeta?.icon}</span>
+        <span className="text-[12px] font-semibold text-white/70">{activeModeMeta?.label}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {sessionMessages.length >= 4 && !sessionDone && !isStreaming && (
+            <button
+              onClick={requestSummary}
+              className="px-2.5 py-1 rounded text-[11px] font-medium text-amber-300 bg-amber-900/20 hover:bg-amber-900/35 border border-amber-700/30 transition-colors"
+            >
+              📋 Summarize
+            </button>
+          )}
+          <button
+            onClick={() => { abortRef.current?.abort(); setHasStarted(false); setSelectedMode(null); setSessionMessages([]); setStreamingBuffer(""); setSessionDone(false); setError(null); }}
+            className="px-2.5 py-1 rounded text-[11px] text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
+          >
+            ← Modes
+          </button>
+        </div>
+      </div>
+
+      {/* Conversation */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {sessionMessages.map((turn, i) => (
+          <div key={i} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[90%] rounded-xl px-4 py-3 text-[12.5px] leading-relaxed whitespace-pre-wrap ${
+              turn.role === "user"
+                ? "bg-emerald-900/30 text-emerald-100 border border-emerald-700/20"
+                : "bg-white/5 text-slate-200 border border-white/8"
+            }`}>
+              {turn.role === "assistant" && <span className="text-[10px] font-bold text-emerald-400/70 block mb-1.5">🩺 Chief Resident</span>}
+              {turn.content}
+            </div>
+          </div>
+        ))}
+
+        {/* Streaming buffer */}
+        {isStreaming && streamingBuffer && (
+          <div className="flex justify-start">
+            <div className="max-w-[90%] rounded-xl px-4 py-3 text-[12.5px] leading-relaxed bg-white/5 text-slate-200 border border-white/8 whitespace-pre-wrap">
+              <span className="text-[10px] font-bold text-emerald-400/70 block mb-1.5">🩺 Chief Resident</span>
+              {streamingBuffer}
+              <span className="animate-pulse ml-0.5 text-emerald-400">▌</span>
+            </div>
+          </div>
+        )}
+
+        {/* Typing indicator (no buffer yet) */}
+        {isStreaming && !streamingBuffer && (
+          <div className="flex justify-start">
+            <div className="rounded-xl px-4 py-3 bg-white/5 border border-white/8">
+              <span className="text-[10px] font-bold text-emerald-400/70 block mb-1.5">🩺 Chief Resident</span>
+              <span className="inline-flex gap-1">
+                {[0, 1, 2].map(d => (
+                  <span key={d} className="w-1.5 h-1.5 bg-emerald-400/50 rounded-full animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />
+                ))}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-lg border border-rose-500/30 bg-rose-900/20 px-3 py-2 text-[11.5px] text-rose-300">
+            {error}
+          </div>
+        )}
+
+        {/* Session complete — show Recall button */}
+        {sessionDone && (
+          <div className="rounded-xl border border-emerald-600/20 bg-emerald-900/10 px-4 py-3 text-center">
+            <p className="text-[11.5px] text-emerald-300/80 mb-3">Teaching session complete.</p>
+            {activeNote && (
+              <button
+                onClick={sendToRecall}
+                className="px-4 py-2 rounded-lg bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-600/30 text-[12px] font-semibold text-emerald-300 transition-colors"
+              >
+                📤 Add note concepts to Recall
+              </button>
+            )}
+            <button
+              onClick={() => { setHasStarted(false); setSelectedMode(null); setSessionMessages([]); setStreamingBuffer(""); setSessionDone(false); }}
+              className="block mx-auto mt-2.5 text-[11px] text-white/30 hover:text-white/60 underline"
+            >
+              Start another session
+            </button>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      {!sessionDone && (
+        <div className="flex-shrink-0 border-t border-white/10 p-3">
+          <div className="flex gap-2 items-end">
+            <textarea
+              ref={inputRef}
+              value={userInput}
+              onChange={e => setUserInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendUserReply(); } }}
+              disabled={isStreaming}
+              placeholder={isStreaming ? "Chief Resident is teaching…" : "Your answer (Enter to send, Shift+Enter for newline)"}
+              rows={2}
+              className="flex-1 resize-none rounded-lg bg-white/5 border border-white/10 text-[12.5px] text-white/85 placeholder:text-white/25 px-3 py-2 focus:outline-none focus:border-emerald-600/50 disabled:opacity-40"
+            />
+            <button
+              onClick={sendUserReply}
+              disabled={isStreaming || !userInput.trim()}
+              className="h-[52px] px-4 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-30 text-white text-[12px] font-semibold transition-colors"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
