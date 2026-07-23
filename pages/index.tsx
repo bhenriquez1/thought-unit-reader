@@ -41,7 +41,6 @@ import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromS
 import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
-import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
 import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
@@ -136,7 +135,6 @@ import {
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
-import { noteLabButlerIntegration, type PDRMButlerNote } from "@/lib/noteLabButlerIntegration";
 import { 
   ChapterAbsorptionPipeline, 
   createChapterAbsorptionPipeline,
@@ -157,9 +155,7 @@ import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTrainingHybridReader"), { ssr: false });
-const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridReader"), { ssr: false });
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
-const OptimizedNoteLabView = dynamic(() => import("@/components/OptimizedNoteLabView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
@@ -1998,8 +1994,8 @@ export default function ThoughtUnitReader() {
           .map((u) => `• ${u.title}: ${u.exactText}`)
           .join("\n");
         note.sections = [
-          { label: "Chief Concern / Core Problem", content: activeUnit.exactText },
-          { label: "Why This Matters", content: activeUnit.reason },
+          { label: "Chief Concern / Problem", content: activeUnit.exactText },
+          { label: "Why This Matters Clinically", content: activeUnit.reason },
           { label: "Diagnostic Reasoning", content: activeUnit.category === "trap" ? `Danger Zone: ${activeUnit.exactText}` : `Use this unit to decide what matters next on page ${currentPage}.` },
           { label: "Procedure Logic", content: activeUnit.category === "mechanism" || activeUnit.category === "application" ? activeUnit.exactText : "Connect this anchor to the neighboring expert units before moving on." },
           { label: "Decision Tree", content: neighbors || activeUnit.exactText },
@@ -2008,7 +2004,7 @@ export default function ThoughtUnitReader() {
           { label: "Clinical Pearl", content: activeUnit.category === "clinical" ? activeUnit.exactText : activeUnit.reason },
           { label: "Common Mistake", content: "Reading the page summary without anchoring this exact source text." },
           { label: "Connection Map", content: neighbors || "No neighboring canonical units available yet." },
-          { label: "Case Recall", content: `In a case, when would “${activeUnit.title}” change the answer?` },
+          { label: “Case-Style Recall Questions”, content: `In a case, when would “${activeUnit.title}” change the answer?` },
           { label: "Recall Questions", content: `1. Why is this a ${activeUnit.importanceLabel}?\n2. What detail in the source text proves it?\n3. What would you confuse it with?` },
           { label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` },
         ];
