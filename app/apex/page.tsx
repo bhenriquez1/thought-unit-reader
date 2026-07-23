@@ -10,6 +10,8 @@ import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import { ExamGenerator, examGeneratorUtils } from "@/lib/apex/examGenerator";
+import { savePendingExam } from "@/lib/db/examStore";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 
 /* ─── Tab config ──────────────────────────────────────────────────────────── */
@@ -63,8 +65,10 @@ function TodayTab() {
         20,
       );
       const exam = gen.generateExam({ ...baseOpts, difficulty: adaptiveDifficulty });
-      localStorage.setItem("currentExam", JSON.stringify(exam));
-      router.push("/apex/proctor");
+      const examId = `recommended-${Date.now()}`;
+      await savePendingExam(examId, exam);
+      safeSetItem("currentExam", JSON.stringify(exam));
+      router.push(`/apex/proctor?examId=${examId}`);
     } catch {
       setLaunching(false);
     }
@@ -322,8 +326,10 @@ function FullExamsTab() {
     try {
       const gen  = await ExamGenerator.fromQuestionBank();
       const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
-      localStorage.setItem("currentExam", JSON.stringify(exam));
-      router.push(prometric ? "/apex/proctor?prometric=1" : "/apex/proctor");
+      const examId = `simulation-${Date.now()}`;
+      await savePendingExam(examId, exam);
+      safeSetItem("currentExam", JSON.stringify(exam));
+      router.push(prometric ? `/apex/proctor?examId=${examId}&prometric=1` : `/apex/proctor?examId=${examId}`);
     } catch {
       setSeedError("Could not prepare the exam. Please try again.");
       setSeeding(false);
@@ -335,7 +341,7 @@ function FullExamsTab() {
     if (!progress) return;
     try {
       const saved = JSON.parse(progress);
-      if (saved.exam) localStorage.setItem("currentExam", JSON.stringify(saved.exam));
+      if (saved.exam) safeSetItem("currentExam", JSON.stringify(saved.exam));
       router.push("/apex/proctor");
     } catch {
       setSeedError("Could not resume the saved exam. It may be corrupted.");
