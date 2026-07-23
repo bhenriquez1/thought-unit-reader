@@ -165,6 +165,14 @@ function resolveEmptyDisplay(reason: string | null | undefined): {
   if (!reason || reason === "Still preparing thought units") {
     return { kind: "loading", icon: "⏳", label: "Analyzing page…" };
   }
+  if (reason.includes("source pdf unavailable")) {
+    return {
+      kind: "no-pdf",
+      icon: "📄",
+      label: "Source PDF unavailable",
+      hint: "Re-upload or reconnect this book to generate page notes and highlights.",
+    };
+  }
   if (reason.includes("no extractable text")) {
     return {
       kind: "image",
