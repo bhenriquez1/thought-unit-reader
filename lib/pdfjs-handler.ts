@@ -160,6 +160,10 @@ export interface IncrementalExtractOptions {
    *  Lets the caller show thought units for the currently visible page
    *  immediately, before pages 1…(priorityPage-1) are extracted. */
   priorityPage?: number;
+  /** Called at each batch boundary. Return a Promise to pause until resumed;
+   *  return void/undefined to continue immediately. Lets callers implement
+   *  pause/resume without aborting and restarting the full extraction. */
+  onPauseCheck?: () => Promise<void> | void;
 }
 
 export async function extractPageTextsIncremental(
@@ -188,7 +192,7 @@ export async function extractPageTextsIncremental(
     throw new Error("Invalid PDF document - no readable pages found");
   }
 
-  const { batchSize = 10, onBatch, signal, onProgress, priorityPage } = options;
+  const { batchSize = 10, onBatch, signal, onProgress, priorityPage, onPauseCheck } = options;
   const totalPages: number = doc.numPages;
 
   async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
@@ -219,6 +223,7 @@ export async function extractPageTextsIncremental(
   if (isPriority && !signal?.aborted) {
     const entry = await extractOnePage(priorityPage!);
     await onBatch?.([entry], totalPages);
+    await onPauseCheck?.();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
 
@@ -238,6 +243,7 @@ export async function extractPageTextsIncremental(
     if (batch.length >= batchSize || i === totalPages) {
       if (!signal?.aborted) {
         await onBatch?.(batch, totalPages);
+        await onPauseCheck?.();
       }
       batch = [];
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

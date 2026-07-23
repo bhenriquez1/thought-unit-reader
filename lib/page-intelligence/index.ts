@@ -208,6 +208,7 @@ export async function buildPageIntelligence(
     getNativeText,
     getPageImageDataUrl,
     docId = 'default',
+    signal,
     options = {},
   } = args;
 
@@ -237,6 +238,7 @@ export async function buildPageIntelligence(
     getPageImageDataUrl,
     ocrEnabled,
     minTextLength,
+    signal,
   });
 
   const source: PageSource = pageText.source;

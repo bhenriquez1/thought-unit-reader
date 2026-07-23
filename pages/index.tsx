@@ -1773,6 +1773,12 @@ export default function ThoughtUnitReader() {
     pagesProcessed: number;
     totalPages: number;
   }>({ phase: 'idle', progress: '', pagesProcessed: 0, totalPages: 0 });
+  const [indexingPaused, setIndexingPaused] = useState(false);
+  // Ref mirrors indexingPaused so the extraction closure can read live state.
+  const indexingPausedRef = useRef(false);
+  // Holds the resolve() for the pause-gate promise so we can resume from UI.
+  const indexingResumeRef = useRef<(() => void) | null>(null);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   const activePageContextForInsights = useMemo<ActivePageContext>(() => {
     const currentChapter = tableOfContents.find((entry, idx) => {
@@ -3243,6 +3249,11 @@ export default function ThoughtUnitReader() {
     const allPageTexts: Array<{ pageIndex: number; text: string }> = [];
     let seenContent = false;
 
+    // Reset pause state when a new extraction starts.
+    indexingPausedRef.current = false;
+    setIndexingPaused(false);
+    indexingResumeRef.current = null;
+
     try {
       await extractPageTextsIncremental(file, {
         signal: ac.signal,
@@ -3250,6 +3261,15 @@ export default function ThoughtUnitReader() {
         // Extract the currently visible page first so its thought units are
         // available for AI context before the sequential scan reaches it.
         priorityPage: initialPage > 1 ? initialPage : undefined,
+        // Pause gate — when indexingPausedRef is true, returns a Promise
+        // that resolves only after the user clicks Resume (which calls the
+        // stored resolve). Using a ref avoids stale closure over React state.
+        onPauseCheck: () => {
+          if (!indexingPausedRef.current) return;
+          return new Promise<void>((resolve) => {
+            indexingResumeRef.current = resolve;
+          });
+        },
         onProgress: (current, total) => {
           if (!ac.signal.aborted) {
             setBookProcessingStatus(prev => ({
@@ -3364,6 +3384,17 @@ export default function ThoughtUnitReader() {
     }
   }, []);
 
+  const toggleIndexingPause = useCallback(() => {
+    const nowPaused = !indexingPausedRef.current;
+    indexingPausedRef.current = nowPaused;
+    setIndexingPaused(nowPaused);
+    if (!nowPaused && indexingResumeRef.current) {
+      // Trigger the resolve stored in the pause-gate promise.
+      indexingResumeRef.current();
+      indexingResumeRef.current = null;
+    }
+  }, []);
+
   /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
@@ -3442,10 +3473,10 @@ export default function ThoughtUnitReader() {
           const needed = file.size;
           const available = (est.quota ?? 0) - (est.usage ?? 0);
           if (available > 0 && available < needed * 1.2) {
-            console.warn(
-              `[storage] Low quota: need ~${(needed / 1e6).toFixed(0)} MB, ` +
-              `available ~${(available / 1e6).toFixed(0)} MB. IDB save may fail.`
-            );
+            const needMB = (needed / 1e6).toFixed(0);
+            const availMB = (available / 1e6).toFixed(0);
+            console.warn(`[storage] Low quota: need ~${needMB} MB, available ~${availMB} MB. IDB save may fail.`);
+            setStorageWarning(`Low storage: need ~${needMB} MB but only ~${availMB} MB available. The book may not save correctly.`);
           }
         }).catch(() => {});
       }
@@ -4703,15 +4734,32 @@ export default function ThoughtUnitReader() {
                   ptKeyMatch: currentPageStudyModel?.pageTruthKey === pageTruthKey,
                 }) as unknown as null}
 
-                {/* Background processing progress banner */}
+                {/* Background processing progress banner with pause/resume */}
                 {bookProcessingStatus.phase === 'processing' && (
-                  <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-blue-700/50 bg-blue-900/80 px-4 py-2 text-xs text-blue-100 backdrop-blur-sm">
-                    <span className="animate-pulse">⚙</span>
-                    <span>
-                      {bookProcessingStatus.totalPages > 0
-                        ? `Preparing book — ${bookProcessingStatus.pagesProcessed} of ${bookProcessingStatus.totalPages} pages analyzed`
-                        : bookProcessingStatus.progress || 'Processing...'}
-                    </span>
+                  <div className="sticky top-0 z-20 border-b border-blue-700/50 bg-blue-900/80 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-blue-100">
+                      {!indexingPaused && <span className="animate-spin text-[10px]">◌</span>}
+                      <span className="flex-1">
+                        {bookProcessingStatus.totalPages > 0
+                          ? `${indexingPaused ? 'Paused — ' : ''}Indexing ${bookProcessingStatus.pagesProcessed} of ${bookProcessingStatus.totalPages} pages`
+                          : bookProcessingStatus.progress || 'Indexing…'}
+                      </span>
+                      <button
+                        onClick={toggleIndexingPause}
+                        className="rounded px-2 py-0.5 text-blue-200 hover:bg-blue-700/60 hover:text-white"
+                        title={indexingPaused ? 'Resume indexing' : 'Pause indexing'}
+                      >
+                        {indexingPaused ? '▶ Resume' : '⏸ Pause'}
+                      </button>
+                    </div>
+                    {bookProcessingStatus.totalPages > 0 && (
+                      <div className="h-0.5 bg-blue-950">
+                        <div
+                          className="h-full bg-blue-400 transition-all duration-300"
+                          style={{ width: `${Math.round((bookProcessingStatus.pagesProcessed / bookProcessingStatus.totalPages) * 100)}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 {bookProcessingStatus.phase === 'error' && (
@@ -4721,6 +4769,18 @@ export default function ThoughtUnitReader() {
                     <button
                       onClick={() => setBookProcessingStatus(prev => ({ ...prev, phase: 'idle' }))}
                       className="ml-auto text-amber-300 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {storageWarning && (
+                  <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-yellow-700/50 bg-yellow-900/80 px-4 py-2 text-xs text-yellow-100 backdrop-blur-sm">
+                    <span>⚠</span>
+                    <span className="flex-1">{storageWarning}</span>
+                    <button
+                      onClick={() => setStorageWarning(null)}
+                      className="ml-auto text-yellow-300 hover:text-white"
                     >
                       ✕
                     </button>

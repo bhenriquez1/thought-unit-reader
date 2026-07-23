@@ -497,6 +497,8 @@ export interface BuildPageIntelligenceOptions {
   getNativeText: () => Promise<string>;
   getPageImageDataUrl: () => Promise<string>;
   docId?: string;
+  /** Cancels in-flight OCR when aborted; native text extraction is unaffected. */
+  signal?: AbortSignal;
   options?: {
     ocrEnabled?: boolean;
     datScoring?: boolean;
