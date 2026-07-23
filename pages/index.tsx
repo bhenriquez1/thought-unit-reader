@@ -3228,14 +3228,18 @@ export default function ThoughtUnitReader() {
      Parses text, builds thought units, and falls back TOC from chapters.
      Never clears fileUrl on failure — the viewer stays live regardless.
   ========================================================================= */
-  const startBookProcessing = useCallback(async (file: File, documentId: string) => {
+  const startBookProcessing = useCallback(async (file: File, documentId: string, initialPage = 1) => {
     processingAbortControllerRef.current?.abort();
     const ac = new AbortController();
     processingAbortControllerRef.current = ac;
 
     setBookProcessingStatus({ phase: 'processing', progress: 'Extracting text...', pagesProcessed: 0, totalPages: 0 });
 
-    // Accumulate all page texts for TOC generation after the full extraction.
+    // Keyed by page index so batches that arrive out of order (priority page
+    // fires before the sequential scan reaches it) still produce a sorted flat
+    // array when we rebuild thoughtUnits after each batch.
+    const pageUnitsMap = new Map<number, ThoughtUnit[]>();
+    // Accumulate raw texts for TOC generation after full extraction.
     const allPageTexts: Array<{ pageIndex: number; text: string }> = [];
     let seenContent = false;
 
@@ -3243,6 +3247,9 @@ export default function ThoughtUnitReader() {
       await extractPageTextsIncremental(file, {
         signal: ac.signal,
         batchSize: 10,
+        // Extract the currently visible page first so its thought units are
+        // available for AI context before the sequential scan reaches it.
+        priorityPage: initialPage > 1 ? initialPage : undefined,
         onProgress: (current, total) => {
           if (!ac.signal.aborted) {
             setBookProcessingStatus(prev => ({
@@ -3258,14 +3265,22 @@ export default function ThoughtUnitReader() {
 
           allPageTexts.push(...pages);
 
-          // Convert this batch to thought units and append them immediately so
-          // the left panel becomes usable before the full document is processed.
-          const newUnits = pages.flatMap(p => chunkTextToUnits(p.text)) as ThoughtUnit[];
-          if (newUnits.length > 0) {
-            setThoughtUnits(prev => [...prev, ...newUnits]);
+          // Convert pages to thought units and store by page index.
+          for (const p of pages) {
+            const units = chunkTextToUnits(p.text) as ThoughtUnit[];
+            if (units.length > 0) pageUnitsMap.set(p.pageIndex, units);
+          }
+
+          // Rebuild sorted flat array so pageToUnit() mapping stays correct
+          // regardless of which pages the priority extraction pulled first.
+          if (pageUnitsMap.size > 0) {
+            const sorted = [...pageUnitsMap.entries()]
+              .sort(([a], [b]) => a - b)
+              .flatMap(([, units]) => units);
+            setThoughtUnits(sorted);
             if (!seenContent) {
               seenContent = true;
-              setSampleText(newUnits[0]?.text ?? '');
+              setSampleText(sorted[0]?.text ?? '');
             }
           }
 

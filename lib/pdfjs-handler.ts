@@ -156,6 +156,10 @@ export interface IncrementalExtractOptions {
   onProgress?: (current: number, total: number) => void;
   onBatch?: (pages: Array<{ pageIndex: number; text: string }>, totalPages: number) => void | Promise<void>;
   batchSize?: number;
+  /** 1-indexed page to extract first (before the sequential scan begins).
+   *  Lets the caller show thought units for the currently visible page
+   *  immediately, before pages 1…(priorityPage-1) are extracted. */
+  priorityPage?: number;
 }
 
 export async function extractPageTextsIncremental(
@@ -184,14 +188,10 @@ export async function extractPageTextsIncremental(
     throw new Error("Invalid PDF document - no readable pages found");
   }
 
-  const { batchSize = 10, onBatch, signal, onProgress } = options;
+  const { batchSize = 10, onBatch, signal, onProgress, priorityPage } = options;
   const totalPages: number = doc.numPages;
-  let batch: Array<{ pageIndex: number; text: string }> = [];
 
-  for (let i = 1; i <= totalPages; i++) {
-    if (signal?.aborted) break;
-    onProgress?.(i, totalPages);
-
+  async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
     try {
       const page = await Promise.race([
         doc.getPage(i),
@@ -207,10 +207,33 @@ export async function extractPageTextsIncremental(
           : '',
         transform: item?.transform,
       }));
-      batch.push({ pageIndex: i, text: buildStructuredPageText(normalizedItems) });
+      return { pageIndex: i, text: buildStructuredPageText(normalizedItems) };
     } catch {
-      batch.push({ pageIndex: i, text: '' });
+      return { pageIndex: i, text: '' };
     }
+  }
+
+  // Extract the priority page first so callers can populate the visible
+  // page's thought units before the sequential scan reaches it.
+  const isPriority = priorityPage && priorityPage >= 1 && priorityPage <= totalPages;
+  if (isPriority && !signal?.aborted) {
+    const entry = await extractOnePage(priorityPage!);
+    await onBatch?.([entry], totalPages);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  // Sequential scan — skip the priority page (already done above).
+  let batch: Array<{ pageIndex: number; text: string }> = [];
+  let scanned = 0;
+
+  for (let i = 1; i <= totalPages; i++) {
+    if (signal?.aborted) break;
+    if (isPriority && i === priorityPage) continue;
+
+    scanned++;
+    onProgress?.(scanned, totalPages - (isPriority ? 1 : 0));
+
+    batch.push(await extractOnePage(i));
 
     if (batch.length >= batchSize || i === totalPages) {
       if (!signal?.aborted) {
