@@ -2664,7 +2664,8 @@ export default function ThoughtUnitReader() {
     console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber, tag });
     setLastRecallSetId(set.id);
     setRecallLabRefreshKey((k) => k + 1);
-  }, [explainStepContext, bookId, uploadedFile]);
+    trySwitchShellTab("study", "study");
+  }, [explainStepContext, bookId, uploadedFile, trySwitchShellTab]);
 
   const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string, turns: ExplainStepMessage[]) => {
     const ctx = explainStepContext;
@@ -4243,6 +4244,16 @@ export default function ThoughtUnitReader() {
     [onPdfHighlightFocus]
   );
 
+  const handleRecallNavigateToPage = useCallback(
+    (page: number) => { syncToPage(page); trySwitchShellTab("reader", "reader"); },
+    [syncToPage, trySwitchShellTab]
+  );
+
+  const handleRecallOpenUnitConsumed = useCallback(
+    () => setRecallLabOpenUnit(null),
+    []
+  );
+
   // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
   // cross-link counts need a fetched snapshot — refreshed whenever the
   // Syllabus tab opens or a note/recall card is saved elsewhere in the app.
@@ -5385,12 +5396,9 @@ export default function ThoughtUnitReader() {
                 bookId={bookId}
                 refreshKey={recallLabRefreshKey}
                 lastSetId={lastRecallSetId ?? undefined}
-                onNavigateToPage={(page) => {
-                  syncToPage(page);
-                  trySwitchShellTab("reader", "reader");
-                }}
+                onNavigateToPage={handleRecallNavigateToPage}
                 openUnit={recallLabOpenUnit}
-                onOpenUnitConsumed={() => setRecallLabOpenUnit(null)}
+                onOpenUnitConsumed={handleRecallOpenUnitConsumed}
                 onVisualize={visualizeThoughtUnit}
                 onOpenInWhiteboard={openThoughtUnitInWhiteboard}
                 onOpenExplainStep={openExplainStepForThoughtUnit}
