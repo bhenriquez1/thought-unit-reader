@@ -153,6 +153,51 @@ function renderSnippetWithActiveWord(
   );
 }
 
+// Translate a raw diagnostic reason string into a human-readable empty-state
+// label, icon, and hint — so the left panel shows an honest state instead of
+// always saying "Analyzing page…" regardless of what actually happened.
+function resolveEmptyDisplay(reason: string | null | undefined): {
+  kind: "loading" | "image" | "no-pdf" | "failed" | "done-empty";
+  icon: string;
+  label: string;
+  hint?: string;
+} {
+  if (!reason || reason === "Still preparing thought units") {
+    return { kind: "loading", icon: "⏳", label: "Analyzing page…" };
+  }
+  if (reason.includes("no extractable text")) {
+    return {
+      kind: "image",
+      icon: "🖼️",
+      label: "Image page — no text to analyze",
+      hint: "Navigate to a text-rich page to see thought units and highlights.",
+    };
+  }
+  if (reason.includes("no pdf") || reason.includes("missing") || reason.includes("not loaded")) {
+    return {
+      kind: "no-pdf",
+      icon: "📄",
+      label: "No document loaded",
+      hint: "Open a PDF to start generating thought units.",
+    };
+  }
+  if (reason.includes("failed")) {
+    return {
+      kind: "failed",
+      icon: "⚠️",
+      label: "No highlights for this page",
+      hint: "The page was analyzed but no key concepts were identified.",
+    };
+  }
+  // Any other reason that arrives with units still empty = analysis finished, none found
+  return {
+    kind: "done-empty",
+    icon: "🔍",
+    label: "No highlights for this page",
+    hint: reason,
+  };
+}
+
 export default function ThoughtUnitNavigator({
   entries,
   focusedId,
@@ -299,7 +344,31 @@ export default function ThoughtUnitNavigator({
   );
 
   if (entries.length === 0) {
+    // Translate the raw diagnostic reason into a human-readable label + icon so
+    // the panel shows an honest empty state instead of always saying "Analyzing…"
+    const emptyDisplay = resolveEmptyDisplay(emptyReason);
     const skeletonGroups = getKindGroups(presetId);
+
+    // Non-loading states (image page, failed analysis, no document) get a plain
+    // explanatory card — no skeleton groups, since no highlights will arrive.
+    if (emptyDisplay.kind !== "loading") {
+      return (
+        <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
+          {header}
+          <div className="rounded-xl border border-white/8 bg-white/3 px-3 py-4 flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-base leading-none">{emptyDisplay.icon}</span>
+              <span className="text-[10.5px] font-semibold text-white/55">{emptyDisplay.label}</span>
+            </div>
+            {emptyDisplay.hint && (
+              <p className="text-[9.5px] text-white/30 leading-relaxed">{emptyDisplay.hint}</p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Loading state — keep the animated skeleton so the panel feels alive.
     return (
       <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
         {header}
@@ -311,7 +380,6 @@ export default function ThoughtUnitNavigator({
               const tier = getImportanceTier(i);
               return (
                 <div key={g.id} className="flex flex-col gap-1">
-                  {/* Skeleton uses the same chapter-header style as populated state, dimmed */}
                   <div
                     className="flex items-center gap-2 px-2 py-1.5 rounded-md opacity-40"
                     style={{
@@ -337,14 +405,12 @@ export default function ThoughtUnitNavigator({
               );
             })}
             <div className="px-2 pt-1 text-[9px] text-white/25 italic leading-relaxed">
-              Analyzing page…
-              {emptyReason ? <span className="mt-1 block text-amber-200/40">({emptyReason})</span> : null}
+              {emptyDisplay.label}
             </div>
           </div>
         ) : (
           <div className="px-2.5 py-3 text-[10.5px] text-white/45 leading-relaxed">
-            Analyzing page…
-            {emptyReason ? <span className="mt-1 block text-amber-200/70">({emptyReason})</span> : null}
+            {emptyDisplay.label}
           </div>
         )}
       </div>
