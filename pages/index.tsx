@@ -4198,13 +4198,31 @@ export default function ThoughtUnitReader() {
     syncToPage(node.page, { reason: "TOC_JUMP" });
     setRightPanelResetKey((k) => k + 1);
     setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
-    setViewMode("reader");
-    setActiveShellTab("reader");
-  }, [syncToPage]);
+    trySwitchShellTab("reader", "reader");
+  }, [syncToPage, trySwitchShellTab]);
 
   const handleSyllabusNodeClick = useCallback((node: TocNode) => {
     syncToPage(node.page, { reason: "TOC_JUMP" });
   }, [syncToPage]);
+
+  // Jump from ChapterDashboard / AdaptiveSyllabusPanel to the Reader — unlike
+  // handleSyllabusNodeClick (which stays in Learning Hub so TocTree shows the
+  // active-chapter highlight), these entry points are navigation actions where
+  // the user expects to arrive at the content.
+  const handleChapterJumpToReader = useCallback((page: number) => {
+    syncToPage(page, { reason: "TOC_JUMP" });
+    trySwitchShellTab("reader", "reader");
+  }, [syncToPage, trySwitchShellTab]);
+
+  const handleGetPageText = useCallback(
+    (page: number) => pageTextByPage.get(`${bookId}:${page}`) ?? "",
+    [pageTextByPage, bookId]
+  );
+
+  const handleStudyPlanNavigate = useCallback(
+    (page: number) => { syncToPage(page); trySwitchShellTab("reader", "reader"); },
+    [syncToPage, trySwitchShellTab]
+  );
 
   // Stable RightPanel prop callbacks — inline arrows would create new references on
   // every index.tsx render (including per-word Zustand writes during TTS), forcing
@@ -5049,8 +5067,8 @@ export default function ThoughtUnitReader() {
                   filename={uploadedFile?.name}
                   tocNodes={syllabusToc}
                   pageCount={pdfPageCount || 1}
-                  onJumpToPage={(page) => handleSyllabusNodeClick({ id: `syllabus-${page}`, title: `p.${page}`, page, kind: "chapter" })}
-                  getPageText={(page) => pageTextByPage.get(`${bookId}:${page}`) ?? ""}
+                  onJumpToPage={handleChapterJumpToReader}
+                  getPageText={handleGetPageText}
                 />
               </div>
             )}
@@ -5090,7 +5108,7 @@ export default function ThoughtUnitReader() {
                 <ChapterDashboard
                   chapters={chapterProgressList}
                   course={courseProgress}
-                  onJumpToChapter={(page) => handleSyllabusNodeClick({ id: `chapter-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                  onJumpToChapter={handleChapterJumpToReader}
                   weakAreas={courseWeakAreas}
                   nextTopic={nextTopicRecommendation}
                   prerequisiteChain={coursePrerequisiteChain}
@@ -5129,7 +5147,7 @@ export default function ThoughtUnitReader() {
                 chapterProgressList={chapterProgressList}
                 courseProgress={courseProgress}
                 nextTopicRecommendation={nextTopicRecommendation}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                onNavigateToPage={handleStudyPlanNavigate}
               />
             </div>
           )}
@@ -5441,24 +5459,6 @@ export default function ThoughtUnitReader() {
           onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
           onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
           onPodcastScript={(script) => setStudyGuideScript(script)}
-        />
-      );
-    }
-
-    if (activeShellTab === "studyplan") {
-      return (
-        <StudyPlanLab
-          bookId={bookId}
-          bookTitle={uploadedFile?.name ?? undefined}
-          pageTextByPage={pageTextByPage}
-          uploadedFile={uploadedFile}
-          chapterProgressList={chapterProgressList}
-          courseProgress={courseProgress}
-          nextTopicRecommendation={nextTopicRecommendation}
-          onNavigateToPage={(page) => {
-            syncToPage(page);
-            trySwitchShellTab("reader", "reader");
-          }}
         />
       );
     }
