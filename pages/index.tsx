@@ -1322,7 +1322,8 @@ export default function ThoughtUnitReader() {
         learningProfile,
         fontSize,
         lineSpacing,
-        fileUrl,
+        // blob: URLs are session-scoped and invalid after refresh — never persist them
+        fileUrl: fileUrl?.startsWith('blob:') ? null : fileUrl,
         thoughtUnitsCount: thoughtUnits.length,
         bookId,
         timestamp: Date.now(),
@@ -3396,8 +3397,9 @@ export default function ThoughtUnitReader() {
       setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
 
       // Saves PDF binary and metadata to IndexedDB for durable local storage.
-      // Fires after the viewer opens — never blocks rendering.
-      const persistToIDB = (documentId: string) => {
+      // Returns a promise that resolves once the binary is confirmed written.
+      // Callers must await this before committing the localStorage library entry.
+      const persistToIDB = async (documentId: string): Promise<void> => {
         const uploadedAt = new Date().toISOString();
         const meta = {
           documentId,
@@ -3409,13 +3411,12 @@ export default function ThoughtUnitReader() {
           processingStatus: 'pending' as const,
           schemaVersion: 1,
         };
-        saveDocumentMeta(meta).catch(err => console.warn('IDB meta save failed:', err));
-        file.arrayBuffer().then(buf => {
-          const data = new Uint8Array(buf);
-          return saveDocumentFile(documentId, data)
-            .then(() => saveDocumentMeta({ ...meta, processingStatus: 'complete', updatedAt: new Date().toISOString() }))
-            .catch(err => console.warn('IDB binary save failed:', err));
-        }).catch(err => console.warn('IDB binary read failed:', err));
+        await saveDocumentMeta(meta).catch(err => console.warn('IDB meta save failed:', err));
+        const buf = await file.arrayBuffer();
+        const data = new Uint8Array(buf);
+        await saveDocumentFile(documentId, data);
+        await saveDocumentMeta({ ...meta, processingStatus: 'complete', updatedAt: new Date().toISOString() })
+          .catch(err => console.warn('IDB status update failed:', err));
       };
 
       // Persists local library entries across sessions (blob URLs are session-only,
@@ -3450,8 +3451,11 @@ export default function ThoughtUnitReader() {
           const uploadedAt = new Date().toISOString();
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
-          persistToIDB(documentId);
-          persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
+          // Only persist the localStorage library entry after IDB binary is confirmed.
+          // setFileUrl runs immediately (below) so the viewer opens without waiting.
+          persistToIDB(documentId)
+            .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
+            .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
         }
       } else {
         // Guest mode or bypass: blob URL for this session + IDB binary for future sessions
@@ -3460,8 +3464,9 @@ export default function ThoughtUnitReader() {
         const uploadedAt = new Date().toISOString();
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
-        persistToIDB(documentId);
-        persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
+        persistToIDB(documentId)
+          .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
+          .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
       }
 
       setFileUrl(url);
@@ -4559,15 +4564,38 @@ export default function ThoughtUnitReader() {
                 <>
                   <h2 className="text-2xl font-bold text-amber-300">Original PDF file is missing</h2>
                   <p className="mt-2 text-slate-300">
-                    <span className="font-medium text-white">{missingPDFEntry.name}</span> was not found in local storage.
+                    <span className="font-medium text-white">{missingPDFEntry.name}</span> was not found in your browser storage.
                     This can happen after clearing browser data or using a different device.
                   </p>
                   <p className="mt-3 text-sm text-slate-400">
-                    Re-upload the file to reconnect it. Your notes, highlights, and progress for this book are preserved.
+                    Re-upload the same PDF to reconnect it. Your notes, highlights, and progress are preserved.
                   </p>
+                  <label className="mt-5 inline-block cursor-pointer rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">
+                    Re-upload PDF
+                    <input
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f || !missingPDFEntry) return;
+                        try {
+                          const buf = await f.arrayBuffer();
+                          const data = new Uint8Array(buf);
+                          await saveDocumentFile(missingPDFEntry.documentId, data);
+                          const blob = new Blob([data], { type: 'application/pdf' });
+                          const sessionUrl = URL.createObjectURL(blob);
+                          setFileUrl(sessionUrl);
+                          setMissingPDFEntry(null);
+                        } catch (err) {
+                          console.error('[storage] Re-upload failed:', err);
+                        }
+                      }}
+                    />
+                  </label>
                   <button
                     onClick={() => setMissingPDFEntry(null)}
-                    className="mt-4 text-xs text-slate-500 underline hover:text-slate-300"
+                    className="mt-3 block mx-auto text-xs text-slate-500 underline hover:text-slate-300"
                   >
                     Dismiss
                   </button>
