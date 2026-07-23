@@ -1,7 +1,7 @@
 // lib/parser.ts
 // Updated with Whiteboard detection + simplified PDF handler
 
-import { extractTextFromPdf } from "./pdfjs-handler";
+import { extractTextFromPdf, type ExtractOptions } from "./pdfjs-handler";
 
 // Define the Chapter interface
 export interface Chapter {
@@ -10,12 +10,12 @@ export interface Chapter {
   page?: number;
 }
 
-export async function extractText(file: File): Promise<string> {
+export async function extractText(file: File, extractOptions?: ExtractOptions): Promise<string> {
   const extension = file.name.split(".").pop()?.toLowerCase();
 
   if (extension === "pdf") {
     try {
-      return await extractTextFromPdf(file);
+      return await extractTextFromPdf(file, extractOptions);
     } catch (error) {
       console.error("Error extracting PDF text:", error);
       return "Error processing PDF file. The PDF viewer will still work for viewing.";
@@ -92,8 +92,9 @@ export function splitIntoChapters(text: string): Chapter[] {
 }
 
 export async function parseBookWithChapters(
-  file: File, 
-  progressCallback?: (progress: string) => void
+  file: File,
+  progressCallback?: (progress: string) => void,
+  extractOptions?: ExtractOptions,
 ): Promise<{
   parsedUnits: string[][];
   chapters: Chapter[];
@@ -111,7 +112,7 @@ export async function parseBookWithChapters(
       progressCallback("Extracting text content from PDF...");
     }
     
-    const text = await extractText(file);
+    const text = await extractText(file, extractOptions);
     console.log("📚 Text extraction result - Length:", text.length, "Preview:", text.slice(0, 100));
     
     if (progressCallback) {

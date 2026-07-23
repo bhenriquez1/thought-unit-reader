@@ -15,17 +15,20 @@ export async function configurePdfjs(): Promise<void> {
   await getPdfjs(); // ensures workerSrc is configured
 }
 
+export interface ExtractOptions {
+  signal?: AbortSignal;
+  onProgress?: (current: number, total: number) => void;
+}
+
 /** Shared core: extracts raw per-page text. Throws user-friendly errors. */
-async function extractPageTexts(file: File): Promise<string[]> {
+async function extractPageTexts(file: File, options?: ExtractOptions): Promise<string[]> {
   const pdfjs = await getPdfjs();
   if (!pdfjs) throw new Error("pdfjs failed to load");
 
-  // ✅ Create timeout promise to prevent hanging
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error("PDF processing timed out after 30 seconds. The file may be too large or complex."));
-    }, 30000); // 30 second timeout
-  });
+  // The old 30-second global timeout fired before large books could finish. It
+  // is replaced by per-page 10-second timeouts in the page loop below, plus the
+  // caller's AbortSignal for cooperative cancellation.
+  if (options?.signal?.aborted) throw new Error("PDF extraction cancelled");
 
   // ✅ Enhanced PDF loading with validation
   const data = new Uint8Array(await file.arrayBuffer());
@@ -44,8 +47,7 @@ async function extractPageTexts(file: File): Promise<string[]> {
     disableFontFace: true, // Speed up loading
   });
 
-  // Race between loading and timeout
-  const doc = await Promise.race([loadingTask.promise, timeoutPromise]);
+  const doc = await loadingTask.promise;
 
   // ✅ Validate document properties
   if (!doc || typeof doc.numPages !== 'number' || doc.numPages < 1) {
@@ -61,6 +63,11 @@ async function extractPageTexts(file: File): Promise<string[]> {
 
   // ✅ Process pages with progress tracking and early text detection
   for (let i = 1; i <= doc.numPages; i++) {
+    if (options?.signal?.aborted) {
+      console.log(`📄 Extraction cancelled at page ${i}/${doc.numPages}`);
+      break;
+    }
+    options?.onProgress?.(i, doc.numPages);
     try {
       // Add timeout for individual page processing
       const pagePromise = doc.getPage(i);
@@ -167,13 +174,13 @@ function rethrowFriendly(error: unknown): never {
   throw new Error("Failed to extract text from PDF. The file may be corrupted, password-protected, or contain only images.");
 }
 
-export async function extractTextFromPdf(file: File): Promise<string> {
+export async function extractTextFromPdf(file: File, options?: ExtractOptions): Promise<string> {
   if (typeof window === "undefined") {
     return "PDF text extraction is only available in the browser.";
   }
 
   try {
-    const pages = await extractPageTexts(file);
+    const pages = await extractPageTexts(file, options);
     return pages.join("\n\n").trim();
   } catch (error) {
     rethrowFriendly(error);

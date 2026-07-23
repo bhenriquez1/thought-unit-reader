@@ -131,6 +131,7 @@ import {
   detectWhiteboardSections,
   containsDiagramOrFormula,
 } from "@/lib/parser";
+import { type ExtractOptions } from "@/lib/pdfjs-handler";
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
@@ -670,6 +671,7 @@ export default function ThoughtUnitReader() {
   // Guards scroll-debounce from overwriting a card-click selection for 1.5 s after
   // the user explicitly focuses an evidence item (RC-3 highlighting race).
   const userFocusLockedUntilRef = useRef<number>(0);
+  const processingAbortControllerRef = useRef<AbortController | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
@@ -1724,6 +1726,13 @@ export default function ThoughtUnitReader() {
     error: null,
     progress: "",
   });
+
+  const [bookProcessingStatus, setBookProcessingStatus] = useState<{
+    phase: 'idle' | 'processing' | 'done' | 'error';
+    progress: string;
+    pagesProcessed: number;
+    totalPages: number;
+  }>({ phase: 'idle', progress: '', pagesProcessed: 0, totalPages: 0 });
 
   const activePageContextForInsights = useMemo<ActivePageContext>(() => {
     const currentChapter = tableOfContents.find((entry, idx) => {
@@ -3175,6 +3184,113 @@ export default function ThoughtUnitReader() {
   }, [handleRightPanelStateChange]);
 
   /* =========================================================================
+     🔹 Background book processing — runs after PDF viewer is already open
+     Parses text, builds thought units, and falls back TOC from chapters.
+     Never clears fileUrl on failure — the viewer stays live regardless.
+  ========================================================================= */
+  const startBookProcessing = useCallback(async (file: File, documentId: string) => {
+    processingAbortControllerRef.current?.abort();
+    const ac = new AbortController();
+    processingAbortControllerRef.current = ac;
+
+    setBookProcessingStatus({ phase: 'processing', progress: 'Extracting text...', pagesProcessed: 0, totalPages: 0 });
+
+    try {
+      const extractOptions: ExtractOptions = {
+        signal: ac.signal,
+        onProgress: (current, total) => {
+          if (!ac.signal.aborted) {
+            setBookProcessingStatus(prev => ({
+              ...prev,
+              pagesProcessed: current,
+              totalPages: total,
+              progress: `Preparing book — ${current} of ${total} pages analyzed`,
+            }));
+          }
+        },
+      };
+
+      const { parsedUnits, chapters } = await parseBookWithChapters(
+        file,
+        (msg) => { if (!ac.signal.aborted) setBookProcessingStatus(prev => ({ ...prev, progress: msg })); },
+        extractOptions,
+      );
+
+      if (ac.signal.aborted) return;
+
+      const normalized = normalizeParsedUnits(parsedUnits);
+      if (!normalized || normalized.length === 0) {
+        throw new Error("No readable content found in PDF");
+      }
+
+      setThoughtUnits(normalized);
+      setSampleText(normalized[0]?.text ?? "");
+
+      // Fallback TOC from parsed chapters — only if outline extraction produced nothing
+      setTimeout(() => {
+        if (ac.signal.aborted) return;
+        const currentToc = useTocStore.getState().getToc(documentId);
+        if (!currentToc || currentToc.items.length === 0) {
+          console.log('📑 No TOC from outline - generating fallback from parsed content');
+          let fallbackToc: TOCEntry[] = [];
+          if (chapters && chapters.length > 0) {
+            fallbackToc = chapters.map((ch: any, idx: number) => ({
+              title: ch.title || `Chapter ${idx + 1}`,
+              pageNumber: ch.page || idx + 1,
+              level: 0,
+              confidence: 0.6,
+            }));
+          }
+          if (fallbackToc.length > 0) {
+            setTableOfContents(fallbackToc);
+            const tocItems = fallbackToc.map((entry: TOCEntry, idx: number) => ({
+              id: `toc_${idx}_${Date.now()}`,
+              title: entry.title,
+              pageNumber: entry.pageNumber,
+              level: entry.level || 0,
+            }));
+            useTocStore.getState().saveToc(documentId, file.name, tocItems, 'heuristic');
+            console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
+          }
+        } else {
+          const storeItems = currentToc.items.map((item: any) => ({
+            title: item.title,
+            pageNumber: item.pageNumber,
+            level: item.level || 0,
+          }));
+          setTableOfContents(storeItems);
+        }
+      }, 500);
+
+      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "detectWhiteboardSections disabled — study model is source" });
+      setShowWhiteboardPanel(false);
+
+      setBookProcessingStatus({ phase: 'done', progress: 'Ready', pagesProcessed: 0, totalPages: 0 });
+      console.log("✅ Background book processing complete:", {
+        thoughtUnits: normalized.length,
+        chapters: chapters.length,
+        fileName: file.name,
+      });
+
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      const msg = err instanceof Error ? err.message : 'Processing failed';
+      let friendly = 'Analysis could not complete — you can still read the book.';
+      if (msg.includes('No readable content') || msg.includes('scanned')) {
+        friendly = 'No searchable text found. You can still view the book — study features may be limited.';
+      } else if (msg.includes('timeout') || msg.includes('took too long')) {
+        friendly = 'Text analysis timed out. You can still read the book — study features may be limited.';
+      } else if (msg.includes('password') || msg.includes('encrypted')) {
+        friendly = 'PDF is password-protected. Text features unavailable, but you can view the book.';
+      } else if (msg.includes('memory') || msg.includes('out of')) {
+        friendly = 'Not enough memory to analyze this PDF. You can still view the book.';
+      }
+      setBookProcessingStatus(prev => ({ ...prev, phase: 'error', progress: friendly }));
+      console.warn('📚 Background book processing failed:', msg);
+    }
+  }, []);
+
+  /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -3282,153 +3398,39 @@ export default function ThoughtUnitReader() {
 
       setFileUrl(url);
 
-      setPdfParsingState(prev => ({ ...prev, progress: "Generating table of contents..." }));
-
-      // Generate and store TOC
+      // TOC from URL (fire-and-forget — outline extraction via PDF.js is async)
       const documentId = file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
-      
-      // TOC generation will be done in two phases:
-      // 1. Heuristic TOC from URL (deferred to SmartPDFViewer.onOutline for native outline)
-      // 2. Fallback TOC from parsed content (handled after parsing)
-      
-      // Try initial TOC generation (may be empty - outline extraction handled by SmartPDFViewer)
       generateTOC(url).then((tocEntries) => {
         if (tocEntries && tocEntries.length > 0) {
           setTableOfContents(tocEntries);
-          
-          // Save to tocStore for persistence
           const tocItems = tocEntries.map((entry: any, idx: number) => ({
             id: `toc_${idx}_${Date.now()}`,
             title: entry.title || `Chapter ${idx + 1}`,
             pageNumber: entry.pageNumber || entry.page || idx + 1,
-            level: entry.level || 0
+            level: entry.level || 0,
           }));
-          
-          const tocStore = useTocStore.getState();
-          tocStore.saveToc(documentId, file.name, tocItems, 'outline');
+          useTocStore.getState().saveToc(documentId, file.name, tocItems, 'outline');
           console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
         }
-      }).catch((err) => {
+      }).catch(() => {
         console.log('📑 Initial TOC generation deferred to outline extraction or fallback');
       });
 
-      setPdfParsingState(prev => ({ ...prev, progress: "Extracting and analyzing content..." }));
+      // Phase 2: text extraction + thought-unit parsing.
+      // Viewer already shows page 1 — never block or remove the PDF on parse failures.
+      startBookProcessing(file, documentId);
 
-      // Parse → normalize → store
-      const { parsedUnits, chapters } = await parseBookWithChapters(file);
-
-      setPdfParsingState(prev => ({ ...prev, progress: "Processing thought units..." }));
-
-      const normalized = normalizeParsedUnits(parsedUnits);
-      
-      // ✅ Validate parsed content before setting
-      if (!normalized || normalized.length === 0) {
-        throw new Error("No readable content found in PDF");
-      }
-
-      setThoughtUnits(normalized);
-      setSampleText(normalized[0]?.text ?? "");
-
-      setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
-
-      // =========================================================================
-      // REQUIREMENT D: Ensure TOC is ALWAYS generated (fallback if no outline)
-      // =========================================================================
-      // Check if TOC was generated from outline - if not, create fallback
-      setTimeout(() => {
-        const currentToc = useTocStore.getState().getToc(documentId);
-        if (!currentToc || currentToc.items.length === 0) {
-          console.log('📑 No TOC from outline - generating fallback from parsed content');
-          
-          // Use chapters from parser if available
-          let fallbackToc: TOCEntry[] = [];
-          
-          if (chapters && chapters.length > 0) {
-            fallbackToc = chapters.map((ch: any, idx: number) => ({
-              title: ch.title || `Chapter ${idx + 1}`,
-              pageNumber: ch.page || idx + 1,
-              level: 0,
-              confidence: 0.6
-            }));
-          }
-          // No synthetic "Section N" fallback — let buildAutoToc (via the
-          // syllabus effect) produce real chapter data instead.
-          
-          if (fallbackToc.length > 0) {
-            setTableOfContents(fallbackToc);
-            
-            const tocItems = fallbackToc.map((entry: TOCEntry, idx: number) => ({
-              id: `toc_${idx}_${Date.now()}`,
-              title: entry.title,
-              pageNumber: entry.pageNumber,
-              level: entry.level || 0
-            }));
-            
-            const tocStore = useTocStore.getState();
-            tocStore.saveToc(documentId, file.name, tocItems, 'heuristic');
-            console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
-          }
-        } else {
-          // Update tableOfContents state from store
-          const storeItems = currentToc.items.map((item: any) => ({
-            title: item.title,
-            pageNumber: item.pageNumber,
-            level: item.level || 0
-          }));
-          setTableOfContents(storeItems);
-        }
-      }, 500); // Wait for outline extraction to complete first
-
-      // Whiteboard auto-detect — legacy concept seeding removed; source is now Study Model only
-      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "detectWhiteboardSections disabled — study model is source" });
-      setShowWhiteboardPanel(false);
-
-      // ✅ Success - clear loading state
-      setPdfParsingState({
-        isLoading: false,
-        error: null,
-        progress: "Complete"
-      });
-
-      console.log("✅ PDF processing complete:", {
-        thoughtUnits: normalized.length,
-        chapters: chapters.length,
-        fileName: file.name
-      });
+      setPdfParsingState({ isLoading: false, error: null, progress: '' });
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to process PDF";
-      console.error("❌ PDF processing failed:", errorMessage);
-
-      // ✅ Enhanced error handling with specific messages
-      let userFriendlyMessage = errorMessage;
-      
-      if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
-        userFriendlyMessage = "This PDF is password-protected or encrypted. Please provide an unlocked PDF file.";
-      } else if (errorMessage.includes("corrupted") || errorMessage.includes("invalid")) {
-        userFriendlyMessage = "This PDF file appears to be corrupted or invalid. Please try a different PDF file.";
-      } else if (errorMessage.includes("No readable content")) {
-        userFriendlyMessage = "This PDF contains no readable text (possibly scanned images only). Try a text-based PDF or consider using OCR software first.";
-      } else if (errorMessage.includes("timeout") || errorMessage.includes("took too long")) {
-        userFriendlyMessage = "PDF processing timed out. This file may be too complex or large. Try a smaller or simpler PDF.";
-      } else if (errorMessage.includes("memory") || errorMessage.includes("out of")) {
-        userFriendlyMessage = "Not enough memory to process this PDF. Try a smaller file or refresh the page and try again.";
-      }
-
-      // ✅ Set error state with user-friendly message
-      setPdfParsingState({
-        isLoading: false,
-        error: userFriendlyMessage,
-        progress: "Failed"
-      });
-
-      // Reset states on error
-      setThoughtUnits([]);
+      // Upload/save failed — fileUrl was never set, safe to clear everything.
+      const errorMessage = error instanceof Error ? error.message : "Failed to upload PDF";
+      console.error("❌ PDF upload failed:", errorMessage);
+      setPdfParsingState({ isLoading: false, error: errorMessage, progress: 'Failed' });
       setFileUrl(null);
       setUploadedFile(null);
       setPageTextByPage(new Map());
-      
-      alert(`Failed to process PDF: ${userFriendlyMessage}`);
+      alert(`Failed to open PDF: ${errorMessage}`);
     }
   };
 
@@ -4494,6 +4496,31 @@ export default function ThoughtUnitReader() {
                   pageTruthKey,
                   ptKeyMatch: currentPageStudyModel?.pageTruthKey === pageTruthKey,
                 }) as unknown as null}
+
+                {/* Background processing progress banner */}
+                {bookProcessingStatus.phase === 'processing' && (
+                  <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-blue-700/50 bg-blue-900/80 px-4 py-2 text-xs text-blue-100 backdrop-blur-sm">
+                    <span className="animate-pulse">⚙</span>
+                    <span>
+                      {bookProcessingStatus.totalPages > 0
+                        ? `Preparing book — ${bookProcessingStatus.pagesProcessed} of ${bookProcessingStatus.totalPages} pages analyzed`
+                        : bookProcessingStatus.progress || 'Processing...'}
+                    </span>
+                  </div>
+                )}
+                {bookProcessingStatus.phase === 'error' && (
+                  <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-amber-700/50 bg-amber-900/80 px-4 py-2 text-xs text-amber-100 backdrop-blur-sm">
+                    <span>⚠</span>
+                    <span className="flex-1">{bookProcessingStatus.progress}</span>
+                    <button
+                      onClick={() => setBookProcessingStatus(prev => ({ ...prev, phase: 'idle' }))}
+                      className="ml-auto text-amber-300 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}

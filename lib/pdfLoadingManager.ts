@@ -89,7 +89,9 @@ export class PDFLoadingManager {
     options: PDFLoadOptions, 
     attempt: number = 1
   ): Promise<PDFLoadResult> {
-    const maxRetries = options.retryCount || 3;
+    // Blob URLs that fail once will keep failing — revoked blobs don't recover.
+    // Cap retries at 1 for blob sources to avoid 90+ second wait on dead blobs.
+    const maxRetries = url.startsWith('blob:') ? 1 : (options.retryCount || 3);
     const timeout = options.timeout || 30000;
 
     try {
@@ -206,6 +208,12 @@ export class PDFLoadingManager {
   private getFriendlyErrorMessage(error: string): string {
     if (error.includes('timeout')) {
       return 'PDF loading timed out. The file may be too large or your connection is slow.';
+    }
+    // Blob URL failures must be checked before the generic fetch/NetworkError branch,
+    // because fetch() on a revoked/expired blob produces "Failed to fetch" which would
+    // otherwise surface as "Network error loading PDF" — a misleading message.
+    if (error.startsWith('Failed to read blob URL') || error.includes('Blob fetch failed')) {
+      return 'Could not open the saved book. The file may have been cleared from browser storage. Please re-upload the file.';
     }
     if (error.includes('fetch') || error.includes('NetworkError')) {
       return 'Network error loading PDF. Check your internet connection and try again.';
