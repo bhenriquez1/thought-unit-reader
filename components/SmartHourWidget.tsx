@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { safeSetItem } from '@/lib/storage/safeStorage';
 import { auth } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 
@@ -142,7 +143,7 @@ export default function SmartHourWidget({ onSessionComplete, className = "" }: S
       const newCount = sessionCount + 1;
       setSessionCount(newCount);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('smartHour-sessionCount', newCount.toString());
+        safeSetItem('smartHour-sessionCount', newCount.toString());
       }
 
       // Show rating modal for focus sessions
@@ -162,7 +163,7 @@ export default function SmartHourWidget({ onSessionComplete, className = "" }: S
       // In a real implementation, this would save to Firestore
       const existingSessions = JSON.parse(localStorage.getItem('smartHour-sessions') || '[]');
       existingSessions.push(session);
-      localStorage.setItem('smartHour-sessions', JSON.stringify(existingSessions));
+      safeSetItem('smartHour-sessions', JSON.stringify(existingSessions));
       
       console.log(`💾 Smart-Hour: Session saved`, session);
     } catch (error) {

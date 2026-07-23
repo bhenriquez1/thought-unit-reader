@@ -2,6 +2,7 @@
 // Tracks incorrect answers and schedules review sessions using spaced repetition algorithm
 
 import type { DATQuestion, ExamAttempt } from '@/types/apex-exam';
+import { safeSetItem } from '@/lib/storage/safeStorage';
 
 export interface MistakeEntry {
   id: string;
@@ -326,7 +327,7 @@ class MistakeLogger {
   deleteMistake(userId: string, mistakeId: string): void {
     const mistakes = this.getMistakes();
     const filtered = mistakes.filter(m => !(m.id === mistakeId && m.userId === userId));
-    localStorage.setItem(this.storageKey, JSON.stringify(filtered));
+    safeSetItem(this.storageKey, JSON.stringify(filtered));
     this.updateStats(userId);
   }
 
@@ -338,7 +339,7 @@ class MistakeLogger {
     const mistake = mistakes.find(m => m.id === mistakeId && m.userId === userId);
     if (mistake) {
       mistake.notes = notes;
-      localStorage.setItem(this.storageKey, JSON.stringify(mistakes));
+      safeSetItem(this.storageKey, JSON.stringify(mistakes));
     }
   }
 
@@ -348,7 +349,7 @@ class MistakeLogger {
     const allMistakes = this.getMistakes();
     const otherUserMistakes = allMistakes.filter(m => m.userId !== userId);
     const updatedMistakes = [...otherUserMistakes, ...userMistakes];
-    localStorage.setItem(this.storageKey, JSON.stringify(updatedMistakes));
+    safeSetItem(this.storageKey, JSON.stringify(updatedMistakes));
   }
 
   private calculateNextReviewDate(intervalDays: number): string {
@@ -381,7 +382,7 @@ class MistakeLogger {
   }
 
   private saveReviewSessions(sessions: ReviewSession[]): void {
-    localStorage.setItem(this.sessionsKey, JSON.stringify(sessions));
+    safeSetItem(this.sessionsKey, JSON.stringify(sessions));
   }
 
   private updateReviewSession(
@@ -409,7 +410,7 @@ class MistakeLogger {
     const stats = this.getMistakeStats(userId);
     const allStats = this.getAllStats();
     allStats[userId] = stats;
-    localStorage.setItem(this.statsKey, JSON.stringify(allStats));
+    safeSetItem(this.statsKey, JSON.stringify(allStats));
   }
 
   private getAllStats(): Record<string, MistakeStats> {

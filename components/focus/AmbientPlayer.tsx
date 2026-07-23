@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 
 export type AmbientMode = "floating" | "docked" | "background";
 
@@ -72,9 +73,9 @@ export default function AmbientPlayer({
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("avrrio-ambient-mode", mode);
-    localStorage.setItem("avrrio-ambient-opacity", String(opacity));
-    localStorage.setItem("avrrio-ambient-position", JSON.stringify(position));
+    safeSetItem("avrrio-ambient-mode", mode);
+    safeSetItem("avrrio-ambient-opacity", String(opacity));
+    safeSetItem("avrrio-ambient-position", JSON.stringify(position));
   }, [mode, opacity, position]);
 
   useEffect(() => {

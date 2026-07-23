@@ -133,8 +133,16 @@ const rawBookScopedStorage = {
   setItem(_name: string, value: string): void {
     const parsed = JSON.parse(value);
     const state = parsed.state ?? {};
-    localStorage.setItem(APEX_GLOBAL_KEY, JSON.stringify({ state: pick(state, GLOBAL_FIELDS), version: parsed.version }));
-    localStorage.setItem(apexBookKey(activeApexBookId), JSON.stringify({ state: pick(state, BOOK_FIELDS), version: parsed.version }));
+    try {
+      localStorage.setItem(APEX_GLOBAL_KEY, JSON.stringify({ state: pick(state, GLOBAL_FIELDS), version: parsed.version }));
+    } catch (e) {
+      console.warn('[apexEngineStore] failed to persist global state (quota?):', e);
+    }
+    try {
+      localStorage.setItem(apexBookKey(activeApexBookId), JSON.stringify({ state: pick(state, BOOK_FIELDS), version: parsed.version }));
+    } catch (e) {
+      console.warn('[apexEngineStore] failed to persist book state (quota?):', e);
+    }
   },
   removeItem(_name: string): void {
     localStorage.removeItem(apexBookKey(activeApexBookId));

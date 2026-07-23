@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { safeSetItem } from '@/lib/storage/safeStorage';
 import { useRouter } from 'next/router';
 import { learningIntegrationService, endLearningTracking, type ExternalLearningSession } from '@/lib/learningIntegrationService';
 import { aiLearningEngine } from '@/lib/aiLearningEngine';
@@ -180,7 +181,7 @@ export default function ProtocolHandlerPage() {
         }, 1500);
       } else {
         // Store enriched data for the APEX page to pick up
-        localStorage.setItem('protocol_return_data', JSON.stringify(enrichedData));
+        safeSetItem('protocol_return_data', JSON.stringify(enrichedData));
         
         // Redirect to APEX Patterns page with success parameters for immediate pattern application
         const redirectParams = new URLSearchParams();

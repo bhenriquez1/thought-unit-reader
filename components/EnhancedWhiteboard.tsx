@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { saveWhiteboardAudio, loadWhiteboardAudio, deleteWhiteboardAudio } from "@/lib/db/whiteboardStore";
 import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
 import Whiteboard from "./Whiteboard";
 import { Button } from "./ui/button";
@@ -309,6 +310,7 @@ export default function EnhancedWhiteboard({
       if (parsed?.steps && parsed?.narrationScript) {
         setSteps(parsed.steps);
         setNarrationScript(parsed.narrationScript);
+        // Audio is now stored as a Blob in IDB. Legacy entries may have audioDataUrl.
         if (parsed.audioDataUrl) {
           try {
             const b = dataUrlToBlob(parsed.audioDataUrl);
@@ -317,6 +319,9 @@ export default function EnhancedWhiteboard({
             setAudioBlob(null);
           }
         } else {
+          loadWhiteboardAudio(cacheKey)
+            .then((blob) => { if (blob) setAudioBlob(blob); })
+            .catch(() => { /* non-fatal */ });
           setAudioBlob(null);
         }
         return true;
@@ -335,29 +340,29 @@ export default function EnhancedWhiteboard({
       narrationScript: payload.narrationScript,
       audioDataUrl: undefined, // keep memory lean
     });
-    // evict oldest
+    // evict oldest — also clean up IDB audio for the evicted key
     if (memCache.size > cacheSize) {
       const firstKey = memCache.keys().next().value as string | undefined;
-      if (firstKey) memCache.delete(firstKey);
+      if (firstKey) {
+        memCache.delete(firstKey);
+        deleteWhiteboardAudio(firstKey).catch(() => { /* non-fatal */ });
+      }
     }
 
-    // localStorage mirror (include audio as dataURL if present)
+    // Persist metadata to localStorage (no audio data URL — keeps it small).
+    // Audio blob goes to IDB separately to avoid quota exhaustion.
     try {
-      const audioDataUrlPromise = payload.audioBlob
-        ? blobToDataURL(payload.audioBlob)
-        : Promise.resolve<string | undefined>(undefined);
-
-      audioDataUrlPromise.then((audioDataUrl) => {
-        const toStore = JSON.stringify({
-          steps: payload.steps,
-          narrationScript: payload.narrationScript,
-          audioDataUrl,
-          savedAt: Date.now(),
-        });
-        localStorage.setItem(key, toStore);
-      }).catch(() => {});
+      localStorage.setItem(key, JSON.stringify({
+        steps: payload.steps,
+        narrationScript: payload.narrationScript,
+        savedAt: Date.now(),
+      }));
     } catch {
-      /* ignore localStorage quota errors */
+      /* ignore localStorage quota errors — audio still goes to IDB below */
+    }
+
+    if (payload.audioBlob) {
+      saveWhiteboardAudio(key, payload.audioBlob).catch(() => { /* non-fatal */ });
     }
   };
 

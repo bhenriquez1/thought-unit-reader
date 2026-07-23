@@ -17,6 +17,7 @@ import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
+import { saveWhiteboardAudio, loadWhiteboardAudio, deleteWhiteboardAudio } from "@/lib/db/whiteboardStore";
 
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
@@ -240,6 +241,8 @@ export default function WhiteboardPanel({
         setSteps(parsed.steps);
         setNarrationScript(parsed.narrationScript);
         setDiagramPlan(plan);
+        // Audio is now stored as a Blob in IDB, not as a data URL in localStorage.
+        // Legacy entries may still have audioDataUrl — handle both paths.
         if (parsed.audioDataUrl) {
           try {
             setAudioBlob(dataUrlToBlob(parsed.audioDataUrl));
@@ -247,6 +250,10 @@ export default function WhiteboardPanel({
             setAudioBlob(null);
           }
         } else {
+          // Try IDB for the audio blob (new path)
+          loadWhiteboardAudio(cacheKey)
+            .then((blob) => { if (blob) setAudioBlob(blob); })
+            .catch(() => { /* non-fatal */ });
           setAudioBlob(null);
         }
         return { steps: parsed.steps, narrationScript: parsed.narrationScript, diagramPlan: plan };
@@ -269,30 +276,30 @@ export default function WhiteboardPanel({
       diagramPlan: payload.diagramPlan,
       audioDataUrl: undefined, // keep memory lean
     });
-    // evict oldest
+    // evict oldest — also clean up IDB audio for the evicted key
     if (memCache.size > cacheSize) {
       const firstKey = memCache.keys().next().value as string | undefined;
-      if (firstKey) memCache.delete(firstKey);
+      if (firstKey) {
+        memCache.delete(firstKey);
+        deleteWhiteboardAudio(firstKey).catch(() => { /* non-fatal */ });
+      }
     }
 
-    // localStorage mirror (include audio as dataURL if present)
+    // Persist metadata to localStorage (no audio data URL — keeps it small).
+    // Audio blob goes to IDB separately to avoid quota exhaustion.
     try {
-      const audioDataUrlPromise = payload.audioBlob
-        ? blobToDataURL(payload.audioBlob)
-        : Promise.resolve<string | undefined>(undefined);
-
-      audioDataUrlPromise.then((audioDataUrl) => {
-        const toStore = JSON.stringify({
-          steps: payload.steps,
-          narrationScript: payload.narrationScript,
-          diagramPlan: payload.diagramPlan,
-          audioDataUrl,
-          savedAt: Date.now(),
-        });
-        localStorage.setItem(key, toStore);
-      }).catch(() => {});
+      localStorage.setItem(key, JSON.stringify({
+        steps: payload.steps,
+        narrationScript: payload.narrationScript,
+        diagramPlan: payload.diagramPlan,
+        savedAt: Date.now(),
+      }));
     } catch {
-      /* ignore localStorage quota errors */
+      /* ignore localStorage quota errors — audio still goes to IDB below */
+    }
+
+    if (payload.audioBlob) {
+      saveWhiteboardAudio(key, payload.audioBlob).catch(() => { /* non-fatal */ });
     }
   };
 
@@ -576,6 +583,7 @@ export default function WhiteboardPanel({
   useEffect(() => {
     return () => {
       memCache.delete(cacheKey);
+      deleteWhiteboardAudio(cacheKey).catch(() => { /* non-fatal */ });
       console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -694,6 +702,7 @@ export default function WhiteboardPanel({
   /** Regenerate — bypass the cache and re-run both the diagram + illustration calls. */
   const handleRegenerate = () => {
     memCache.delete(cacheKey);
+    deleteWhiteboardAudio(cacheKey).catch(() => { /* non-fatal */ });
     try { localStorage.removeItem(cacheKey); } catch { /* ignore */ }
     setAiImageUrl(null);
     setAiImageError(null);

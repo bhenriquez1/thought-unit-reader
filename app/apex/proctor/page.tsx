@@ -7,6 +7,7 @@ import { formatTime, isTimeWarning, DAT_SECTIONS } from "@/types/apex-exam";
 import type { GeneratedExam } from "@/lib/apex/examGenerator";
 import type { DATQuestion } from "@/types/apex-exam";
 import { loadPendingExam, deletePendingExam } from "@/lib/db/examStore";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import { saveAttempt } from "@/lib/datApex/idbStore";
 import type { DatAttempt } from "@/lib/datApex/types";
 import type { DatSectionId } from "@/lib/datApex/blueprint";
@@ -187,7 +188,7 @@ export default function ExamProctorPage() {
       _exam: s.exam,
     };
 
-    localStorage.setItem("examResults", JSON.stringify(results));
+    safeSetItem("examResults", JSON.stringify(results));
     localStorage.removeItem("currentExam");
     localStorage.removeItem("examProgress");
 

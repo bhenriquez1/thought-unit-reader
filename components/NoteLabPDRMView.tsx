@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import type { ThoughtUnit as BaseThoughtUnit } from "@/types/reading";
 import { auth } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
@@ -69,7 +70,7 @@ export default function NoteLabPDRMView({
       (entries) => {
         setPdrmEntries(entries);
         // Keep local backup
-        localStorage.setItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(entries));
+        safeSetItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(entries));
       }
     );
 
@@ -78,7 +79,7 @@ export default function NoteLabPDRMView({
       (sessions) => {
         setSmartHourSessions(sessions);
         // Keep local backup
-        localStorage.setItem('smartHour-sessions', JSON.stringify(sessions));
+        safeSetItem('smartHour-sessions', JSON.stringify(sessions));
       }
     );
 
@@ -153,21 +154,21 @@ export default function NoteLabPDRMView({
         : [...pdrmEntries, entry];
       
       setPdrmEntries(updatedEntries);
-      
+
       // Keep local backup
-      localStorage.setItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(updatedEntries));
-      
+      safeSetItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(updatedEntries));
+
       console.log('💾 PDRM: Entry saved to Firestore and locally', entry);
     } catch (error) {
       console.error("Failed to save PDRM entry:", error);
-      
+
       // Fallback to localStorage only
-      const updatedEntries = currentEntry 
+      const updatedEntries = currentEntry
         ? pdrmEntries.map(e => e.id === currentEntry.id ? entry : e)
         : [...pdrmEntries, entry];
-      
+
       setPdrmEntries(updatedEntries);
-      localStorage.setItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(updatedEntries));
+      safeSetItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(updatedEntries));
     }
   };
 
