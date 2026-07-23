@@ -717,7 +717,18 @@ export default function ThoughtUnitReader() {
       source: "finalStudyModel.visualAnchors",
     });
     // Embed pageTruthKey so the render-time guard can verify this model is current.
-    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
+    // Anchor-equality guard: if visualAnchor IDs are unchanged (e.g. Stage 1→Stage 2
+    // only enriched study notes, not anchors), return the same prev reference so React
+    // skips the re-render and the canonicalLeftPanelUnits cascade doesn't fire twice.
+    setCurrentPageStudyModel(prev => {
+      const next = { ...model, pageTruthKey: key };
+      if (prev && prev.pageTruthKey === key) {
+        const prevIds = prev.visualAnchors.map((a) => a.id).join(',');
+        const nextIds = next.visualAnchors.map((a) => a.id).join(',');
+        if (prevIds === nextIds) return prev;
+      }
+      return next;
+    });
     console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
   }, []);
 
@@ -4200,6 +4211,42 @@ export default function ThoughtUnitReader() {
     syncToPage(node.page, { reason: "TOC_JUMP" });
   }, [syncToPage]);
 
+  // Stable RightPanel prop callbacks — inline arrows would create new references on
+  // every index.tsx render (including per-word Zustand writes during TTS), forcing
+  // RightPanel to re-render even when nothing meaningful changed.
+  const handleNoteSaved = useCallback(() => {
+    setSessionNotesCount((n) => n + 1);
+    setNoteLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("notelab", "notelab");
+  }, [trySwitchShellTab]);
+
+  const handleStudySetGenerated = useCallback((setId: string) => {
+    setSessionCardsCount((n) => n + 1);
+    setLastRecallSetId(setId);
+    setRecallLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("study", "study");
+  }, [trySwitchShellTab]);
+
+  const handleCrossLinkNavigate = useCallback(
+    (page: number) => syncToPage(page, { reason: "TOC_JUMP" }),
+    [syncToPage]
+  );
+
+  const handleSpeechSnippetFocus = useCallback(
+    (snippet: string | null) => setFocusSnippet(snippet),
+    []
+  );
+
+  const handleOpenWhiteboardPanel = useCallback(
+    () => setShowWhiteboardPanel(true),
+    []
+  );
+
+  const handleJumpToUnit = useCallback(
+    (id: string) => onPdfHighlightFocus(id),
+    [onPdfHighlightFocus]
+  );
+
   // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
   // cross-link counts need a fetched snapshot — refreshed whenever the
   // Syllabus tab opens or a note/recall card is saved elsewhere in the app.
@@ -4491,41 +4538,28 @@ export default function ThoughtUnitReader() {
                 intelligence={intelligenceSnapshot}
                 guidedPath={guidedPath}
                 resolveEvidenceId={resolveEvidenceId}
-                onNoteSaved={() => {
-                  // Called by GenerateNoteButton only after save is verified — navigate is safe.
-                  console.log("[NAV_AFTER_SAVE]", { destination: "notelab", bookId, page: currentPage, storageKey: "ultraNotes_v1" });
-                  setSessionNotesCount((n) => n + 1);
-                  setNoteLabRefreshKey((k) => k + 1);
-                  trySwitchShellTab("notelab", "notelab");
-                }}
-                onStudySetGenerated={(setId) => {
-                  // Called by GenerateStudySetButton only after save is verified — navigate is safe.
-                  console.log("[NAV_AFTER_SAVE]", { destination: "study", setId, bookId, page: currentPage, storageKey: "recallSets_v1" });
-                  setSessionCardsCount((n) => n + 1);
-                  setLastRecallSetId(setId);
-                  setRecallLabRefreshKey((k) => k + 1);
-                  trySwitchShellTab("study", "study");
-                }}
+                onNoteSaved={handleNoteSaved}
+                onStudySetGenerated={handleStudySetGenerated}
                 onEvidenceClick={playThoughtUnit}
                 onOpenThoughtUnit={openThoughtUnitInRecallLab}
                 onStudyModelReady={handleStudyModelReady}
-                onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
+                onCrossLinkNavigate={handleCrossLinkNavigate}
                 tocItems={tocItemsForSearch}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
                 highlightedAnchorTexts={highlightedAnchorTexts}
                 activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
-                onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
+                onSpeechSnippetFocus={handleSpeechSnippetFocus}
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
-                onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
+                onOpenWhiteboard={handleOpenWhiteboardPanel}
                 onOpenExplainStep={handleOpenExplainStep}
-                onOpenExplainIt={() => handleOpenExplainIt()}
+                onOpenExplainIt={handleOpenExplainIt}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
-                onJumpToUnit={(id) => onPdfHighlightFocus(id)}
+                onJumpToUnit={handleJumpToUnit}
               />
             </div>
           </ErrorBoundary>

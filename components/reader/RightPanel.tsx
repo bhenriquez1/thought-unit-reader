@@ -855,11 +855,6 @@ export function RightPanel({
   onAskExpert,
   onJumpToUnit,
 }: RightPanelProps) {
-  // Render counter — temporary diagnostic for React #185 investigation.
-  const rpRenderCountRef = useRef(0);
-  rpRenderCountRef.current++;
-  console.log("[RIGHTPANEL_RENDER]", rpRenderCountRef.current);
-
   // Reading position from the single source of truth — no prop-drilling.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
 
