@@ -2,6 +2,8 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { savePendingExam } from '@/lib/db/examStore';
 import { DAT_SECTIONS } from '@/types/apex-exam';
 import { buildExam } from '@/lib/examEngine/examBuilder';
 import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
@@ -43,6 +45,7 @@ const SUBJECT_COLORS: Record<string, string> = {
 };
 
 export default function ExamGeneratorPage() {
+  const router = useRouter();
   const tocs = useTocStore((s) => s.tocs);
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
   const books = useMemo(() => getUserBookCatalogue(), [catalogueRefreshKey]);
@@ -59,6 +62,7 @@ export default function ExamGeneratorPage() {
   const [randomize, setRandomize] = useState(true);
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [generatedExam, setGeneratedExam] = useState<GeneratedExam | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
@@ -187,10 +191,20 @@ export default function ExamGeneratorPage() {
     }
   }
 
-  function startExam() {
+  async function startExam() {
     if (!generatedExam) return;
+    setIsStarting(true);
+    const examId = generatedExam.id || crypto.randomUUID();
+    try {
+      await savePendingExam(examId, generatedExam);
+    } catch {
+      setGenerationError('The generated exam could not be saved. Please try again.');
+      setIsStarting(false);
+      return;
+    }
+    // Backward-compat: keep localStorage so the proctor can fall back if IDB is unavailable.
     localStorage.setItem('currentExam', JSON.stringify(generatedExam));
-    window.location.href = '/apex/proctor';
+    router.push(`/apex/proctor?examId=${encodeURIComponent(examId)}`);
   }
 
   const canGenerate = !!bookId && sectionIds.length > 0 && !isGenerating;
@@ -630,9 +644,17 @@ export default function ExamGeneratorPage() {
                 </p>
                 <button
                   onClick={startExam}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-lg transition-all"
+                  disabled={isStarting}
+                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-all"
                 >
-                  🚀 Start Exam
+                  {isStarting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                      Starting…
+                    </span>
+                  ) : (
+                    '🚀 Start Exam'
+                  )}
                 </button>
               </div>
             )}
