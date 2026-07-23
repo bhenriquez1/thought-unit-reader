@@ -117,10 +117,15 @@ async function estimateIdbBytes(db: IDBDatabase): Promise<number | null> {
 }
 
 async function countPdfRecords(db: IDBDatabase): Promise<number> {
-  // The avrrio-books IDB (from P1 durable PDF storage) stores pdf_data entries.
+  // avrrio-documents (from lib/db/documentStore.ts) uses stores "documents" and "files".
+  // Legacy store names (pdf_data, books) are checked as fallback for older schemas.
   const stores = Array.from(db.objectStoreNames);
-  if (!stores.includes('pdf_data') && !stores.includes('books')) return 0;
-  const storeName = stores.includes('pdf_data') ? 'pdf_data' : 'books';
+  const storeName =
+    stores.includes('documents') ? 'documents' :
+    stores.includes('pdf_data')  ? 'pdf_data'  :
+    stores.includes('books')     ? 'books'      :
+    null;
+  if (!storeName) return 0;
   return new Promise((resolve) => {
     try {
       const tx = db.transaction(storeName, 'readonly');

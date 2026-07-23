@@ -165,6 +165,7 @@ const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ss
 const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTrainingHybridReader"), { ssr: false });
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
+const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
@@ -635,7 +636,8 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "podcast">("notes");
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching">("notes");
+  const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachResponse, setCoachResponse] = useState<string | null>(null);
@@ -3396,6 +3398,22 @@ export default function ThoughtUnitReader() {
 
       setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
 
+      // Pre-flight storage check: warn if the browser may not have enough quota.
+      // navigator.storage.persist() requests durable storage (prevents eviction).
+      if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+      if (navigator.storage?.estimate) {
+        navigator.storage.estimate().then(est => {
+          const needed = file.size;
+          const available = (est.quota ?? 0) - (est.usage ?? 0);
+          if (available > 0 && available < needed * 1.2) {
+            console.warn(
+              `[storage] Low quota: need ~${(needed / 1e6).toFixed(0)} MB, ` +
+              `available ~${(available / 1e6).toFixed(0)} MB. IDB save may fail.`
+            );
+          }
+        }).catch(() => {});
+      }
+
       // Saves PDF binary and metadata to IndexedDB for durable local storage.
       // Returns a promise that resolves once the binary is confirmed written.
       // Callers must await this before committing the localStorage library entry.
@@ -4782,7 +4800,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1">
-              {(["notes", "studyguide", "podcast"] as const).map(v => (
+              {(["notes", "studyguide", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
@@ -4792,7 +4810,7 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🎧 Listen"}
+                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🩺 Chief Resident"}
                 </button>
               ))}
             </div>
@@ -4813,18 +4831,17 @@ export default function ThoughtUnitReader() {
               />
           </div>
 
-          {/* Listen sub-tab — always mounted so audio continues across tab switches */}
-          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "podcast" ? "flex" : "none", flexDirection: "column" }}>
-              <PodcastLab
-                studyModel={currentPageStudyModel}
-                pageNumber={currentPage}
-                bookId={bookId}
-                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-                onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
-                initialScript={studyGuideScript}
-                explainItSeed={explainItPodcastSeed}
-                onDiscussSegment={handleDiscussPodcastSegment}
-              />
+          {/* Chief Resident sub-tab — always mounted so session state persists across tab switches */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "teaching" ? "flex" : "none", flexDirection: "column" }}>
+            <ChiefResidentPanel
+              studyModel={currentPageStudyModel}
+              pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+              bookId={bookId}
+              currentPage={currentPage}
+              bookTitle={uploadedFile?.name}
+              activeNote={activeNote}
+              onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+            />
           </div>
 
           {/* Notes sub-tab — always mounted to preserve selected note and edits */}
@@ -4864,7 +4881,7 @@ export default function ThoughtUnitReader() {
                   onExplainCard={(note, card) => {
                     openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
                   }}
-                  onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); }}
+                  onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); setActiveNote(note); }}
                   focusedAnchorText={notelabFocusedAnchorText}
                   focusedKnowledgeNodeId={selectedKgNodeId}
                 />
