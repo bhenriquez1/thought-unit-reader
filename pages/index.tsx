@@ -1,5 +1,6 @@
 // pages/index.tsx
 import dynamic from "next/dynamic";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import React, { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent } from "react";
 import { useRouter } from "next/router";
 
@@ -1648,7 +1649,7 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!ambientUrl) return;
-    localStorage.setItem("avrrio-ambient-url", ambientUrl);
+    safeSetItem("avrrio-ambient-url", ambientUrl);
   }, [ambientUrl]);
 
   useEffect(() => {
@@ -1715,7 +1716,7 @@ export default function ThoughtUnitReader() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("avrrio-shell-tab", activeShellTab);
+      safeSetItem("avrrio-shell-tab", activeShellTab);
     }
   }, [activeShellTab]);
 

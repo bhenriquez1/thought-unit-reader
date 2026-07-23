@@ -3,6 +3,7 @@
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import ReadingBuddy    from "@/components/elena/ReadingBuddy";
 import MemoryMatch     from "@/components/elena/MemoryMatch";
 import WordScramble    from "@/components/elena/WordScramble";
@@ -1372,8 +1373,8 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   }, [loadAttempt]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
-    // Write the active profile ID synchronously so the next mount can load it.
-    localStorage.setItem(STORAGE_KEY, p.id);
+    // Write the active profile ID so the next mount can load it.
+    safeSetItem(STORAGE_KEY, p.id);
     const defaultRewards = makeDefaultRewards(p.id);
 
     // Open the workspace immediately — state updates happen before any IDB await.

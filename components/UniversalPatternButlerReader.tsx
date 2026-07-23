@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { safeSetItem } from "@/lib/storage/safeStorage";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { Document, Page } from "react-pdf";
 import type { TOCEntry } from "@/lib/tocParser";
@@ -1010,7 +1011,7 @@ export default function UniversalPatternButlerReader({
     // Store in local storage for prototype
     const attempts = JSON.parse(localStorage.getItem('patternAttempts') || '[]');
     attempts.push(attempt);
-    localStorage.setItem('patternAttempts', JSON.stringify(attempts));
+    safeSetItem('patternAttempts', JSON.stringify(attempts));
     
     setTrainingState(prev => ({
       ...prev,

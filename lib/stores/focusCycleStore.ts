@@ -1,5 +1,16 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { safeSetItem } from '@/lib/storage/safeStorage';
+
+const quotaSafeStorage = {
+  getItem: (key: string) => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  setItem: (key: string, value: string) => { safeSetItem(key, value); },
+  removeItem: (key: string) => {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  },
+};
 
 export type FocusPhaseType = 'learn' | 'consolidate' | 'synthesize' | 'review' | 'recall' | 'compare' | 'break';
 
@@ -202,7 +213,7 @@ export const useFocusCycleStore = create<FocusCycleState>()(
     }),
     {
       name: 'focus-cycle-store-v1',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => quotaSafeStorage),
       partialize: (state) => ({
         timerPreset: state.timerPreset,
         timerPhase: state.timerPhase,
