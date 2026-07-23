@@ -41,7 +41,6 @@ import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromS
 import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
-import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
 import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
@@ -136,7 +135,6 @@ import {
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
-import { noteLabButlerIntegration, type PDRMButlerNote } from "@/lib/noteLabButlerIntegration";
 import { 
   ChapterAbsorptionPipeline, 
   createChapterAbsorptionPipeline,
@@ -157,9 +155,7 @@ import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTrainingHybridReader"), { ssr: false });
-const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridReader"), { ssr: false });
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
-const OptimizedNoteLabView = dynamic(() => import("@/components/OptimizedNoteLabView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
@@ -717,7 +713,18 @@ export default function ThoughtUnitReader() {
       source: "finalStudyModel.visualAnchors",
     });
     // Embed pageTruthKey so the render-time guard can verify this model is current.
-    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
+    // Anchor-equality guard: if visualAnchor IDs are unchanged (e.g. Stage 1→Stage 2
+    // only enriched study notes, not anchors), return the same prev reference so React
+    // skips the re-render and the canonicalLeftPanelUnits cascade doesn't fire twice.
+    setCurrentPageStudyModel(prev => {
+      const next = { ...model, pageTruthKey: key };
+      if (prev && prev.pageTruthKey === key) {
+        const prevIds = prev.visualAnchors.map((a) => a.id).join(',');
+        const nextIds = next.visualAnchors.map((a) => a.id).join(',');
+        if (prevIds === nextIds) return prev;
+      }
+      return next;
+    });
     console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
   }, []);
 
@@ -1269,12 +1276,10 @@ export default function ThoughtUnitReader() {
     decisionRules,
     clinicalIQ,
     expertMode,
-    datMode,
     insightPanel,
     openInsightPanel,
     closeInsightPanel,
     toggleExpertMode,
-    toggleDATMode,
     setExpertMode,
     getActiveRules,
   } = useCognitiveEngineStore();
@@ -1660,7 +1665,7 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
+    const isProtected = !["reader", "toc", "syllabus", "podcast", "elena"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
@@ -1987,8 +1992,8 @@ export default function ThoughtUnitReader() {
           .map((u) => `• ${u.title}: ${u.exactText}`)
           .join("\n");
         note.sections = [
-          { label: "Chief Concern / Core Problem", content: activeUnit.exactText },
-          { label: "Why This Matters", content: activeUnit.reason },
+          { label: "Chief Concern / Problem", content: activeUnit.exactText },
+          { label: "Why This Matters Clinically", content: activeUnit.reason },
           { label: "Diagnostic Reasoning", content: activeUnit.category === "trap" ? `Danger Zone: ${activeUnit.exactText}` : `Use this unit to decide what matters next on page ${currentPage}.` },
           { label: "Procedure Logic", content: activeUnit.category === "mechanism" || activeUnit.category === "application" ? activeUnit.exactText : "Connect this anchor to the neighboring expert units before moving on." },
           { label: "Decision Tree", content: neighbors || activeUnit.exactText },
@@ -1997,7 +2002,7 @@ export default function ThoughtUnitReader() {
           { label: "Clinical Pearl", content: activeUnit.category === "clinical" ? activeUnit.exactText : activeUnit.reason },
           { label: "Common Mistake", content: "Reading the page summary without anchoring this exact source text." },
           { label: "Connection Map", content: neighbors || "No neighboring canonical units available yet." },
-          { label: "Case Recall", content: `In a case, when would “${activeUnit.title}” change the answer?` },
+          { label: “Case-Style Recall Questions”, content: `In a case, when would “${activeUnit.title}” change the answer?` },
           { label: "Recall Questions", content: `1. Why is this a ${activeUnit.importanceLabel}?\n2. What detail in the source text proves it?\n3. What would you confuse it with?` },
           { label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` },
         ];
@@ -2657,7 +2662,8 @@ export default function ThoughtUnitReader() {
     console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber, tag });
     setLastRecallSetId(set.id);
     setRecallLabRefreshKey((k) => k + 1);
-  }, [explainStepContext, bookId, uploadedFile]);
+    trySwitchShellTab("study", "study");
+  }, [explainStepContext, bookId, uploadedFile, trySwitchShellTab]);
 
   const handleExplainStepAddToStudyGuide = useCallback(async (question: string, explanation: string, turns: ExplainStepMessage[]) => {
     const ctx = explainStepContext;
@@ -4192,17 +4198,77 @@ export default function ThoughtUnitReader() {
     syncToPage(node.page, { reason: "TOC_JUMP" });
     setRightPanelResetKey((k) => k + 1);
     setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
-    setViewMode("reader");
-    setActiveShellTab("reader");
-  }, [syncToPage]);
+    trySwitchShellTab("reader", "reader");
+  }, [syncToPage, trySwitchShellTab]);
 
   const handleSyllabusNodeClick = useCallback((node: TocNode) => {
     syncToPage(node.page, { reason: "TOC_JUMP" });
-    setRightPanelResetKey((k) => k + 1);
-    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
-    setViewMode("reader");
-    setActiveShellTab("reader");
   }, [syncToPage]);
+
+  // Jump from ChapterDashboard / AdaptiveSyllabusPanel to the Reader — unlike
+  // handleSyllabusNodeClick (which stays in Learning Hub so TocTree shows the
+  // active-chapter highlight), these entry points are navigation actions where
+  // the user expects to arrive at the content.
+  const handleChapterJumpToReader = useCallback((page: number) => {
+    syncToPage(page, { reason: "TOC_JUMP" });
+    trySwitchShellTab("reader", "reader");
+  }, [syncToPage, trySwitchShellTab]);
+
+  const handleGetPageText = useCallback(
+    (page: number) => pageTextByPage.get(`${bookId}:${page}`) ?? "",
+    [pageTextByPage, bookId]
+  );
+
+  const handleStudyPlanNavigate = useCallback(
+    (page: number) => { syncToPage(page); trySwitchShellTab("reader", "reader"); },
+    [syncToPage, trySwitchShellTab]
+  );
+
+  // Stable RightPanel prop callbacks — inline arrows would create new references on
+  // every index.tsx render (including per-word Zustand writes during TTS), forcing
+  // RightPanel to re-render even when nothing meaningful changed.
+  const handleNoteSaved = useCallback(() => {
+    setSessionNotesCount((n) => n + 1);
+    setNoteLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("notelab", "notelab");
+  }, [trySwitchShellTab]);
+
+  const handleStudySetGenerated = useCallback((setId: string) => {
+    setSessionCardsCount((n) => n + 1);
+    setLastRecallSetId(setId);
+    setRecallLabRefreshKey((k) => k + 1);
+    trySwitchShellTab("study", "study");
+  }, [trySwitchShellTab]);
+
+  const handleCrossLinkNavigate = useCallback(
+    (page: number) => syncToPage(page, { reason: "TOC_JUMP" }),
+    [syncToPage]
+  );
+
+  const handleSpeechSnippetFocus = useCallback(
+    (snippet: string | null) => setFocusSnippet(snippet),
+    []
+  );
+
+  const handleOpenWhiteboardPanel = useCallback(
+    () => setShowWhiteboardPanel(true),
+    []
+  );
+
+  const handleJumpToUnit = useCallback(
+    (id: string) => onPdfHighlightFocus(id),
+    [onPdfHighlightFocus]
+  );
+
+  const handleRecallNavigateToPage = useCallback(
+    (page: number) => { syncToPage(page); trySwitchShellTab("reader", "reader"); },
+    [syncToPage, trySwitchShellTab]
+  );
+
+  const handleRecallOpenUnitConsumed = useCallback(
+    () => setRecallLabOpenUnit(null),
+    []
+  );
 
   // Study Guides are IDB-backed (no sync read), so the Course Dashboard's
   // cross-link counts need a fetched snapshot — refreshed whenever the
@@ -4472,7 +4538,7 @@ export default function ThoughtUnitReader() {
                   bookTitle={uploadedFile?.name}
                 />
 
-                {/* Ask About This Page — floats over PDF when Elena mode is active */}
+                {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
                 {ELENA_ENABLED && (
                   <div className="absolute bottom-4 right-4 z-20">
                     <AskPagePanel
@@ -4495,41 +4561,28 @@ export default function ThoughtUnitReader() {
                 intelligence={intelligenceSnapshot}
                 guidedPath={guidedPath}
                 resolveEvidenceId={resolveEvidenceId}
-                onNoteSaved={() => {
-                  // Called by GenerateNoteButton only after save is verified — navigate is safe.
-                  console.log("[NAV_AFTER_SAVE]", { destination: "notelab", bookId, page: currentPage, storageKey: "ultraNotes_v1" });
-                  setSessionNotesCount((n) => n + 1);
-                  setNoteLabRefreshKey((k) => k + 1);
-                  trySwitchShellTab("notelab", "notelab");
-                }}
-                onStudySetGenerated={(setId) => {
-                  // Called by GenerateStudySetButton only after save is verified — navigate is safe.
-                  console.log("[NAV_AFTER_SAVE]", { destination: "study", setId, bookId, page: currentPage, storageKey: "recallSets_v1" });
-                  setSessionCardsCount((n) => n + 1);
-                  setLastRecallSetId(setId);
-                  setRecallLabRefreshKey((k) => k + 1);
-                  trySwitchShellTab("study", "study");
-                }}
+                onNoteSaved={handleNoteSaved}
+                onStudySetGenerated={handleStudySetGenerated}
                 onEvidenceClick={playThoughtUnit}
                 onOpenThoughtUnit={openThoughtUnitInRecallLab}
                 onStudyModelReady={handleStudyModelReady}
-                onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
+                onCrossLinkNavigate={handleCrossLinkNavigate}
                 tocItems={tocItemsForSearch}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
                 highlightedAnchorTexts={highlightedAnchorTexts}
                 activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
-                onSpeechSnippetFocus={(snippet) => setFocusSnippet(snippet)}
+                onSpeechSnippetFocus={handleSpeechSnippetFocus}
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
-                onOpenWhiteboard={() => setShowWhiteboardPanel(true)}
+                onOpenWhiteboard={handleOpenWhiteboardPanel}
                 onOpenExplainStep={handleOpenExplainStep}
-                onOpenExplainIt={() => handleOpenExplainIt()}
+                onOpenExplainIt={handleOpenExplainIt}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
-                onJumpToUnit={(id) => onPdfHighlightFocus(id)}
+                onJumpToUnit={handleJumpToUnit}
               />
             </div>
           </ErrorBoundary>
@@ -4730,8 +4783,8 @@ export default function ThoughtUnitReader() {
               currentPage={currentPage}
               pdfPageCount={pdfPageCount}
               onOpenChapter={(pageNumber) => {
-                syncToPage(pageNumber);
-                setViewMode("reader");
+                syncToPage(pageNumber, { reason: "TOC_JUMP" });
+                trySwitchShellTab("reader", "reader");
               }}
             />
           </ErrorBoundary>
@@ -5014,8 +5067,8 @@ export default function ThoughtUnitReader() {
                   filename={uploadedFile?.name}
                   tocNodes={syllabusToc}
                   pageCount={pdfPageCount || 1}
-                  onJumpToPage={(page) => handleSyllabusNodeClick({ id: `syllabus-${page}`, title: `p.${page}`, page, kind: "chapter" })}
-                  getPageText={(page) => pageTextByPage.get(`${bookId}:${page}`) ?? ""}
+                  onJumpToPage={handleChapterJumpToReader}
+                  getPageText={handleGetPageText}
                 />
               </div>
             )}
@@ -5055,7 +5108,7 @@ export default function ThoughtUnitReader() {
                 <ChapterDashboard
                   chapters={chapterProgressList}
                   course={courseProgress}
-                  onJumpToChapter={(page) => handleSyllabusNodeClick({ id: `chapter-${page}`, title: `p.${page}`, page, kind: "chapter" })}
+                  onJumpToChapter={handleChapterJumpToReader}
                   weakAreas={courseWeakAreas}
                   nextTopic={nextTopicRecommendation}
                   prerequisiteChain={coursePrerequisiteChain}
@@ -5094,7 +5147,7 @@ export default function ThoughtUnitReader() {
                 chapterProgressList={chapterProgressList}
                 courseProgress={courseProgress}
                 nextTopicRecommendation={nextTopicRecommendation}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                onNavigateToPage={handleStudyPlanNavigate}
               />
             </div>
           )}
@@ -5359,12 +5412,9 @@ export default function ThoughtUnitReader() {
                 bookId={bookId}
                 refreshKey={recallLabRefreshKey}
                 lastSetId={lastRecallSetId ?? undefined}
-                onNavigateToPage={(page) => {
-                  syncToPage(page);
-                  trySwitchShellTab("reader", "reader");
-                }}
+                onNavigateToPage={handleRecallNavigateToPage}
                 openUnit={recallLabOpenUnit}
-                onOpenUnitConsumed={() => setRecallLabOpenUnit(null)}
+                onOpenUnitConsumed={handleRecallOpenUnitConsumed}
                 onVisualize={visualizeThoughtUnit}
                 onOpenInWhiteboard={openThoughtUnitInWhiteboard}
                 onOpenExplainStep={openExplainStepForThoughtUnit}
@@ -5409,24 +5459,6 @@ export default function ThoughtUnitReader() {
           onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
           onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
           onPodcastScript={(script) => setStudyGuideScript(script)}
-        />
-      );
-    }
-
-    if (activeShellTab === "studyplan") {
-      return (
-        <StudyPlanLab
-          bookId={bookId}
-          bookTitle={uploadedFile?.name ?? undefined}
-          pageTextByPage={pageTextByPage}
-          uploadedFile={uploadedFile}
-          chapterProgressList={chapterProgressList}
-          courseProgress={courseProgress}
-          nextTopicRecommendation={nextTopicRecommendation}
-          onNavigateToPage={(page) => {
-            syncToPage(page);
-            trySwitchShellTab("reader", "reader");
-          }}
         />
       );
     }

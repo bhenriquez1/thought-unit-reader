@@ -346,6 +346,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
           )}
         </div>
       </div>
+      <ModeSelector mode={mode} onChange={handleModeChange} />
 
       {/* No search results */}
       {q && filteredNotes.length === 0 && (

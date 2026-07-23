@@ -10,6 +10,7 @@ import { useRelationshipStore } from '@/lib/relationshipSchema/store';
 import { useNoteLabStore } from '@/lib/cognitiveEngine/noteLabStore';
 import { useSurgeonEngineStore } from '@/lib/surgeonEngine/store';
 import { useExpertViewStore } from '@/lib/cognitive/expertViewStore';
+import { useApexEngineStore } from '@/lib/stores/apexEngineStore';
 import { usePageContextStore } from '@/lib/cognitive/pageContextStore';
 import { useReaderState } from '@/lib/cognitive/useReaderState';
 import type {
@@ -596,6 +597,22 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     const insights = getRankedInsights();
     return enrichInsightsWithApex(insights);
   }, [relations, clusters, rules, concepts, getRankedInsights]);
+
+  const recordPatternAttempt = useApexEngineStore(s => s.recordPatternAttempt);
+
+  const handleDrillClose = useCallback(() => setShowDrillMode(false), []);
+
+  const handleDrillComplete = useCallback((results: {
+    missedInsightIds: string[];
+    correctCount: number;
+    totalQuestions: number;
+  }) => {
+    for (const insight of rankedInsights) {
+      const patternId = insight.apexBadge?.patternName ?? insight.id;
+      const correct = !results.missedInsightIds.includes(insight.id);
+      recordPatternAttempt(patternId, correct, 0);
+    }
+  }, [rankedInsights, recordPatternAttempt]);
 
   // Get trap insights
   const trapInsights = useMemo(() => {
@@ -1601,8 +1618,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       {showDrillMode && (
         <DATDrillMode
           insights={rankedInsights}
-          onClose={() => setShowDrillMode(false)}
-          onComplete={() => {}}
+          onClose={handleDrillClose}
+          onComplete={handleDrillComplete}
         />
       )}
 
