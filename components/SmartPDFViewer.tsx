@@ -359,6 +359,8 @@ export interface SmartPDFViewerProps {
    * should call triggerPlay() on the speech panel to start playback from the primed cursor.
    */
   onPdfChipPlay?: (cursor: ReadingCursor) => void;
+  /** Fired once when PDF loading fails — used to surface an honest error state upstream. */
+  onLoadError?: (message: string) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -572,6 +574,7 @@ export default function SmartPDFViewer({
   authorizedHighlightIds,
   onPdfWordClick,
   onPdfChipPlay,
+  onLoadError,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -1187,6 +1190,13 @@ export default function SmartPDFViewer({
     hasError,
     retry
   } = usePDFLoading(toSameOrigin(fileUrl));
+
+  useEffect(() => {
+    if (hasError && onLoadError) {
+      onLoadError(loadingError ?? 'PDF failed to load');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasError]);
 
   // Enhanced sync integration
   const { 

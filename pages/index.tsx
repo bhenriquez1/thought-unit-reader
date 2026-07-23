@@ -4691,6 +4691,7 @@ export default function ThoughtUnitReader() {
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}
                   bookTitle={uploadedFile?.name}
+                  onPdfLoadError={() => setCanonicalLeftPanelDiagnostic('source pdf unavailable')}
                 />
 
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}

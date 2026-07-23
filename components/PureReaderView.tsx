@@ -148,6 +148,8 @@ interface PureReaderViewProps {
   onPdfWordClick?: (cursor: ReadingCursor) => void;
   /** Fired when the user presses the Play chip — should call seekToCursor + triggerPlay. */
   onPdfChipPlay?: (cursor: ReadingCursor) => void;
+  /** Fired once when PDF loading fails — forwarded from SmartPDFViewer to the page. */
+  onPdfLoadError?: (message: string) => void;
 }
 
 // Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
@@ -192,6 +194,7 @@ export default function PureReaderView({
   bookTitle,
   onPdfWordClick,
   onPdfChipPlay,
+  onPdfLoadError,
 }: PureReaderViewProps) {
   // Render counter — diagnostic for React #185 investigation.
   const prRenderCountRef = useRef(0);
@@ -732,6 +735,7 @@ export default function PureReaderView({
               roleLabelByConceptId={roleLabelByConceptId}
               onPdfWordClick={onPdfWordClick}
               onPdfChipPlay={onPdfChipPlay}
+              onLoadError={onPdfLoadError}
             />
           </div>
         </div>
