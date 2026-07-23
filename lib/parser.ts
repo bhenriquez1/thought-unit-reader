@@ -44,6 +44,40 @@ export function parseIntoUnits(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+/** Convert a single page's extracted text into balanced thought-unit objects.
+ *  Used by incremental PDF processing so units appear in state as each
+ *  batch of pages is extracted, rather than after the full document. */
+export function chunkTextToUnits(text: string): Array<{ text: string }> {
+  const sentences = parseIntoUnits(text);
+  if (sentences.length === 0) return [];
+
+  const TARGET = 6;
+  const MIN = 3;
+  const MAX = 9;
+  const units: Array<{ text: string }> = [];
+  let i = 0;
+
+  while (i < sentences.length) {
+    const remaining = sentences.length - i;
+    if (remaining <= MIN && units.length > 0) {
+      const tail = sentences.slice(i).filter((s) => s.trim().length > 5);
+      if (tail.length > 0) {
+        const last = units[units.length - 1];
+        units[units.length - 1] = { text: last.text + ' ' + tail.join(' ') };
+      }
+      break;
+    }
+    let size = TARGET;
+    if (remaining < TARGET + MIN) size = remaining;
+    else if (remaining <= MAX) size = Math.ceil(remaining / 2);
+    const chunk = sentences.slice(i, i + size).filter((s) => s.trim().length > 5);
+    if (chunk.length > 0) units.push({ text: chunk.join(' ') });
+    i += size;
+  }
+
+  return units;
+}
+
 export function parseTextToUnits(text: string): string[][] {
   if (!text) return [[]];
 

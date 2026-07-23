@@ -70,17 +70,26 @@ async function getTesseractWorker(): Promise<any> {
 }
 
 /**
- * OCR a data URL image and return extracted text with confidence
+ * OCR a data URL image and return extracted text with confidence.
+ * Passing signal allows the caller to cancel before recognition starts;
+ * throws AbortError when cancelled so callers can distinguish it from
+ * OCR failures.
  */
-export async function ocrDataUrlToText(dataUrl: string): Promise<{ text: string; confidence: number }> {
+export async function ocrDataUrlToText(
+  dataUrl: string,
+  signal?: AbortSignal,
+): Promise<{ text: string; confidence: number }> {
+  if (signal?.aborted) throw new DOMException('OCR cancelled', 'AbortError');
   try {
     const worker = await getTesseractWorker();
+    if (signal?.aborted) throw new DOMException('OCR cancelled', 'AbortError');
     const { data } = await worker.recognize(dataUrl);
     return {
       text: data.text || '',
       confidence: data.confidence || 0
     };
   } catch (error) {
+    if ((error as any)?.name === 'AbortError') throw error;
     console.error('[PageIntelligence] OCR recognition failed:', error);
     return { text: '', confidence: 0 };
   }
@@ -182,6 +191,8 @@ export interface ExtractPageTextOptions {
   mixedLengthRatio?: number;
   onOCRStart?: () => void;
   onOCRComplete?: (text: string, confidence: number) => void;
+  /** Cancels in-flight OCR when aborted. Native-text extraction is unaffected. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -203,7 +214,8 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     minTextLength = MIN_TEXT_LENGTH,
     mixedLengthRatio = 0.75,
     onOCRStart,
-    onOCRComplete
+    onOCRComplete,
+    signal,
   } = options;
 
   // Step 1: Try native text extraction
@@ -228,7 +240,10 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     console.warn(`[PageIntelligence] Native text extraction failed for page ${pageNumber}:`, error);
   }
 
-  // Step 2: Check if OCR is enabled
+  // Step 2: Check if OCR is enabled or already cancelled
+  if (signal?.aborted) {
+    return { pageNumber, text: '', nativeText, ocrText: '', mergedText: '', source: 'native' as PageSource, confidence: 0 };
+  }
   if (!ocrEnabled) {
     return {
       pageNumber,
@@ -269,7 +284,7 @@ ${cachedText}`.trim()
     onOCRStart?.();
 
     const imageDataUrl = await getPageImageDataUrl();
-    const ocrResult = await ocrDataUrlToText(imageDataUrl);
+    const ocrResult = await ocrDataUrlToText(imageDataUrl, signal);
     const sanitizedOcrText = sanitizeExtractionText(ocrResult.text);
 
     // Cache the result
@@ -303,6 +318,7 @@ ${sanitizedOcrText}`.trim()
       confidence: ocrResult.confidence
     };
   } catch (error) {
+    if ((error as any)?.name === 'AbortError') throw error;
     console.error(`[PageIntelligence] OCR failed for page ${pageNumber}:`, error);
     return {
       pageNumber,

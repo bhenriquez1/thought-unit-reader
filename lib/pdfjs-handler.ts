@@ -145,6 +145,114 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
   return pages;
 }
 
+// ---------------------------------------------------------------------------
+// Incremental page extraction — fires onBatch after every batchSize pages.
+// Callers can append thought units to React state progressively rather than
+// blocking until the entire PDF is processed.
+// ---------------------------------------------------------------------------
+
+export interface IncrementalExtractOptions {
+  signal?: AbortSignal;
+  onProgress?: (current: number, total: number) => void;
+  onBatch?: (pages: Array<{ pageIndex: number; text: string }>, totalPages: number) => void | Promise<void>;
+  batchSize?: number;
+  /** 1-indexed page to extract first (before the sequential scan begins).
+   *  Lets the caller show thought units for the currently visible page
+   *  immediately, before pages 1…(priorityPage-1) are extracted. */
+  priorityPage?: number;
+  /** Called at each batch boundary. Return a Promise to pause until resumed;
+   *  return void/undefined to continue immediately. Lets callers implement
+   *  pause/resume without aborting and restarting the full extraction. */
+  onPauseCheck?: () => Promise<void> | void;
+}
+
+export async function extractPageTextsIncremental(
+  file: File,
+  options: IncrementalExtractOptions = {},
+): Promise<void> {
+  const pdfjs = await getPdfjs();
+  if (!pdfjs) throw new Error("pdfjs failed to load");
+  if (options.signal?.aborted) throw new Error("PDF extraction cancelled");
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  const header = new TextDecoder().decode(data.slice(0, 5));
+  if (!header.startsWith('%PDF-')) {
+    throw new Error("File does not appear to be a valid PDF (missing PDF header)");
+  }
+
+  const loadingTask: any = (pdfjs as any).getDocument({
+    data,
+    verbosity: 0,
+    maxImageSize: 1024 * 1024,
+    disableFontFace: true,
+  });
+
+  const doc = await loadingTask.promise;
+  if (!doc || typeof doc.numPages !== 'number' || doc.numPages < 1) {
+    throw new Error("Invalid PDF document - no readable pages found");
+  }
+
+  const { batchSize = 10, onBatch, signal, onProgress, priorityPage, onPauseCheck } = options;
+  const totalPages: number = doc.numPages;
+
+  async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
+    try {
+      const page = await Promise.race([
+        doc.getPage(i),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Page ${i} timed out`)), 10_000),
+        ),
+      ]);
+      const content = await page.getTextContent();
+      const normalizedItems = (content.items as any[]).map((item: any) => ({
+        str: typeof item?.str === 'string' ? item.str
+          : typeof item?.unicode === 'string' ? item.unicode
+          : typeof item?.text === 'string' ? item.text
+          : '',
+        transform: item?.transform,
+      }));
+      return { pageIndex: i, text: buildStructuredPageText(normalizedItems) };
+    } catch {
+      return { pageIndex: i, text: '' };
+    }
+  }
+
+  // Extract the priority page first so callers can populate the visible
+  // page's thought units before the sequential scan reaches it.
+  const isPriority = priorityPage && priorityPage >= 1 && priorityPage <= totalPages;
+  if (isPriority && !signal?.aborted) {
+    const entry = await extractOnePage(priorityPage!);
+    await onBatch?.([entry], totalPages);
+    await onPauseCheck?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  // Sequential scan — skip the priority page (already done above).
+  let batch: Array<{ pageIndex: number; text: string }> = [];
+  let scanned = 0;
+
+  for (let i = 1; i <= totalPages; i++) {
+    if (signal?.aborted) break;
+    if (isPriority && i === priorityPage) continue;
+
+    scanned++;
+    onProgress?.(scanned, totalPages - (isPriority ? 1 : 0));
+
+    batch.push(await extractOnePage(i));
+
+    if (batch.length >= batchSize || i === totalPages) {
+      if (!signal?.aborted) {
+        await onBatch?.(batch, totalPages);
+        await onPauseCheck?.();
+      }
+      batch = [];
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  try { await doc.cleanup?.(); await doc.destroy?.(); } catch { /* ignore */ }
+}
+
 function rethrowFriendly(error: unknown): never {
   console.error("Error extracting text from PDF:", error);
 
