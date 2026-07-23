@@ -1665,7 +1665,7 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
+    const isProtected = !["reader", "toc", "syllabus", "podcast", "elena"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
@@ -4538,7 +4538,7 @@ export default function ThoughtUnitReader() {
                   bookTitle={uploadedFile?.name}
                 />
 
-                {/* Ask About This Page — floats over PDF when Elena mode is active */}
+                {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
                 {ELENA_ENABLED && (
                   <div className="absolute bottom-4 right-4 z-20">
                     <AskPagePanel
