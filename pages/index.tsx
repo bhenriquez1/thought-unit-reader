@@ -131,8 +131,10 @@ import {
   parseBookWithChapters,
   detectWhiteboardSections,
   containsDiagramOrFormula,
+  splitIntoChapters,
+  chunkTextToUnits,
 } from "@/lib/parser";
-import { type ExtractOptions } from "@/lib/pdfjs-handler";
+import { type ExtractOptions, extractPageTextsIncremental } from "@/lib/pdfjs-handler";
 import {
   saveDocumentMeta,
   saveDocumentFile,
@@ -3233,9 +3235,14 @@ export default function ThoughtUnitReader() {
 
     setBookProcessingStatus({ phase: 'processing', progress: 'Extracting text...', pagesProcessed: 0, totalPages: 0 });
 
+    // Accumulate all page texts for TOC generation after the full extraction.
+    const allPageTexts: Array<{ pageIndex: number; text: string }> = [];
+    let seenContent = false;
+
     try {
-      const extractOptions: ExtractOptions = {
+      await extractPageTextsIncremental(file, {
         signal: ac.signal,
+        batchSize: 10,
         onProgress: (current, total) => {
           if (!ac.signal.aborted) {
             setBookProcessingStatus(prev => ({
@@ -3246,40 +3253,55 @@ export default function ThoughtUnitReader() {
             }));
           }
         },
-      };
+        onBatch: (pages, totalPages) => {
+          if (ac.signal.aborted) return;
 
-      const { parsedUnits, chapters } = await parseBookWithChapters(
-        file,
-        (msg) => { if (!ac.signal.aborted) setBookProcessingStatus(prev => ({ ...prev, progress: msg })); },
-        extractOptions,
-      );
+          allPageTexts.push(...pages);
+
+          // Convert this batch to thought units and append them immediately so
+          // the left panel becomes usable before the full document is processed.
+          const newUnits = pages.flatMap(p => chunkTextToUnits(p.text)) as ThoughtUnit[];
+          if (newUnits.length > 0) {
+            setThoughtUnits(prev => [...prev, ...newUnits]);
+            if (!seenContent) {
+              seenContent = true;
+              setSampleText(newUnits[0]?.text ?? '');
+            }
+          }
+
+          setBookProcessingStatus(prev => ({
+            ...prev,
+            pagesProcessed: allPageTexts.length,
+            totalPages,
+            progress: `Indexed ${allPageTexts.length} of ${totalPages} pages`,
+          }));
+        },
+      });
 
       if (ac.signal.aborted) return;
 
-      const normalized = normalizeParsedUnits(parsedUnits);
-      if (!normalized || normalized.length === 0) {
+      if (!seenContent) {
         throw new Error("No readable content found in PDF");
       }
 
-      setThoughtUnits(normalized);
-      setSampleText(normalized[0]?.text ?? "");
-
-      // Fallback TOC from parsed chapters — only if outline extraction produced nothing
+      // Fallback TOC from accumulated page texts — only if outline extraction produced nothing.
       setTimeout(() => {
         if (ac.signal.aborted) return;
         const currentToc = useTocStore.getState().getToc(documentId);
         if (!currentToc || currentToc.items.length === 0) {
           console.log('📑 No TOC from outline - generating fallback from parsed content');
-          let fallbackToc: TOCEntry[] = [];
-          if (chapters && chapters.length > 0) {
-            fallbackToc = chapters.map((ch: any, idx: number) => ({
+          const fullText = allPageTexts
+            .sort((a, b) => a.pageIndex - b.pageIndex)
+            .map(p => p.text)
+            .join('\n\n');
+          const chapters = splitIntoChapters(fullText);
+          if (chapters.length > 0) {
+            const fallbackToc: TOCEntry[] = chapters.map((ch, idx) => ({
               title: ch.title || `Chapter ${idx + 1}`,
               pageNumber: ch.page || idx + 1,
               level: 0,
               confidence: 0.6,
             }));
-          }
-          if (fallbackToc.length > 0) {
             setTableOfContents(fallbackToc);
             const tocItems = fallbackToc.map((entry: TOCEntry, idx: number) => ({
               id: `toc_${idx}_${Date.now()}`,
@@ -3304,9 +3326,8 @@ export default function ThoughtUnitReader() {
       setShowWhiteboardPanel(false);
 
       setBookProcessingStatus({ phase: 'done', progress: 'Ready', pagesProcessed: 0, totalPages: 0 });
-      console.log("✅ Background book processing complete:", {
-        thoughtUnits: normalized.length,
-        chapters: chapters.length,
+      console.log('✅ Background book processing complete:', {
+        pages: allPageTexts.length,
         fileName: file.name,
       });
 
