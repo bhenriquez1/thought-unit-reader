@@ -89,10 +89,15 @@ export class PDFLoadingManager {
     options: PDFLoadOptions, 
     attempt: number = 1
   ): Promise<PDFLoadResult> {
-    // Blob URLs that fail once will keep failing — revoked blobs don't recover.
-    // Cap retries at 1 for blob sources to avoid 90+ second wait on dead blobs.
-    const maxRetries = url.startsWith('blob:') ? 1 : (options.retryCount || 3);
-    const timeout = options.timeout || 30000;
+    // Allow a generous 5-minute timeout for large textbooks. The old 30-second
+    // hard cap timed out 300–700 page PDFs before PDF.js finished parsing the
+    // cross-reference table. Revoked blob URLs still fail fast (within the
+    // first fetch), so a larger ceiling does not extend the "dead blob" wait.
+    const isBlob = url.startsWith('blob:');
+    // Blob: attempt 1 — direct URL (memory-efficient); attempt 2 — disable range
+    // requests as a fallback for browsers that report status 0 on blob range reqs.
+    const maxRetries = isBlob ? 2 : (options.retryCount || 3);
+    const timeout = options.timeout || (isBlob ? 300_000 : 60_000);
 
     try {
       // Update state to loading
@@ -104,29 +109,26 @@ export class PDFLoadingManager {
 
       console.log(`📄 PDFLoadingManager: Loading attempt ${attempt}/${maxRetries} for ${url.slice(0, 50)}...`);
 
-      // Blob URLs don't support HTTP range requests — the browser returns status 0
-      // for range requests on blob: URLs in some environments, which PDF.js v3
-      // interprets as "Unexpected server response (0)". Fix: read the blob into a
-      // Uint8Array and pass it as {data} instead of {url}. This bypasses the
-      // range-request layer entirely and matches how pdfjs-handler.ts loads files.
-      let documentSource: { url: string } | { data: Uint8Array };
-      if (url.startsWith('blob:')) {
-        try {
-          const resp = await fetch(url);
-          if (!resp.ok) throw new Error(`Blob fetch failed: ${resp.status}`);
-          const buf = await resp.arrayBuffer();
-          documentSource = { data: new Uint8Array(buf) };
-          console.log(`📄 PDFLoadingManager: Blob URL converted to ArrayBuffer (${buf.byteLength} bytes)`);
-        } catch (fetchErr) {
-          throw new Error(`Failed to read blob URL: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
-        }
+      // Blob URL strategy:
+      // Attempt 1: Pass the blob URL directly to PDF.js. PDF.js v4 issues byte-range
+      //   requests against blob: URLs, which work in Chrome 90+/Firefox 78+/Safari 14+.
+      //   This is memory-efficient — no second ArrayBuffer copy of the full binary.
+      // Attempt 2 (fallback): Disable range requests so PDF.js fetches the entire blob
+      //   in one shot. Covers environments where blob: range requests return status 0.
+      //   Memory cost is one full ArrayBuffer, but at least the PDF opens.
+      let documentSourceOpts: Record<string, unknown>;
+      if (isBlob) {
+        documentSourceOpts = attempt === 1
+          ? { url, disableRange: false, rangeChunkSize: 65536 }
+          : { url, disableRange: true };
+        console.log(`📄 PDFLoadingManager: Blob URL — attempt ${attempt} (${attempt === 1 ? 'range-request mode' : 'full-fetch fallback'})`);
       } else {
-        documentSource = { url };
+        documentSourceOpts = { url };
       }
 
-      // Create loading task with timeout
+      // Create loading task
       const loadingTask = pdfjsLib.getDocument({
-        ...documentSource,
+        ...documentSourceOpts,
         cMapUrl: '/cmaps/',
         cMapPacked: true,
         disableStream: false,
@@ -138,15 +140,19 @@ export class PDFLoadingManager {
 
       // Set up progress tracking
       loadingTask.onProgress = (progress) => {
-        const progressPercent = Math.round((progress.loaded / progress.total) * 70) + 30; // 30-100%
+        const progressPercent = progress.total
+          ? Math.round((progress.loaded / progress.total) * 70) + 30
+          : Math.min(attempt * 10 + 20, 90);
         this.updateState(url, { progress: progressPercent });
         options.onProgress?.(progressPercent);
       };
 
-      // Race between loading and timeout
+      // Race between loading and timeout.
+      // 5-minute ceiling lets large textbooks (700+ pages) finish parsing.
+      // Dead blob URLs fail quickly on the first fetch — they don't need the timeout.
       const documentPromise = loadingTask.promise;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`PDF loading timeout after ${timeout}ms`)), timeout);
+        setTimeout(() => reject(new Error(`PDF loading timeout after ${timeout / 1000}s`)), timeout);
       });
 
       const document = await Promise.race([documentPromise, timeoutPromise]);

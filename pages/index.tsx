@@ -3398,6 +3398,22 @@ export default function ThoughtUnitReader() {
 
       setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
 
+      // Pre-flight storage check: warn if the browser may not have enough quota.
+      // navigator.storage.persist() requests durable storage (prevents eviction).
+      if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+      if (navigator.storage?.estimate) {
+        navigator.storage.estimate().then(est => {
+          const needed = file.size;
+          const available = (est.quota ?? 0) - (est.usage ?? 0);
+          if (available > 0 && available < needed * 1.2) {
+            console.warn(
+              `[storage] Low quota: need ~${(needed / 1e6).toFixed(0)} MB, ` +
+              `available ~${(available / 1e6).toFixed(0)} MB. IDB save may fail.`
+            );
+          }
+        }).catch(() => {});
+      }
+
       // Saves PDF binary and metadata to IndexedDB for durable local storage.
       // Returns a promise that resolves once the binary is confirmed written.
       // Callers must await this before committing the localStorage library entry.
