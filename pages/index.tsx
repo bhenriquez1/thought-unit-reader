@@ -2002,8 +2002,12 @@ export default function ThoughtUnitReader() {
           { label: "Clinical Pearl", content: activeUnit.category === "clinical" ? activeUnit.exactText : activeUnit.reason },
           { label: "Common Mistake", content: "Reading the page summary without anchoring this exact source text." },
           { label: "Connection Map", content: neighbors || "No neighboring canonical units available yet." },
-          { label: “Case-Style Recall Questions”, content: `In a case, when would “${activeUnit.title}” change the answer?` },
-          { label: "Recall Questions", content: `1. Why is this a ${activeUnit.importanceLabel}?\n2. What detail in the source text proves it?\n3. What would you confuse it with?` },
+          { label: "Case-Style Recall Questions", content: `In a case, when would "${activeUnit.title}" change the answer?` },
+          { label: "Recall Questions", content: [
+            `Why is this a ${activeUnit.importanceLabel}?`,
+            "What detail in the source text proves it?",
+            "What would you confuse it with?",
+          ].join("\n") },
           { label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` },
         ];
         note.visualAnchors = canonicalLeftPanelUnits.map((u) => ({
@@ -2523,7 +2527,7 @@ export default function ThoughtUnitReader() {
         { label: "Clinical Pearl", content: unit.category === "clinical" ? unit.exactText : unit.reason },
         { label: "Common Mistake", content: "Using page-level summary instead of this exact thought unit." },
         { label: "Connection Map", content: canonicalLeftPanelUnits.slice(0, 5).map((u) => `• ${u.importanceLabel}: ${u.title}`).join("\n") },
-        { label: "Case Recall", content: `When would “${unit.title}” change a decision?` },
+        { label: "Case Recall", content: `When would "${unit.title}" change a decision?` },
         { label: "Recall Questions", content: `1. What makes this high-value?\n2. What is the key phrase?\n3. What trap does it prevent?` },
         { label: "Source", content: `Page ${unit.page} · thoughtUnitId: ${unit.id}` },
       ];
