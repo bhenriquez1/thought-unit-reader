@@ -2,9 +2,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatTime, isTimeWarning, DAT_SECTIONS } from "@/types/apex-exam";
 import type { GeneratedExam } from "@/lib/apex/examGenerator";
 import type { DATQuestion } from "@/types/apex-exam";
+import { loadPendingExam, deletePendingExam } from "@/lib/db/examStore";
+import { saveAttempt } from "@/lib/datApex/idbStore";
+import type { DatAttempt } from "@/lib/datApex/types";
+import type { DatSectionId } from "@/lib/datApex/blueprint";
 
 /* ─── Section display metadata ───────────────────────────────────────────────── */
 
@@ -56,6 +61,7 @@ interface ProctorState {
   startTime:           string;
   breakTimeRemaining:  number;
   isProctored:         boolean; // Prometric/strict mode — no pause, section-locked
+  pendingExamId:       string | null; // IDB key for cleanup on submit
 }
 
 /* ─── Helpers ────────────────────────────────────────────────────────────────── */
@@ -83,6 +89,7 @@ function sectionColors(sectionId: string) {
 /* ─── Component ──────────────────────────────────────────────────────────────── */
 
 export default function ExamProctorPage() {
+  const router = useRouter();
   const [phase,           setPhase]           = useState<ExamPhase>("loading");
   const [state,           setState]           = useState<ProctorState | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -100,14 +107,30 @@ export default function ExamProctorPage() {
   /* ─── Load exam ───────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    const raw = localStorage.getItem("currentExam");
-    if (!raw) return;
+    const params      = new URLSearchParams(window.location.search);
+    const examId      = params.get("examId");
+    const isPrometric = params.get("prometric") === "1";
 
-    try {
-      const exam: GeneratedExam = JSON.parse(raw);
+    async function loadExam() {
+      let exam: GeneratedExam | null = null;
+
+      // Primary: IDB by examId (atomic, survives hard reload)
+      if (examId) {
+        try { exam = await loadPendingExam(examId); } catch { /* fall through */ }
+      }
+
+      // Fallback: legacy localStorage (written by generator as backward-compat)
+      if (!exam) {
+        const raw = localStorage.getItem("currentExam");
+        if (raw) {
+          try { exam = JSON.parse(raw) as GeneratedExam; } catch { /* bad JSON */ }
+        }
+      }
+
+      if (!exam) return; // "No Exam Found" screen renders
+
       const sections    = groupBySections(exam);
-      const isProctored = !!exam.config.strictMode ||
-        new URLSearchParams(window.location.search).get("prometric") === "1";
+      const isProctored = !!exam.config.strictMode || isPrometric;
 
       const s: ProctorState = {
         exam,
@@ -121,13 +144,14 @@ export default function ExamProctorPage() {
         startTime:            new Date().toISOString(),
         breakTimeRemaining:   BREAK_DURATION_SECS,
         isProctored,
+        pendingExamId:        examId,
       };
       setState(s);
       stateRef.current = s;
       setPhase("examining");
-    } catch {
-      // Stay in loading — "No Exam Found" screen renders
     }
+
+    loadExam();
   }, []);
 
   /* ─── Submit exam ─────────────────────────────────────────────────────────── */
@@ -137,12 +161,15 @@ export default function ExamProctorPage() {
     if (!s) return;
     setPhase("submitting");
 
+    const endTime   = new Date().toISOString();
+    const attemptId = `attempt-${Date.now()}`;
+
     const results = {
-      id:                   `attempt-${Date.now()}`,
+      id:                   attemptId,
       userId:               "demo-user",
       examConfigId:         s.exam.id,
       startTime:            s.startTime,
-      endTime:              new Date().toISOString(),
+      endTime,
       status:               "completed" as const,
       currentSectionIndex:  s.currentSectionIdx,
       currentQuestionIndex: s.currentQuestionIdx,
@@ -152,20 +179,50 @@ export default function ExamProctorPage() {
         selectedAnswer: answer as "A" | "B" | "C" | "D" | "E",
         timeSpent:      0,
         flagged:        s.flagged.has(questionId),
-        timestamp:      new Date().toISOString(),
+        timestamp:      endTime,
       })),
       sectionTimes: [],
-      lastSaved:    new Date().toISOString(),
+      lastSaved:    endTime,
       saveVersion:  1,
-      // Embed exam so results page can read it after currentExam is cleared
       _exam: s.exam,
     };
 
     localStorage.setItem("examResults", JSON.stringify(results));
     localStorage.removeItem("currentExam");
     localStorage.removeItem("examProgress");
-    window.location.href = "/apex/results";
-  }, []);
+
+    // Build sectionId lookup for DatAttempt responses
+    const sectionIdByQuestion = new Map<string, string>();
+    for (const sg of s.sections) {
+      for (const q of sg.questions) sectionIdByQuestion.set(q.id, sg.sectionId);
+    }
+
+    const attempt: DatAttempt = {
+      id:          attemptId,
+      testFormId:  s.exam.id,
+      mode:        s.exam.config.allowPause ? "practice" : "simulation",
+      state:       "submitted",
+      responses:   Object.entries(s.responses).map(([questionId, answer]) => ({
+        questionId,
+        sectionId:        (sectionIdByQuestion.get(questionId) ?? "survey-natural-sciences") as DatSectionId,
+        selectedChoiceId: answer as "A" | "B" | "C" | "D" | "E",
+        flagged:          s.flagged.has(questionId),
+      })),
+      timeRemainingSeconds: Object.fromEntries(
+        s.sections.map((sg, idx) => [sg.sectionId, idx === s.currentSectionIdx ? s.sectionTimeRemaining : 0]),
+      ),
+      startedAt:   s.startTime,
+      submittedAt: endTime,
+    };
+
+    // Fire-and-forget: persist attempt to IDB and clean up pending exam entry
+    saveAttempt(attempt).catch(() => { /* non-fatal — results are in localStorage */ });
+    if (s.pendingExamId) {
+      deletePendingExam(s.pendingExamId).catch(() => { /* non-fatal */ });
+    }
+
+    router.push("/apex/results");
+  }, [router]);
 
   useEffect(() => { submitRef.current = handleSubmitExam; }, [handleSubmitExam]);
 
