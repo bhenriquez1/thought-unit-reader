@@ -132,6 +132,12 @@ import {
   containsDiagramOrFormula,
 } from "@/lib/parser";
 import { type ExtractOptions } from "@/lib/pdfjs-handler";
+import {
+  saveDocumentMeta,
+  saveDocumentFile,
+  getDocumentFile,
+  deleteDocument,
+} from "@/lib/db/documentStore";
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
@@ -1394,8 +1400,36 @@ export default function ThoughtUnitReader() {
 
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
-    { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
+    { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string }[]
   >([]);
+  // Entry shown when a local book's binary can't be found in IndexedDB
+  const [missingPDFEntry, setMissingPDFEntry] = useState<{ name: string; documentId: string } | null>(null);
+
+  // Restore local (guest) library from localStorage on mount.
+  // Firebase library is restored via the auth useEffect; local entries live here.
+  const LOCAL_LIBRARY_KEY = 'avrrio-local-library';
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_LIBRARY_KEY);
+      if (raw) {
+        const entries = JSON.parse(raw) as Array<{
+          id: string; name: string; uploadedAt: string; localDocumentId: string;
+        }>;
+        if (Array.isArray(entries) && entries.length > 0) {
+          setPdfLibrary(prev => {
+            // Merge: local entries first, avoid duplicates by id
+            const existingIds = new Set(prev.map(e => e.id));
+            const fresh = entries
+              .filter(e => e.id && e.name && e.localDocumentId && !existingIds.has(e.id))
+              .map(e => ({ id: e.id, name: e.name, url: '', uploadedAt: e.uploadedAt, isLocal: true, localDocumentId: e.localDocumentId }));
+            return fresh.length > 0 ? [...fresh, ...prev] : prev;
+          });
+        }
+      }
+    } catch {
+      // Non-fatal — stale or corrupted entry; user just re-uploads
+    }
+  }, []);
 
   // Attachments + modal
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -3352,13 +3386,50 @@ export default function ThoughtUnitReader() {
 
     try {
       let url: string;
-      let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean };
+      let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string };
 
       // Check if we're using the bypass (mock user) or real Firebase
       const isUsingBypass = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
       const canUseFirebase = firebaseConnected && user && !isUsingBypass;
 
       setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
+
+      // Saves PDF binary and metadata to IndexedDB for durable local storage.
+      // Fires after the viewer opens — never blocks rendering.
+      const persistToIDB = (documentId: string) => {
+        const uploadedAt = new Date().toISOString();
+        const meta = {
+          documentId,
+          title: file.name,
+          mimeType: file.type || 'application/pdf',
+          byteLength: file.size,
+          createdAt: uploadedAt,
+          updatedAt: uploadedAt,
+          processingStatus: 'pending' as const,
+          schemaVersion: 1,
+        };
+        saveDocumentMeta(meta).catch(err => console.warn('IDB meta save failed:', err));
+        file.arrayBuffer().then(buf => {
+          const data = new Uint8Array(buf);
+          return saveDocumentFile(documentId, data)
+            .then(() => saveDocumentMeta({ ...meta, processingStatus: 'complete', updatedAt: new Date().toISOString() }))
+            .catch(err => console.warn('IDB binary save failed:', err));
+        }).catch(err => console.warn('IDB binary read failed:', err));
+      };
+
+      // Persists local library entries across sessions (blob URLs are session-only,
+      // so we store metadata only; the binary lives in IndexedDB).
+      const persistLocalLibraryEntry = (entry: { id: string; name: string; uploadedAt: string; localDocumentId: string }) => {
+        try {
+          const raw = localStorage.getItem(LOCAL_LIBRARY_KEY);
+          const existing = raw ? (JSON.parse(raw) as typeof entry[]) : [];
+          // Cap at 50 entries; drop oldest first
+          const updated = [entry, ...existing.filter(e => e.id !== entry.id)].slice(0, 50);
+          localStorage.setItem(LOCAL_LIBRARY_KEY, JSON.stringify(updated));
+        } catch {
+          // Non-fatal — localStorage may be full or disabled
+        }
+      };
 
       if (canUseFirebase) {
         try {
@@ -3372,28 +3443,24 @@ export default function ThoughtUnitReader() {
           };
         } catch (error) {
           console.error("Firebase upload failed, falling back to local:", error);
-          // Fall back to local mode if Firebase upload fails
+          // Firebase failed — save locally with IDB binary for durability
+          const documentId = crypto.randomUUID();
           url = URL.createObjectURL(file);
-          libEntry = {
-            id: String(Date.now()),
-            name: file.name,
-            url,
-            uploadedAt: new Date().toISOString(),
-            isLocal: true,
-          };
+          const uploadedAt = new Date().toISOString();
+          libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
+          persistToIDB(documentId);
+          persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
         }
       } else {
-        // Guest mode or bypass: blob URL + session library
+        // Guest mode or bypass: blob URL for this session + IDB binary for future sessions
+        const documentId = crypto.randomUUID();
         url = URL.createObjectURL(file);
-        libEntry = {
-          id: String(Date.now()),
-          name: file.name,
-          url,
-          uploadedAt: new Date().toISOString(),
-          isLocal: true,
-        };
+        const uploadedAt = new Date().toISOString();
+        libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
+        persistToIDB(documentId);
+        persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
       }
 
       setFileUrl(url);
@@ -3529,28 +3596,51 @@ export default function ThoughtUnitReader() {
 
   /* =========================================================================
      🔹 Load PDF from Library
+     For local entries (localDocumentId set): reconstructs a session blob URL
+     from the IndexedDB binary. Falls back to the stored URL for Firebase entries.
   ========================================================================= */
-  const handleLoadPDF = (url: string, name?: string) => {
-    // Clear stale per-page text cache so the new document never inherits
-    // text extracted from the previous one. Reset page position too.
+  const handleLoadPDF = useCallback(async (url: string, name?: string, localDocumentId?: string) => {
     setPageTextByPage(new Map());
     setCurrentPage(1);
     setThoughtUnits([]);
     setCurrentThoughtUnit(1);
-    // Reset global sync store — prevents a stale persisted page from a previous
-    // session overriding the fresh page-1 state via the global sync subscription.
     updateSync({ page: 1, unitIndex: 1 }, 'manual');
     if (name) setBookId(name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
-    setFileUrl(url);
     setShowLibrary(false);
     setViewMode("reader");
-    generateTOC(url).then(setTableOfContents).catch(() => {});
-  };
+    setMissingPDFEntry(null);
+
+    if (localDocumentId) {
+      // Always reconstruct blob URL from IDB — stored blob URLs are session-scoped
+      // and are invalid after page refresh or when opened in a new tab.
+      try {
+        const data = await getDocumentFile(localDocumentId);
+        if (!data) {
+          setMissingPDFEntry({ name: name || 'this book', documentId: localDocumentId });
+          return;
+        }
+        const blob = new Blob([data], { type: 'application/pdf' });
+        const sessionUrl = URL.createObjectURL(blob);
+        setFileUrl(sessionUrl);
+        generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
+        // Re-run background processing to rebuild thought units
+        const docId = (name || '').replace(/\.[Pp][Dd][Ff]$/, '') || 'book';
+        startBookProcessing(new File([blob], name || 'document.pdf', { type: 'application/pdf' }), docId);
+      } catch (err) {
+        console.error('Failed to load PDF from IndexedDB:', err);
+        setMissingPDFEntry({ name: name || 'this book', documentId: localDocumentId });
+      }
+    } else {
+      // Firebase URL or other durable URL — use directly
+      setFileUrl(url);
+      generateTOC(url).then(setTableOfContents).catch(() => {});
+    }
+  }, [startBookProcessing, updateSync]);
 
   /* =========================================================================
      🔹 Delete PDF
   ========================================================================= */
-  const handleDeletePDF = async (id: string, name: string, isLocal?: boolean) => {
+  const handleDeletePDF = async (id: string, name: string, isLocal?: boolean, localDocumentId?: string) => {
     if (!confirm(`Delete ${name}?`)) return;
 
     if (firebaseConnected && user && !isLocal) {
@@ -3558,6 +3648,18 @@ export default function ThoughtUnitReader() {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
       setPdfLibrary((prev) => prev.filter((p) => p.id !== id));
+      // Remove binary from IndexedDB
+      if (localDocumentId) {
+        deleteDocument(localDocumentId).catch(err => console.warn('IDB delete failed:', err));
+      }
+      // Remove from localStorage library list
+      try {
+        const raw = localStorage.getItem(LOCAL_LIBRARY_KEY);
+        if (raw) {
+          const entries = JSON.parse(raw) as Array<{ id: string }>;
+          localStorage.setItem(LOCAL_LIBRARY_KEY, JSON.stringify(entries.filter(e => e.id !== id)));
+        }
+      } catch { /* non-fatal */ }
     }
   };
 
@@ -4452,9 +4554,30 @@ export default function ThoughtUnitReader() {
         return (
           <div className="h-full grid place-items-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
             <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-white/5 p-8 text-center backdrop-blur-xl">
-              <h2 className="text-2xl font-bold text-blue-200">Upload your first textbook</h2>
-              <p className="mt-2 text-slate-300">Reader + Panel unlock after textbook upload. You can still use the Syllabus tab independently.</p>
-              <p className="mt-4 text-sm text-slate-400">No PDF pane, panel, or page navigation is shown until a real book is loaded.</p>
+              {missingPDFEntry ? (
+                <>
+                  <h2 className="text-2xl font-bold text-amber-300">Original PDF file is missing</h2>
+                  <p className="mt-2 text-slate-300">
+                    <span className="font-medium text-white">{missingPDFEntry.name}</span> was not found in local storage.
+                    This can happen after clearing browser data or using a different device.
+                  </p>
+                  <p className="mt-3 text-sm text-slate-400">
+                    Re-upload the file to reconnect it. Your notes, highlights, and progress for this book are preserved.
+                  </p>
+                  <button
+                    onClick={() => setMissingPDFEntry(null)}
+                    className="mt-4 text-xs text-slate-500 underline hover:text-slate-300"
+                  >
+                    Dismiss
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold text-blue-200">Upload your first textbook</h2>
+                  <p className="mt-2 text-slate-300">Reader + Panel unlock after textbook upload. You can still use the Syllabus tab independently.</p>
+                  <p className="mt-4 text-sm text-slate-400">No PDF pane, panel, or page navigation is shown until a real book is loaded.</p>
+                </>
+              )}
             </div>
           </div>
         );
@@ -6114,7 +6237,7 @@ export default function ThoughtUnitReader() {
 
           {!user && (
             <div className="mb-3 text-xs text-yellow-300">
-              Guest mode: uploads are stored locally for this session only.
+              Guest mode: uploads are stored in your browser. Books persist across sessions on this device.
             </div>
           )}
 
@@ -6127,11 +6250,11 @@ export default function ThoughtUnitReader() {
                   key={pdf.id}
                   className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
                 >
-                  <span onClick={() => handleLoadPDF(pdf.url, pdf.name)} className="cursor-pointer">
+                  <span onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId)} className="cursor-pointer">
                     {pdf.name}
                   </span>
                   <button
-                    onClick={() => handleDeletePDF(pdf.id, pdf.name, pdf.isLocal)}
+                    onClick={() => handleDeletePDF(pdf.id, pdf.name, pdf.isLocal, pdf.localDocumentId)}
                     className={`${
                       pdf.isLocal || (firebaseConnected && user)
                         ? "text-red-400 hover:text-red-200"
