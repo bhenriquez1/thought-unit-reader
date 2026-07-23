@@ -28,11 +28,11 @@ export default function TUExplainModal({ question, userAnswer, isOpen, onClose }
 
   useEffect(() => {
     if (isOpen && question) {
-      generateTUExplanation();
+      runGeneration();
     }
-  }, [isOpen, question]);
+  }, [isOpen, question]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const generateTUExplanation = async () => {
+  const runGeneration = async () => {
     setLoading(true);
     try {
       // Generate Butler-style metaphor for the concept

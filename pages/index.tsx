@@ -1276,12 +1276,10 @@ export default function ThoughtUnitReader() {
     decisionRules,
     clinicalIQ,
     expertMode,
-    datMode,
     insightPanel,
     openInsightPanel,
     closeInsightPanel,
     toggleExpertMode,
-    toggleDATMode,
     setExpertMode,
     getActiveRules,
   } = useCognitiveEngineStore();

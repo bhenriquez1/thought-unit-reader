@@ -8,6 +8,7 @@ import type {
   InsightType,
 } from '@/lib/relationshipSchema/types';
 import { sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
+import { ApexBadgeInline } from '@/components/apex/ApexBadge';
 
 // ============================================================================
 // Types
@@ -331,24 +332,6 @@ const ActionButton: React.FC<{
   >
     {icon}
   </button>
-);
-
-const ApexBadgeInline: React.FC<{
-  badge: NonNullable<RankedInsight['apexBadge']>;
-}> = ({ badge }) => (
-  <div className="mt-2 p-2 bg-purple-900/30 border border-purple-700/50 rounded">
-    <div className="flex items-center gap-2 mb-1">
-      <span className="text-sm">🎯</span>
-      <span className="text-xs font-semibold text-purple-300">DAT Pattern: {badge.patternName}</span>
-    </div>
-    <div className="text-xs text-gray-300 space-y-1">
-      <p><span className="text-purple-400">Tests:</span> {badge.whatTheyTest}</p>
-      <p><span className="text-red-400">Trap:</span> {badge.commonTrap}</p>
-      {badge.quickMnemonic && (
-        <p><span className="text-teal-400">Mnemonic:</span> {badge.quickMnemonic}</p>
-      )}
-    </div>
-  </div>
 );
 
 export default PriorityFeedPanel;
