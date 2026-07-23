@@ -1336,6 +1336,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   const [showParent,         setShowParent]         = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setIdbError(null);
     const savedId = localStorage.getItem(STORAGE_KEY);
@@ -1345,11 +1346,20 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
       loadRewardState(savedId),
       loadChildProgress(savedId),
     ]).then(([p, r, prog]) => {
-      setProfile(p);
-      setRewards(r ?? (p ? makeDefaultRewards(p.id) : null));
+      if (cancelled) return;
+      // Guard: never overwrite a valid optimistic profile with a null IDB result.
+      // This race fires when a tab switch causes a remount while handleSave's
+      // saveChildProfile write is still in-flight — IDB reads null before the write
+      // commits. The functional form reads the current state to detect the mismatch.
+      setProfile(prev => (prev !== null && p === null ? prev : p));
+      setRewards(prev => {
+        if (prev !== null && p === null && r === null) return prev;
+        return r ?? (p ? makeDefaultRewards(p.id) : null);
+      });
       setProgress(prog);
       setLoading(false);
     }).catch((err) => {
+      if (cancelled) return;
       const blocked = String(err).includes("blocked");
       setIdbError(
         blocked
@@ -1358,6 +1368,7 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
       );
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [loadAttempt]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
