@@ -200,8 +200,13 @@ export default function WhiteboardPanel({
   /** Build stable cache key */
   const cacheKey = useMemo(() => {
     const sm = studyModel as any;
+    // Hash block IDs/titles (not just length) so re-analyzed pages with different
+    // canonical unit content but the same block count get a distinct key.
+    const blockSig = Array.isArray(sm?.conceptBlocks)
+      ? sm.conceptBlocks.map((b: any) => b.id ?? b.canonicalUnitId ?? b.title ?? "").join(",")
+      : "0";
     const smKey = sm
-      ? hashString([sm.pageThesis ?? "", sm.studyNotes?.keyMechanism ?? "", (sm.conceptBlocks?.length ?? 0).toString()].join("|"))
+      ? hashString([sm.pageThesis ?? "", sm.studyNotes?.keyMechanism ?? "", blockSig].join("|"))
       : "no-model";
     const base = JSON.stringify({
       lessonId: lessonId || lessonTitle || "lesson",
@@ -209,9 +214,10 @@ export default function WhiteboardPanel({
       cHash: hashString(effectiveConcept),
       xHash: hashString(effectiveContext),
       smKey,
+      profile: learningProfile ?? "standard",
     });
     return `wb:${hashString(base)}`;
-  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext, studyModel]);
+  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext, studyModel, learningProfile]);
 
   /** Convert a data: URL back to Blob */
   function dataUrlToBlob(dataUrl: string): Blob {
