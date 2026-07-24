@@ -1,11 +1,22 @@
 // lib/apex/bookCatalogue.ts
 // DAT subject catalogue: predefined book registry + user-upload merging.
+// Subject classification is delegated to lib/canonical/classifier.ts —
+// the single canonical DAT subject classifier shared by all consumers.
 
-import { getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
+import { getAllUltraNotesAsync } from "@/lib/notelab/ultraNoteStore";
 import type { TocItem } from "@/lib/stores/tocStore";
 import type { DifficultyLevel } from "@/lib/examEngine/types";
+import {
+  classifyDATSubject,
+  type DATSubject,
+  type SubjectConfidence,
+  type DATClassificationResult,
+} from "@/lib/canonical/classifier";
 
-export type DATSubject = "Biology" | "General Chemistry" | "Organic Chemistry" | "Other";
+export type { DATSubject, SubjectConfidence };
+
+// Re-export for callers that import ClassificationResult from here.
+export type ClassificationResult = DATClassificationResult;
 
 export const DAT_SUBJECTS: DATSubject[] = [
   "Biology",
@@ -14,20 +25,15 @@ export const DAT_SUBJECTS: DATSubject[] = [
   "Other",
 ];
 
-export type SubjectConfidence = "high" | "low";
-
-export interface ClassificationResult {
-  subject: DATSubject;
-  confidence: SubjectConfidence;
-}
-
 export interface CatalogueBook {
   bookId: string;
   bookTitle: string;
   subject: DATSubject;
-  /** "high" = multiple strong keyword signals; "low" = single/generic match */
+  /** "high" = multiple specific signals; "low" = single/generic match or no match */
   subjectConfidence: SubjectConfidence;
   noteCount: number;
+  /** Human-readable reason for the classification — shown in the subject mismatch banner. */
+  classificationReason?: string;
 }
 
 const SUBJECT_OVERRIDE_KEY = (bookId: string) => `avrrio:v1:subject-override:${bookId}`;
@@ -51,32 +57,16 @@ export function getSubjectOverride(bookId: string): DATSubject | null {
   } catch { return null; }
 }
 
-/** Classify a book by title/id keywords, returning subject + confidence.
- *  Confidence is "high" when multiple specific signals match;
- *  "low" when only a generic term (e.g. "chem") or nothing matched. */
+/** Classify a book's DAT subject — thin shim over the canonical classifier.
+ *  Kept so existing callers (builder.ts, legacyAdapter tests) don't need imports changed. */
 export function classifyBook(bookId: string, bookTitle?: string): ClassificationResult {
-  const text = `${bookId} ${bookTitle ?? ""}`.toLowerCase();
-
-  const orgHigh = /organ(ic)?|orgo|klein|sn1|sn2|nucleophile|electrophile|carbocation/.test(text);
-  const gcHigh  = /gen(eral)?\s*chem|gchem|zumdahl|stoich|molarity|enthalpy|chad.*chem|dat.*gc/.test(text);
-  const bioHigh = /bio(logy)?|anatomy|physiology|genetics|cell|organism|feralis|campbell|cliff.*bio/.test(text);
-  const gcLow   = /chem/.test(text);
-
-  if (orgHigh) return { subject: "Organic Chemistry", confidence: "high" };
-  if (gcHigh)  return { subject: "General Chemistry", confidence: "high" };
-  if (bioHigh) return { subject: "Biology",           confidence: "high" };
-  if (gcLow)   return { subject: "General Chemistry", confidence: "low"  };
-  return         { subject: "Other",                  confidence: "low"  };
+  return classifyDATSubject(bookId, bookTitle);
 }
 
-/** Convenience wrapper kept for internal use. */
-function inferDATSubject(bookId: string, bookTitle?: string): DATSubject {
-  return classifyBook(bookId, bookTitle).subject;
-}
-
-/** Build a catalogue of books that have UltraNotes, inferring DAT subject. */
-export function getUserBookCatalogue(): CatalogueBook[] {
-  const notes = getAllUltraNotes();
+/** Build a catalogue of books that have UltraNotes, inferring DAT subject.
+ *  Reads from IndexedDB (authoritative) instead of the stale LS mirror. */
+export async function getUserBookCatalogue(): Promise<CatalogueBook[]> {
+  const notes = await getAllUltraNotesAsync();
   const countMap = new Map<string, { bookTitle: string; count: number }>();
 
   for (const note of notes) {
@@ -94,13 +84,14 @@ export function getUserBookCatalogue(): CatalogueBook[] {
   const books: CatalogueBook[] = [];
   for (const [bookId, { bookTitle, count }] of countMap.entries()) {
     const override = getSubjectOverride(bookId);
-    const { subject: detected, confidence } = classifyBook(bookId, bookTitle);
+    const { subject: detected, confidence, reason } = classifyBook(bookId, bookTitle);
     books.push({
       bookId,
       bookTitle,
       subject: override ?? detected,
       subjectConfidence: override ? "high" : confidence,
       noteCount: count,
+      classificationReason: override ? undefined : reason,
     });
   }
 

@@ -135,6 +135,7 @@ import {
   chunkTextToUnits,
 } from "@/lib/parser";
 import { type ExtractOptions, extractPageTextsIncremental } from "@/lib/pdfjs-handler";
+import { buildCanonicalUnits, saveCanonicalUnits, readAndClearViewSourceLink } from "@/lib/canonical";
 import {
   saveDocumentMeta,
   saveDocumentFile,
@@ -558,6 +559,8 @@ export default function ThoughtUnitReader() {
   // inside a useCallback without listing currentPage as a dep (which would
   // recreate the callback and cascade re-renders into TocTree on every page flip).
   const currentPageRef = useRef(1);
+  // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
+  const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
   const [pdfLoadingState, setPdfLoadingState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
@@ -1393,6 +1396,18 @@ export default function ThoughtUnitReader() {
       setFontSize(restored.fontSize || 16);
       setLineSpacing(restored.lineSpacing || 1.5);
       // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
+    }
+  }, []);
+
+  // "View Source in Reader" deep-link — written by DAT Apex before navigating here.
+  // Runs once on mount, after session restore, so setCurrentPage wins over any
+  // restored page position when a source link is present.
+  useEffect(() => {
+    const link = readAndClearViewSourceLink();
+    if (!link) return;
+    setCurrentPage(link.pageNumber);
+    if (link.quote) {
+      setViewSourceBanner({ pageNumber: link.pageNumber, quote: link.quote });
     }
   }, []);
 
@@ -3286,9 +3301,39 @@ export default function ThoughtUnitReader() {
           allPageTexts.push(...pages);
 
           // Convert pages to thought units and store by page index.
+          // Concurrently persist CanonicalThoughtUnits to IDB for DAT Apex.
+          const canonicalBatch: import('@/lib/canonical').CanonicalThoughtUnit[] = [];
+          const bookTitle = file.name.replace(/\.[Pp][Dd][Ff]$/, '');
+
           for (const p of pages) {
-            const units = chunkTextToUnits(p.text) as ThoughtUnit[];
+            const rawChunks = chunkTextToUnits(p.text);
+            const units = rawChunks as ThoughtUnit[];
             if (units.length > 0) pageUnitsMap.set(p.pageIndex, units);
+
+            // Build char-offset anchors for canonical units by scanning
+            // each chunk text inside the page text.
+            let searchStart = 0;
+            const chunksWithOffsets = rawChunks.map((chunk) => {
+              const idx = p.text.indexOf(chunk.text, searchStart);
+              const startChar = idx >= 0 ? idx : searchStart;
+              const endChar = startChar + chunk.text.length;
+              searchStart = endChar;
+              return { text: chunk.text, startChar, endChar };
+            });
+
+            const canonical = buildCanonicalUnits({
+              documentId,
+              bookId: documentId,
+              bookTitle,
+              pageIndex: p.pageIndex,
+              chunks: chunksWithOffsets,
+            });
+            canonicalBatch.push(...canonical);
+          }
+
+          // Fire-and-forget — canonical unit persistence is best-effort.
+          if (canonicalBatch.length > 0) {
+            saveCanonicalUnits(canonicalBatch).catch(() => {});
           }
 
           // Rebuild sorted flat array so pageToUnit() mapping stays correct
@@ -4781,6 +4826,25 @@ export default function ThoughtUnitReader() {
                     <button
                       onClick={() => setStorageWarning(null)}
                       className="ml-auto text-yellow-300 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* "View Source in Reader" banner — shown when DAT Apex navigated here */}
+                {viewSourceBanner && (
+                  <div className="sticky top-0 z-20 flex items-start gap-3 border-b border-teal-700/50 bg-teal-900/80 px-4 py-2 text-xs text-teal-100 backdrop-blur-sm">
+                    <span className="mt-0.5">📖</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold">Viewing source — page {viewSourceBanner.pageNumber}.</span>
+                      {' '}
+                      <span className="opacity-75 line-clamp-1 italic">&ldquo;{viewSourceBanner.quote}&rdquo;</span>
+                    </div>
+                    <button
+                      onClick={() => setViewSourceBanner(null)}
+                      className="ml-auto shrink-0 text-teal-300 hover:text-white"
+                      aria-label="Dismiss view source banner"
                     >
                       ✕
                     </button>

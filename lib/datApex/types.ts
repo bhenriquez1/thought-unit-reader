@@ -1,76 +1,7 @@
 // lib/datApex/types.ts
 // Canonical domain types for the DAT Apex exam-simulation and learning product.
-//
-// Naming note: Three "DATQuestion" variants exist in this codebase:
-//   - types/apex-exam.ts       → DATQuestion  (legacy, options: {A,B,C,D,E})
-//   - lib/dat-apex/types.ts    → DatQuestion  (book-model pipeline)
-//   - HERE                     → DatExamQuestion (canonical exam layer)
-//
-// Never collapse these; each has a distinct lifecycle and ownership.
 
 import type { DatSectionId } from "./blueprint";
-
-/* ─── Question validation lifecycle ───────────────────────────────────────── */
-
-/**
- * A generated question is NOT exam-ready until it reaches "approved".
- * Retire questions when superseded by spec changes (e.g. OC 2026 update).
- */
-export type QuestionValidationStatus =
-  | "draft"                   // generated, not yet reviewed
-  | "content-validated"       // subject accuracy confirmed
-  | "answer-verified"         // correct answer confirmed
-  | "distractors-reviewed"    // wrong choices are plausible but unambiguously wrong
-  | "specification-aligned"   // mapped to current ADA topic weight
-  | "approved"                // cleared for exam forms
-  | "retired";                // removed from active pool (spec changed, etc.)
-
-/* ─── Core question types ──────────────────────────────────────────────────── */
-
-export type DatChoice = {
-  id:    "A" | "B" | "C" | "D" | "E";
-  text:  string;
-  /** Present only after answer-verified stage */
-  isCorrect?: boolean;
-};
-
-/**
- * Canonical exam question used by DAT Apex.
- * Distinct from legacy DATQuestion and book-model DatQuestion.
- */
-export type DatExamQuestion = {
-  id:               string;
-  sectionId:        DatSectionId;
-  /** ADA content spec version this question maps to (e.g. "2025", "2026") */
-  specificationVersion: string;
-  topicId:          string;
-  stem:             string;
-  choices:          DatChoice[];
-  correctChoiceId:  "A" | "B" | "C" | "D" | "E";
-  explanation?:     string;    // withheld in strict simulation mode
-  difficulty:       number;    // 0–1
-  validationStatus: QuestionValidationStatus;
-  /** ISO timestamp of last validation status change */
-  validatedAt?:     string;
-  createdAt:        string;
-};
-
-/* ─── Test form ────────────────────────────────────────────────────────────── */
-
-/**
- * A concrete assembly of questions for a single exam sitting.
- * Assembled by formAssembler according to the active DatExamBlueprint.
- */
-export type DatTestForm = {
-  id:              string;
-  blueprintVersion: string;  // DatExamBlueprint.version used to build this form
-  /** Ordered question IDs per section, in administration order */
-  sections: {
-    sectionId:   DatSectionId;
-    questionIds: string[];
-  }[];
-  createdAt:       string;
-};
 
 /* ─── Attempt and response ─────────────────────────────────────────────────── */
 

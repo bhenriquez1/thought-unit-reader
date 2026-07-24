@@ -1,6 +1,5 @@
 // tests/datApex.blueprint.test.ts
-// DAT Apex — blueprint integrity, state machine transitions, scoring types, and
-// form assembler contract.
+// DAT Apex — blueprint integrity, state machine transitions, and scoring types.
 
 import { describe, it, expect, vi } from "vitest";
 
@@ -23,18 +22,10 @@ import {
   enterFinalReview,
   submitExam,
   DatSessionTransitionError,
-  assembleTestForm,
-  sectionTimeLimitSeconds,
   ACTIVE_DAT_BLUEPRINT,
 } from "../lib/datApex";
 
-import type {
-  DatExamQuestion,
-  DatSessionState,
-  QuestionValidationStatus,
-} from "../lib/datApex";
-
-import type { QuestionPool } from "../lib/datApex/formAssembler";
+import type { DatSessionState } from "../lib/datApex";
 
 /* ─── Blueprint 2025 — structural integrity ────────────────────────────────── */
 
@@ -413,140 +404,3 @@ describe("session state machine — invalid transitions", () => {
   });
 });
 
-/* ─── sectionTimeLimitSeconds helper ───────────────────────────────────────── */
-
-describe("sectionTimeLimitSeconds", () => {
-  it("returns correct seconds for each section", () => {
-    expect(sectionTimeLimitSeconds("biology",               DAT_BLUEPRINT_2025)).toBe(90 * 60);
-    expect(sectionTimeLimitSeconds("general-chemistry",     DAT_BLUEPRINT_2025)).toBe(90 * 60);
-    expect(sectionTimeLimitSeconds("organic-chemistry",     DAT_BLUEPRINT_2025)).toBe(90 * 60);
-    expect(sectionTimeLimitSeconds("perceptual-ability",    DAT_BLUEPRINT_2025)).toBe(60 * 60);
-    expect(sectionTimeLimitSeconds("reading-comprehension", DAT_BLUEPRINT_2025)).toBe(60 * 60);
-    expect(sectionTimeLimitSeconds("quantitative-reasoning",DAT_BLUEPRINT_2025)).toBe(45 * 60);
-  });
-
-  it("throws for unknown sectionId", () => {
-    expect(() => sectionTimeLimitSeconds("unknown" as any, DAT_BLUEPRINT_2025)).toThrow();
-  });
-});
-
-/* ─── Form assembler ────────────────────────────────────────────────────────── */
-
-function makeQuestion(
-  id:        string,
-  sectionId: string,
-  topicId:   string,
-  status:    QuestionValidationStatus = "approved",
-): DatExamQuestion {
-  return {
-    id,
-    sectionId:             sectionId as any,
-    specificationVersion:  "2025",
-    topicId,
-    stem:                  `Question ${id}`,
-    choices:               [
-      { id: "A", text: "A", isCorrect: false },
-      { id: "B", text: "B", isCorrect: true  },
-      { id: "C", text: "C", isCorrect: false },
-      { id: "D", text: "D", isCorrect: false },
-    ],
-    correctChoiceId:  "B",
-    difficulty:       0.5,
-    validationStatus: status,
-    createdAt:        "2025-01-01T00:00:00Z",
-  };
-}
-
-function makePool(questions: DatExamQuestion[]): QuestionPool {
-  return {
-    fetchBySection: async (sectionId, statuses) =>
-      questions.filter(q => q.sectionId === sectionId && statuses.includes(q.validationStatus)),
-  };
-}
-
-describe("assembleTestForm", () => {
-  it("returns error when pool is empty", async () => {
-    const pool   = makePool([]);
-    const result = await assembleTestForm(DAT_BLUEPRINT_2025, pool, {
-      mode:           "simulation",
-      attemptId:      "a1",
-      sectionsFilter: ["biology"],
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.shortfall).toBeDefined();
-      expect(result.shortfall![0].sectionId).toBe("biology");
-    }
-  });
-
-  it("accepts practice questions with non-approved status", async () => {
-    // Build a pool of 40 draft biology questions (not approved)
-    const questions = Array.from({ length: 40 }, (_, i) =>
-      makeQuestion(`bio-${i}`, "biology", "cell-biology", "draft"),
-    );
-    const pool   = makePool(questions);
-    const result = await assembleTestForm(DAT_BLUEPRINT_2025, pool, {
-      mode:           "practice",
-      attemptId:      "a1",
-      sectionsFilter: ["biology"],
-      createdAt:      "2025-01-01T00:00:00Z",
-    });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const biologySection = result.form.sections.find(s => s.sectionId === "biology");
-      expect(biologySection?.questionIds).toHaveLength(40);
-    }
-  });
-
-  it("rejects draft questions in simulation mode", async () => {
-    const questions = Array.from({ length: 40 }, (_, i) =>
-      makeQuestion(`bio-${i}`, "biology", "cell-biology", "draft"),
-    );
-    const pool   = makePool(questions);
-    const result = await assembleTestForm(DAT_BLUEPRINT_2025, pool, {
-      mode:           "simulation",
-      attemptId:      "a1",
-      sectionsFilter: ["biology"],
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.shortfall![0].available).toBe(0);
-    }
-  });
-
-  it("assembles biology section with correct item count", async () => {
-    const questions = Array.from({ length: 60 }, (_, i) =>
-      makeQuestion(`bio-${i}`, "biology", "cell-biology"),
-    );
-    const pool   = makePool(questions);
-    const result = await assembleTestForm(DAT_BLUEPRINT_2025, pool, {
-      mode:           "simulation",
-      attemptId:      "a1",
-      sectionsFilter: ["biology"],
-      createdAt:      "2025-01-01T00:00:00Z",
-    });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.form.blueprintVersion).toBe("2025.1");
-      const biologySection = result.form.sections.find(s => s.sectionId === "biology");
-      expect(biologySection?.questionIds).toHaveLength(40);
-    }
-  });
-
-  it("form id is derived from attemptId", async () => {
-    const questions = Array.from({ length: 40 }, (_, i) =>
-      makeQuestion(`bio-${i}`, "biology", "cell-biology"),
-    );
-    const pool   = makePool(questions);
-    const result = await assembleTestForm(DAT_BLUEPRINT_2025, pool, {
-      mode:           "simulation",
-      attemptId:      "myAttempt",
-      sectionsFilter: ["biology"],
-      createdAt:      "2025-01-01T00:00:00Z",
-    });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.form.id).toBe("form-myAttempt");
-    }
-  });
-});

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { savePendingExam } from '@/lib/db/examStore';
@@ -48,7 +48,10 @@ export default function ExamGeneratorPage() {
   const router = useRouter();
   const tocs = useTocStore((s) => s.tocs);
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
-  const books = useMemo(() => getUserBookCatalogue(), [catalogueRefreshKey]);
+  const [books, setBooks] = useState<import('@/lib/apex/bookCatalogue').CatalogueBook[]>([]);
+  useEffect(() => {
+    getUserBookCatalogue().then(setBooks).catch(() => setBooks([]));
+  }, [catalogueRefreshKey]);
 
   // --- State ---
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
@@ -334,6 +337,40 @@ export default function ExamGeneratorPage() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* Subject mismatch warning — shown when the selected book's
+                      subject was detected with low confidence or not at all. */}
+                  {selectedBook && selectedBook.subjectConfidence === 'low' && (
+                    <div className={`mt-4 rounded-lg border px-4 py-3 text-sm flex items-start gap-3 ${
+                      selectedBook.subject === 'Other'
+                        ? 'border-orange-500/40 bg-orange-900/20 text-orange-200'
+                        : 'border-yellow-500/40 bg-yellow-900/20 text-yellow-200'
+                    }`}>
+                      <span className="text-lg leading-none mt-0.5" aria-hidden>
+                        {selectedBook.subject === 'Other' ? '⚠️' : '⚠'}
+                      </span>
+                      <div>
+                        {selectedBook.subject === 'Other' ? (
+                          <>
+                            <span className="font-medium">No DAT subject detected.</span>
+                            {' '}Questions may not align with the DAT Blueprint.
+                            <span className="block mt-1 text-xs opacity-75">
+                              {selectedBook.classificationReason} — click the subject badge on the book card to set one manually.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-medium">Subject detected with low confidence:</span>
+                            {' '}<span className="font-semibold">{selectedBook.subject}</span>.
+                            {' '}If questions seem off-topic, click the ⚠ badge to correct it.
+                            <span className="block mt-1 text-xs opacity-75">
+                              {selectedBook.classificationReason}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
 

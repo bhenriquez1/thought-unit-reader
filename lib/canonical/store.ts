@@ -1,0 +1,127 @@
+// lib/canonical/store.ts
+// IDB persistence for CanonicalThoughtUnit.
+// Store: "canonical_units_v1" in DB "avrrio_canonical_v1".
+// Key path: "id" (the `${documentId}:${pageIndex}:${unitIndex}` stable key).
+
+import type { CanonicalThoughtUnit } from './types';
+
+const DB_NAME    = 'avrrio_canonical_v1';
+const STORE_NAME = 'canonical_units_v1';
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('IDB unavailable')); return; }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store.createIndex('byDocument', 'documentId');
+        store.createIndex('byDocumentPage', ['documentId', 'pageIndex']);
+      }
+    };
+    req.onsuccess  = () => resolve(req.result);
+    req.onerror    = () => reject(req.error);
+    req.onblocked  = () => reject(new Error('IDB blocked'));
+  });
+}
+
+/** Upsert a single unit. */
+export async function saveCanonicalUnit(unit: CanonicalThoughtUnit): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(unit);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/** Upsert many units in a single transaction. */
+export async function saveCanonicalUnits(units: CanonicalThoughtUnit[]): Promise<void> {
+  if (!units.length) return;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    for (const u of units) store.put(u);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/** Get all units for a document, sorted by pageIndex then unitIndex. */
+export async function getCanonicalUnitsByDocument(
+  documentId: string,
+): Promise<CanonicalThoughtUnit[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(STORE_NAME, 'readonly');
+    const idx   = tx.objectStore(STORE_NAME).index('byDocument');
+    const req   = idx.getAll(IDBKeyRange.only(documentId));
+    req.onsuccess = () => {
+      const all = (req.result as CanonicalThoughtUnit[]) ?? [];
+      all.sort((a, b) =>
+        a.pageIndex !== b.pageIndex
+          ? a.pageIndex - b.pageIndex
+          : a.unitIndex - b.unitIndex,
+      );
+      resolve(all);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Get units for a single page. */
+export async function getCanonicalUnitsByPage(
+  documentId: string,
+  pageIndex: number,
+): Promise<CanonicalThoughtUnit[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, 'readonly');
+    const idx = tx.objectStore(STORE_NAME).index('byDocumentPage');
+    const req = idx.getAll(IDBKeyRange.only([documentId, pageIndex]));
+    req.onsuccess = () => {
+      const all = (req.result as CanonicalThoughtUnit[]) ?? [];
+      all.sort((a, b) => a.unitIndex - b.unitIndex);
+      resolve(all);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Get a single unit by its stable ID. */
+export async function getCanonicalUnit(id: string): Promise<CanonicalThoughtUnit | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(id);
+    req.onsuccess = () => resolve((req.result as CanonicalThoughtUnit) ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+/** Append a questionId to a unit's questionIds array. Idempotent. */
+export async function linkQuestionToUnit(unitId: string, questionId: string): Promise<void> {
+  const unit = await getCanonicalUnit(unitId);
+  if (!unit) return;
+  const ids = new Set(unit.questionIds ?? []);
+  if (ids.has(questionId)) return;
+  ids.add(questionId);
+  await saveCanonicalUnit({ ...unit, questionIds: [...ids], updatedAt: Date.now() });
+}
+
+/** Delete all units for a document (used on document deletion). */
+export async function deleteCanonicalUnitsByDocument(documentId: string): Promise<void> {
+  const units = await getCanonicalUnitsByDocument(documentId);
+  if (!units.length) return;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    for (const u of units) store.delete(u.id);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}

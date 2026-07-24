@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { calculateSectionScore, formatTime, DAT_SECTIONS } from '@/types/apex-exam';
 import type { ExamAttempt, DATQuestion } from '@/types/apex-exam';
 import type { GeneratedExam } from '@/lib/apex/examGenerator';
@@ -14,6 +15,7 @@ import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
 import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
 import { useTocStore } from '@/lib/stores/tocStore';
 import { chapterForPage } from '@/lib/apex/bookCatalogue';
+import { writeViewSourceLink } from '@/lib/canonical/viewSourceLink';
 
 const ANSWER_LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -72,6 +74,7 @@ interface ExamResults {
 }
 
 export default function ExamResultsPage() {
+  const router = useRouter();
   const [results, setResults] = useState<ExamResults | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'sections' | 'chapters' | 'topics' | 'review'>('overview');
@@ -81,6 +84,18 @@ export default function ExamResultsPage() {
   const [selectedUserAnswer, setSelectedUserAnswer] = useState<string | undefined>(undefined);
   const [recommendation, setRecommendation] = useState<StudyRecommendation | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
+
+  function handleViewSource(question: DATQuestion) {
+    if (!question.sourceBookId || !question.sourcePageNumber) return;
+    writeViewSourceLink({
+      documentId: question.sourceBookId,
+      pageNumber: question.sourcePageNumber,
+      unitIds: question.sourceThoughtUnitIds,
+      quote: question.stem.slice(0, 180),
+      bookTitle: question.sourceBookId,
+    });
+    router.push('/');
+  }
 
   useEffect(() => {
     const loadResults = () => {
@@ -767,17 +782,28 @@ export default function ExamResultsPage() {
                         })}
                       </div>
                       
+                      {/* View Source + Explain buttons */}
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        {question.sourceBookId && question.sourcePageNumber && (
+                          <button
+                            onClick={() => handleViewSource(question)}
+                            className="px-2 py-1 bg-teal-700 hover:bg-teal-600 text-white rounded text-xs font-semibold transition-colors flex items-center gap-1"
+                            title={`Jump to page ${question.sourcePageNumber} in the Reader`}
+                          >
+                            📖 View Source · p.{question.sourcePageNumber}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleTUExplain(question, response?.selectedAnswer)}
+                          className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors"
+                        >
+                          🧠 Explain in TU
+                        </button>
+                      </div>
+
                       {question.explanation && (
-                        <div className="mt-3 p-3 bg-blue-900/20 rounded border border-blue-500/30">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="text-xs font-semibold text-blue-400">Explanation:</div>
-                            <button
-                              onClick={() => handleTUExplain(question, response?.selectedAnswer)}
-                              className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors"
-                            >
-                              🧠 Explain in TU
-                            </button>
-                          </div>
+                        <div className="mt-2 p-3 bg-blue-900/20 rounded border border-blue-500/30">
+                          <div className="text-xs font-semibold text-blue-400 mb-1">Explanation:</div>
                           <div className="text-sm text-blue-200">{question.explanation}</div>
                         </div>
                       )}
@@ -807,16 +833,8 @@ export default function ExamResultsPage() {
                       )}
                       
                       {!question.explanation && (
-                        <div className="mt-3 p-3 bg-gray-900/20 rounded border border-gray-500/30">
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-gray-400">No standard explanation available</div>
-                            <button
-                              onClick={() => handleTUExplain(question, response?.selectedAnswer)}
-                              className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors"
-                            >
-                              🧠 Generate TU Explanation
-                            </button>
-                          </div>
+                        <div className="mt-1 p-2 bg-gray-900/20 rounded border border-gray-500/30">
+                          <div className="text-xs text-gray-400">No standard explanation — use 🧠 Explain in TU above to generate one.</div>
                         </div>
                       )}
                     </div>
