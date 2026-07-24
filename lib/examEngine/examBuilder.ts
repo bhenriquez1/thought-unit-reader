@@ -10,6 +10,7 @@ import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from "@/lib/examEngine/types";
 import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
+import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -139,6 +140,20 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   // Distribute the requested count evenly across concepts, cycling question
   // types so coverage isn't biased toward one type.
   const perConcept = Math.max(1, Math.ceil(opts.questionCount / pool.length));
+
+  // Look up canonical unit IDs per page (best-effort, one IDB read per note).
+  // Canonical units are stored under bookId == documentId used during extraction.
+  const canonicalIdsByNote = await Promise.all(
+    pool.map(async (note) => {
+      try {
+        const units = await getCanonicalUnitsByPage(opts.bookId, note.pageNumber - 1);
+        return units.map((u) => u.id);
+      } catch {
+        return [] as string[];
+      }
+    }),
+  );
+
   const batches = await Promise.all(
     pool.map((note, i) => {
       const questionType = questionTypes[i % questionTypes.length];
@@ -152,6 +167,7 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
         topic: note.topic,
         section,
         sourcePageNumber: note.pageNumber,
+        sourceThoughtUnitIds: canonicalIdsByNote[i],
         questionType,
         difficulty: opts.difficulty,
         count: perConcept,

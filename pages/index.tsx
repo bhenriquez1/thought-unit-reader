@@ -135,6 +135,7 @@ import {
   chunkTextToUnits,
 } from "@/lib/parser";
 import { type ExtractOptions, extractPageTextsIncremental } from "@/lib/pdfjs-handler";
+import { buildCanonicalUnits, saveCanonicalUnits } from "@/lib/canonical";
 import {
   saveDocumentMeta,
   saveDocumentFile,
@@ -3286,9 +3287,39 @@ export default function ThoughtUnitReader() {
           allPageTexts.push(...pages);
 
           // Convert pages to thought units and store by page index.
+          // Concurrently persist CanonicalThoughtUnits to IDB for DAT Apex.
+          const canonicalBatch: import('@/lib/canonical').CanonicalThoughtUnit[] = [];
+          const bookTitle = file.name.replace(/\.[Pp][Dd][Ff]$/, '');
+
           for (const p of pages) {
-            const units = chunkTextToUnits(p.text) as ThoughtUnit[];
+            const rawChunks = chunkTextToUnits(p.text);
+            const units = rawChunks as ThoughtUnit[];
             if (units.length > 0) pageUnitsMap.set(p.pageIndex, units);
+
+            // Build char-offset anchors for canonical units by scanning
+            // each chunk text inside the page text.
+            let searchStart = 0;
+            const chunksWithOffsets = rawChunks.map((chunk) => {
+              const idx = p.text.indexOf(chunk.text, searchStart);
+              const startChar = idx >= 0 ? idx : searchStart;
+              const endChar = startChar + chunk.text.length;
+              searchStart = endChar;
+              return { text: chunk.text, startChar, endChar };
+            });
+
+            const canonical = buildCanonicalUnits({
+              documentId,
+              bookId: documentId,
+              bookTitle,
+              pageIndex: p.pageIndex,
+              chunks: chunksWithOffsets,
+            });
+            canonicalBatch.push(...canonical);
+          }
+
+          // Fire-and-forget — canonical unit persistence is best-effort.
+          if (canonicalBatch.length > 0) {
+            saveCanonicalUnits(canonicalBatch).catch(() => {});
           }
 
           // Rebuild sorted flat array so pageToUnit() mapping stays correct

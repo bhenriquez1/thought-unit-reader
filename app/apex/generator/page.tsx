@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { savePendingExam } from '@/lib/db/examStore';
@@ -48,7 +48,10 @@ export default function ExamGeneratorPage() {
   const router = useRouter();
   const tocs = useTocStore((s) => s.tocs);
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
-  const books = useMemo(() => getUserBookCatalogue(), [catalogueRefreshKey]);
+  const [books, setBooks] = useState<import('@/lib/apex/bookCatalogue').CatalogueBook[]>([]);
+  useEffect(() => {
+    getUserBookCatalogue().then(setBooks).catch(() => setBooks([]));
+  }, [catalogueRefreshKey]);
 
   // --- State ---
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');

@@ -19,6 +19,8 @@ export interface GenerateQuestionsOptions {
   topic?: string;
   section?: string;
   sourcePageNumber?: number;
+  /** CanonicalThoughtUnit IDs this question was generated from. */
+  sourceThoughtUnitIds?: string[];
   questionType: QuestionType;
   difficulty: DifficultyLevel;
   count: number;
@@ -107,7 +109,14 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
     if (data.error && (!Array.isArray(data.questions) || data.questions.length === 0)) {
       throw new Error(data.error);
     }
-    const generated: EngineQuestion[] = Array.isArray(data?.questions) ? data.questions : [];
+    const generated: EngineQuestion[] = Array.isArray(data?.questions)
+      ? (data.questions as EngineQuestion[]).map((q) => ({
+          ...q,
+          sourceThoughtUnitIds: opts.sourceThoughtUnitIds?.length
+            ? opts.sourceThoughtUnitIds
+            : q.sourceThoughtUnitIds,
+        }))
+      : [];
 
     if (generated.length > 0) {
       const merged = [...cached, ...generated];

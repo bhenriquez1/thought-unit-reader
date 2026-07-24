@@ -80,6 +80,9 @@ export interface EngineQuestion {
   sourceStudyModelId?: string;
   sourceBookId: string;
   sourcePageNumber?: number;
+  /** IDs of CanonicalThoughtUnits this question was generated from.
+   *  Enables "View Source in Reader" navigation. */
+  sourceThoughtUnitIds?: string[];
 
   stem: string;
   choices: string[];

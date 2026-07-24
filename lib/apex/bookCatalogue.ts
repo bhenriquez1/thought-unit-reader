@@ -1,7 +1,7 @@
 // lib/apex/bookCatalogue.ts
 // DAT subject catalogue: predefined book registry + user-upload merging.
 
-import { getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
+import { getAllUltraNotesAsync } from "@/lib/notelab/ultraNoteStore";
 import type { TocItem } from "@/lib/stores/tocStore";
 import type { DifficultyLevel } from "@/lib/examEngine/types";
 
@@ -74,9 +74,10 @@ function inferDATSubject(bookId: string, bookTitle?: string): DATSubject {
   return classifyBook(bookId, bookTitle).subject;
 }
 
-/** Build a catalogue of books that have UltraNotes, inferring DAT subject. */
-export function getUserBookCatalogue(): CatalogueBook[] {
-  const notes = getAllUltraNotes();
+/** Build a catalogue of books that have UltraNotes, inferring DAT subject.
+ *  Reads from IndexedDB (authoritative) instead of the stale LS mirror. */
+export async function getUserBookCatalogue(): Promise<CatalogueBook[]> {
+  const notes = await getAllUltraNotesAsync();
   const countMap = new Map<string, { bookTitle: string; count: number }>();
 
   for (const note of notes) {
