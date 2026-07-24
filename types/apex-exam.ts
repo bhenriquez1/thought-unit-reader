@@ -50,6 +50,9 @@ export interface DATQuestion {
   engineQuestionType?: string;
   sourceBookId?: string;
   sourcePageNumber?: number;
+  /** CanonicalThoughtUnit IDs this question was generated from.
+   *  Enables "View Source in Reader" navigation. */
+  sourceThoughtUnitIds?: string[];
 }
 
 export interface ExamConfiguration {

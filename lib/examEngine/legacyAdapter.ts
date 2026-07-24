@@ -53,6 +53,7 @@ export function engineQuestionToDATQuestion(q: EngineQuestion): DATQuestion {
     engineQuestionType: q.questionType,
     sourceBookId: q.sourceBookId,
     sourcePageNumber: q.sourcePageNumber,
+    sourceThoughtUnitIds: q.sourceThoughtUnitIds,
   };
 }
 
