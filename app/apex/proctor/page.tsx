@@ -11,6 +11,8 @@ import { safeSetItem } from "@/lib/storage/safeStorage";
 import { saveAttempt } from "@/lib/datApex/idbStore";
 import type { DatAttempt } from "@/lib/datApex/types";
 import type { DatSectionId } from "@/lib/datApex/blueprint";
+import { scoreDatAttempt } from "@/lib/datApex/scoring";
+import { updateReadinessAfterAttempt } from "@/lib/datApex/readinessUpdater";
 
 /* ─── Section display metadata ───────────────────────────────────────────────── */
 
@@ -216,8 +218,26 @@ export default function ExamProctorPage() {
       submittedAt: endTime,
     };
 
-    // Fire-and-forget: persist attempt to IDB and clean up pending exam entry
-    saveAttempt(attempt).catch(() => { /* non-fatal — results are in localStorage */ });
+    // Fire-and-forget: persist attempt, score, update readiness, clean up pending exam
+    saveAttempt(attempt)
+      .then(() => {
+        // Build minimal question metadata for scoring from exam questions
+        const scoringQuestions = s.sections.flatMap((sg) =>
+          sg.questions.map((q) => ({
+            id:            q.id,
+            correctAnswer: q.correctAnswer,
+            topic:         q.topic,
+            sectionId:     q.sectionId,
+          })),
+        );
+        const result = scoreDatAttempt(attempt, scoringQuestions);
+        // Save result back onto the attempt
+        saveAttempt({ ...attempt, result }).catch(() => {});
+        // Update rolling readiness state
+        updateReadinessAfterAttempt("demo-user", result).catch(() => {});
+      })
+      .catch(() => { /* non-fatal — results are in localStorage */ });
+
     if (s.pendingExamId) {
       deletePendingExam(s.pendingExamId).catch(() => { /* non-fatal */ });
     }

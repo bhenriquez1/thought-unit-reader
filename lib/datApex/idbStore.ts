@@ -6,23 +6,29 @@
 //   attempts   — DatAttempt records keyed by id
 //   readiness  — DatReadinessState keyed by userId (one record per user)
 
-import type { DatAttempt, DatReadinessState } from "./types";
+import type { DatAttempt, DatReadinessState, DatErrorClassification } from "./types";
 
 const DB_NAME      = "avrrio-dat-apex";
-const DB_VERSION   = 1;
-const STORE_ATTEMPTS  = "attempts";
-const STORE_READINESS = "readiness";
+const DB_VERSION   = 2;
+const STORE_ATTEMPTS        = "attempts";
+const STORE_READINESS       = "readiness";
+const STORE_CLASSIFICATIONS = "classifications";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_ATTEMPTS)) {
         db.createObjectStore(STORE_ATTEMPTS, { keyPath: "id" });
       }
       if (!db.objectStoreNames.contains(STORE_READINESS)) {
         db.createObjectStore(STORE_READINESS, { keyPath: "userId" });
+      }
+      // v2: error classification store
+      if (!db.objectStoreNames.contains(STORE_CLASSIFICATIONS)) {
+        const store = db.createObjectStore(STORE_CLASSIFICATIONS, { keyPath: "questionId" });
+        store.createIndex("byAttempt", "attemptId", { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -93,6 +99,32 @@ export async function loadReadinessState(userId: string): Promise<DatReadinessSt
   const req = tx.objectStore(STORE_READINESS).get(userId);
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve((req.result as DatReadinessState) ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+/* ─── Error classifications ────────────────────────────────────────────────── */
+
+export async function saveErrorClassification(c: DatErrorClassification): Promise<void> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_CLASSIFICATIONS, "readwrite");
+  const req = tx.objectStore(STORE_CLASSIFICATIONS).put(c);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+export async function loadClassificationsForAttempt(
+  attemptId: string,
+): Promise<DatErrorClassification[]> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_CLASSIFICATIONS, "readonly");
+  const idx = tx.objectStore(STORE_CLASSIFICATIONS).index("byAttempt");
+  const req = idx.getAll(attemptId);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result as DatErrorClassification[]);
     req.onerror   = () => reject(req.error);
   });
 }
