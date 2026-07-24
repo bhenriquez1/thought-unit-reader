@@ -7,12 +7,12 @@ import Whiteboard, { type WhiteboardHandle } from "./Whiteboard";
 import { Button } from "./ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
+import type { WhiteboardVisualPlan } from "@/lib/whiteboard/visualPlan";
+import { buildVisualPlanFromStudyModel, detectSubjectFull } from "@/lib/whiteboard/visualPlan";
 import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
-import TeachingCanvas from "@/components/whiteboard/TeachingCanvas";
-import RecallCanvas from "@/components/whiteboard/RecallCanvas";
 import WorkspaceSteps from "@/components/whiteboard/WorkspaceSteps";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
@@ -84,7 +84,7 @@ type Props = {
    */
   debugMode?: boolean;
 
-  /** Recall tab metadata — passed through to RecallCanvas for saving sets */
+  /** Metadata for save actions */
   bookId?: string;
   bookTitle?: string;
   pageTitle?: string | null;
@@ -92,6 +92,8 @@ type Props = {
   recallSubject?: NoteSubject;
   /** Active Learning Profile — frames how the Whiteboard teaches (Standard / Dental / Medical / Surgeon / DAT). */
   learningProfile?: string;
+  /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
+  onOpenChiefResident?: () => void;
 };
 
 type WhiteboardDebugInfo = {
@@ -136,6 +138,7 @@ export default function WhiteboardPanel({
   knowledgeNodeId,
   recallSubject,
   learningProfile,
+  onOpenChiefResident,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -167,11 +170,7 @@ export default function WhiteboardPanel({
   const [illustrationProfile, setIllustrationProfile] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  // ── Adaptive Teaching Engine tab state ───────────────────────────────────
-  type WbTab = "teach" | "recall" | "visualize";
-  const [wbTab, setWbTab] = useState<WbTab>("teach");
-  // Guard: only request generation once (lazy, on first Visualize tab open)
-  const diagramRequestedRef = useRef(false);
+  // (tab state removed — single integrated canvas)
 
   const teachNoteCards = useMemo((): NoteCard[] => {
     const sm = studyModel as any;
@@ -192,6 +191,8 @@ export default function WhiteboardPanel({
 
   const debounceRef = useRef<number | null>(null);
   const lastCallTsRef = useRef<number>(0); // rate-limit
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const illustrationCacheKeyRef = useRef<string | null>(null);
 
   const effectiveConcept = (concept || "").trim();
   const effectiveContext = (context || "").trim();
@@ -199,8 +200,13 @@ export default function WhiteboardPanel({
   /** Build stable cache key */
   const cacheKey = useMemo(() => {
     const sm = studyModel as any;
+    // Hash block IDs/titles (not just length) so re-analyzed pages with different
+    // canonical unit content but the same block count get a distinct key.
+    const blockSig = Array.isArray(sm?.conceptBlocks)
+      ? sm.conceptBlocks.map((b: any) => b.id ?? b.canonicalUnitId ?? b.title ?? "").join(",")
+      : "0";
     const smKey = sm
-      ? hashString([sm.pageThesis ?? "", sm.studyNotes?.keyMechanism ?? "", (sm.conceptBlocks?.length ?? 0).toString()].join("|"))
+      ? hashString([sm.pageThesis ?? "", sm.studyNotes?.keyMechanism ?? "", blockSig].join("|"))
       : "no-model";
     const base = JSON.stringify({
       lessonId: lessonId || lessonTitle || "lesson",
@@ -208,9 +214,10 @@ export default function WhiteboardPanel({
       cHash: hashString(effectiveConcept),
       xHash: hashString(effectiveContext),
       smKey,
+      profile: learningProfile ?? "standard",
     });
     return `wb:${hashString(base)}`;
-  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext, studyModel]);
+  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext, studyModel, learningProfile]);
 
   /** Convert a data: URL back to Blob */
   function dataUrlToBlob(dataUrl: string): Blob {
@@ -321,8 +328,14 @@ export default function WhiteboardPanel({
    *  parallel with the always-present diagram, never gating it. Failure of any
    *  kind degrades silently: the diagram stays up, and (outside debug mode) a
    *  small auto-fading note is shown instead of a raw model error. */
-  const generateAIDrawing = useCallback(async (plan: DiagramPlan | null) => {
+  const generateAIDrawing = useCallback(async (plan: DiagramPlan | null, visualPlan?: WhiteboardVisualPlan) => {
     if (!effectiveConcept) return;
+
+    // Cancel any in-flight request before starting a new one
+    aiAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+
     setAiImageLoading(true);
     setAiImageError(null);
     setAiImageDebugInfo(null);
@@ -340,16 +353,20 @@ export default function WhiteboardPanel({
       const resp = await fetch("/api/whiteboard-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
         body: JSON.stringify({
           concept: effectiveConcept,
           context: effectiveContext,
           provider,
           debug: isDebugMode,
           diagramPlan: plan ?? undefined,
+          visualPlan: visualPlan ?? undefined,
           sdxlOptions,
         }),
       });
+      if (ctrl.signal.aborted) return;
       const data = await resp.json();
+      if (ctrl.signal.aborted) return;
 
       if (data.error) {
         console.warn("[WHITEBOARD_IMAGE_CLIENT_FAILURE]", { provider, error: data.error, ...(data.debugInfo ?? {}) });
@@ -370,6 +387,7 @@ export default function WhiteboardPanel({
       setIllustrationProfile(learningProfile ?? "standard");
       console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
     } catch (err: any) {
+      if (err?.name === "AbortError") return; // cancelled — no state update needed
       console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
       setAiImageUrl(null);
       setAiTeachingScript("");
@@ -381,7 +399,7 @@ export default function WhiteboardPanel({
         window.setTimeout(() => setShowFallbackNote(false), 3200);
       }
     } finally {
-      setAiImageLoading(false);
+      if (!ctrl.signal.aborted) setAiImageLoading(false);
     }
   }, [effectiveConcept, effectiveContext, provider, isDebugMode, sdxlEndpoint, sdxlModelId, sdxlStylePreset, sdxlNegativePrompt, sdxlSeed]);
 
@@ -552,20 +570,29 @@ export default function WhiteboardPanel({
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
     if (studyModel) {
-      // Study model path: Teach tab renders instantly from noteCards — defer
-      // diagram generation to the first time the user opens the Diagram tab.
+      // WorkspaceSteps renders instantly from noteCards; kick off the
+      // AI illustration in the background as the "big visual overview".
       console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
         page: currentPage ?? null,
         hasThesis: !!(studyModel as any).pageThesis,
         hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
         conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
       });
+      if (effectiveConcept && illustrationCacheKeyRef.current !== cacheKey) {
+        illustrationCacheKeyRef.current = cacheKey;
+        const subject = detectSubjectFull(studyModel, teachNoteCards);
+        const vp = buildVisualPlanFromStudyModel(studyModel as Record<string, unknown>, subject);
+        generateAIDrawing(null, vp);
+      }
       return;
     }
     const shouldTrigger = autoTrigger && !!effectiveConcept && !!effectiveContext;
     if (!shouldTrigger) {
       // Bare concept (e.g. "Explain This Step → Visualize") — still generate illustration.
-      if (effectiveConcept) generateAIDrawing(null);
+      if (effectiveConcept && illustrationCacheKeyRef.current !== cacheKey) {
+        illustrationCacheKeyRef.current = cacheKey;
+        generateAIDrawing(null);
+      }
       return;
     }
     setJustDetected(true);
@@ -588,6 +615,11 @@ export default function WhiteboardPanel({
       console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Cancel any in-flight AI illustration fetch on unmount to prevent stale state updates */
+  useEffect(() => {
+    return () => { aiAbortRef.current?.abort(); };
   }, []);
 
   /** Auto re-explain when page changes (debounced + heuristic) */
@@ -690,10 +722,10 @@ export default function WhiteboardPanel({
         createdAt: Date.now(),
       };
       await saveStudyGuide(record);
-      flashAction("✅ Added to Study Guide");
+      flashAction("✅ Saved to Study Sheet");
     } catch (err) {
       console.error("[WHITEBOARD_STUDYGUIDE_ERROR]", err);
-      flashAction("⚠ Could not add to Study Guide");
+      flashAction("⚠ Could not save to Study Sheet");
     }
   };
 
@@ -725,65 +757,47 @@ export default function WhiteboardPanel({
           transition={{ type: "spring", stiffness: 260, damping: 24 }}
           className="flex flex-col gap-3"
         >
-          {/* ── Adaptive Teaching Engine: mode tabs ─────────────────────── */}
-          <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
-            {(
-              [
-                ["teach",     "🗺 Workspace"],
-                ["recall",    "🎯 Recall"],
-                ["visualize", "📊 Visualize"],
-              ] as [WbTab, string][]
-            ).map(([tab, label]) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => {
-                  setWbTab(tab);
-                  if (tab === "visualize" && !diagramRequestedRef.current && !steps.length) {
-                    diagramRequestedRef.current = true;
-                    runGenerate();
-                  }
-                }}
-                style={{
-                  flex: 1, padding: "10px 4px", fontSize: 11,
-                  fontWeight: wbTab === tab ? 700 : 500,
-                  background: "transparent",
-                  color: wbTab === tab ? "#fcd34d" : "rgba(148,163,184,0.5)",
-                  borderBottom: `2px solid ${wbTab === tab ? "#fcd34d" : "transparent"}`,
-                  border: "none",
-                  cursor: "pointer",
-                  transition: "color 0.15s, border-color 0.15s",
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── Workspace tab: 7-step structured learning workspace ──────── */}
-          {wbTab === "teach" && (
-            <WorkspaceSteps
-              studyModel={studyModel ?? null}
-              pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle}
-              noteCards={teachNoteCards}
-            />
+          {/* ── AI Illustration — auto-generated big visual overview ────────── */}
+          {(aiImageLoading || aiImageUrl) && (
+            <div className="rounded-lg border border-gray-800/60 bg-black/20 overflow-hidden">
+              {aiImageLoading && (
+                <div className="text-[11px] text-blue-300/70 px-3 py-2 flex items-center gap-1.5">
+                  <span className="animate-pulse">✨</span> Generating visual overview…
+                </div>
+              )}
+              {aiImageUrl && (
+                <>
+                  {illustrationProfile && illustrationProfile !== (learningProfile ?? "standard") && (
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-amber-900/30 border-b border-amber-700/40 text-xs text-amber-300/80">
+                      <span>Generated under <strong>{illustrationProfile}</strong> profile.</span>
+                      <button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading} className="ml-3 px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-700/60 disabled:opacity-50 text-xs">
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={aiImageUrl} alt={effectiveConcept || "Whiteboard visual overview"} className="w-full max-h-[40vh] object-contain bg-white" />
+                  {aiTeachingScript && (
+                    <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
+                      <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
+                      <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
           )}
 
-          {/* ── Recall tab: flip-card session from the same teaching sequence ── */}
-          {wbTab === "recall" && (
-            <RecallCanvas
-              noteCards={teachNoteCards}
-              pageTitle={pageTitle ?? (studyModel as any)?.pageThesis ?? lessonTitle}
-              bookId={bookId}
-              bookTitle={bookTitle}
-              pageNumber={currentPage}
-              knowledgeNodeId={knowledgeNodeId}
-              subject={recallSubject}
-            />
-          )}
+          {/* ── WorkspaceSteps: subject-aware structured learning canvas ─────── */}
+          <WorkspaceSteps
+            studyModel={studyModel ?? null}
+            pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle}
+            noteCards={teachNoteCards}
+            onOpenChiefResident={onOpenChiefResident}
+          />
 
-          {/* ── Visualize tab: canvas diagram + optional AI illustration ── */}
-          {wbTab === "visualize" && (
+          {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}
+          {!studyModel && (
             <>
 
           {/* Header / Controls */}
@@ -998,8 +1012,8 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* Canvas diagram — primary view on Visualize tab */}
-          <div style={{ display: wbTab === "visualize" ? "block" : "none" }}>
+          {/* Canvas diagram */}
+          <div>
             {canRender ? (
               <motion.div
                 ref={scrollRef}
@@ -1046,98 +1060,10 @@ export default function WhiteboardPanel({
             ) : null}
           </div>
 
-          {/* AI Illustration — secondary view, shown below canvas when available */}
-          {aiImageUrl && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="rounded-lg border border-gray-800 bg-black/30 overflow-hidden"
-            >
-              {/* Stale-profile indicator: illustration was generated under a different profile */}
-              {illustrationProfile && illustrationProfile !== (learningProfile ?? "standard") && (
-                <div className="flex items-center justify-between px-3 py-1.5 bg-amber-900/30 border-b border-amber-700/40 text-xs text-amber-300/80">
-                  <span>Illustration generated under <strong>{illustrationProfile}</strong> profile — may not match current framing.</span>
-                  <button
-                    onClick={() => generateAIDrawing(diagramPlan)}
-                    disabled={aiImageLoading}
-                    className="ml-3 px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-700/60 transition-colors disabled:opacity-50"
-                  >
-                    Regenerate
-                  </button>
-                </div>
-              )}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={aiImageUrl} alt={effectiveConcept || "AI-generated whiteboard drawing"} className="w-full max-h-[50vh] object-contain bg-white" />
-              {aiTeachingScript && (
-                <details className="text-xs text-gray-300/90 p-3 border-t border-gray-800">
-                  <summary className="cursor-pointer opacity-80">Visual teaching script</summary>
-                  <pre className="whitespace-pre-wrap mt-2">{aiTeachingScript}</pre>
-                </details>
-              )}
-            </motion.div>
+            </> /* end concept-only fallback */
           )}
 
-          {/* Illustration controls + export/regenerate */}
-          <div className="flex flex-col gap-2 border-t border-gray-800 pt-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-xs opacity-80">Image provider</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as Provider)}
-                className="border rounded px-2 py-1 bg-gray-900 text-xs"
-              >
-                <option value="openai">OpenAI Images (anatomy / biology / chemistry / dental)</option>
-                <option value="ideogram">Ideogram (text-heavy labeled diagrams)</option>
-                <option value="sdxl">Stable Diffusion XL</option>
-                <option value="sdxlFineTuned">Fine-tuned SDXL</option>
-                <option value="leonardo" disabled>Leonardo AI (coming soon)</option>
-              </select>
-              <Button onClick={() => generateAIDrawing(diagramPlan)} disabled={aiImageLoading || !effectiveConcept}>
-                {aiImageLoading ? "Drawing..." : "🖌️ Generate Illustration"}
-              </Button>
-            </div>
-
-            {(provider === "sdxl" || provider === "sdxlFineTuned") && (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <input placeholder="Endpoint URL" value={sdxlEndpoint} onChange={(e) => setSdxlEndpoint(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                <input placeholder="Model ID" value={sdxlModelId} onChange={(e) => setSdxlModelId(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-40" />
-                <input placeholder="Style preset" value={sdxlStylePreset} onChange={(e) => setSdxlStylePreset(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-32" />
-                <input placeholder="Negative prompt" value={sdxlNegativePrompt} onChange={(e) => setSdxlNegativePrompt(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-48" />
-                <input placeholder="Seed" value={sdxlSeed} onChange={(e) => setSdxlSeed(e.target.value)} className="border rounded px-2 py-1 bg-gray-900 w-20" />
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={handleExportPNG} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                🖼 Export PNG
-              </button>
-              <button onClick={handleExportPDF} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                🧾 Export PDF
-              </button>
-              <button onClick={handleRegenerate} disabled={loading || aiImageLoading} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-                🔄 Regenerate
-              </button>
-            </div>
-          </div>
-
-          {/* Sticky notes */}
-          {stickyNotes.length > 0 && (
-            <div className="border p-3 rounded bg-yellow-50 text-sm text-gray-900">
-              <h3 className="font-semibold mb-1">Sticky Notes</h3>
-              <ul className="list-disc ml-5 space-y-1">
-                {stickyNotes.map((note, idx) => (
-                  <li key={idx}>
-                    <strong>p.{note.pageNumber}:</strong> {note.content}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-            </> /* end diagram/illustration wrapper (wbTab !== "teach" && wbTab !== "recall") */
-          )}
-
-          {/* Integration buttons — visible in all tabs */}
+          {/* ── Bottom actions ─────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 flex-wrap border-t border-gray-800 pt-2">
             <button onClick={handleSaveToNoteLab} disabled={!studyModel || !diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
               📓 Save to NoteLab
@@ -1146,7 +1072,24 @@ export default function WhiteboardPanel({
               🧠 Create Recall Card
             </button>
             <button onClick={handleAddToStudyGuide} disabled={!diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-              📘 Add to Study Guide
+              📚 Save to Study Sheet
+            </button>
+            <button
+              onClick={() => generateAIDrawing(diagramPlan)}
+              disabled={aiImageLoading || !effectiveConcept}
+              className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40"
+              title="Generate or regenerate the visual overview"
+            >
+              {aiImageLoading ? "Drawing…" : "🖌️ Illustration"}
+            </button>
+            <button onClick={handleExportPNG} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+              🖼 PNG
+            </button>
+            <button onClick={handleExportPDF} disabled={!canRender} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
+              🧾 PDF
+            </button>
+            <button onClick={() => setIsOpen(false)} className="ml-auto text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700">
+              ✖
             </button>
             {actionMessage && <span className="text-xs text-emerald-300">{actionMessage}</span>}
           </div>

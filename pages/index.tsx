@@ -6505,6 +6505,7 @@ export default function ThoughtUnitReader() {
                 pageTitle={currentPageStudyModel?.pageThesis ?? null}
                 knowledgeNodeId={pageKgNodeIdRef.current}
                 learningProfile={learningProfile}
+                onOpenChiefResident={handleOpenChiefResidentExplainPage}
               />
             </div>
           </div>

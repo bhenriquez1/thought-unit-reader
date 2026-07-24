@@ -381,9 +381,10 @@ interface WorkspaceStepsProps {
   studyModel: Record<string, unknown> | null;
   pageTitle?: string | null;
   noteCards?: NoteCard[];
+  onOpenChiefResident?: () => void;
 }
 
-export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }: WorkspaceStepsProps) {
+export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [], onOpenChiefResident }: WorkspaceStepsProps) {
   const sm = studyModel as any;
   const subject  = detectPageSubject(sm, noteCards);
   const stepDefs = getStepDefs(subject);
@@ -420,12 +421,21 @@ export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }
 
   return (
     <div className="flex flex-col px-3 py-2 gap-0.5 overflow-y-auto max-h-[calc(100vh-280px)]">
-      {/* Title + subject badge */}
-      <div className="px-1 pb-2 flex items-baseline gap-2">
+      {/* Title + subject badge + Chief Resident shortcut */}
+      <div className="px-1 pb-2 flex items-center gap-2">
         {pageTitle && (
           <div className="text-[11px] font-semibold text-white/50 truncate flex-1">{pageTitle}</div>
         )}
         <div className={`text-[9.5px] shrink-0 ${subjectMeta.color}`}>{subjectMeta.label}</div>
+        {onOpenChiefResident && (
+          <button
+            onClick={onOpenChiefResident}
+            className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/30 border border-emerald-600/30 text-emerald-300 hover:bg-emerald-900/50 transition-colors"
+            title="Open Chief Resident for this page"
+          >
+            🩺 Teach
+          </button>
+        )}
       </div>
 
       {/* Progress bar */}
