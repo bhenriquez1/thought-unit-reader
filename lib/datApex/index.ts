@@ -5,6 +5,5 @@
 export * from "./blueprint";
 export * from "./types";
 export * from "./sessionState";
-export * from "./formAssembler";
 export { ACTIVE_DAT_BLUEPRINT } from "./activeBlueprint";
 export { DAT_BLUEPRINT_2025 } from "./blueprints/dat-2025";
