@@ -32,6 +32,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
+import type { WhiteboardVisualPlan } from "@/lib/whiteboard/visualPlan";
 
 const HAS_OPENAI_KEY = !!process.env.OPENAI_API_KEY;
 const openai = HAS_OPENAI_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY! }) : (null as any);
@@ -52,6 +53,8 @@ type Body = {
   provider?: Provider;
   debug?: boolean;
   diagramPlan?: DiagramPlan;
+  /** Subject-aware visual plan — enriches the director prompt with sequence and visual type. */
+  visualPlan?: WhiteboardVisualPlan;
   sdxlOptions?: SdxlOptions;
 };
 
@@ -99,10 +102,27 @@ Your script must describe:
 
 Keep it concise (under 150 words), concrete, and visual — describe shapes, positions, labels, arrows, and colors, not abstract prose. Every label must be SHORT and large enough to read. This script will be sent directly to an image-generation model.`;
 
-async function buildTeachingScript(concept: string, context: string, debug: boolean): Promise<{ script: string; raw: string }> {
+async function buildTeachingScript(
+  concept: string,
+  context: string,
+  debug: boolean,
+  visualPlan?: WhiteboardVisualPlan,
+): Promise<{ script: string; raw: string }> {
+  const planLines: string[] = [];
+  if (visualPlan) {
+    planLines.push(`Visual type: ${visualPlan.visualType}`);
+    planLines.push(`Subject: ${visualPlan.subject}`);
+    if (visualPlan.sequence.length)
+      planLines.push(`Required sequence: ${visualPlan.sequence.join(" → ")}`);
+    if (visualPlan.requiredLabels.length)
+      planLines.push(`Required labels: ${visualPlan.requiredLabels.join(", ")}`);
+    if (visualPlan.warnings.length)
+      planLines.push(`Common traps to highlight: ${visualPlan.warnings.join("; ")}`);
+  }
   const userPrompt = [
     `Concept to visualize: ${concept}`,
-    context ? `Page context: ${context.slice(0, 1200)}` : null,
+    planLines.length ? planLines.join("\n") : null,
+    context ? `Page context: ${context.slice(0, 1000)}` : null,
   ].filter(Boolean).join("\n\n");
 
   if (debug || process.env.NODE_ENV !== "production") {
@@ -345,7 +365,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   let script = "";
   let directorRaw = "";
   try {
-    const directed = await buildTeachingScript(concept, context, debug);
+    const directed = await buildTeachingScript(concept, context, debug, body.visualPlan);
     script = directed.script;
     directorRaw = directed.raw;
     if (!script) throw new Error("Empty teaching script returned by gpt-4o-mini");

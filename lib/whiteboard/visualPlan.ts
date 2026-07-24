@@ -3,6 +3,43 @@
 // illustrations from Canonical Thought Units. A richer, semantically-grounded
 // counterpart to DiagramPlan that drives subject-specific image generation.
 
+import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+
+export type PageSubject = "chemistry" | "biology" | "clinical" | "default";
+
+// ---------------------------------------------------------------------------
+// Subject detection
+// ---------------------------------------------------------------------------
+
+const CHEM_RX = /stoichiometr|molar\s*mass|molarity|molality|\bmol\b|balancing|oxidation|reduction|equilibrium|\bacid\b|\bbase\b|buffer|\bpH\b|gas law|enthalpy|entropy|electronegativity|hybridization|resonance|isomer|polymer|coulomb|wavelength|photon|orbital|periodic|electron/i;
+const BIO_RX  = /\bcell\b|protein|\bdna\b|\brna\b|gene|chromosome|mitosis|meiosis|enzyme|metabolism|\batp\b|photosynthesis|respiration|evolution|natural selection|membrane|organelle|nucleus|transcription|translation|mutation|phenotype|genotype/i;
+const CLIN_RX = /diagnosis|treatment|patient|clinical|dental|\btooth\b|caries|symptom|pathology|disease|therapy|pharmacology|prognosis|complication|pulp|enamel|dentin|periodontal/i;
+
+/**
+ * Detect page subject from text fragments of the study model alone.
+ * Faster than the NoteCard-based detector in WorkspaceSteps (no card scan needed)
+ * and safe to call without noteCards.
+ */
+export function detectSubjectFromStudyModel(sm: any): PageSubject {
+  const text = [sm?.pageThesis, sm?.studyNotes?.keyMechanism, sm?.studyNotes?.whyThisMatters]
+    .filter(Boolean).join(" ");
+  if (CHEM_RX.test(text)) return "chemistry";
+  if (BIO_RX.test(text))  return "biology";
+  if (CLIN_RX.test(text)) return "clinical";
+  return "default";
+}
+
+/**
+ * Full subject detection including NoteCard type scan — mirrors WorkspaceSteps
+ * logic for cases where note cards are already available (e.g. WhiteboardPanel).
+ */
+export function detectSubjectFull(sm: any, noteCards: NoteCard[]): PageSubject {
+  const base = detectSubjectFromStudyModel(sm);
+  if (base !== "default") return base;
+  if (noteCards.some(c => c.type === "formula_breakdown")) return "chemistry";
+  return "default";
+}
+
 export type VisualType =
   | "flowchart"
   | "mechanism"

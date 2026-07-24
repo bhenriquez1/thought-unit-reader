@@ -7,6 +7,8 @@ import Whiteboard, { type WhiteboardHandle } from "./Whiteboard";
 import { Button } from "./ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
+import type { WhiteboardVisualPlan } from "@/lib/whiteboard/visualPlan";
+import { buildVisualPlanFromStudyModel, detectSubjectFull } from "@/lib/whiteboard/visualPlan";
 import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
@@ -189,6 +191,8 @@ export default function WhiteboardPanel({
 
   const debounceRef = useRef<number | null>(null);
   const lastCallTsRef = useRef<number>(0); // rate-limit
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const illustrationCacheKeyRef = useRef<string | null>(null);
 
   const effectiveConcept = (concept || "").trim();
   const effectiveContext = (context || "").trim();
@@ -318,8 +322,14 @@ export default function WhiteboardPanel({
    *  parallel with the always-present diagram, never gating it. Failure of any
    *  kind degrades silently: the diagram stays up, and (outside debug mode) a
    *  small auto-fading note is shown instead of a raw model error. */
-  const generateAIDrawing = useCallback(async (plan: DiagramPlan | null) => {
+  const generateAIDrawing = useCallback(async (plan: DiagramPlan | null, visualPlan?: WhiteboardVisualPlan) => {
     if (!effectiveConcept) return;
+
+    // Cancel any in-flight request before starting a new one
+    aiAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+
     setAiImageLoading(true);
     setAiImageError(null);
     setAiImageDebugInfo(null);
@@ -337,16 +347,20 @@ export default function WhiteboardPanel({
       const resp = await fetch("/api/whiteboard-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
         body: JSON.stringify({
           concept: effectiveConcept,
           context: effectiveContext,
           provider,
           debug: isDebugMode,
           diagramPlan: plan ?? undefined,
+          visualPlan: visualPlan ?? undefined,
           sdxlOptions,
         }),
       });
+      if (ctrl.signal.aborted) return;
       const data = await resp.json();
+      if (ctrl.signal.aborted) return;
 
       if (data.error) {
         console.warn("[WHITEBOARD_IMAGE_CLIENT_FAILURE]", { provider, error: data.error, ...(data.debugInfo ?? {}) });
@@ -367,6 +381,7 @@ export default function WhiteboardPanel({
       setIllustrationProfile(learningProfile ?? "standard");
       console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
     } catch (err: any) {
+      if (err?.name === "AbortError") return; // cancelled — no state update needed
       console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
       setAiImageUrl(null);
       setAiTeachingScript("");
@@ -378,7 +393,7 @@ export default function WhiteboardPanel({
         window.setTimeout(() => setShowFallbackNote(false), 3200);
       }
     } finally {
-      setAiImageLoading(false);
+      if (!ctrl.signal.aborted) setAiImageLoading(false);
     }
   }, [effectiveConcept, effectiveContext, provider, isDebugMode, sdxlEndpoint, sdxlModelId, sdxlStylePreset, sdxlNegativePrompt, sdxlSeed]);
 
@@ -557,13 +572,21 @@ export default function WhiteboardPanel({
         hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
         conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
       });
-      if (effectiveConcept) generateAIDrawing(null);
+      if (effectiveConcept && illustrationCacheKeyRef.current !== cacheKey) {
+        illustrationCacheKeyRef.current = cacheKey;
+        const subject = detectSubjectFull(studyModel, teachNoteCards);
+        const vp = buildVisualPlanFromStudyModel(studyModel as Record<string, unknown>, subject);
+        generateAIDrawing(null, vp);
+      }
       return;
     }
     const shouldTrigger = autoTrigger && !!effectiveConcept && !!effectiveContext;
     if (!shouldTrigger) {
       // Bare concept (e.g. "Explain This Step → Visualize") — still generate illustration.
-      if (effectiveConcept) generateAIDrawing(null);
+      if (effectiveConcept && illustrationCacheKeyRef.current !== cacheKey) {
+        illustrationCacheKeyRef.current = cacheKey;
+        generateAIDrawing(null);
+      }
       return;
     }
     setJustDetected(true);
@@ -586,6 +609,11 @@ export default function WhiteboardPanel({
       console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Cancel any in-flight AI illustration fetch on unmount to prevent stale state updates */
+  useEffect(() => {
+    return () => { aiAbortRef.current?.abort(); };
   }, []);
 
   /** Auto re-explain when page changes (debounced + heuristic) */
@@ -688,10 +716,10 @@ export default function WhiteboardPanel({
         createdAt: Date.now(),
       };
       await saveStudyGuide(record);
-      flashAction("✅ Added to Study Guide");
+      flashAction("✅ Saved to Study Sheet");
     } catch (err) {
       console.error("[WHITEBOARD_STUDYGUIDE_ERROR]", err);
-      flashAction("⚠ Could not add to Study Guide");
+      flashAction("⚠ Could not save to Study Sheet");
     }
   };
 
@@ -1038,7 +1066,7 @@ export default function WhiteboardPanel({
               🧠 Create Recall Card
             </button>
             <button onClick={handleAddToStudyGuide} disabled={!diagramPlan} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-40">
-              📘 Add to Study Guide
+              📚 Save to Study Sheet
             </button>
             <button
               onClick={() => generateAIDrawing(diagramPlan)}
