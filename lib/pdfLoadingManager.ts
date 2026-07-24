@@ -94,9 +94,15 @@ export class PDFLoadingManager {
     // cross-reference table. Revoked blob URLs still fail fast (within the
     // first fetch), so a larger ceiling does not extend the "dead blob" wait.
     const isBlob = url.startsWith('blob:');
-    // Blob: attempt 1 — direct URL (memory-efficient); attempt 2 — disable range
-    // requests as a fallback for browsers that report status 0 on blob range reqs.
-    const maxRetries = isBlob ? 2 : (options.retryCount || 3);
+    // Blob URLs live in local memory — range requests against them return status 0
+    // in some environments (Next.js production builds, service workers, iOS Safari)
+    // and the failure can occur during PAGE RENDERING, not during the initial
+    // getDocument() call. That means the loadingTask.promise resolves successfully
+    // but a later render request fails, bypassing this retry mechanism entirely.
+    // Fix: always disable range requests for blob URLs so PDF.js fetches the entire
+    // content in one shot before handing it to the renderer. No retry needed since
+    // the data is already in local memory.
+    const maxRetries = isBlob ? 1 : (options.retryCount || 3);
     const timeout = options.timeout || (isBlob ? 300_000 : 60_000);
 
     try {
@@ -109,19 +115,15 @@ export class PDFLoadingManager {
 
       console.log(`📄 PDFLoadingManager: Loading attempt ${attempt}/${maxRetries} for ${url.slice(0, 50)}...`);
 
-      // Blob URL strategy:
-      // Attempt 1: Pass the blob URL directly to PDF.js. PDF.js v4 issues byte-range
-      //   requests against blob: URLs, which work in Chrome 90+/Firefox 78+/Safari 14+.
-      //   This is memory-efficient — no second ArrayBuffer copy of the full binary.
-      // Attempt 2 (fallback): Disable range requests so PDF.js fetches the entire blob
-      //   in one shot. Covers environments where blob: range requests return status 0.
-      //   Memory cost is one full ArrayBuffer, but at least the PDF opens.
       let documentSourceOpts: Record<string, unknown>;
       if (isBlob) {
-        documentSourceOpts = attempt === 1
-          ? { url, disableRange: false, rangeChunkSize: 65536 }
-          : { url, disableRange: true };
-        console.log(`📄 PDFLoadingManager: Blob URL — attempt ${attempt} (${attempt === 1 ? 'range-request mode' : 'full-fetch fallback'})`);
+        // Blob URLs are local memory — always disable range requests.
+        // Range-request failures during rendering bypass the retry mechanism
+        // (the loadingTask.promise resolves before the renderer issues range
+        // requests), so we must prevent them proactively rather than catching
+        // them after the fact.
+        documentSourceOpts = { url, disableRange: true };
+        console.log(`📄 PDFLoadingManager: Blob URL — full-fetch mode (range requests disabled)`);
       } else {
         documentSourceOpts = { url };
       }
