@@ -1,7 +1,7 @@
 "use client";
 // components/apex/TrainingArena.tsx
 // DAT Training Arena — Learn → Practice → Generate → Review
-// Each subject panel: Learn (PDRM accordion) | Practice | Generate | Review
+// Each subject panel: Learn (Chief Resident + topology) | Practice | Generate | Review
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
@@ -10,6 +10,13 @@ import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import { DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
 import type { DifficultyLevel, EngineQuestion, QuestionType } from "@/lib/examEngine/types";
 import type { ApexSection } from "@/lib/apex/datApexTypes";
+import { getSectionTopology, buildAdaptivePlan } from "@/lib/datApex";
+import type { TopicNode } from "@/lib/datApex/blueprintTopology";
+import type { DatSectionId } from "@/lib/datApex/blueprint";
+import type { DatReadinessState } from "@/lib/datApex/types";
+import ChiefResidentPanel from "@/components/apex/ChiefResidentPanel";
+import { blueprintFromShort } from "@/lib/datApex/sectionIdBridge";
+import type { ShortSectionId } from "@/lib/datApex/sectionIdBridge";
 
 // Training Arena has no real uploaded book — pattern modules are AI-grounded
 // directly from their own pattern/decisionRule/mechanism/trap text instead.
@@ -36,6 +43,7 @@ type Subject = {
   colorTo: string;
   border: string;
   textAccent: string;
+  bg?: string;
 };
 
 const SUBJECTS: Subject[] = [
@@ -107,74 +115,87 @@ type TabId = "learn" | "practice" | "generate" | "review";
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function LearnTab({ subject }: { subject: Subject }) {
-  const modules = getModulesBySection(subject.id as ApexSection);
-  const allPatterns = useApexEngineStore((s) => s.patterns);
-  // useMemo prevents a new array reference on every render (inline .filter() inside
-  // a Zustand selector causes an infinite re-render loop via useSyncExternalStore).
-  const storePatterns = useMemo(
-    () => allPatterns.filter((p) => p.section === subject.id),
-    [allPatterns, subject.id],
+function LearnTab({ subject, readiness }: { subject: Subject; readiness: DatReadinessState | null }) {
+  const bpSectionId = blueprintFromShort(subject.id as ShortSectionId);
+  const topo = useMemo(() => getSectionTopology(bpSectionId), [bpSectionId]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(
+    topo?.topics[0]?.topicId ?? null,
   );
-  const [openId, setOpenId] = useState<string | null>(null);
+
+  // Keep selectedTopicId valid when subject changes
+  useEffect(() => {
+    if (topo?.topics.length) setSelectedTopicId(topo.topics[0].topicId);
+  }, [subject.id]);
+
+  if (!topo) return <div className="text-xs text-gray-500 p-4">No topology for this section.</div>;
+
+  const selectedTopic = topo.topics.find((t) => t.topicId === selectedTopicId) ?? topo.topics[0];
+
+  // Derive topic readiness bands for display
+  const topicAccuracies: Record<string, number> = {};
+  if (readiness) {
+    for (const [key, acc] of Object.entries(readiness.topicAccuracy)) {
+      const [sec, topicId] = key.split(":");
+      if (sec === bpSectionId) topicAccuracies[topicId] = acc;
+    }
+  }
 
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-gray-400 mb-3">
-        Pattern → Decision Rule → Mechanism → Trap. Open each to study before you practice.
-      </p>
-      {modules.map((m) => {
-        const stored = storePatterns.find((p) => p.id === m.id);
-        const isOpen = openId === m.id;
-        return (
-          <div key={m.id} className="rounded-lg border border-gray-600/30 overflow-hidden">
-            <button
-              onClick={() => setOpenId(isOpen ? null : m.id)}
-              className="w-full flex items-center justify-between px-3 py-2.5 bg-black/20 hover:bg-black/30 transition-colors text-left"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-white">{m.name}</span>
-                {m.patSubtype && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-400 uppercase">
-                    {m.patSubtype.replace("_", " ")}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {stored && stored.masteryLevel !== "unseen" && stored.timesSeen > 0 && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-                    stored.masteryLevel === "mastered" ? "bg-emerald-500/20 text-emerald-300"
-                      : stored.masteryLevel === "strong" ? "bg-green-500/20 text-green-300"
-                      : stored.masteryLevel === "unstable" ? "bg-yellow-500/20 text-yellow-300"
-                      : "bg-gray-500/20 text-gray-400"
-                  }`}>{stored.masteryLevel}</span>
-                )}
-                <span className="text-gray-500 text-xs">{isOpen ? "▲" : "▼"}</span>
-              </div>
-            </button>
-            {isOpen && (
-              <div className="p-3 bg-black/10 grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-purple-400 font-medium">Pattern</span>
-                  <p className="text-gray-300 mt-1 leading-relaxed">{m.pattern}</p>
+    <div className="flex gap-0 h-full min-h-[400px]">
+      {/* Left: Topic list */}
+      <div className="w-[200px] shrink-0 border-r border-white/5 overflow-y-auto">
+        <div className="p-2 space-y-0.5">
+          {topo.topics.map((topic) => {
+            const acc = topicAccuracies[topic.topicId];
+            const hasData = acc !== undefined;
+            const bandColor = hasData
+              ? acc >= 0.82 ? "text-emerald-400"
+              : acc >= 0.70 ? "text-green-400"
+              : acc >= 0.58 ? "text-blue-400"
+              : acc >= 0.44 ? "text-yellow-400"
+              : "text-red-400"
+              : "text-gray-600";
+
+            return (
+              <button
+                key={topic.topicId}
+                onClick={() => setSelectedTopicId(topic.topicId)}
+                className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${
+                  selectedTopicId === topic.topicId
+                    ? `${subject.bg ?? "bg-white/10"} text-white`
+                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-medium leading-tight line-clamp-2">{topic.label}</span>
+                  {hasData && (
+                    <span className={`text-[9px] shrink-0 ${bandColor}`}>
+                      {Math.round(acc * 100)}%
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <span className="text-blue-400 font-medium">Decision Rule</span>
-                  <p className="text-gray-300 mt-1 leading-relaxed">{m.decisionRule}</p>
-                </div>
-                <div>
-                  <span className="text-green-400 font-medium">Mechanism</span>
-                  <p className="text-gray-300 mt-1 leading-relaxed">{m.mechanism}</p>
-                </div>
-                <div>
-                  <span className="text-rose-400 font-medium">Trap</span>
-                  <p className="text-gray-300 mt-1 leading-relaxed">{m.trap}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+                <div className="text-[9px] text-gray-600 mt-0.5">{topic.targetPct}% of exam</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Right: Chief Resident Panel */}
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <ChiefResidentPanel
+          key={`${subject.id}:${selectedTopic.topicId}`}
+          sectionId={bpSectionId}
+          sectionLabel={subject.label}
+          topic={selectedTopic}
+          accentColor={subject.id === "bio" ? "purple"
+            : subject.id === "gc" ? "blue"
+            : subject.id === "orgo" ? "green"
+            : subject.id === "pat" ? "yellow"
+            : subject.id === "qr" ? "pink"
+            : "teal"}
+        />
+      </div>
     </div>
   );
 }
@@ -636,7 +657,7 @@ function ReviewTab({ subject }: { subject: Subject }) {
 // Subject Panel
 // ---------------------------------------------------------------------------
 
-function SubjectPanel({ subject }: { subject: Subject }) {
+function SubjectPanel({ subject, readiness }: { subject: Subject; readiness: DatReadinessState | null }) {
   const [tab, setTab] = useState<TabId>("learn");
   const { patterns: storePatterns } = useApexEngineStore();
   const readinessForSubject = storePatterns
@@ -693,7 +714,7 @@ function SubjectPanel({ subject }: { subject: Subject }) {
 
       {/* Tab content */}
       <div className="min-h-[200px]">
-        {tab === "learn" && <LearnTab subject={subject} />}
+        {tab === "learn" && <LearnTab subject={subject} readiness={readiness} />}
         {tab === "practice" && <PracticeTab subject={subject} />}
         {tab === "generate" && <GenerateTab subject={subject} />}
         {tab === "review" && <ReviewTab subject={subject} />}
@@ -708,6 +729,14 @@ function SubjectPanel({ subject }: { subject: Subject }) {
 
 export default function TrainingArena() {
   const [expanded, setExpanded] = useState(false);
+  const [readiness, setReadiness] = useState<DatReadinessState | null>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    import("@/lib/datApex/idbStore").then(({ loadReadinessState }) => {
+      loadReadinessState("demo-user").then(setReadiness).catch(() => {});
+    });
+  }, [expanded]);
 
   return (
     <div className="bg-black/30 backdrop-blur-sm rounded-xl border border-blue-500/20 overflow-hidden">
@@ -731,7 +760,7 @@ export default function TrainingArena() {
         <div className="px-6 pb-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {SUBJECTS.map((s) => (
-              <SubjectPanel key={s.id} subject={s} />
+              <SubjectPanel key={s.id} subject={s} readiness={readiness} />
             ))}
           </div>
         </div>

@@ -7,3 +7,8 @@ export * from "./types";
 export * from "./sessionState";
 export { ACTIVE_DAT_BLUEPRINT } from "./activeBlueprint";
 export { DAT_BLUEPRINT_2025 } from "./blueprints/dat-2025";
+export * from "./sectionIdBridge";
+export * from "./blueprintTopology";
+export * from "./scoring";
+export * from "./readinessUpdater";
+export * from "./adaptivePlanner";
