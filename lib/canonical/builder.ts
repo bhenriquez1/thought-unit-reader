@@ -11,7 +11,7 @@ import {
   buildCanonicalId,
   datSectionFromSubject,
 } from './types';
-import { classifyBook } from '@/lib/apex/bookCatalogue';
+import { classifyDATSubject } from './classifier';
 
 // ── Unit type detection via simple lexicon ──────────────────────────────────
 
@@ -115,7 +115,7 @@ export function buildCanonicalUnits(
 ): CanonicalThoughtUnit[] {
   const { documentId, bookId, bookTitle, pageIndex, chunks, sourceUltraNoteId } = opts;
 
-  const { subject, confidence } = classifyBook(bookId, bookTitle);
+  const { subject, confidence } = classifyDATSubject(bookId, bookTitle);
   const datSection: DatSection = datSectionFromSubject(subject);
   const classConfidence = confidence === 'high' ? 0.85 : 0.45;
 

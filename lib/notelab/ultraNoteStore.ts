@@ -6,17 +6,10 @@ import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/current
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
+import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
 
-export type NoteSubject =
-  | "Biology"
-  | "Calculus"
-  | "Chemistry"
-  | "Physics"
-  | "Computer Science"
-  | "Law"
-  | "Nursing / Pharmacology"
-  | "Dental / Clinical"
-  | "General Notes";
+// Re-export NoteSubject so callers that import it from here don't need to change.
+export type { NoteSubject };
 
 export interface UltraNoteFolder {
   id: string;
@@ -26,18 +19,9 @@ export interface UltraNoteFolder {
   createdAt: number;
 }
 
-/** Infer subject from bookId or title keywords */
-export function inferSubject(bookId: string): NoteSubject {
-  const lower = bookId.toLowerCase();
-  if (/bio(logy)?|anatomy|physiology|genetics|cell|organism/.test(lower)) return "Biology";
-  if (/calc|math|algebra|geometry|trig|statistic|linear|differential/.test(lower)) return "Calculus";
-  if (/chem(istry)?|organic|biochem/.test(lower)) return "Chemistry";
-  if (/physics|mechanics|thermodynamic|electromagnet/.test(lower)) return "Physics";
-  if (/nursing|pharma|nclex/.test(lower)) return "Nursing / Pharmacology";
-  if (/\blaw\b|legal|contract|tort/.test(lower)) return "Law";
-  if (/computer science|programming|algorithm|software|coding/.test(lower)) return "Computer Science";
-  if (/dental|dent|medical|med|clinical|patho|histology/.test(lower)) return "Dental / Clinical";
-  return "General Notes";
+/** Infer NoteSubject from bookId — delegates to the canonical classifier. */
+export function inferSubject(bookId: string, bookTitle?: string): NoteSubject {
+  return inferNoteSubject(bookId, bookTitle);
 }
 
 export interface UltraNoteConcept {
