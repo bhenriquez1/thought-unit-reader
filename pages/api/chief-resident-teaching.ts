@@ -193,7 +193,7 @@ function buildUserContext(req: ChiefResidentRequest): string {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: "ANTHROPIC_API_KEY not configured — contact your administrator" });
+    return res.status(503).json({ error: "Chief Resident is temporarily unavailable. The teaching service has not been configured for this deployment." });
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
