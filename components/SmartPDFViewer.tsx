@@ -361,6 +361,8 @@ export interface SmartPDFViewerProps {
   onPdfChipPlay?: (cursor: ReadingCursor) => void;
   /** Fired once when PDF loading fails — used to surface an honest error state upstream. */
   onLoadError?: (message: string) => void;
+  /** Overrides the default URL-retry with an IDB-aware re-resolve (provided by index.tsx). */
+  onRetry?: () => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -575,6 +577,7 @@ export default function SmartPDFViewer({
   onPdfWordClick,
   onPdfChipPlay,
   onLoadError,
+  onRetry: onRetryProp,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -1751,7 +1754,7 @@ export default function SmartPDFViewer({
               <div className="font-semibold mb-1">PDF Loading Failed</div>
               <div className="text-sm opacity-90 mb-4">{loadingError}</div>
               <button
-                onClick={retry}
+                onClick={onRetryProp ?? retry}
                 className="bg-white text-red-600 px-4 py-2 rounded font-medium hover:bg-gray-100 transition-colors"
               >
                 🔄 Try Again

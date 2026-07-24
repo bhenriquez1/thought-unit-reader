@@ -548,6 +548,10 @@ export default function ThoughtUnitReader() {
   const [pageTextByPage, setPageTextByPage] = useState<Map<string, string>>(() => new Map());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  // IDB documentId of the currently open PDF — used by the IDB-aware retry callback.
+  const [currentLocalDocumentId, setCurrentLocalDocumentId] = useState<string | null>(null);
+  // True when PDF.js fails to load the source file (distinct from text-analysis failures).
+  const [pdfSourceFailed, setPdfSourceFailed] = useState(false);
 
   const [viewMode, setViewMode] = useState<WorkspaceMode>("reader");
 
@@ -562,6 +566,8 @@ export default function ThoughtUnitReader() {
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  // Clear PDF source failure when a new source URL is set (fresh upload or IDB reload).
+  useEffect(() => { if (fileUrl) setPdfSourceFailed(false); }, [fileUrl]);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
   const [pdfLoadingState, setPdfLoadingState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -3581,6 +3587,7 @@ export default function ThoughtUnitReader() {
           const uploadedAt = new Date().toISOString();
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
+          setCurrentLocalDocumentId(documentId);
           // Only persist the localStorage library entry after IDB binary is confirmed.
           // setFileUrl runs immediately (below) so the viewer opens without waiting.
           persistToIDB(documentId)
@@ -3594,6 +3601,7 @@ export default function ThoughtUnitReader() {
         const uploadedAt = new Date().toISOString();
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
+        setCurrentLocalDocumentId(documentId);
         persistToIDB(documentId)
           .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
           .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
@@ -3757,6 +3765,7 @@ export default function ThoughtUnitReader() {
         }
         const blob = new Blob([data], { type: 'application/pdf' });
         const sessionUrl = URL.createObjectURL(blob);
+        setCurrentLocalDocumentId(localDocumentId);
         setFileUrl(sessionUrl);
         generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
         // Re-run background processing to rebuild thought units
@@ -3768,6 +3777,7 @@ export default function ThoughtUnitReader() {
       }
     } else {
       // Firebase URL or other durable URL — use directly
+      setCurrentLocalDocumentId(null);
       setFileUrl(url);
       generateTOC(url).then(setTableOfContents).catch(() => {});
     }
@@ -4715,8 +4725,11 @@ export default function ThoughtUnitReader() {
                           await saveDocumentFile(missingPDFEntry.documentId, data);
                           const blob = new Blob([data], { type: 'application/pdf' });
                           const sessionUrl = URL.createObjectURL(blob);
+                          setCurrentLocalDocumentId(missingPDFEntry.documentId);
                           setFileUrl(sessionUrl);
                           setMissingPDFEntry(null);
+                          const docId = (missingPDFEntry.name || '').replace(/\.[Pp][Dd][Ff]$/, '') || 'book';
+                          startBookProcessing(new File([blob], missingPDFEntry.name || 'document.pdf', { type: 'application/pdf' }), docId);
                         } catch (err) {
                           console.error('[storage] Re-upload failed:', err);
                         }
@@ -4807,13 +4820,36 @@ export default function ThoughtUnitReader() {
                     )}
                   </div>
                 )}
-                {bookProcessingStatus.phase === 'error' && (
+                {bookProcessingStatus.phase === 'error' && !pdfSourceFailed && (
                   <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-amber-700/50 bg-amber-900/80 px-4 py-2 text-xs text-amber-100 backdrop-blur-sm">
                     <span>⚠</span>
                     <span className="flex-1">{bookProcessingStatus.progress}</span>
                     <button
                       onClick={() => setBookProcessingStatus(prev => ({ ...prev, phase: 'idle' }))}
                       className="ml-auto text-amber-300 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {pdfSourceFailed && (
+                  <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-red-700/50 bg-red-900/80 px-4 py-2 text-xs text-red-100 backdrop-blur-sm">
+                    <span>✕</span>
+                    <span className="flex-1">Source PDF unavailable — the file could not be loaded.</span>
+                    {currentLocalDocumentId && (
+                      <button
+                        onClick={() => {
+                          setPdfSourceFailed(false);
+                          handleLoadPDF('', uploadedFile?.name, currentLocalDocumentId);
+                        }}
+                        className="rounded px-2 py-0.5 bg-red-700 hover:bg-red-600 text-red-100"
+                      >
+                        Try Again
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setPdfSourceFailed(false)}
+                      className="ml-1 text-red-300 hover:text-white"
                     >
                       ✕
                     </button>
@@ -4897,7 +4933,14 @@ export default function ThoughtUnitReader() {
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}
                   bookTitle={uploadedFile?.name}
-                  onPdfLoadError={() => setCanonicalLeftPanelDiagnostic('source pdf unavailable')}
+                  onPdfLoadError={() => {
+                    setCanonicalLeftPanelDiagnostic('source pdf unavailable');
+                    setPdfSourceFailed(true);
+                  }}
+                  onPdfRetry={currentLocalDocumentId ? () => {
+                    setPdfSourceFailed(false);
+                    handleLoadPDF('', uploadedFile?.name, currentLocalDocumentId);
+                  } : undefined}
                 />
 
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
