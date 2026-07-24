@@ -1,18 +1,74 @@
 // components/whiteboard/WorkspaceSteps.tsx
-// 7-step structured learning workspace derived from CurrentPageStudyModel.
-// Replaces the sequential "Teach" flash-card view in WhiteboardPanel.
-// Each step maps to a distinct stage of deep understanding:
-//   1 Core Concept  →  2 Why It Matters  →  3 Mechanism
-//   4 Clinical Example  →  5 Common Mistakes  →  6 DAT Question  →  7 Memory Anchor
-// Rendering: colored callout cards, mechanism arrows, collapsible depth.
+// Subject-aware structured learning workspace derived from CurrentPageStudyModel.
+// Detects page subject (chemistry/physics, biology, clinical/dental, or default)
+// and applies the matching step schema:
+//
+//   CHEMISTRY / PHYSICS — problem-solving flow
+//     Concept → Known Info → Rule/Equation → Step-by-Step → Calculation → Trap → DAT Check → Anchor
+//
+//   BIOLOGY — conceptual mechanism flow
+//     Concept → Why It Matters → Mechanism → Application → Common Mistakes → DAT Question → Anchor
+//
+//   CLINICAL / DENTAL — clinical-reasoning flow
+//     Concept → Why It Matters → Mechanism → Clinical Case → Diagnosis/Treatment → Mistakes → Anchor
+//
+//   DEFAULT (general) — 7-step general flow
+//     Concept → Why It Matters → Mechanism → Clinical Example → Common Mistakes → DAT Question → Anchor
 
 "use client";
 
 import React, { useState } from "react";
-import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
-interface StepConfig {
+// ---------------------------------------------------------------------------
+// Subject detection
+// ---------------------------------------------------------------------------
+
+type PageSubject = "chemistry" | "biology" | "clinical" | "default";
+
+function detectPageSubject(sm: any, noteCards: NoteCard[]): PageSubject {
+  const thesis  = (sm?.pageThesis ?? "").toLowerCase();
+  const mechTxt = (sm?.studyNotes?.keyMechanism ?? "").toLowerCase();
+  const whyTxt  = (sm?.studyNotes?.whyThisMatters ?? "").toLowerCase();
+  const combined = `${thesis} ${mechTxt} ${whyTxt}`;
+
+  // Chemistry / physics — calculation-first subjects
+  const chemWords = [
+    "stoichiometry","molar mass","molarity","molality","mol","equation",
+    "reaction","electron","orbital","periodic","balancing","oxidation",
+    "reduction","equilibrium","acid","base","buffer","ph","pressure",
+    "temperature","gas law","energy","enthalpy","entropy",
+    "electronegativity","hybridization","resonance","isomer","polymer",
+    "coulomb","joule","wavelength","frequency","photon",
+  ];
+  if (chemWords.some(w => combined.includes(w))) return "chemistry";
+  if (noteCards.some(c => c.type === "formula_breakdown")) return "chemistry";
+
+  // Biology — concept/mechanism subjects
+  const bioWords = [
+    "cell","protein","dna","rna","gene","chromosome","mitosis","meiosis",
+    "enzyme","metabolism","atp","photosynthesis","cellular respiration",
+    "evolution","natural selection","membrane","organelle","nucleus",
+    "transcription","translation","mutation","phenotype","genotype",
+  ];
+  if (bioWords.some(w => combined.includes(w))) return "biology";
+
+  // Clinical / dental — patient-facing reasoning
+  const clinWords = [
+    "diagnosis","treatment","patient","clinical","dental","tooth","caries",
+    "symptom","pathology","disease","therapy","pharmacology","prognosis",
+    "complication","pulp","enamel","dentin","periodontal",
+  ];
+  if (clinWords.some(w => combined.includes(w))) return "clinical";
+
+  return "default";
+}
+
+// ---------------------------------------------------------------------------
+// Step configuration
+// ---------------------------------------------------------------------------
+
+interface StepDef {
   id: number;
   label: string;
   icon: string;
@@ -23,130 +79,216 @@ interface StepConfig {
   badgeClass: string;
 }
 
-const STEPS: StepConfig[] = [
-  { id: 1, label: "Core Concept",     icon: "⚡", color: "#fcd34d", bgClass: "bg-yellow-900/20",  borderClass: "border-yellow-500/30", textClass: "text-yellow-100",  badgeClass: "bg-yellow-500/80 text-black" },
-  { id: 2, label: "Why It Matters",   icon: "🎯", color: "#34d399", bgClass: "bg-emerald-900/20", borderClass: "border-emerald-500/30", textClass: "text-emerald-50",  badgeClass: "bg-emerald-500/80 text-black" },
-  { id: 3, label: "Mechanism",        icon: "⚙️", color: "#60a5fa", bgClass: "bg-blue-900/20",    borderClass: "border-blue-500/30",   textClass: "text-blue-50",     badgeClass: "bg-blue-500/80 text-white"  },
-  { id: 4, label: "Clinical Example", icon: "🩺", color: "#a78bfa", bgClass: "bg-violet-900/20",  borderClass: "border-violet-500/30", textClass: "text-violet-50",   badgeClass: "bg-violet-500/80 text-white" },
-  { id: 5, label: "Common Mistakes",  icon: "⚠️", color: "#fb923c", bgClass: "bg-orange-900/20",  borderClass: "border-orange-500/30", textClass: "text-orange-50",   badgeClass: "bg-orange-500/80 text-black" },
-  { id: 6, label: "DAT Question",     icon: "❓", color: "#e879f9", bgClass: "bg-pink-900/20",    borderClass: "border-pink-500/30",   textClass: "text-pink-50",     badgeClass: "bg-pink-500/80 text-white"  },
-  { id: 7, label: "Memory Anchor",    icon: "🧠", color: "#a78bfa", bgClass: "bg-purple-900/20",  borderClass: "border-purple-500/30", textClass: "text-purple-50",   badgeClass: "bg-purple-500/80 text-white" },
-];
-
 interface StepContent {
   stepId: number;
   content: string;
   bullets?: string[];
 }
 
-interface WorkspaceStepsProps {
-  studyModel: Record<string, unknown> | CurrentPageStudyModel | null;
-  pageTitle?: string | null;
-  noteCards?: NoteCard[];
+// Color palettes per step role
+const STEP_COLORS = {
+  concept:    { color: "#fcd34d", bgClass: "bg-yellow-900/20",  borderClass: "border-yellow-500/30", textClass: "text-yellow-100",  badgeClass: "bg-yellow-500/80 text-black" },
+  why:        { color: "#34d399", bgClass: "bg-emerald-900/20", borderClass: "border-emerald-500/30", textClass: "text-emerald-50",  badgeClass: "bg-emerald-500/80 text-black" },
+  mechanism:  { color: "#60a5fa", bgClass: "bg-blue-900/20",    borderClass: "border-blue-500/30",   textClass: "text-blue-50",     badgeClass: "bg-blue-500/80 text-white"  },
+  known:      { color: "#818cf8", bgClass: "bg-indigo-900/20",  borderClass: "border-indigo-500/30", textClass: "text-indigo-50",   badgeClass: "bg-indigo-500/80 text-white" },
+  equation:   { color: "#22d3ee", bgClass: "bg-cyan-900/20",    borderClass: "border-cyan-500/30",   textClass: "text-cyan-50",     badgeClass: "bg-cyan-500/80 text-black"  },
+  steps:      { color: "#60a5fa", bgClass: "bg-blue-900/20",    borderClass: "border-blue-500/30",   textClass: "text-blue-50",     badgeClass: "bg-blue-500/80 text-white"  },
+  calc:       { color: "#a3e635", bgClass: "bg-lime-900/20",    borderClass: "border-lime-500/30",   textClass: "text-lime-50",     badgeClass: "bg-lime-600/80 text-black"  },
+  clinical:   { color: "#a78bfa", bgClass: "bg-violet-900/20",  borderClass: "border-violet-500/30", textClass: "text-violet-50",   badgeClass: "bg-violet-500/80 text-white" },
+  diag:       { color: "#4ade80", bgClass: "bg-green-900/20",   borderClass: "border-green-500/30",  textClass: "text-green-50",    badgeClass: "bg-green-600/80 text-black" },
+  mistakes:   { color: "#fb923c", bgClass: "bg-orange-900/20",  borderClass: "border-orange-500/30", textClass: "text-orange-50",   badgeClass: "bg-orange-500/80 text-black" },
+  datcheck:   { color: "#e879f9", bgClass: "bg-pink-900/20",    borderClass: "border-pink-500/30",   textClass: "text-pink-50",     badgeClass: "bg-pink-500/80 text-white"  },
+  anchor:     { color: "#c084fc", bgClass: "bg-purple-900/20",  borderClass: "border-purple-500/30", textClass: "text-purple-50",   badgeClass: "bg-purple-500/80 text-white" },
+  application:{ color: "#34d399", bgClass: "bg-teal-900/20",    borderClass: "border-teal-500/30",   textClass: "text-teal-50",     badgeClass: "bg-teal-500/80 text-black"  },
+};
+
+// ---------------------------------------------------------------------------
+// Schema definitions per subject
+// ---------------------------------------------------------------------------
+
+const CHEMISTRY_STEPS: StepDef[] = [
+  { id: 1, label: "Core Concept",        icon: "⚡", ...STEP_COLORS.concept   },
+  { id: 2, label: "Known Information",   icon: "📋", ...STEP_COLORS.known     },
+  { id: 3, label: "Rule or Equation",    icon: "📐", ...STEP_COLORS.equation  },
+  { id: 4, label: "Step-by-Step Setup",  icon: "🔢", ...STEP_COLORS.steps     },
+  { id: 5, label: "Calculation",         icon: "🧮", ...STEP_COLORS.calc      },
+  { id: 6, label: "Common Trap",         icon: "⚠️", ...STEP_COLORS.mistakes  },
+  { id: 7, label: "DAT Check",           icon: "✓",  ...STEP_COLORS.datcheck  },
+  { id: 8, label: "Memory Anchor",       icon: "🧠", ...STEP_COLORS.anchor    },
+];
+
+const BIOLOGY_STEPS: StepDef[] = [
+  { id: 1, label: "Core Concept",        icon: "⚡", ...STEP_COLORS.concept    },
+  { id: 2, label: "Why It Matters",      icon: "🎯", ...STEP_COLORS.why        },
+  { id: 3, label: "Mechanism",           icon: "⚙️", ...STEP_COLORS.mechanism  },
+  { id: 4, label: "Real-World Example",  icon: "🔬", ...STEP_COLORS.application},
+  { id: 5, label: "Common Mistakes",     icon: "⚠️", ...STEP_COLORS.mistakes   },
+  { id: 6, label: "DAT Question",        icon: "❓", ...STEP_COLORS.datcheck   },
+  { id: 7, label: "Memory Anchor",       icon: "🧠", ...STEP_COLORS.anchor     },
+];
+
+const CLINICAL_STEPS: StepDef[] = [
+  { id: 1, label: "Core Concept",        icon: "⚡", ...STEP_COLORS.concept   },
+  { id: 2, label: "Why It Matters",      icon: "🎯", ...STEP_COLORS.why       },
+  { id: 3, label: "Mechanism",           icon: "⚙️", ...STEP_COLORS.mechanism },
+  { id: 4, label: "Clinical Case",       icon: "🩺", ...STEP_COLORS.clinical  },
+  { id: 5, label: "Diagnosis / Tx",      icon: "💊", ...STEP_COLORS.diag      },
+  { id: 6, label: "Common Mistakes",     icon: "⚠️", ...STEP_COLORS.mistakes  },
+  { id: 7, label: "Memory Anchor",       icon: "🧠", ...STEP_COLORS.anchor    },
+];
+
+const DEFAULT_STEPS: StepDef[] = [
+  { id: 1, label: "Core Concept",        icon: "⚡", ...STEP_COLORS.concept    },
+  { id: 2, label: "Why It Matters",      icon: "🎯", ...STEP_COLORS.why        },
+  { id: 3, label: "Mechanism",           icon: "⚙️", ...STEP_COLORS.mechanism  },
+  { id: 4, label: "Clinical Example",    icon: "🩺", ...STEP_COLORS.clinical   },
+  { id: 5, label: "Common Mistakes",     icon: "⚠️", ...STEP_COLORS.mistakes   },
+  { id: 6, label: "DAT Question",        icon: "❓", ...STEP_COLORS.datcheck   },
+  { id: 7, label: "Memory Anchor",       icon: "🧠", ...STEP_COLORS.anchor     },
+];
+
+function getStepDefs(subject: PageSubject): StepDef[] {
+  if (subject === "chemistry") return CHEMISTRY_STEPS;
+  if (subject === "biology")   return BIOLOGY_STEPS;
+  if (subject === "clinical")  return CLINICAL_STEPS;
+  return DEFAULT_STEPS;
 }
 
-function extractStepContent(
-  studyModel: Record<string, unknown> | CurrentPageStudyModel | null,
-  noteCards: NoteCard[],
-): StepContent[] {
-  const sm = studyModel as any;
+// ---------------------------------------------------------------------------
+// Content extraction — per-schema extractor
+// ---------------------------------------------------------------------------
+
+function noteCard(noteCards: NoteCard[], type: string): string {
+  return noteCards.find(c => c.type === type)?.body ?? "";
+}
+
+function formulaCards(noteCards: NoteCard[]): string[] {
+  return noteCards.filter(c => c.type === "formula_breakdown").map(c => c.body).filter(Boolean);
+}
+
+function extractChemistryContent(sm: any, noteCards: NoteCard[]): StepContent[] {
   const sn = sm?.studyNotes as any;
+  const blocks = (sm?.conceptBlocks as any[] | undefined) ?? [];
 
-  // Helper: pull first noteCard matching a type
-  const noteCard = (type: string) => noteCards.find(c => c.type === type)?.body ?? "";
+  // 1 — Core Concept
+  const concept = sm?.pageThesis || noteCard(noteCards, "must_know") || blocks[0]?.title || "";
 
-  // Step 1 — Core Concept
-  const coreText =
-    sm?.pageThesis ||
-    noteCard("must_know") ||
-    (sm?.conceptBlocks?.[0]?.title ? `${sm.conceptBlocks[0].title}` : "");
-
-  // Step 2 — Why It Matters
-  const whyText =
+  // 2 — Known Information: what the student is given in a typical problem
+  const known =
+    noteCard(noteCards, "why_this_matters") ||
     sn?.whyThisMatters ||
-    noteCard("why_this_matters") ||
-    (sm?.conceptBlocks?.[0]?.clinicalRelevance ?? "");
+    blocks.map((b: any) => b.rule || b.pattern).filter(Boolean).slice(0, 2).join(" / ") ||
+    "What information does the problem give you? List the known quantities and units before touching the equation.";
 
-  // Step 3 — Mechanism
-  const mechanismText =
+  // 3 — Rule or Equation: the governing law
+  const formulaTexts = formulaCards(noteCards);
+  const equation =
+    formulaTexts.join("\n") ||
+    noteCard(noteCards, "mechanism") ||
     sn?.keyMechanism ||
-    noteCard("mechanism") ||
-    (sm?.conceptBlocks?.[0]?.mechanism ?? "");
+    blocks.map((b: any) => b.mechanism).filter(Boolean)[0] ||
+    "";
 
-  // Step 4 — Clinical Example
-  const clinicalText =
-    noteCard("clinical_reasoning") ||
-    noteCard("clinical_pearl") ||
-    sn?.examSignal ||
-    (sm?.conceptBlocks?.map((b: any) => b.clinicalApplication).filter(Boolean)[0] ?? "");
+  // 4 — Step-by-Step Setup: procedural breakdown
+  const stepByStep =
+    noteCard(noteCards, "mechanism") ||
+    blocks.map((b: any) => b.mechanism).filter(Boolean).join(" → ") ||
+    sn?.keyMechanism ||
+    "";
+  const mechanismBullets = blocks
+    .slice(0, 5)
+    .map((b: any) => b.mechanism || b.title)
+    .filter(Boolean) as string[];
 
-  // Step 5 — Common Mistakes
-  const mistakeText =
+  // 5 — Calculation: worked example / numeric result
+  const calculation =
+    noteCard(noteCards, "clinical_reasoning") ||
+    noteCard(noteCards, "application") ||
+    blocks.map((b: any) => b.clinicalApplication || b.example).filter(Boolean)[0] ||
+    "";
+
+  // 6 — Common Trap
+  const trap =
     sn?.commonConfusion ||
-    noteCard("dat_trap") ||
-    noteCard("common_mistake") ||
-    (sm?.conceptBlocks?.map((b: any) => b.trap).filter(Boolean).join(" / ") ?? "");
+    noteCard(noteCards, "dat_trap") ||
+    noteCard(noteCards, "common_mistake") ||
+    blocks.map((b: any) => b.trap).filter(Boolean).join(" / ") ||
+    "";
+  const trapBullets = blocks.map((b: any) => b.trap).filter(Boolean) as string[];
 
-  // Step 6 — DAT Question
+  // 7 — DAT Check
   const miniTest = sm?.miniTest as any[] | undefined;
-  const datQText =
-    (miniTest && miniTest.length > 0)
-      ? `${miniTest[0]?.stem ?? miniTest[0]?.question ?? String(miniTest[0])}`
-      : noteCard("recall_questions") ||
-        "No DAT question available for this page yet. Ask the Chief Resident to generate one.";
+  const datCheck =
+    (miniTest?.[0]?.stem ?? miniTest?.[0]?.question ?? (miniTest?.[0] ? String(miniTest[0]) : "")) ||
+    noteCard(noteCards, "recall_questions") ||
+    sn?.examSignal ||
+    "";
 
-  // Step 7 — Memory Anchor
-  const memoryText =
+  // 8 — Memory Anchor
+  const anchor =
     sn?.quickMemory ||
-    noteCard("memory_hook") ||
-    (sm?.conceptBlocks?.map((b: any) => b.memoryHook ?? b.memoryShortcut).filter(Boolean)[0] ?? "");
+    noteCard(noteCards, "memory_hook") ||
+    blocks.map((b: any) => b.memoryHook ?? b.memoryShortcut).filter(Boolean)[0] ||
+    "";
 
   return [
-    { stepId: 1, content: coreText },
-    { stepId: 2, content: whyText },
-    { stepId: 3, content: mechanismText, bullets: extractMechanismBullets(sm) },
-    { stepId: 4, content: clinicalText },
-    { stepId: 5, content: mistakeText, bullets: extractMistakeBullets(sm, noteCards) },
-    { stepId: 6, content: datQText },
-    { stepId: 7, content: memoryText },
+    { stepId: 1, content: concept },
+    { stepId: 2, content: known },
+    { stepId: 3, content: equation, bullets: formulaTexts.length > 1 ? formulaTexts : undefined },
+    { stepId: 4, content: stepByStep, bullets: mechanismBullets.length > 1 ? mechanismBullets : undefined },
+    { stepId: 5, content: calculation },
+    { stepId: 6, content: trap, bullets: trapBullets.length > 1 ? trapBullets : undefined },
+    { stepId: 7, content: datCheck },
+    { stepId: 8, content: anchor },
   ];
 }
 
-function extractMechanismBullets(sm: any): string[] | undefined {
-  if (!sm?.conceptBlocks?.length) return undefined;
-  const bullets: string[] = [];
-  for (const cb of sm.conceptBlocks.slice(0, 3)) {
-    if (cb.mechanism && cb.title) bullets.push(`${cb.title}: ${cb.mechanism}`);
-    else if (cb.mechanism) bullets.push(cb.mechanism);
-  }
-  return bullets.length > 1 ? bullets : undefined;
+function extractDefaultContent(sm: any, noteCards: NoteCard[]): StepContent[] {
+  const sn = sm?.studyNotes as any;
+  const blocks = (sm?.conceptBlocks as any[] | undefined) ?? [];
+  const miniTest = sm?.miniTest as any[] | undefined;
+
+  const concept    = sm?.pageThesis || noteCard(noteCards, "must_know") || blocks[0]?.title || "";
+  const why        = sn?.whyThisMatters || noteCard(noteCards, "why_this_matters") || "";
+  const mechanism  = sn?.keyMechanism || noteCard(noteCards, "mechanism") || blocks[0]?.mechanism || "";
+  const mechBullets = blocks.slice(0, 3)
+    .filter((b: any) => b.mechanism && b.title)
+    .map((b: any) => `${b.title}: ${b.mechanism}`) as string[];
+  const clinical   = noteCard(noteCards, "clinical_reasoning") || noteCard(noteCards, "clinical_pearl") ||
+    sn?.examSignal || blocks.map((b: any) => b.clinicalApplication).filter(Boolean)[0] || "";
+  const mistakes   = sn?.commonConfusion || noteCard(noteCards, "dat_trap") || noteCard(noteCards, "common_mistake") ||
+    blocks.map((b: any) => b.trap).filter(Boolean).join(" / ") || "";
+  const trapBullets = blocks.map((b: any) => b.trap).filter(Boolean) as string[];
+  const datQ       = (miniTest?.[0]?.stem ?? miniTest?.[0]?.question ?? (miniTest?.[0] ? String(miniTest[0]) : "")) ||
+    noteCard(noteCards, "recall_questions") || "";
+  const anchor     = sn?.quickMemory || noteCard(noteCards, "memory_hook") ||
+    blocks.map((b: any) => b.memoryHook ?? b.memoryShortcut).filter(Boolean)[0] || "";
+
+  return [
+    { stepId: 1, content: concept },
+    { stepId: 2, content: why },
+    { stepId: 3, content: mechanism, bullets: mechBullets.length > 1 ? mechBullets : undefined },
+    { stepId: 4, content: clinical },
+    { stepId: 5, content: mistakes, bullets: trapBullets.length > 1 ? trapBullets : undefined },
+    { stepId: 6, content: datQ },
+    { stepId: 7, content: anchor },
+  ];
 }
 
-function extractMistakeBullets(sm: any, noteCards: NoteCard[]): string[] | undefined {
-  const bullets: string[] = [];
-  const traps = noteCards.filter(c => c.type === "dat_trap" || c.type === "common_mistake");
-  for (const t of traps.slice(0, 3)) if (t.body) bullets.push(t.body);
-  if (sm?.conceptBlocks) {
-    for (const cb of sm.conceptBlocks.slice(0, 4)) {
-      if (cb.trap) bullets.push(cb.trap);
-    }
-  }
-  return bullets.length > 1 ? bullets : undefined;
+function extractContent(sm: any, noteCards: NoteCard[], subject: PageSubject): StepContent[] {
+  if (subject === "chemistry") return extractChemistryContent(sm, noteCards);
+  // biology and clinical reuse the default extractor — the step labels carry the meaning
+  return extractDefaultContent(sm, noteCards);
 }
 
 // ---------------------------------------------------------------------------
-// Single step card
+// Step card
 // ---------------------------------------------------------------------------
 
 function StepCard({
-  step,
-  content,
-  bullets,
-  isActive,
-  isCompleted,
-  onClick,
+  step, content, bullets, isActive, isCompleted, onClick,
 }: {
-  step: StepConfig;
+  step: StepDef;
   content: string;
   bullets?: string[];
   isActive: boolean;
@@ -160,7 +302,7 @@ function StepCard({
       onClick={isEmpty ? undefined : onClick}
       className={`rounded-xl border transition-all duration-200 overflow-hidden ${
         isEmpty
-          ? "border-white/5 opacity-40 cursor-default"
+          ? "border-white/5 opacity-30 cursor-default"
           : isActive
           ? `${step.bgClass} ${step.borderClass} shadow-lg cursor-pointer`
           : isCompleted
@@ -168,7 +310,6 @@ function StepCard({
           : "border-white/8 bg-white/2 cursor-pointer hover:bg-white/5"
       }`}
     >
-      {/* Step header */}
       <div className="flex items-center gap-2.5 px-4 py-2.5">
         <div className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold shrink-0 ${
           isActive ? step.badgeClass : isCompleted ? "bg-white/20 text-white/60" : "bg-white/8 text-white/35"
@@ -185,9 +326,8 @@ function StepCard({
         )}
       </div>
 
-      {/* Expanded content */}
       {isActive && !isEmpty && (
-        <div className="px-4 pb-4 pt-0">
+        <div className="px-4 pb-4">
           <div className={`text-[12px] leading-relaxed ${step.textClass}`}>
             {bullets && bullets.length > 1 ? (
               <>
@@ -211,11 +351,7 @@ function StepCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Connector arrow between steps
-// ---------------------------------------------------------------------------
-
-function StepArrow({ color }: { color: string }) {
+function StepConnector({ color }: { color: string }) {
   return (
     <div className="flex justify-center py-0.5">
       <div className="flex flex-col items-center">
@@ -227,15 +363,36 @@ function StepArrow({ color }: { color: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Subject badge
+// ---------------------------------------------------------------------------
+
+const SUBJECT_LABELS: Record<PageSubject, { label: string; color: string }> = {
+  chemistry: { label: "⚗️ Chem / Physics schema",   color: "text-cyan-400/60"   },
+  biology:   { label: "🧬 Biology schema",           color: "text-emerald-400/60" },
+  clinical:  { label: "🩺 Clinical schema",          color: "text-violet-400/60"  },
+  default:   { label: "📚 General schema",           color: "text-slate-400/60"   },
+};
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
+interface WorkspaceStepsProps {
+  studyModel: Record<string, unknown> | null;
+  pageTitle?: string | null;
+  noteCards?: NoteCard[];
+}
+
 export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }: WorkspaceStepsProps) {
-  const [activeStep, setActiveStep] = useState<number>(1);
+  const sm = studyModel as any;
+  const subject  = detectPageSubject(sm, noteCards);
+  const stepDefs = getStepDefs(subject);
+  const contents = extractContent(sm, noteCards, subject);
+
+  const [activeStep,     setActiveStep]     = useState<number>(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
-  const stepContents = extractStepContent(studyModel, noteCards);
-  const hasAnyContent = stepContents.some(s => s.content.trim());
+  const hasAnyContent = contents.some(s => s.content.trim());
 
   if (!hasAnyContent) {
     return (
@@ -243,7 +400,7 @@ export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }
         <div className="text-3xl">🗺</div>
         <div className="text-[13px] font-semibold text-white/60">Workspace not ready</div>
         <div className="text-[11.5px] text-white/30 max-w-[240px] leading-relaxed">
-          Open an instructional page — the 7-step workspace appears once the Study Sheet loads.
+          Open an instructional page — the workspace appears once the Study Sheet loads.
         </div>
       </div>
     );
@@ -251,28 +408,30 @@ export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }
 
   const handleStepClick = (stepId: number) => {
     if (activeStep === stepId) {
-      // Collapse current and mark complete
       setCompletedSteps(prev => new Set([...prev, stepId]));
-      const next = stepContents.find(s => s.stepId > stepId && s.content.trim())?.stepId;
+      const next = contents.find(s => s.stepId > stepId && s.content.trim())?.stepId;
       if (next) setActiveStep(next);
     } else {
       setActiveStep(stepId);
     }
   };
 
+  const subjectMeta = SUBJECT_LABELS[subject];
+
   return (
     <div className="flex flex-col px-3 py-2 gap-0.5 overflow-y-auto max-h-[calc(100vh-280px)]">
-      {/* Title */}
-      {pageTitle && (
-        <div className="px-1 pb-2 text-[11px] font-semibold text-white/50 truncate">
-          {pageTitle}
-        </div>
-      )}
+      {/* Title + subject badge */}
+      <div className="px-1 pb-2 flex items-baseline gap-2">
+        {pageTitle && (
+          <div className="text-[11px] font-semibold text-white/50 truncate flex-1">{pageTitle}</div>
+        )}
+        <div className={`text-[9.5px] shrink-0 ${subjectMeta.color}`}>{subjectMeta.label}</div>
+      </div>
 
       {/* Progress bar */}
       <div className="flex items-center gap-1 mb-2 px-1">
-        {STEPS.map((s, i) => {
-          const sc = stepContents.find(c => c.stepId === s.id);
+        {stepDefs.map((s, i) => {
+          const sc = contents.find(c => c.stepId === s.id);
           const hasContent = sc?.content.trim();
           return (
             <React.Fragment key={s.id}>
@@ -288,18 +447,16 @@ export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }
                     : "rgba(255,255,255,0.08)",
                 }}
               />
-              {i < STEPS.length - 1 && (
-                <div className="w-0.5 h-1 bg-transparent" />
-              )}
+              {i < stepDefs.length - 1 && <div className="w-0.5 h-1 bg-transparent" />}
             </React.Fragment>
           );
         })}
       </div>
 
       {/* Steps */}
-      {STEPS.map((step, i) => {
-        const sc = stepContents.find(c => c.stepId === step.id)!;
-        const isActive = activeStep === step.id;
+      {stepDefs.map((step, i) => {
+        const sc = contents.find(c => c.stepId === step.id) ?? { stepId: step.id, content: "" };
+        const isActive    = activeStep === step.id;
         const isCompleted = completedSteps.has(step.id) && !isActive;
         return (
           <React.Fragment key={step.id}>
@@ -311,14 +468,13 @@ export default function WorkspaceSteps({ studyModel, pageTitle, noteCards = [] }
               isCompleted={isCompleted}
               onClick={() => handleStepClick(step.id)}
             />
-            {i < STEPS.length - 1 && !isActive && (
-              <StepArrow color={step.color} />
+            {i < stepDefs.length - 1 && !isActive && (
+              <StepConnector color={step.color} />
             )}
           </React.Fragment>
         );
       })}
 
-      {/* Reset */}
       {completedSteps.size > 0 && (
         <button
           onClick={() => { setCompletedSteps(new Set()); setActiveStep(1); }}
