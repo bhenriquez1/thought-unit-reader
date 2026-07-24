@@ -41,6 +41,17 @@ export type DatUnitType =
   | 'fact'
   | 'unknown';
 
+/**
+ * Semantic highlight label — marks what kind of learning value this unit carries.
+ * Assigned by the paragraph scorer / highlighting engine.
+ *
+ * MASTER    — foundational concept required to understand everything else on this page
+ * PEARL     — high-yield clinical/exam fact that separates top scorers
+ * PROCEDURE — step-by-step process, algorithm, or sequence (enumerate-and-apply knowledge)
+ * FAILURE   — common trap, misconception, or edge case the examiners love to test
+ */
+export type SemanticLabel = 'master' | 'pearl' | 'procedure' | 'failure';
+
 // ────────────────────────────────────────────────────────────────────────────
 // Reader highlight coordinates (for "View Source in Reader" navigation)
 // ────────────────────────────────────────────────────────────────────────────
@@ -101,6 +112,14 @@ export interface CanonicalThoughtUnit {
   // ── Difficulty estimate ───────────────────────────────────────────────────
   /** 0–1; higher = harder question to generate from this unit. */
   difficulty: number;
+
+  // ── Semantic highlight label ──────────────────────────────────────────────
+  /**
+   * What kind of learning value this unit carries — used by the highlighting
+   * engine to render distinct badge colors in the Reader margin.
+   * Assigned post-classification by paragraphScoring.ts.
+   */
+  semanticLabel?: SemanticLabel;
 
   // ── Provenance ────────────────────────────────────────────────────────────
   /** ID of the UltraNote this unit was originally derived from, if any. */

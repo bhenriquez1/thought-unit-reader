@@ -76,6 +76,7 @@ import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/save
 import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/ExplainStepChat";
 import ExplainItChat from "@/components/reader/ExplainItChat";
 import type { ExplainItContext, ExplainItMessage } from "@/lib/explainIt/types";
+import ChiefResidentModal, { type ChiefResidentContext } from "@/components/reader/ChiefResidentModal";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -663,6 +664,8 @@ export default function ThoughtUnitReader() {
   const explainStepTurnsRef = useRef<Map<string, import("@/lib/explainStep/types").ExplainStepMessage[]>>(new Map());
   const [explainItContext, setExplainItContext] = useState<ExplainItContext | null>(null);
   const explainItTurnsRef = useRef<Map<string, ExplainItMessage[]>>(new Map());
+  const [chiefResidentContext, setChiefResidentContext] = useState<ChiefResidentContext | null>(null);
+  const chiefResidentTurnsRef = useRef<Map<string, import("@/components/reader/ChiefResidentModal").ChiefResidentMessage[]>>(new Map());
   const [explainItPodcastSeed, setExplainItPodcastSeed] = useState<string | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
@@ -2502,6 +2505,37 @@ export default function ThoughtUnitReader() {
       learningProfile,
     });
   }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript, learningProfile]);
+
+  // Chief Resident Modal — "Explain This Step" route (unified modal replacing ExplainStepChat)
+  const handleOpenChiefResidentExplainStep = useCallback(() => {
+    const text = sel.selectionText?.trim() ?? "";
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setChiefResidentContext({
+      mode: "explain-text",
+      selectedText: text || undefined,
+      pageText,
+      pageThesis: sm?.pageThesis ?? null,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+      learningProfile,
+    });
+    sel.clearSelection?.();
+  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+
+  // Chief Resident Modal — "Explain It" / "Explain This Page" route
+  const handleOpenChiefResidentExplainPage = useCallback(() => {
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setChiefResidentContext({
+      mode: "explain-page",
+      pageText,
+      pageThesis: sm?.pageThesis ?? null,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+      learningProfile,
+    });
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
@@ -4982,8 +5016,8 @@ export default function ThoughtUnitReader() {
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={handleOpenWhiteboardPanel}
-                onOpenExplainStep={handleOpenExplainStep}
-                onOpenExplainIt={handleOpenExplainIt}
+                onOpenExplainStep={handleOpenChiefResidentExplainStep}
+                onOpenExplainIt={handleOpenChiefResidentExplainPage}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
@@ -6574,6 +6608,37 @@ export default function ThoughtUnitReader() {
             explainItTurnsRef.current.set(`${bookId}:${explainItContext.pageNumber}`, turns)
           }
           onTurnIntoPodcast={handleExplainItTurnIntoPodcast}
+        />
+      )}
+
+      {/* Chief Resident Modal — unified explain-text / explain-page tutor (replaces Explain It + Explain This Step buttons) */}
+      {chiefResidentContext && (
+        <ChiefResidentModal
+          context={chiefResidentContext}
+          onClose={() => setChiefResidentContext(null)}
+          initialTurns={chiefResidentTurnsRef.current.get(
+            `${bookId}:${chiefResidentContext.pageNumber}:${chiefResidentContext.mode}:${chiefResidentContext.selectedText ?? ""}`
+          )}
+          onTurnsChange={(turns) =>
+            chiefResidentTurnsRef.current.set(
+              `${bookId}:${chiefResidentContext.pageNumber}:${chiefResidentContext.mode}:${chiefResidentContext.selectedText ?? ""}`,
+              turns,
+            )
+          }
+          onSaveNote={async (question, explanation) => {
+            const note = buildNoteFromStudyModel(currentPageStudyModel as any, {
+              bookId,
+              pageNumber: chiefResidentContext.pageNumber,
+              topic: question.slice(0, 80),
+            });
+            await saveUltraNote({ ...note, coreIdea: explanation });
+          }}
+          onVisualize={({ selectedText, explanation, pageContext }) => {
+            setWbConcept(truncate(selectedText || explanation, 600));
+            setWbContext(truncate([explanation, pageContext].filter(Boolean).join("\n\n"), 1200));
+            setChiefResidentContext(null);
+            setShowWhiteboardPanel(true);
+          }}
         />
       )}
 

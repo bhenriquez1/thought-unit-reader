@@ -16,7 +16,18 @@ export type TeachingMode =
   | "teach-study-sheet"
   | "case-based"
   | "rapid-fire"
-  | "explain-mistake";
+  | "explain-mistake"
+  | "explain-text"
+  | "explain-page";
+
+export type TeachingAudience =
+  | "beginner"
+  | "dental-student"
+  | "dentist"
+  | "oral-surgeon"
+  | "dat"
+  | "board-review"
+  | "child";
 
 export interface TeachingMessage {
   role: "user" | "assistant";
@@ -27,7 +38,10 @@ export interface ChiefResidentRequest {
   sourceText: string;
   bookTitle?: string;
   mode: TeachingMode;
+  audience?: TeachingAudience;
   messages: TeachingMessage[];
+  /** For explain-text mode: the highlighted/selected passage */
+  selectedText?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,27 +112,77 @@ const CASE_BASED_SYSTEM = `${BASE_SYSTEM}
 ADDITIONAL INSTRUCTION — CASE-BASED MODE:
 Start by generating a realistic case or scenario based on the source content. Present it as a brief scenario (3–5 sentences). Then teach through the case using the question-evaluate-connect loop. Do not give the diagnosis or answer immediately — guide the learner to reason to it.`;
 
-function getSystemPrompt(mode: TeachingMode): string {
-  if (mode === "rapid-fire") return RAPID_FIRE_SYSTEM;
-  if (mode === "explain-mistake") return EXPLAIN_MISTAKE_SYSTEM;
-  if (mode === "case-based") return CASE_BASED_SYSTEM;
-  return BASE_SYSTEM;
+const EXPLAIN_TEXT_SYSTEM = `You are a clinical tutor. A student has highlighted a passage from their reading and wants you to explain it deeply.
+
+APPROACH (follow in this order):
+1. Identify the CORE CONCEPT — what is this passage actually saying, stripped of jargon?
+2. Explain WHY it works this way — mechanism, not just definition. What forces, rules, or principles are at play?
+3. Name ONE common mistake students make with this concept and explain why the wrong version is seductive.
+4. Give ONE clinical or real-world anchor that makes this stick ("this is why patients with X present with Y").
+5. Ask one reasoning question (not a recall question) to check if they truly understood.
+
+Rules:
+- Keep the first response under 200 words.
+- Be direct. Don't summarize or paraphrase the selected text verbatim — teach from it.
+- Do NOT start with "Great selection!" or "Sure!" Just begin with the core concept.
+- After the student answers your question, evaluate their REASONING and either go deeper or correct the misconception.`;
+
+const EXPLAIN_PAGE_SYSTEM = `You are a study partner having an office-hours conversation about a page from a textbook.
+
+APPROACH:
+- Open with 2–3 sentences framing what this page is really about (the thesis or main idea — not a summary of the content)
+- End your opening with exactly ONE discussion question that probes reasoning (not recall): "Why do you think..." or "What would happen if..." — not "What is..."
+- After the student answers: grade their reasoning honestly and briefly (correct / partially correct / incorrect, with one sentence explaining why), then build on their response
+- As the conversation deepens: introduce clinical/exam implications, add nuance, and surface the one trap most students fall for on this topic
+
+Rules:
+- Keep each response to 2–5 short conversational sentences, occasionally longer for a worked example.
+- Be Socratic: a well-placed question teaches more than a 10-bullet lecture.
+- Do NOT start with "Great question!" or "Interesting!" Just respond directly.
+- Ground all explanations in the source content provided.`;
+
+const AUDIENCE_MODIFIERS: Record<string, string> = {
+  "beginner": "\n\nAUDIENCE: The learner is a complete beginner. Use very simple language, build from first principles, and define any jargon before using it.",
+  "dental-student": "\n\nAUDIENCE: The learner is a dental student in pre-clinical years. Connect concepts to dentistry when relevant. Emphasize mechanisms that appear on the DAT and in dental boards.",
+  "dentist": "\n\nAUDIENCE: The learner is a licensed dentist refreshing knowledge. Use clinical terminology freely. Focus on practical applications, clinical pearls, and evidence-based nuances.",
+  "oral-surgeon": "\n\nAUDIENCE: The learner is an oral surgeon or advanced specialist. Use highly technical language. Focus on mechanisms, edge cases, complications, and evidence-based distinctions.",
+  "dat": "\n\nAUDIENCE: The learner is preparing for the DAT exam. Focus on what is high-yield for the DAT: common question patterns, traps, mechanisms the ADA tests, and memory anchors that survive exam-day pressure.",
+  "board-review": "\n\nAUDIENCE: The learner is doing board exam review. Focus on high-yield algorithms, reasoning patterns, and the concepts most commonly tested on boards.",
+  "child": "\n\nAUDIENCE: The learner is a young child (ages 8–12). Use very simple, friendly language. Draw analogies to everyday things they know. Short sentences. Make it fun and encouraging.",
+};
+
+function getSystemPrompt(mode: TeachingMode, audience?: string): string {
+  let base: string;
+  if (mode === "rapid-fire") base = RAPID_FIRE_SYSTEM;
+  else if (mode === "explain-mistake") base = EXPLAIN_MISTAKE_SYSTEM;
+  else if (mode === "case-based") base = CASE_BASED_SYSTEM;
+  else if (mode === "explain-text") base = EXPLAIN_TEXT_SYSTEM;
+  else if (mode === "explain-page") base = EXPLAIN_PAGE_SYSTEM;
+  else base = BASE_SYSTEM;
+  if (audience && AUDIENCE_MODIFIERS[audience]) base += AUDIENCE_MODIFIERS[audience];
+  return base;
 }
 
 // ---------------------------------------------------------------------------
 // Source context builder
 // ---------------------------------------------------------------------------
 
-function buildUserContext(sourceText: string, bookTitle: string | undefined, mode: TeachingMode): string {
+function buildUserContext(req: ChiefResidentRequest): string {
+  const { sourceText, bookTitle, mode, selectedText } = req;
   const bookNote = bookTitle ? `Book: "${bookTitle}"\n\n` : "";
   const modeLabel: Record<TeachingMode, string> = {
-    "teach-page": "Current page content to teach from:",
-    "teach-note": "Note to teach from:",
+    "teach-page":        "Current page content to teach from:",
+    "teach-note":        "Note to teach from:",
     "teach-study-sheet": "Study sheet to teach from:",
-    "case-based": "Source content for case-based teaching:",
-    "rapid-fire": "Content for rapid-fire questions:",
-    "explain-mistake": "Content context (the learner will describe their mistake next):",
+    "case-based":        "Source content for case-based teaching:",
+    "rapid-fire":        "Content for rapid-fire questions:",
+    "explain-mistake":   "Content context (the learner will describe their mistake next):",
+    "explain-text":      "Full page context:",
+    "explain-page":      "Current page content:",
   };
+  if (mode === "explain-text" && selectedText) {
+    return `${bookNote}HIGHLIGHTED PASSAGE:\n"""\n${selectedText.slice(0, 600)}\n"""\n\n${modeLabel[mode]}\n"""\n${sourceText.trim().slice(0, 2000)}\n"""\n\n---\n\nPlease explain the highlighted passage.`;
+  }
   return `${bookNote}${modeLabel[mode]}\n\n${sourceText.trim()}\n\n---\n\nPlease begin the teaching session.`;
 }
 
@@ -126,15 +190,16 @@ function buildUserContext(sourceText: string, bookTitle: string | undefined, mod
 // Handler
 // ---------------------------------------------------------------------------
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: "ANTHROPIC_API_KEY not configured" });
+    return res.status(503).json({ error: "ANTHROPIC_API_KEY not configured — contact your administrator" });
   }
 
-  const { sourceText, bookTitle, mode, messages = [] } = req.body as ChiefResidentRequest;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const body = req.body as ChiefResidentRequest;
+  const { sourceText, mode, audience, messages = [] } = body;
 
   if (!sourceText || !mode) {
     return res.status(400).json({ error: "sourceText and mode are required" });
@@ -142,7 +207,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Build message array for Claude
   const claudeMessages: TeachingMessage[] = messages.length === 0
-    ? [{ role: "user", content: buildUserContext(sourceText, bookTitle, mode) }]
+    ? [{ role: "user", content: buildUserContext(body) }]
     : messages;
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -154,7 +219,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: getSystemPrompt(mode),
+      system: getSystemPrompt(mode, audience),
       messages: claudeMessages,
     });
 
