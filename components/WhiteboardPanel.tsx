@@ -13,6 +13,7 @@ import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import TeachingCanvas from "@/components/whiteboard/TeachingCanvas";
 import RecallCanvas from "@/components/whiteboard/RecallCanvas";
+import WorkspaceSteps from "@/components/whiteboard/WorkspaceSteps";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
@@ -728,7 +729,7 @@ export default function WhiteboardPanel({
           <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
             {(
               [
-                ["teach",     "📚 Teach"],
+                ["teach",     "🗺 Workspace"],
                 ["recall",    "🎯 Recall"],
                 ["visualize", "📊 Visualize"],
               ] as [WbTab, string][]
@@ -759,9 +760,10 @@ export default function WhiteboardPanel({
             ))}
           </div>
 
-          {/* ── Teach tab: instant sequential teaching frames ─────────────── */}
+          {/* ── Workspace tab: 7-step structured learning workspace ──────── */}
           {wbTab === "teach" && (
-            <TeachingCanvas
+            <WorkspaceSteps
+              studyModel={studyModel ?? null}
               pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle}
               noteCards={teachNoteCards}
             />

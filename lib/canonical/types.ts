@@ -41,6 +41,33 @@ export type DatUnitType =
   | 'fact'
   | 'unknown';
 
+/**
+ * Semantic highlight label — marks what kind of learning value this unit carries.
+ * Assigned by the paragraph scorer / highlighting engine.
+ *
+ * MASTER         — foundational concept required to understand everything else on this page
+ * DEFINITION     — precise term definition (memorize the exact wording)
+ * PROCEDURE      — step-by-step process, algorithm, or sequence (enumerate-and-apply)
+ * MECHANISM      — causal explanation of how/why something works
+ * FORMULA        — mathematical or chemical equation with variables
+ * WORKED-EXAMPLE — solved sample problem showing method step-by-step
+ * EXCEPTION      — rule-breaker or special case that breaks the general pattern
+ * COMMON-ERROR   — frequent student mistake or misconception
+ * CLINICAL-PEARL — high-yield clinical/exam fact that separates top scorers
+ * DAT-TIP        — exam-strategy or test-taking hint specific to the DAT
+ */
+export type SemanticLabel =
+  | 'master'
+  | 'definition'
+  | 'procedure'
+  | 'mechanism'
+  | 'formula'
+  | 'worked-example'
+  | 'exception'
+  | 'common-error'
+  | 'clinical-pearl'
+  | 'dat-tip';
+
 // ────────────────────────────────────────────────────────────────────────────
 // Reader highlight coordinates (for "View Source in Reader" navigation)
 // ────────────────────────────────────────────────────────────────────────────
@@ -101,6 +128,14 @@ export interface CanonicalThoughtUnit {
   // ── Difficulty estimate ───────────────────────────────────────────────────
   /** 0–1; higher = harder question to generate from this unit. */
   difficulty: number;
+
+  // ── Semantic highlight label ──────────────────────────────────────────────
+  /**
+   * What kind of learning value this unit carries — used by the highlighting
+   * engine to render distinct badge colors in the Reader margin.
+   * Assigned post-classification by paragraphScoring.ts.
+   */
+  semanticLabel?: SemanticLabel;
 
   // ── Provenance ────────────────────────────────────────────────────────────
   /** ID of the UltraNote this unit was originally derived from, if any. */
