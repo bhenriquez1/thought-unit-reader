@@ -192,9 +192,7 @@ function lsRemove(id: string): void {
 
 export async function getAllRecallSetsAsync(): Promise<RecallSet[]> {
   try {
-    const sets = await idbGetAll();
-    console.log("[RECALL_IDB_READ]", { count: sets.length, driver: "indexeddb" });
-    return sets;
+    return await idbGetAll();
   } catch (e) {
     console.warn("[RECALL_IDB_READ_FAIL]", String(e), "— falling back to localStorage mirror");
     return lsRead();
@@ -214,9 +212,7 @@ export function getRecallSetsByBook(bookId: string): RecallSet[] {
 // ── Save ───────────────────────────────────────────────────────────────────
 
 export async function saveRecallSet(set: RecallSet): Promise<void> {
-  const c = compact(set);
-  console.log("[RECALL_SAVE_START]", { id: c.id, bookId: c.bookId, page: c.pageNumber, cards: c.cards.length });
-  console.log("[RECALL_SET_ID]", c.id);
+  let c = compact(set);
 
   // Remove legacy entries for same book+page with a DIFFERENT id (old non-stable,
   // pre-"rs-" IDs). Every current producer (stableRecallId, MiniTestPanel's missed-
@@ -224,6 +220,7 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   // keep multiple "rs-"-prefixed sets per book+page (e.g. a sticky-note set, a
   // thought-unit set, and a missed-questions set can all coexist on one page).
   // Only ids that don't even match that modern scheme are true legacy debris.
+  let prior: RecallSet | undefined;
   try {
     const existing = await idbGetAll();
     const stale = existing.filter(
@@ -232,14 +229,47 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
     for (const s of stale) {
       await idbDelete(s.id);
       lsRemove(s.id);
-      console.log("[RECALL_STALE_REMOVED]", { oldId: s.id });
     }
+    prior = existing.find((s) => s.id === c.id);
   } catch { /* non-fatal — still try to save */ }
+
+  // Preserve SRS review history when regenerating cards for the same page.
+  // Card IDs are deterministic (stable prefix + ordinal), so we match by id.
+  if (prior) {
+    const srsMap = new Map(
+      prior.cards.map((card) => [
+        card.id,
+        {
+          reviewCount: card.reviewCount,
+          isMissed: card.isMissed,
+          srsState: card.srsState,
+          lastReviewedAt: card.lastReviewedAt,
+          correctStreak: card.correctStreak,
+          difficulty: card.difficulty,
+        } satisfies Partial<RecallCard>,
+      ])
+    );
+    c = {
+      ...c,
+      cards: c.cards.map((card) => {
+        const saved = srsMap.get(card.id);
+        if (!saved) return card;
+        return {
+          ...card,
+          reviewCount: Math.max(card.reviewCount, saved.reviewCount),
+          isMissed: saved.isMissed,
+          ...(saved.srsState        ? { srsState: saved.srsState }               : {}),
+          ...(saved.lastReviewedAt  ? { lastReviewedAt: saved.lastReviewedAt }   : {}),
+          ...(saved.correctStreak   ? { correctStreak: saved.correctStreak }     : {}),
+          ...(saved.difficulty      ? { difficulty: saved.difficulty }           : {}),
+        };
+      }),
+    };
+  }
 
   // Primary: IDB
   try {
     await idbPut(c);
-    console.log("[RECALL_IDB_PUT]", { id: c.id, cards: c.cards.length });
   } catch (idbErr) {
     console.error("[RECALL_SAVE_FAILED]", { driver: "indexeddb", id: c.id, error: String(idbErr) });
     // Fall through to localStorage-only path
@@ -254,7 +284,6 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
     if (!readback) {
       throw new Error(`Read-back check failed — id ${c.id} not found after put()`);
     }
-    console.log("[RECALL_IDB_READ]", { id: c.id, cards: readback.cards.length, verified: true });
   } catch (verifyErr) {
     console.error("[RECALL_SAVE_FAILED]", { stage: "readback", id: c.id, error: String(verifyErr) });
     throw verifyErr;
@@ -263,18 +292,10 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   // Mirror to localStorage for sync reads
   lsUpsert(c);
 
-  console.log("[RECALL_SAVE_SUCCESS]", { driver: "indexeddb", id: c.id, cards: c.cards.length });
-
   // Notify RecallLab to re-render
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("recall-lab-updated"));
   }
-
-  // Log total count
-  try {
-    const all = await idbGetAll();
-    console.log("[RECALL_RENDER_COUNT]", { total: all.length });
-  } catch { /* non-fatal */ }
 }
 
 export async function bulkSaveRecallSets(sets: RecallSet[]): Promise<void> {
