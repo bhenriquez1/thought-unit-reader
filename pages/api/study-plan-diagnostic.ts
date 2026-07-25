@@ -158,6 +158,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  if (!req.body || typeof req.body !== "object") {
+    res.status(400).json({ error: "Request body is missing or not JSON." });
+    return;
+  }
   const { sourceText, bookTitle, chapterTitle, questionCount } = req.body as RequestBody;
   const count = Math.min(Math.max(questionCount ?? 30, 5), 40);
 
@@ -234,7 +238,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(200).json({
       questions: [],
       provider: "fallback",
-      error: isAbort ? "Request timed out — try with a smaller chapter/section" : String(err),
+      error: isAbort ? "Request timed out — try with a smaller chapter/section" : "Question generation failed. Please try again.",
     });
   }
 }

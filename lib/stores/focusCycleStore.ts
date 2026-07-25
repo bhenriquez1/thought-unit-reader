@@ -218,11 +218,24 @@ export const useFocusCycleStore = create<FocusCycleState>()(
         timerPreset: state.timerPreset,
         timerPhase: state.timerPhase,
         timerRemainingSeconds: state.timerRemainingSeconds,
-        timerRunning: state.timerRunning,
+        // Persist as paused — on reload we correct for elapsed wall-clock time below.
+        timerRunning: false,
         timerBoundDocumentId: state.timerBoundDocumentId,
         timerBoundPage: state.timerBoundPage,
         timerBoundSectionId: state.timerBoundSectionId,
+        // Wall-clock snapshot so we can subtract elapsed seconds on rehydration.
+        _persistedAt: state.timerRunning ? Date.now() : null,
       }),
+      onRehydrateStorage: () => (hydratedState) => {
+        if (!hydratedState) return;
+        const { timerRunning, _persistedAt, timerRemainingSeconds } = hydratedState as any;
+        if (timerRunning && typeof _persistedAt === "number") {
+          // Correct remaining time for however long the tab was closed.
+          const elapsedSeconds = Math.floor((Date.now() - _persistedAt) / 1000);
+          const corrected = Math.max(0, timerRemainingSeconds - elapsedSeconds);
+          useFocusCycleStore.setState({ timerRemainingSeconds: corrected, timerRunning: corrected > 0 });
+        }
+      },
     }
   )
 );

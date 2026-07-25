@@ -153,11 +153,17 @@ export class PDFLoadingManager {
       // 5-minute ceiling lets large textbooks (700+ pages) finish parsing.
       // Dead blob URLs fail quickly on the first fetch — they don't need the timeout.
       const documentPromise = loadingTask.promise;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`PDF loading timeout after ${timeout / 1000}s`)), timeout);
+        timeoutId = setTimeout(() => reject(new Error(`PDF loading timeout after ${timeout / 1000}s`)), timeout);
       });
 
-      const document = await Promise.race([documentPromise, timeoutPromise]);
+      let document: Awaited<typeof documentPromise>;
+      try {
+        document = await Promise.race([documentPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutId); // always cancel the timer to prevent a 5-min leak
+      }
 
       // Validate document
       if (!document || typeof document.numPages !== 'number' || document.numPages <= 0) {

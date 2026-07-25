@@ -806,12 +806,20 @@ export default function ExamProctorPage() {
                       key={sg.sectionId}
                       onClick={() => {
                         if (!locked) {
-                          setState(prev => prev ? {
-                            ...prev,
-                            currentSectionIdx:    idx,
-                            currentQuestionIdx:   0,
-                            sectionTimeRemaining: prev.sections[idx].timeLimitSeconds,
-                          } : prev);
+                          setState(prev => {
+                            if (!prev) return prev;
+                            const alreadyActive = prev.currentSectionIdx === idx;
+                            return {
+                              ...prev,
+                              currentSectionIdx:  idx,
+                              currentQuestionIdx: alreadyActive ? prev.currentQuestionIdx : 0,
+                              // Preserve elapsed section time — only reset when switching TO a section
+                              // for the very first time (timeLimitSeconds preserved when revisiting).
+                              sectionTimeRemaining: alreadyActive
+                                ? prev.sectionTimeRemaining
+                                : prev.sections[idx].timeLimitSeconds,
+                            };
+                          });
                         }
                       }}
                       disabled={locked}

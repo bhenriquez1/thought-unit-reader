@@ -212,35 +212,13 @@ export default function HybridReader({
     if (sel) onTextSelect?.(sel);
   };
 
-  /* -------------------- Empty states -------------------- */
-  if (!thoughtUnits?.length) {
-    return (
-      <div
-        className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
-        📂 Please upload a PDF to start Hybrid Reading.
-      </div>
-    );
-  }
-
-  const rawUnit = thoughtUnits[currentThoughtUnit - 1];
-  if (!rawUnit) {
-    return (
-      <div
-        className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
-        ⏳ Preparing your reading view...
-      </div>
-    );
-  }
-
-  const unitText = unitToText(rawUnit);
+  // Compute these before hooks so hooks are never called conditionally.
+  const rawUnit = thoughtUnits?.[currentThoughtUnit - 1] ?? null;
+  const unitText = rawUnit ? unitToText(rawUnit) : "";
 
   /* -------------------- Idea chunks with knob -------------------- */
   const chunks = useMemo(
-    () => chunkText(unitText, { mode: chunkMode, targetChars: chunkChars }),
+    () => (unitText ? chunkText(unitText, { mode: chunkMode, targetChars: chunkChars }) : []),
     [unitText, chunkMode, chunkChars]
   );
   const [activeIdx, setActiveIdx] = useState(0);
@@ -275,6 +253,33 @@ export default function HybridReader({
   const activePrompt = COMPREHENSION_PROMPTS[promptIdx];
   const promptContext = (effectiveSelection || activeChunk || unitText || sampleText).trim();
 
+  /* -------------------- Quick quiz state (must be before hotkeys effect) -------------------- */
+  const [showQuiz, setShowQuiz] = useState(false);
+  const quiz = useMemo(() => makeTwoChoiceQuiz(activeChunk), [activeChunk]);
+  const [quizPick, setQuizPick] = useState<number | null>(null);
+  useEffect(() => {
+    setQuizPick(null);
+  }, [quiz.prompt, activeChunkId]);
+
+  /* -------------------- Progress (percent understood) -------------------- */
+  const understoodCount = useMemo(
+    () => chunks.reduce((n, c) => n + (understoodMap[stableChunkId(c)] ? 1 : 0), 0),
+    [chunks, understoodMap]
+  );
+  const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
+  const ringValue = understoodPct / 100;
+
+  /* -------------------- Understood toggle -------------------- */
+  function toggleUnderstood() {
+    setUnderstoodMap((m) => {
+      const next = { ...m };
+      if (next[activeChunkId]) delete next[activeChunkId];
+      else next[activeChunkId] = true;
+      return next;
+    });
+    markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
+  }
+
   /* -------------------- Hotkeys -------------------- */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -304,32 +309,28 @@ export default function HybridReader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chunks.length, promptContext, promptIdx, activeChunk]);
 
-  /* -------------------- Understood toggle -------------------- */
-  function toggleUnderstood() {
-    setUnderstoodMap((m) => {
-      const next = { ...m };
-      if (next[activeChunkId]) delete next[activeChunkId];
-      else next[activeChunkId] = true;
-      return next;
-    });
-    markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
+  /* -------------------- Empty states (all hooks above — safe to early-return now) ---- */
+  if (!thoughtUnits?.length) {
+    return (
+      <div
+        className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
+      >
+        📂 Please upload a PDF to start Hybrid Reading.
+      </div>
+    );
   }
 
-  /* -------------------- Quick quiz -------------------- */
-  const [showQuiz, setShowQuiz] = useState(false);
-  const quiz = useMemo(() => makeTwoChoiceQuiz(activeChunk), [activeChunk]);
-  const [quizPick, setQuizPick] = useState<number | null>(null);
-  useEffect(() => {
-    setQuizPick(null);
-  }, [quiz.prompt, activeChunkId]);
-
-  /* -------------------- Progress (percent understood) -------------------- */
-  const understoodCount = useMemo(
-    () => chunks.reduce((n, c) => n + (understoodMap[stableChunkId(c)] ? 1 : 0), 0),
-    [chunks, understoodMap]
-  );
-  const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
-  const ringValue = understoodPct / 100;
+  if (!rawUnit) {
+    return (
+      <div
+        className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
+      >
+        ⏳ Preparing your reading view...
+      </div>
+    );
+  }
 
   /* -------------------- Main dual-panel UI -------------------- */
   return (
