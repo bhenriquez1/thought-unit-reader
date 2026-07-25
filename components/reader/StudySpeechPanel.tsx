@@ -5,6 +5,7 @@
 
 "use client";
 
+const DEV = process.env.NODE_ENV === "development";
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import {
@@ -1041,14 +1042,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       onSpokenWordIndex(wordIndexForFraction(cumulativeWeightsRef.current, frac));
     };
     return new Promise((resolve, reject) => {
-      audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); updatePlayState("playing"); };
+      audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); if (DEV) { console.log("[SPEECH_UTTERANCE_START]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_PLAY]", { mode }); } updatePlayState("playing"); };
       // Do NOT notifySpeechEnd here — a multi-segment session (Study/Full/Focus/
       // Highlights modes) claims one token for the whole sequence and reuses it
       // across segments via registerActiveAudio. Releasing it after the first
       // segment would make every later fetchAndPlayAudio() call see its own
       // token as stale and silently skip playback. notifySpeechEnd is called
       // once when the whole sequence actually finishes (or is stopped).
-      audio.onended = () => { console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+      audio.onended = () => { if (DEV) { console.log("[SPEECH_UTTERANCE_END]", { source: "openai", mode }); console.log("[SPEECH_AUDIO_END]", { mode }); } URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
       audio.onerror = () => {
         // stopAudio() clears src which fires onerror — treat as clean stop, not failure
         if (abortRef.current || isStale(session) || isSpeechStale(token)) { resolve("done"); return; }
@@ -1099,7 +1100,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }, timeoutMs);
     const clearWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
 
-    utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); if (!superseded()) updatePlayState("playing"); };
+    utt.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); if (DEV) { console.log("[SPEECH_UTTERANCE_START]", { source: "browser", charCount: normalized.length }); console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); } if (!superseded()) updatePlayState("playing"); };
     // Word-by-word karaoke sync: browser TTS fires real boundary events with an
     // exact charIndex into `normalized` — no estimation needed. `normalized`
     // only substitutes punctuation (never adds/removes words), so its word
@@ -1111,7 +1112,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     };
     // See the comment on fetchAndPlayAudio's audio.onended — same reasoning:
     // don't release the shared session token after just one segment.
-    utt.onend   = () => { clearWatchdog(); console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); if (!superseded()) updatePlayState("idle"); onDone?.(); };
+    utt.onend   = () => { clearWatchdog(); if (DEV) { console.log("[SPEECH_UTTERANCE_END]", { source: "browser" }); console.log("[SPEECH_AUDIO_END]", { source: "browser" }); } if (!superseded()) updatePlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       clearWatchdog();
       // "canceled"/"interrupted" = intentional stop — resolve so the play loop can exit cleanly.

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+const DEV = process.env.NODE_ENV === "development";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { deriveRecallItems, type SynthesisForRecall } from "@/lib/insights/deriveRecallItems";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
@@ -1071,6 +1072,7 @@ export function RightPanel({
   // ── DIAGNOSTIC: [SYNTH_GATE] — fires every time synthEnabled or synthStatus changes ──
   // Answers: "Why is synthesis running/blocked on this page?"
   useEffect(() => {
+    if (!DEV) return;
     console.log("[SYNTH_GATE]", {
       page:                   ctx?.pageNumber ?? null,
       pageRole:               intelligence.pageRole ?? null,
@@ -1460,17 +1462,10 @@ export function RightPanel({
       const fingerprint = `${pageTruthKey}:${anchorFingerprint}`;
       if (fingerprint === lastEmittedFingerprintRef.current) return;
       lastEmittedFingerprintRef.current = fingerprint;
-      console.log("[RIGHTPANEL_STUDYMODEL_EMIT]", { pageTruthKey, fingerprint: fingerprint.slice(0, 80) });
-      console.log("[WIRE] studyModel accepted", {
-        pageTruthKey,
-        page: studyModel.page,
-        thesis: studyModel.pageThesis?.slice(0, 60),
-        anchors: studyModel.highlightAnchors?.length ?? 0,
-        preReadRecall: (studyModel as any).preReadRecallItems?.length ?? 0,
-      });
+      if (DEV) console.log("[RIGHTPANEL_STUDYMODEL_EMIT]", { pageTruthKey, fingerprint: fingerprint.slice(0, 80) });
       onStudyModelReady(studyModel, pageTruthKey);
     } else if (blockEmit && studyModel) {
-      console.log("[SYNTH_BLOCKED]", {
+      if (DEV) console.log("[SYNTH_BLOCKED]", {
         reason: isStructuralPage ? "structural page role" : "openAI review_checkpoint",
         pageRole: intelligence.pageRole ?? null,
         pageType: teachingSynthesis?.pageType ?? null,
