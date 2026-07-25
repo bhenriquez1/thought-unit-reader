@@ -30,6 +30,13 @@ export interface LazyPDFViewerProps {
   onOutline?: (items: TocItem[]) => void;
 }
 
+// LRU-bounded caches — 50 entries each so they don't grow unboundedly over a session
+const MAX_CACHE = 50;
+function lruSet<K, V>(map: Map<K, V>, key: K, value: V) {
+  if (map.size >= MAX_CACHE) map.delete(map.keys().next().value as K);
+  map.set(key, value);
+}
+
 // Enhanced same-origin conversion with caching
 const urlCache = new Map<string, string>();
 
@@ -40,21 +47,21 @@ function toSameOrigin(url: string): string {
 
   try {
     if (!/^https?:/i.test(url)) {
-      urlCache.set(url, url);
+      lruSet(urlCache, url, url);
       return url;
     }
     if (typeof window !== "undefined") {
       const u = new URL(url);
       if (u.origin === window.location.origin) {
-        urlCache.set(url, url);
+        lruSet(urlCache, url, url);
         return url;
       }
     }
     const proxiedUrl = `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
-    urlCache.set(url, proxiedUrl);
+    lruSet(urlCache, url, proxiedUrl);
     return proxiedUrl;
   } catch {
-    urlCache.set(url, url);
+    lruSet(urlCache, url, url);
     return url;
   }
 }
@@ -72,7 +79,7 @@ async function resolveOutline(
   }
 
   if (!nodes || !nodes.length) {
-    outlineCache.set(cacheKey, []);
+    lruSet(outlineCache, cacheKey, []);
     return [];
   }
 
@@ -101,7 +108,7 @@ async function resolveOutline(
     });
   }
 
-  outlineCache.set(cacheKey, out);
+  lruSet(outlineCache, cacheKey, out);
   return out;
 }
 
@@ -210,39 +217,18 @@ export default React.memo(function LazyPDFViewer({
     const safePage = Math.max(1, currentPage);
     setPageInput(String(safePage));
     
-    // Update preload range (current page ± 2)
-    const newStart = Math.max(1, currentPage - 2);
-    const newEnd = Math.min(numPages || currentPage + 2, currentPage + 2);
-    setPreloadRange({ start: newStart, end: newEnd });
-    
-    // Add current page to rendered pages
-    setRenderedPages(prev => new Set([...prev, currentPage]));
-  }, [currentPage, numPages]);
+    // Keep a sliding window of ±3 pages so large books never accumulate
+    // hundreds of live page renders (each is an expensive canvas element).
+    const windowStart = Math.max(1, currentPage - 3);
+    const windowEnd = Math.min(numPages || currentPage + 3, currentPage + 3);
+    setPreloadRange({ start: windowStart, end: windowEnd });
 
-  // Preload adjacent pages for smooth navigation
-  useEffect(() => {
-    if (numPages > 0) {
-      const pagesToPreload: number[] = [];
-      for (let i = preloadRange.start; i <= preloadRange.end; i++) {
-        if (i >= 1 && i <= numPages && !renderedPages.has(i)) {
-          pagesToPreload.push(i);
-        }
-      }
-      
-      // Gradually add pages to rendered set (avoid rendering all at once)
-      if (pagesToPreload.length > 0) {
-        const timer = setTimeout(() => {
-          setRenderedPages(prev => {
-            const newSet = new Set([...prev]);
-            pagesToPreload.slice(0, 2).forEach(p => newSet.add(p)); // Max 2 at a time
-            return newSet;
-          });
-        }, 100);
-        
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [preloadRange, numPages, renderedPages]);
+    setRenderedPages(() => {
+      const next = new Set<number>();
+      for (let p = windowStart; p <= windowEnd; p++) next.add(p);
+      return next;
+    });
+  }, [currentPage, numPages]);
 
   // Enhanced page change handler with performance tracking
   const handlePageChangeWithSync = useCallback((newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {

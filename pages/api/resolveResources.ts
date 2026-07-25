@@ -232,7 +232,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "HEAD") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).end();
 
-  if (!apiKey)    return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+  if (!apiKey)    return res.status(500).json({ error: "AI service is not configured for this deployment." });
   if (!FORMAT)    return res.status(500).json({ error: "Schema init failed" });
 
   const body = req.body as Partial<ResourcesRequest>;

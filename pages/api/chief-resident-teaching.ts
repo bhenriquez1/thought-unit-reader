@@ -198,6 +198,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  if (!req.body || typeof req.body !== "object") {
+    return res.status(400).json({ error: "Request body is missing or not JSON. Set Content-Type: application/json." });
+  }
+
   const body = req.body as ChiefResidentRequest;
   const { sourceText, mode, audience, messages = [] } = body;
 
@@ -231,8 +235,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.write("data: [DONE]\n\n");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+    // Never send raw SDK error text (contains rate-limit details, internal fields).
+    const isOverload = err instanceof Error && /overload|rate.?limit|529/i.test(err.message);
+    const friendly = isOverload
+      ? "Chief Resident is busy right now. Please try again in a moment."
+      : "Chief Resident encountered an error. Please try again.";
+    res.write(`data: ${JSON.stringify({ error: friendly })}\n\n`);
   } finally {
     res.end();
   }

@@ -548,6 +548,14 @@ export default function ThoughtUnitReader() {
   // different books at the same page number can never share entries.
   const [pageTextByPage, setPageTextByPage] = useState<Map<string, string>>(() => new Map());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  // Track the active blob URL so we can revoke it when a new one is created (prevents memory leak).
+  const activeBlobUrlRef = useRef<string | null>(null);
+  const createBlobUrl = (source: Blob | File): string => {
+    if (activeBlobUrlRef.current) URL.revokeObjectURL(activeBlobUrlRef.current);
+    const url = URL.createObjectURL(source);
+    activeBlobUrlRef.current = url;
+    return url;
+  };
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   // IDB documentId of the currently open PDF — used by the IDB-aware retry callback.
   const [currentLocalDocumentId, setCurrentLocalDocumentId] = useState<string | null>(null);
@@ -783,6 +791,11 @@ export default function ThoughtUnitReader() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Revoke the last blob URL on unmount to free the pinned ArrayBuffer.
+  useEffect(() => {
+    return () => { if (activeBlobUrlRef.current) URL.revokeObjectURL(activeBlobUrlRef.current); };
+  }, []);
+
   // Clear stale synthesis state immediately when the user navigates to a new page.
   useEffect(() => {
     setCurrentPageStudyModel(null);
@@ -796,6 +809,9 @@ export default function ThoughtUnitReader() {
   //                priorityHighlights, localStorage highlights.
   // Rule: if canonical units are empty, render diagnostics instead of silent empty UI.
   const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
+  // Clear stale highlight anchors on every page change so page-N highlights are never
+  // visible on page N+1 (the main synthesis effect populates them when ready).
+  useEffect(() => { setFinalHighlightAnchors([]); }, [currentPage]);
 
   // Effective domain preset reported by the left panel (PureReaderView) — including
   // any manual override — shared with RightPanel/Guided speech so they rank and
@@ -3617,7 +3633,7 @@ export default function ThoughtUnitReader() {
           console.error("Firebase upload failed, falling back to local:", error);
           // Firebase failed — save locally with IDB binary for durability
           const documentId = crypto.randomUUID();
-          url = URL.createObjectURL(file);
+          url = createBlobUrl(file);
           const uploadedAt = new Date().toISOString();
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
@@ -3631,7 +3647,7 @@ export default function ThoughtUnitReader() {
       } else {
         // Guest mode or bypass: blob URL for this session + IDB binary for future sessions
         const documentId = crypto.randomUUID();
-        url = URL.createObjectURL(file);
+        url = createBlobUrl(file);
         const uploadedAt = new Date().toISOString();
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
@@ -3798,7 +3814,7 @@ export default function ThoughtUnitReader() {
           return;
         }
         const blob = new Blob([data], { type: 'application/pdf' });
-        const sessionUrl = URL.createObjectURL(blob);
+        const sessionUrl = createBlobUrl(blob);
         setCurrentLocalDocumentId(localDocumentId);
         setFileUrl(sessionUrl);
         generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
@@ -4758,7 +4774,7 @@ export default function ThoughtUnitReader() {
                           const data = new Uint8Array(buf);
                           await saveDocumentFile(missingPDFEntry.documentId, data);
                           const blob = new Blob([data], { type: 'application/pdf' });
-                          const sessionUrl = URL.createObjectURL(blob);
+                          const sessionUrl = createBlobUrl(blob);
                           setCurrentLocalDocumentId(missingPDFEntry.documentId);
                           setFileUrl(sessionUrl);
                           setMissingPDFEntry(null);

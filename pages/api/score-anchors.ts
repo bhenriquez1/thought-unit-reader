@@ -87,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (!apiKey) {
-    return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+    return res.status(500).json({ error: "AI service is not configured for this deployment." });
   }
 
   if (!FORMAT) {

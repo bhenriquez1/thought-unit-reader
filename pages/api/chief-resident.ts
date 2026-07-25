@@ -114,7 +114,10 @@ Respond with the JSON object as specified.`;
 
     return res.status(200).json(parsed);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return res.status(500).json({ error: `Chief Resident API error: ${message}` });
+    const isOverload = err instanceof Error && /overload|rate.?limit|529/i.test(err.message);
+    const friendly = isOverload
+      ? "Chief Resident is busy right now. Please try again in a moment."
+      : "Chief Resident encountered an error. Please try again.";
+    return res.status(500).json({ error: friendly });
   }
 }

@@ -225,7 +225,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Allow", "POST, HEAD");
     return res.status(405).json({ error: "Method Not Allowed" });
   }
-  if (!apiKey)  return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+  if (!apiKey)  return res.status(500).json({ error: "AI service is not configured for this deployment." });
   if (!FORMAT)  return res.status(500).json({ error: "Schema init failed" });
 
   const {
