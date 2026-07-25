@@ -96,28 +96,23 @@ export default function LivingButlerPDFReader({
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const extractedTextRef = useRef<Map<number, string>>(new Map());
+  const extractionAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
-  console.log('🔬 Living Butler PDF Reader initialized:', {
-    bookId,
-    currentPage,
-    pdfPageCount,
-    hasDocument: !!pdrmDocument,
-    annotationCount: butlerAnnotations.length
-  });
-
-  // Process PDF when URL changes
+  // Process PDF when URL changes — cancel any in-flight extraction first
   useEffect(() => {
     if (pdfUrl && pdfPageCount && pdfPageCount > 0) {
+      extractionAbortRef.current = { cancelled: false };
       processLivingButlerPDF();
     }
+    return () => { extractionAbortRef.current.cancelled = true; };
   }, [pdfUrl, pdfPageCount]);
 
   // Main processing pipeline
   const processLivingButlerPDF = async () => {
     if (!pdfUrl) return;
+    const abort = extractionAbortRef.current;
 
     try {
-      console.log('🔬 Starting Living Butler PDF processing...');
       setProcessingState({
         stage: 'extracting',
         progress: 10,
@@ -125,14 +120,14 @@ export default function LivingButlerPDFReader({
       });
 
       // Step 1: Extract text from all PDF pages
-      const allPageTexts = await extractAllPageTexts();
+      const allPageTexts = await extractAllPageTexts(abort);
+      if (abort.cancelled) return;
+
       const combinedText = Array.from(allPageTexts.values()).join('\n\n');
-      
+
       if (!combinedText.trim()) {
         throw new Error('No readable text found in PDF');
       }
-
-      console.log(`📄 Extracted text from ${allPageTexts.size} pages, ${combinedText.length} characters`);
 
       setProcessingState({
         stage: 'analyzing',
@@ -147,6 +142,7 @@ export default function LivingButlerPDFReader({
           filename: `living-butler-${bookId}.pdf`,
           pageCount: pdfPageCount || 1,
           progressCallback: (progress) => {
+            if (abort.cancelled) return;
             setProcessingState(prev => ({
               ...prev,
               progress: 40 + (progress === '✅ Generated' ? 40 : 20),
@@ -156,12 +152,7 @@ export default function LivingButlerPDFReader({
         }
       );
 
-      console.log('🤖 PDRM document generated:', {
-        subject: pdrmDoc.subject,
-        sections: pdrmDoc.totalSections,
-        confidence: Math.round(pdrmDoc.metadata.avgConfidence * 100) + '%'
-      });
-
+      if (abort.cancelled) return;
       setPdrmDocument(pdrmDoc);
 
       setProcessingState({
@@ -172,12 +163,12 @@ export default function LivingButlerPDFReader({
 
       // Step 3: Create Butler annotations mapped to PDF pages
       const annotations = await createButlerAnnotations(pdrmDoc, allPageTexts);
+      if (abort.cancelled) return;
       setButlerAnnotations(annotations);
-
-      console.log(`🔬 Created ${annotations.length} Butler annotations across ${allPageTexts.size} pages`);
 
       // Step 4: Analyze chapters and Butler coverage
       const chapterInfo = await analyzeChaptersWithButler(pdrmDoc, tableOfContents, annotations);
+      if (abort.cancelled) return;
       setChapters(chapterInfo);
 
       setProcessingState({
@@ -186,16 +177,11 @@ export default function LivingButlerPDFReader({
         message: `✅ Living Butler analysis complete! ${annotations.length} insights embedded.`
       });
 
-      console.log('✅ Living Butler PDF processing complete:', {
-        annotations: annotations.length,
-        chapters: chapterInfo.length,
-        subject: pdrmDoc.subject
-      });
-
     } catch (error) {
-      console.error('❌ Living Butler PDF processing failed:', error);
+      if (abort.cancelled) return;
+      console.error('[LivingButlerPDFReader] processing failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Processing failed';
-      
+
       setProcessingState({
         stage: 'error',
         progress: 0,
@@ -205,49 +191,46 @@ export default function LivingButlerPDFReader({
     }
   };
 
-  // Extract text from all PDF pages
-  const extractAllPageTexts = async (): Promise<Map<number, string>> => {
+  // Extract text from all PDF pages using PDF.js getTextContent
+  const extractAllPageTexts = async (abort: { cancelled: boolean }): Promise<Map<number, string>> => {
     const pageTexts = new Map<number, string>();
-    
-    if (!pdfPageCount) {
-      throw new Error('PDF page count not available');
+
+    if (!pdfPageCount || !pdfUrl) {
+      throw new Error('PDF page count or URL not available');
     }
 
-    // For now, use a mock text extraction (in real implementation, use PDF.js getTextContent)
-    for (let pageNum = 1; pageNum <= pdfPageCount; pageNum++) {
-      // Mock text based on page - in real implementation, extract actual PDF text
-      const mockText = `
-        Page ${pageNum} Content:
-        
-        This page contains important information about neural development and cellular processes.
-        The mechanisms involved include complex signaling pathways and molecular interactions.
-        Understanding these processes requires knowledge of both biochemistry and cell biology.
-        
-        Key concepts on this page:
-        - Signal transduction pathways
-        - Cellular differentiation
-        - Gene expression regulation
-        - Protein-protein interactions
-        
-        These concepts are fundamental to understanding how cells communicate and respond
-        to environmental changes. The Butler system can help explain these complex processes
-        using visual metaphors and real-world analogies.
-      `;
-      
-      pageTexts.set(pageNum, mockText);
-      
-      // Update progress
-      const progress = 10 + (pageNum / pdfPageCount) * 30;
+    // Load the PDF document via pdfjs-dist directly (same worker already configured above)
+    const loadingTask = pdfjs.getDocument(pdfUrl);
+    const pdfDoc = await loadingTask.promise;
+    if (abort.cancelled) { loadingTask.destroy(); return pageTexts; }
+
+    const totalPages = pdfDoc.numPages;
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      if (abort.cancelled) { pdfDoc.destroy(); return pageTexts; }
+
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const content = await page.getTextContent();
+        const text = content.items
+          .map((item: any) => ('str' in item ? item.str : ''))
+          .join(' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        pageTexts.set(pageNum, text ? `[PAGE ${pageNum}]\n${text}` : '');
+        page.cleanup();
+      } catch {
+        pageTexts.set(pageNum, '');
+      }
+
+      const progress = 10 + (pageNum / totalPages) * 30;
       setProcessingState(prev => ({
         ...prev,
         progress,
-        message: `📄 Extracting page ${pageNum}/${pdfPageCount}...`
+        message: `📄 Extracting page ${pageNum}/${totalPages}...`
       }));
-      
-      // Yield to prevent blocking
-      await new Promise(resolve => setTimeout(resolve, 10));
     }
-    
+
+    pdfDoc.destroy();
     extractedTextRef.current = pageTexts;
     return pageTexts;
   };
@@ -261,8 +244,7 @@ export default function LivingButlerPDFReader({
     let annotationId = 0;
 
     // Process each PDRM section and create annotations
-    for (const [sectionId, section] of pdrmDoc.sections.entries()) {
-      console.log(`🔬 Processing section: ${sectionId}`);
+    for (const [, section] of pdrmDoc.sections.entries()) {
 
       // Get all Butler insights from this section
       const allInsights: ButlerInsight[] = [
@@ -299,7 +281,6 @@ export default function LivingButlerPDFReader({
       }
     }
 
-    console.log(`🔬 Created ${annotations.length} Butler annotations`);
     return annotations;
   };
 
@@ -382,12 +363,6 @@ export default function LivingButlerPDFReader({
         });
       }
     }
-
-    console.log('📚 Analyzed chapters:', chapters.map(ch => ({
-      title: ch.title,
-      pages: `${ch.pageStart}-${ch.pageEnd}`,
-      butlerCount: ch.butlerCount
-    })));
 
     return chapters;
   };
@@ -679,10 +654,9 @@ export default function LivingButlerPDFReader({
             ) : (
               <div className="flex justify-center relative">
                 <div className="bg-white shadow-lg relative">
-                  <Document 
+                  <Document
                     file={pdfUrl}
                     onLoadSuccess={(pdf) => {
-                      console.log(`📄 PDF loaded: ${pdf.numPages} pages`);
                       onPageCount?.(pdf.numPages);
                     }}
                     onLoadError={(error) => {
