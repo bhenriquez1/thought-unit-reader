@@ -281,10 +281,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
   ref,
 ) {
-  // Render counter — temporary diagnostic for React #185 investigation.
+  // Render counter — diagnostic for React render-loop investigation.
   const spRenderCountRef = useRef(0);
   spRenderCountRef.current++;
-  console.log("[SPEECH_RENDER]", spRenderCountRef.current);
+  if (DEV) console.log("[SPEECH_RENDER]", spRenderCountRef.current);
 
   // Rapid-fire detection for onPlayStateChange — fires [PARENT_WRITE:RAPID] if called
   // more than once within a single 16ms frame (sign of a state-update loop).
@@ -394,7 +394,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // when the overlay will render correctly milliseconds later. Confirmation comes from
     // [THOUGHT_UNIT_WORD_SYNC_RENDERED] emitted by WordRectOverlay after the rect paints.
     const _s = buildCanonicalSyncState(anchorId, mode, 0);
-    console.log("[THOUGHT_UNIT_WORD_SYNC_REQUESTED]", {
+    if (DEV) console.log("[THOUGHT_UNIT_WORD_SYNC_REQUESTED]", {
       canonicalAnchorId:        anchorId,
       mode,
       sourceText:               (rawText ?? spokenText)?.slice(0, 80) ?? null,
@@ -588,7 +588,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     stopAudio();
     // Flush blob URL cache so previous book's audio doesn't linger in memory (M4 fix).
     audioCacheRef.current.clear();
-    console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
+    if (DEV) console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
 
@@ -605,7 +605,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     stopAudio();
     // Flush blob URL cache — previous page's audio is invalid on the new page (M4 fix).
     audioCacheRef.current.clear();
-    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
+    if (DEV) console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
 
@@ -613,18 +613,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   useEffect(() => { speedRef.current  = speed;  }, [speed]);
   useEffect(() => { segIdxRef.current = segIdx; }, [segIdx]);
 
-  // Reset on mode switch so playback always starts at the first segment of the new mode.
+  // Reset on mode switch — stops any currently playing audio so mode A's audio
+  // doesn't keep running while mode B's UI is shown.
   useEffect(() => {
-    console.log("[SPEECH_MODE_CHANGE]", mode);
+    stopAudio();
     setSegIdx(0);
-    setEyeText(null);
-    setEyeRole(null);
-    setEyeTier(null);
-    setKaraokeWords([]);
-    setActiveWordIdx(0);
-    activeAnchorIdRef.current = null;
-    useReadingFocusStore.getState().clearWord();
-    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -633,7 +626,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (activePageText) {
-      console.log("[SPEECH_RAW_TEXT]", {
+      if (DEV) console.log("[SPEECH_RAW_TEXT]", {
         page:     pageNumber,
         chars:    activePageText.length,
         first200: activePageText.slice(0, 200),
@@ -651,7 +644,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       let removedHeaders = 0;
       for (const line of rawLines) {
         if (isHeaderOrFooter(line)) {
-          console.log("[SPEECH_HEADER_REMOVED]", { page: pageNumber, text: line.slice(0, 80) });
+          if (DEV) console.log("[SPEECH_HEADER_REMOVED]", { page: pageNumber, text: line.slice(0, 80) });
           removedHeaders++;
         } else {
           bodyLines.push(line);
@@ -684,20 +677,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const quickSents = merged.filter((s) => s.length >= 10 && !isHeaderOrFooter(s));
       const firstBodyIdx = quickSents.findIndex(s => !isHeaderOrFooter(s));
 
-      console.log("[SPEECH_CLEANED_TEXT]", {
+      if (DEV) console.log("[SPEECH_CLEANED_TEXT]", {
         page:           pageNumber,
         removedHeaders,
         chars:          quickCleaned.length,
         first200:       quickCleaned.slice(0, 200),
       });
-      console.log("[SPEECH_SENTENCE_COUNT]", {
+      if (DEV) console.log("[SPEECH_SENTENCE_COUNT]", {
         page:         pageNumber,
         count:        quickSents.length,
         firstBodyIdx,
         firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
         first4:       quickSents.slice(0, 4).map(s => s.slice(0, 60)),
       });
-      console.log("[SPEECH_FULL_PAGE_STATE]", {
+      if (DEV) console.log("[SPEECH_FULL_PAGE_STATE]", {
         page:           pageNumber,
         mode,
         rawChars:       activePageText.length,
@@ -708,12 +701,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         firstBodyText:  firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
         sentences1to4:  quickSents.slice(0, 4).map(s => s.slice(0, 60)),
       });
-      console.log("[OCR_TEXT_PREVIEW]", {
+      if (DEV) console.log("[OCR_TEXT_PREVIEW]", {
         page:     pageNumber,
         first500: activePageText.slice(0, 500),
         source:   "activePageText prop from index.tsx pageTextByPage",
       });
-      console.log("[EYE_GUIDE_TEXT_BLOCKS]", {
+      if (DEV) console.log("[EYE_GUIDE_TEXT_BLOCKS]", {
         page:   pageNumber,
         blocks: quickSents.slice(0, 8).map((s, i) => ({
           idx:       i,
@@ -721,18 +714,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           text:      s.slice(0, 80),
         })),
       });
-      console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
+      if (DEV) console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
         page:         pageNumber,
         total:        quickSents.length,
         firstBodyIdx,
         firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
         source:       "activePageText-top-to-bottom",
       });
-      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: quickSents.length, first: quickSents[0]?.slice(0, 80) });
+      if (DEV) console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: quickSents.length, first: quickSents[0]?.slice(0, 80) });
 
       // Set immediately with quick-cleaned result so playback can start
       setFpSentences(quickSents);
-      console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
+      if (DEV) console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
 
       // Auto-resume if Play was pressed before this page's text was extracted.
       if (pendingFullPagePlayRef.current !== null && quickSents.length > 0) {
@@ -755,7 +748,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         return t.length >= 2 && t.length <= 4 && t === t.toUpperCase() && !COMMON.has(t);
       });
       const corruptionScore = allTokens.length > 0 ? suspiciousTokens.length / allTokens.length : 0;
-      console.log("[SPEECH_OCR_REPAIR]", {
+      if (DEV) console.log("[SPEECH_OCR_REPAIR]", {
         page:             pageNumber,
         corruptionScore:  Math.round(corruptionScore * 1000) / 1000,
         suspiciousTokens: suspiciousTokens.slice(0, 10),
@@ -777,7 +770,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           .then(r => r.json())
           .then((data: { cleaned: string; wasRepaired: boolean }) => {
             if (!data.wasRepaired || !data.cleaned) return;
-            console.log("[SPEECH_OCR_REPAIR]", {
+            if (DEV) console.log("[SPEECH_OCR_REPAIR]", {
               page:        pageNumber,
               wasRepaired: true,
               before:      textToRepair.slice(0, 100),
@@ -795,7 +788,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             }
             const repairedSents = reMerged.filter(s => s.length >= 10);
             if (repairedSents.length > 0) {
-              console.log("[SPEECH_SENTENCE_COUNT]", {
+              if (DEV) console.log("[SPEECH_SENTENCE_COUNT]", {
                 page:        pageNumber,
                 source:      "ai-repaired",
                 count:       repairedSents.length,
@@ -818,7 +811,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
-    console.log("[SPEECH_EFFECT_C_RUN]", {
+    if (DEV) console.log("[SPEECH_EFFECT_C_RUN]", {
       mode,
       pageNumber,
       hasStudyModel: !!studyModel,
@@ -834,7 +827,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Canonical units are the single source of truth. If not yet available
     // (synthesis still running), segments stay empty and play() shows loading state.
     const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
-    console.log("[SPEECH_SET_SEGMENTS]", next.length);
+    if (DEV) console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
     segmentsRef.current = next;
 
@@ -881,7 +874,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       const resolvedIdx = remapIdx >= 0 ? remapIdx : 0;
       resumeSegIdxRef.current = resolvedIdx;
-      console.log("[SPEECH_CURSOR_REMAP]", {
+      if (DEV) console.log("[SPEECH_CURSOR_REMAP]", {
         fromMode: prevModeRef.current,
         toMode: mode,
         anchorId: anchorToResume,
@@ -899,7 +892,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   function stopAudio() {
     if (providerRef.current) {
-      console.log("[SPEECH_CANCEL_PREVIOUS]", { provider: providerRef.current, mode, segIdx });
+      if (DEV) console.log("[SPEECH_CANCEL_PREVIOUS]", { provider: providerRef.current, mode, segIdx });
     }
     // Cancel pending auto-continue timer — page-change calls stopAudio() directly,
     // bypassing resolveContinue(), so the timer must be cleared here (M2 fix).
@@ -936,7 +929,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowStop - lastPlayStateWriteRef.current });
     }
     lastPlayStateWriteRef.current = _nowStop;
-    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (stop)");
+    if (DEV) console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (stop)");
     onPlayStateChange?.(false);
     // Only release the shared controller's active slot if WE currently hold
     // it — never force-stop a different component's speech from here.
@@ -983,14 +976,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const data = await res.json();
 
       if (data.audioBase64) {
-        console.log("[OPENAI_SPEECH_DONE]", { provider: data.provider ?? "openai", bytes: data.audioBase64.length });
+        if (DEV) console.log("[OPENAI_SPEECH_DONE]", { provider: data.provider ?? "openai", bytes: data.audioBase64.length });
         const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
         const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
         return { blob, mimeType: data.mimeType || "audio/mpeg" };
       }
 
       if (data.useBrowserSpeech) {
-        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
+        if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
         return "browser";
       }
 
@@ -1028,7 +1021,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const url = URL.createObjectURL(blob);
     blobUrlRef.current = url;
     const audio = new Audio(url);
-    audio.playbackRate = speed;
+    audio.playbackRate = speedRef.current;
     audioRef.current   = audio;
     providerRef.current = "openai";
     const token = globalTokenRef.current;
@@ -1141,11 +1134,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       console.warn("[PARENT_WRITE:RAPID]", "onPlayStateChange double-fire within 16ms", { gap: _nowPlay - lastPlayStateWriteRef.current });
     }
     lastPlayStateWriteRef.current = _nowPlay;
-    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange true (fullPage start)");
+    if (DEV) console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange true (fullPage start)");
     onPlayStateChange?.(true);
 
     // [DIAGNOSIS] State at play start — reveals stale segIdx and sentence zero issue
-    console.log("[EYE_GUIDE_START_INDEX]", {
+    if (DEV) console.log("[EYE_GUIDE_START_INDEX]", {
       page:         pageNumber,
       mode,
       fromIdx,
@@ -1165,8 +1158,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Tracks the most-recently matched thought unit so the left panel stays on the
     // "current chapter" even for body-text sentences (Spotify lyrics behaviour).
     let lastMatchedId: string | null = null;
-    console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
-    console.log("[CURRENT_PAGE_SPEECH_START]", {
+    if (DEV) console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
+    if (DEV) console.log("[CURRENT_PAGE_SPEECH_START]", {
       page: pageNumber,
       sentenceIndex: effectiveFromIdx,
       wordIndex: 0,
@@ -1175,12 +1168,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (isStale(session)) break;
-      if (i === effectiveFromIdx) console.log("[SPEECH_PLAY_START]", { mode: "fullPage", fromIdx, totalSentences: sentences.length, page: pageNumber, first: sentences[i]?.slice(0, 80) });
+      if (i === effectiveFromIdx && DEV) console.log("[SPEECH_PLAY_START]", { mode: "fullPage", fromIdx, totalSentences: sentences.length, page: pageNumber, first: sentences[i]?.slice(0, 80) });
       const raw = sentences[i];
       const { hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
-      if (transformations > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
-      if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
-      if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
+      if (transformations > 0 && DEV) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
+      if (hasMath && DEV)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
+      if (hasScience && DEV) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
       const text = computeSpeechText(raw);
       // seekWordStartRef MUST be reset to 0 at the top of every iteration (not just i>0)
       // so the clicked-word offset cannot leak from the first segment into later segments.
@@ -1202,13 +1195,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
             ttsText = computeSpeechText(slicedRaw || raw);
             eyeText = slicedRaw.slice(0, 160) || eyeText;
-            console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "fullPage", sentenceIdx: i, wordIdx, ttsPreview: ttsText.slice(0, 80) });
+            if (DEV) console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "fullPage", sentenceIdx: i, wordIdx, ttsPreview: ttsText.slice(0, 80) });
           }
         }
       }
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "fullPage", charCount: ttsText.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsText.length, preview: ttsText.slice(0, 60) });
-      console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: ttsText.slice(0, 200) });
+      if (DEV) console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "fullPage", charCount: ttsText.length });
+      if (DEV) console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsText.length, preview: ttsText.slice(0, 60) });
+      if (DEV) console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: ttsText.slice(0, 200) });
       setSegIdx(i);
       setEyeText(eyeText);
       setEyeRole("fullPage");
@@ -1226,7 +1219,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         : null;
       const matchedId = matchedUnit?.evidenceRefId ?? matchedExpert?.evidenceRefId ?? null;
       if (matchedId) { lastMatchedId = matchedId; lastMatchedIdRef.current = matchedId; }
-      console.log("[SPEECH_SEEK_OFFSET]", {
+      if (DEV) console.log("[SPEECH_SEEK_OFFSET]", {
         segIdx: i, canonicalAnchorId: matchedId ?? lastMatchedId,
         cursorConsumed: seekWordStartRef.current > 0,
         clickedWordStart: seekWordStartRef.current,
@@ -1238,18 +1231,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
       beginKaraoke(eyeText, ttsText, matchedId ?? lastMatchedId, raw);
 
-      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: ttsText.length, totalSentences: sentences.length });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsText.length, voice, mode: "fullPage" });
+      if (DEV) console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: ttsText.length, totalSentences: sentences.length });
+      if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsText.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
       // Always emit the nearest matched thought unit so the left panel follows
       // speech like Spotify lyrics — even body-text sentences keep a section active.
       const focusId = matchedId ?? lastMatchedId;
       if (focusId) {
-        console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
+        if (DEV) console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
         useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
-      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
+      if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
 
       // Prefetch the next sentence's audio while this one plays.
       if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
@@ -1280,7 +1273,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       // focus so the last-read TU stays highlighted in LeftPanel/PDF/Expert Brain.
       useReadingFocusStore.getState().clearWord();
     }
-    console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (fullPage end)");
+    if (DEV) console.log("[PARENT_WRITE:StudySpeechPanel] onPlayStateChange false (fullPage end)");
     onPlayStateChange?.(false);
   }
 
@@ -1294,20 +1287,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const seg = segs[i];
       setSegIdx(i);
 
-      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
+      if (DEV) console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
       setEyeText(seg.text.slice(0, 160));
       setEyeRole(seg.role ?? "highlights");
       setEyeTier(null);
       if (seg.evidenceRefId) {
-        console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
-        console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
+        if (DEV) console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
+        if (DEV) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
         useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
       }
 
       const { hasMath: hMath, hasScience: hSci, transformations: hTx } = normalizeFormulasForSpeech(seg.text);
-      if (hTx > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: hTx, hasMath: hMath, hasScience: hSci });
-      if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
-      if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (hTx > 0 && DEV) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: hTx, hasMath: hMath, hasScience: hSci });
+      if (hMath && DEV)  console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (hSci && DEV)   console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const hText = computeSpeechText(seg.text);
       // Reset before every segment — prevents clicked-word offset leaking past the first segment.
       seekWordStartRef.current = 0;
@@ -1331,11 +1324,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             eyeHText = slicedRaw.slice(0, 160) || eyeHText;
             // Narration prefix was stripped from the sliced TTS — don't subtract it again.
             hWordOffset = 0;
-            console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "highlights", segIdx: i, wordIdx, ttsPreview: ttsHText.slice(0, 80) });
+            if (DEV) console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "highlights", segIdx: i, wordIdx, ttsPreview: ttsHText.slice(0, 80) });
           }
         }
       }
-      console.log("[SPEECH_SEEK_OFFSET]", {
+      if (DEV) console.log("[SPEECH_SEEK_OFFSET]", {
         segIdx: i, canonicalAnchorId: seg.evidenceRefId ?? null,
         cursorConsumed: seekWordStartRef.current > 0,
         clickedWordStart: seekWordStartRef.current,
@@ -1344,10 +1337,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         resultingPdfStartIndex: seekWordStartRef.current,
       });
       beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, hWordOffset);
-      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsHText.length, preview: ttsHText.slice(0, 60) });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsHText.length, voice, evidenceRefId: seg.evidenceRefId });
+      if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
+      if (DEV) console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
+      if (DEV) console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsHText.length, preview: ttsHText.slice(0, 60) });
+      if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsHText.length, voice, evidenceRefId: seg.evidenceRefId });
 
       // Prefetch the next segment's audio while this one plays.
       if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text));
@@ -1367,7 +1360,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "highlights", error: message });
-        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
+        if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
         await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session));
       }
     }
@@ -1391,7 +1384,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       updatePlayState("idle");
       return;
     }
-    console.log("[SPEECH_FALLBACK_USED]", { provider: "page-text", reason, mode, sentenceCount: sents.length });
+    if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "page-text", reason, mode, sentenceCount: sents.length });
     playFullPageSequential(sents, fromIdx < sents.length ? fromIdx : 0, session);
   }
 
@@ -1401,15 +1394,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       return;
     }
     isStartingRef.current = true;
-    console.log("[SPEECH_START_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber, hasStudyModel: !!studyModel });
-    console.log("[SPEECH_PLAY_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
+    if (DEV) console.log("[SPEECH_START_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber, hasStudyModel: !!studyModel });
+    if (DEV) console.log("[SPEECH_PLAY_REQUEST]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
     stopAudio();
     // claimSpeech() force-stops any speech currently active in ANY component
     // (this one or another) before we start a new one.
     globalTokenRef.current = claimSpeech(SPEECH_OWNER);
     const session = beginSession();
     setErrorMsg(null);
-    console.log("[SPEECH_START]", { mode, fromIdx, session });
+    if (DEV) console.log("[SPEECH_START]", { mode, fromIdx, session });
     // Debounce window for a fast double-click on ▶ Play — released shortly
     // after, well before this segment's own audio would naturally finish.
     setTimeout(() => { isStartingRef.current = false; }, 400);
@@ -1442,7 +1435,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const matchedUnit = studyModel?.visualAnchors
           ? matchSentenceToAnchor(sents[startIdx] ?? "", studyModel.visualAnchors)
           : null;
-        console.log("[CURRENT_PAGE_START_POSITION]", {
+        if (DEV) console.log("[CURRENT_PAGE_START_POSITION]", {
           page: pageNumber,
           startMode: "viewport",
           sentenceIndex: startIdx,
@@ -1452,8 +1445,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       } else {
         startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
       }
-      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
-      console.log("[SPEECH_SOURCE]", {
+      if (DEV) console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
+      if (DEV) console.log("[SPEECH_SOURCE]", {
         mode: "fullPage",
         source: "activePageText, each sentence matched to nearest finalStudyModel.visualAnchors entry",
         sentenceCount: sents.length,
@@ -1462,7 +1455,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         anchorPoolIds: (studyModel?.visualAnchors ?? []).map((a) => a.id),
         canonicalUnitCount: thoughtUnits.length,
       });
-      console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
+      if (DEV) console.log("[SPEECH_TEXT_READY]", { mode: "fullPage", sentenceCount: sents.length });
       playFullPageSequential(sents, startIdx, session);
       return;
     }
@@ -1471,14 +1464,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (mode === "highlights") {
       const segsToPlay = segments.length > 0 ? segments : buildSpeechTimeline({ thoughtUnits, mode: "highlights", activePageText, selectedUnitId, presetId });
       if (!segsToPlay.length) { fallbackToPageText(fromIdx, session, "no-highlight-anchors"); return; }
-      console.log("[SPEECH_SOURCE]", {
+      if (DEV) console.log("[SPEECH_SOURCE]", {
         mode: "highlights",
         source: "finalStudyModel.visualAnchors",
         itemCount: segsToPlay.length,
         charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
         anchorIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
       });
-      console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
+      if (DEV) console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
         mode: "highlights",
         segmentCount: segsToPlay.length,
         evidenceRefIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
@@ -1496,7 +1489,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       return;
     }
 
-    console.log("[SPEECH_SOURCE]", {
+    if (DEV) console.log("[SPEECH_SOURCE]", {
       mode,
       source: "finalStudyModel.visualAnchors via buildSpeechScript (LeftPanel order)",
       itemCount: segsToPlay.length,
@@ -1516,17 +1509,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeTier(seg.tier ?? null);
       if (seg.evidenceRefId) {
         useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
-        console.log("[SPEECH_EYE_FOCUS]", {
+        if (DEV) console.log("[SPEECH_EYE_FOCUS]", {
           segIdx: i, mode, evidenceRefId: seg.evidenceRefId, role: seg.role,
         });
       }
-      console.log("[SPEECH_SEGMENT_START]", {
+      if (DEV) console.log("[SPEECH_SEGMENT_START]", {
         segIdx: i, mode, role: seg.role, charCount: seg.text.length,
       });
       const { hasMath: segMath, hasScience: segSci, transformations: segTx } = normalizeFormulasForSpeech(seg.text);
-      if (segTx > 0)  console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: segTx, hasMath: segMath, hasScience: segSci });
-      if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
-      if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (segTx > 0 && DEV) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: segTx, hasMath: segMath, hasScience: segSci });
+      if (segMath && DEV)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (segSci && DEV)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
       const segText = computeSpeechText(seg.text);
       // Reset before every segment — prevents clicked-word offset leaking past the first segment.
       seekWordStartRef.current = 0;
@@ -1551,11 +1544,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             // Guided narration prefix was stripped from the sliced TTS — zero the offset so
             // sourceTextWordOffsetRef doesn't double-subtract it from the PDF word index.
             segWordOffset = 0;
-            console.log("[SPEECH_CURSOR_CONSUMED]", { mode, segIdx: i, wordIdx, ttsPreview: ttsSegText.slice(0, 80) });
+            if (DEV) console.log("[SPEECH_CURSOR_CONSUMED]", { mode, segIdx: i, wordIdx, ttsPreview: ttsSegText.slice(0, 80) });
           }
         }
       }
-      console.log("[SPEECH_SEEK_OFFSET]", {
+      if (DEV) console.log("[SPEECH_SEEK_OFFSET]", {
         segIdx: i, canonicalAnchorId: seg.evidenceRefId ?? null,
         cursorConsumed: seekWordStartRef.current > 0,
         clickedWordStart: seekWordStartRef.current,
@@ -1564,10 +1557,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         resultingPdfStartIndex: seekWordStartRef.current,
       });
       beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, segWordOffset);
-      console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
-      console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });
-      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsSegText.length, mode, preview: ttsSegText.slice(0, 60) });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsSegText.length, voice });
+      if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
+      if (DEV) console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });
+      if (DEV) console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsSegText.length, mode, preview: ttsSegText.slice(0, 60) });
+      if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsSegText.length, voice });
 
       // Prefetch the next segment's audio while this one plays.
       if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text));
@@ -1590,7 +1583,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode, error: message });
-        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
+        if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
         await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session));
       }
     }
@@ -1612,10 +1605,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function pause() {
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
-      setPlayState("paused");
+      updatePlayState("paused");
     } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
-      setPlayState("paused");
+      updatePlayState("paused");
     }
   }
 
@@ -1631,7 +1624,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   }
 
   function stop() {
-    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
+    if (DEV) console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     // Reset starting guard so a Stop → Play within 400 ms isn't silently blocked (L1 fix).
     isStartingRef.current = false;
     stopAudio();
@@ -1654,8 +1647,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
     if (!sents.length) return;
     const idx = findBestSentenceIndex(sents, snippet);
-    console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60), sentenceStart: sents[idx]?.slice(0, 120) ?? null });
-    console.log("[CURRENT_PAGE_SPEECH_START]", { page: pageNumber, sentenceIndex: idx, wordIndex: 0, textPreview: sents[idx]?.slice(0, 120) ?? null });
+    if (DEV) console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60), sentenceStart: sents[idx]?.slice(0, 120) ?? null });
+    if (DEV) console.log("[CURRENT_PAGE_SPEECH_START]", { page: pageNumber, sentenceIndex: idx, wordIndex: 0, textPreview: sents[idx]?.slice(0, 120) ?? null });
     setOpen(true);
     setMode("fullPage");
     stop();
@@ -1731,7 +1724,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Open the panel if it's collapsed so the user can see the mode controls.
     setOpen(true);
-    console.log("[PDF_CLICK_CURSOR_PREPARED]", {
+    if (DEV) console.log("[PDF_CLICK_CURSOR_PREPARED]", {
       mode,
       canonicalAnchorId: anchor,
       resolvedSegmentIndex: resolvedIdx,
@@ -1739,7 +1732,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       charOffset: cursor.sourceCharOffset,
       strategy,
     });
-    console.log("[SPEECH_SEEK_TO_CURSOR]", {
+    if (DEV) console.log("[SPEECH_SEEK_TO_CURSOR]", {
       mode,
       canonicalAnchorId: anchor,
       sourcePage: cursor.sourcePage,
