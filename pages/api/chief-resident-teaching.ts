@@ -193,7 +193,10 @@ function buildUserContext(req: ChiefResidentRequest): string {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: "Chief Resident is temporarily unavailable. The teaching service has not been configured for this deployment." });
+    return res.status(503).json({
+      error: "Chief Resident is not available — this deployment is missing required server configuration.",
+      code:  "missing_configuration",
+    });
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -235,12 +238,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.write("data: [DONE]\n\n");
   } catch (err) {
-    // Never send raw SDK error text (contains rate-limit details, internal fields).
-    const isOverload = err instanceof Error && /overload|rate.?limit|529/i.test(err.message);
-    const friendly = isOverload
-      ? "Chief Resident is busy right now. Please try again in a moment."
-      : "Chief Resident encountered an error. Please try again.";
-    res.write(`data: ${JSON.stringify({ error: friendly })}\n\n`);
+    // Classify error so the client can decide whether to offer a Retry button
+    // and show an appropriate message. Never send raw SDK error text.
+    let code = "unknown_error";
+    let friendly: string;
+
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+      code    = "invalid_api_key";
+      friendly = "Chief Resident is not authorized — the API key may be invalid or revoked.";
+    } else if (err instanceof Anthropic.RateLimitError) {
+      code    = "rate_limited";
+      friendly = "Chief Resident is busy right now. Please try again in a moment.";
+    } else if (err instanceof Anthropic.APIConnectionTimeoutError) {
+      code    = "timeout";
+      friendly = "Chief Resident timed out. Please try again.";
+    } else if (err instanceof Anthropic.InternalServerError) {
+      code    = "overloaded";
+      friendly = "Chief Resident is temporarily overloaded. Please try again in a moment.";
+    } else if (err instanceof Anthropic.APIConnectionError) {
+      code    = "connection_error";
+      friendly = "Chief Resident could not reach the AI service. Please try again.";
+    } else {
+      friendly = "Chief Resident encountered an error. Please try again.";
+    }
+    res.write(`data: ${JSON.stringify({ error: friendly, code })}\n\n`);
   } finally {
     res.end();
   }
