@@ -389,7 +389,7 @@ function applyHighlightBudget<T extends BudgetAnchor>(
 
   const pageLen = pageText.length;
 
-  console.log("[HIGHLIGHT_BUDGET_INPUT]", {
+  DEV && console.log("[HIGHLIGHT_BUDGET_INPUT]", {
     page,
     inputCount:  anchors.length,
     isMathPage,
@@ -450,16 +450,17 @@ function applyHighlightBudget<T extends BudgetAnchor>(
   const coveragePct = pageLen > 0 ? ((coverageChars / pageLen) * 100).toFixed(1) : "n/a";
 
   if (dropped.length > 0) {
-    console.log("[HIGHLIGHT_BUDGET_DROP]", { page, droppedCount: dropped.length, dropped });
+    DEV && console.log("[HIGHLIGHT_BUDGET_DROP]", { page, droppedCount: dropped.length, dropped });
   }
-  console.log("[HIGHLIGHT_BUDGET_FINAL]", { page, finalCount: result.length, types: result.map(a => a.anchorType) });
-  console.log("[HIGHLIGHT_COVERAGE]", { page, coveragePct: `${coveragePct}%`, coverageChars, pageTextLen: pageLen, target: `${BUDGET_COVERAGE_TARGET * 100}%`, max: `${BUDGET_COVERAGE_MAX * 100}%` });
+  DEV && console.log("[HIGHLIGHT_BUDGET_FINAL]", { page, finalCount: result.length, types: result.map(a => a.anchorType) });
+  DEV && console.log("[HIGHLIGHT_COVERAGE]", { page, coveragePct: `${coveragePct}%`, coverageChars, pageTextLen: pageLen, target: `${BUDGET_COVERAGE_TARGET * 100}%`, max: `${BUDGET_COVERAGE_MAX * 100}%` });
 
   return result;
 }
 
 
 const ELENA_ENABLED = resolveElenaModeFlagsFromEnv().ELENA_MODE_ENABLED;
+const DEV = process.env.NODE_ENV === "development";
 
 export default function ThoughtUnitReader() {
   const router = useRouter();
@@ -495,8 +496,8 @@ export default function ThoughtUnitReader() {
   // Subscribe to global sync changes for cross-view synchronization.
   // Gated by navLock + followScroll to prevent observer/scroll feedback loops.
   useEffect(() => {
-    console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}, source=${lastUpdateSource}`);
-    console.log("[TRACE pageSync]", {
+    DEV && console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}, source=${lastUpdateSource}`);
+    DEV && console.log("[TRACE pageSync]", {
       source: `globalSync:${lastUpdateSource}`,
       documentId: bookId,
       visiblePage: page,
@@ -507,7 +508,7 @@ export default function ThoughtUnitReader() {
 
     // Hard gate: never process observer callbacks during page hydration
     if (navLockRef.current) {
-      console.log(`🔒 navLock active – ignoring sync update from source=${lastUpdateSource}`);
+      DEV && console.log(`🔒 navLock active – ignoring sync update from source=${lastUpdateSource}`);
       return;
     }
 
@@ -515,23 +516,23 @@ export default function ThoughtUnitReader() {
 
     // When Follow Scroll is OFF, only manual/toc sources are allowed to drive page changes
     if (isScrollDriven && !followScroll) {
-      console.log(`🚫 Follow Scroll OFF – suppressing scroll-driven page update (source=${lastUpdateSource})`);
+      DEV && console.log(`🚫 Follow Scroll OFF – suppressing scroll-driven page update (source=${lastUpdateSource})`);
       return;
     }
 
     // Cooldown: ignore scroll-driven updates within 650 ms of the last user navigation
     if (isScrollDriven && Date.now() - lastUserNavAtRef.current < 650) {
-      console.log(`⏳ User nav cooldown – suppressing scroll-driven update (${Date.now() - lastUserNavAtRef.current}ms < 650ms)`);
+      DEV && console.log(`⏳ User nav cooldown – suppressing scroll-driven update (${Date.now() - lastUserNavAtRef.current}ms < 650ms)`);
       return;
     }
 
     if (page !== currentPage) {
-      console.log(`🔄 Syncing local page: ${currentPage} -> ${page}`);
+      DEV && console.log(`🔄 Syncing local page: ${currentPage} -> ${page}`);
       setCurrentPage(page);
     }
 
     if (unitIndex !== currentThoughtUnit) {
-      console.log(`🔄 Syncing local unit: ${currentThoughtUnit} -> ${unitIndex}`);
+      DEV && console.log(`🔄 Syncing local unit: ${currentThoughtUnit} -> ${unitIndex}`);
       setCurrentThoughtUnit(unitIndex);
     }
   }, [page, unitIndex, activeChunkId, lastUpdateSource, followScroll]);
@@ -682,7 +683,7 @@ export default function ThoughtUnitReader() {
   // Render counter — temporary diagnostic for React #185 investigation.
   const renderCountRef = useRef(0);
   renderCountRef.current++;
-  console.log("[INDEX_RENDER]", renderCountRef.current);
+  DEV && console.log("[INDEX_RENDER]", renderCountRef.current);
 
   // Primary KnowledgeNode for the current page — populated by the KG effect below.
   // Used by all note-save paths to attach knowledgeNodeId without blocking the UI.
@@ -720,7 +721,7 @@ export default function ThoughtUnitReader() {
     model: import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel,
     key: string
   ) => {
-    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
+    DEV && console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
       key,
       page: model.page,
       visualAnchorCount: model.visualAnchors.length,
@@ -731,14 +732,14 @@ export default function ThoughtUnitReader() {
       console.warn("[WIRE] rejected stale studyModel", { from: key, current });
       return;
     }
-    console.log("[WIRE] studyModel accepted", {
+    DEV && console.log("[WIRE] studyModel accepted", {
       key,
       page: model.page,
       visualAnchors: model.visualAnchors.length,
       ids: model.visualAnchors.map((a) => a.id),
       roles: model.visualAnchors.map((a) => a.role),
     });
-    console.log("[VISUAL_ANCHORS_RECEIVED]", {
+    DEV && console.log("[VISUAL_ANCHORS_RECEIVED]", {
       page: model.page,
       count: model.visualAnchors.length,
       ids: model.visualAnchors.map((a) => a.id),
@@ -758,7 +759,7 @@ export default function ThoughtUnitReader() {
       }
       return next;
     });
-    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
+    DEV && console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map((a) => a.exactText.slice(0, 40)) });
   }, []);
 
   // Stable wrapper so RightPanel's onPlayStateChange prop identity never changes.
@@ -775,14 +776,14 @@ export default function ThoughtUnitReader() {
   // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
   useEffect(() => {
     const notes = getAllUltraNotes();
-    console.log("[NOTELAB_RESTORE]", {
+    DEV && console.log("[NOTELAB_RESTORE]", {
       recordsFound: notes.length,
       storageKey:   "ultraNotes_v1",
       destination:  "localStorage",
       sampleTopics: notes.slice(0, 3).map(n => `p${n.pageNumber}: ${n.topic?.slice(0, 40) ?? "(no topic)"}`),
     });
     const recallSets = getAllRecallSets();
-    console.log("[RECALLLAB_RESTORE]", {
+    DEV && console.log("[RECALLLAB_RESTORE]", {
       recordsFound: recallSets.length,
       storageKey:   "recallSets_v1",
       destination:  "localStorage",
@@ -964,7 +965,7 @@ export default function ThoughtUnitReader() {
 
     // ── No canonical units yet — keep existing highlights until extraction/model arrives ──
     if (!canonicalLeftPanelUnits.length && !currentPageStudyModel) {
-      console.log("[HIGHLIGHT_PERSIST]", {
+      DEV && console.log("[HIGHLIGHT_PERSIST]", {
         page:          currentPage,
         reason:        canonicalLeftPanelDiagnostic ?? "canonical-units-loading",
         existingCount: finalHighlightAnchors.length,
@@ -976,7 +977,7 @@ export default function ThoughtUnitReader() {
     // Grounding with empty pageText would set semantic text that SmartPDFViewer
     // can't locate in the PDF, so highlights wouldn't appear. Wait for real text.
     if (pageText.length < 30) {
-      console.log("[LEFT_PANEL_GROUND_WAITING_FOR_TEXT]", {
+      DEV && console.log("[LEFT_PANEL_GROUND_WAITING_FOR_TEXT]", {
         page:        currentPage,
         pageTextLen: pageText.length,
         anchorCount: canonicalLeftPanelUnits.length,
@@ -990,25 +991,25 @@ export default function ThoughtUnitReader() {
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged(null);
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
-      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "stale-page" });
-      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
+      DEV && console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
+      DEV && console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "stale-page" });
+      DEV && console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
     const pageType   = currentPageStudyModel?.pageType ?? null;
     const visualAnchors = canonicalLeftPanelUnits;
 
-    console.log("[LEFT_PANEL_VISUAL_ANCHORS_COUNT]", { page: currentPage, count: visualAnchors.length, roles: visualAnchors.map(a => a.category), source: "canonicalLeftPanelUnits" });
+    DEV && console.log("[LEFT_PANEL_VISUAL_ANCHORS_COUNT]", { page: currentPage, count: visualAnchors.length, roles: visualAnchors.map(a => a.category), source: "canonicalLeftPanelUnits" });
     visualAnchors.forEach((a) => {
-      console.log("[LEFT_PANEL_ANCHOR_EXACT_TEXT]", { page: currentPage, id: a.id, role: a.category, sourceField: a.source, exactText: a.exactText.slice(0, 100) });
+      DEV && console.log("[LEFT_PANEL_ANCHOR_EXACT_TEXT]", { page: currentPage, id: a.id, role: a.category, sourceField: a.source, exactText: a.exactText.slice(0, 100) });
     });
 
     const pageRole = currentPageRoleRef.current;
 
     // ── Page classification ────────────────────────────────────────────────
     const conceptBlockCount = currentPageStudyModel?.conceptBlocks?.length ?? 0;
-    console.log("[PAGE_CLASSIFY]", {
+    DEV && console.log("[PAGE_CLASSIFY]", {
       page:              currentPage,
       pageType:          pageType ?? "unknown",
       pageRole:          pageRole ?? "unknown",
@@ -1038,7 +1039,7 @@ export default function ThoughtUnitReader() {
     // the structural-page skip below (contents/glossary/chapter_opener, etc.).
     const aiConfirmsInstructional = visualAnchors.some((a) => a.source === "canonical_left_panel");
 
-    console.log("[CLASSIFIER_EVIDENCE]", {
+    DEV && console.log("[CLASSIFIER_EVIDENCE]", {
       page:                currentPage,
       pageType,
       pageRole,
@@ -1051,31 +1052,31 @@ export default function ThoughtUnitReader() {
 
     // Tier 1: always respect OpenAI's own type
     if (NON_INSTRUCTIONAL_TYPES.has(pageType ?? "")) {
-      console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "OpenAI pageType confirmed non-instructional", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "openai-non-instructional-type", pageType });
+      DEV && console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "OpenAI pageType confirmed non-instructional", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
+      DEV && console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "openai-non-instructional-type", pageType });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
-      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "openai-non-instructional-type" });
-      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
+      DEV && console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "openai-non-instructional-type" });
+      DEV && console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
     // Tier 2: local classifier only when AI found nothing
     if (!aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
-      console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "local pageRole + AI found zero anchors", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
+      DEV && console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "local pageRole + AI found zero anchors", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
+      DEV && console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: visualAnchors.length, groundedCount: 0, failedCount: visualAnchors.length, anchors: [] });
-      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "local-page-role-structural" });
-      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
+      DEV && console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "local-page-role-structural" });
+      DEV && console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
     // If AI has anchors but local classifier fired chapter_opener — override logged here
     if (aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
-      console.log("[PAGE_CLASSIFY_REASON]", {
+      DEV && console.log("[PAGE_CLASSIFY_REASON]", {
         page:    currentPage,
         verdict: "instructional — AI anchors override stale local pageRole",
         pageRole,
@@ -1084,16 +1085,16 @@ export default function ThoughtUnitReader() {
       });
     }
 
-    console.log("[VISUAL_ANCHOR_COUNT_BEFORE_SKIP]", { page: currentPage, count: visualAnchors.length });
+    DEV && console.log("[VISUAL_ANCHOR_COUNT_BEFORE_SKIP]", { page: currentPage, count: visualAnchors.length });
 
     // ── Empty canonicalLeftPanelUnits — no live highlights; saved highlights still render ──
     if (!visualAnchors.length) {
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: canonicalLeftPanelDiagnostic ?? "canonical-units-empty", note: "Canonical LeftPanel returned no units for this page" });
+      DEV && console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: canonicalLeftPanelDiagnostic ?? "canonical-units-empty", note: "Canonical LeftPanel returned no units for this page" });
       const savedGrounded = groundSavedAnchors(pageText);
       setFinalHighlightAnchorsIfChanged(savedGrounded);
       setHighlightDiagnosticsIfChanged({ page: currentPage, requestedCount: 0, groundedCount: 0, failedCount: 0, anchors: [] });
-      console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "visual-anchors-empty" });
-      console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
+      DEV && console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: 0, savedCount: savedGrounded.length, mergedCount: savedGrounded.length, reason: "visual-anchors-empty" });
+      DEV && console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: savedGrounded.length });
       return;
     }
 
@@ -1138,10 +1139,10 @@ export default function ThoughtUnitReader() {
     // "definition" and "keyDetail", which prove definitions/details on the page.
     const OVERLAY_ROLES = new Set(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact", "clinical_pearl", "memory_hook", "anatomy", "comparison", "reference", "filler", "unknown"]);
     const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
-    console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "canonicalLeftPanelUnits" });
+    DEV && console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "canonicalLeftPanelUnits" });
     const sanitized = sanitizeHighlightAnchors(roleFiltered);
     const grounded  = groundHighlightAnchors(sanitized, pageText);
-    console.log("[LEFT_PANEL_GROUND_RESULT]", {
+    DEV && console.log("[LEFT_PANEL_GROUND_RESULT]", {
       page:         currentPage,
       inputCount:   visualAnchors.length,
       groundedCount: grounded.length,
@@ -1202,7 +1203,7 @@ export default function ThoughtUnitReader() {
       }),
     });
 
-    console.log("[LEFT_PANEL_SOURCE]", {
+    DEV && console.log("[LEFT_PANEL_SOURCE]", {
       source:     "canonicalLeftPanelUnits",
       page:       currentPage,
       count:      groundedAnchors.length,
@@ -1210,7 +1211,7 @@ export default function ThoughtUnitReader() {
       firstTexts: groundedAnchors.slice(0, 3).map((a) => a.text?.slice(0, 60)),
     });
 
-    console.log("[VISUAL_ANCHOR_COUNT_AFTER_SKIP]", {
+    DEV && console.log("[VISUAL_ANCHOR_COUNT_AFTER_SKIP]", {
       page:          currentPage,
       inputAnchors:  visualAnchors.length,
       groundedCount: grounded.length,
@@ -1221,7 +1222,7 @@ export default function ThoughtUnitReader() {
     // Cross-reference with [SPEECH_INTEGRITY] (speech engine) to verify full coverage.
     const groundedIdSet = new Set(groundedAnchors.map(a => a.evidenceRefId).filter(Boolean));
     const studyNoteAnchorIds = currentPageStudyModel?.studyNoteAnchorIds ?? {};
-    console.log("[CANONICAL_INTEGRITY]", {
+    DEV && console.log("[CANONICAL_INTEGRITY]", {
       page: currentPage,
       canonicalIds:     visualAnchors.map(a => a.evidenceRefId),
       pdfTargetCount:   groundedAnchors.length,   // PDF highlight targets
@@ -1250,9 +1251,9 @@ export default function ThoughtUnitReader() {
     }
 
     setFinalHighlightAnchorsIfChanged(merged);
-    console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: groundedAnchors.length, savedCount: savedGrounded.length, mergedCount: merged.length });
-    console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: merged.length });
-    console.log("[HIGHLIGHT_SOURCE_AUDIT]", {
+    DEV && console.log("[SAVED_HIGHLIGHTS_MERGED]", { page: currentPage, liveCount: groundedAnchors.length, savedCount: savedGrounded.length, mergedCount: merged.length });
+    DEV && console.log("[LEFTPANEL_HIGHLIGHT_RENDER_COUNT]", { page: currentPage, count: merged.length });
+    DEV && console.log("[HIGHLIGHT_SOURCE_AUDIT]", {
       page:                       currentPage,
       source:                     "finalStudyModel.visualAnchors + savedHighlightsStore",
       legacyHighlightTargets:     "removed",
@@ -1260,11 +1261,11 @@ export default function ThoughtUnitReader() {
       legacyPriorityHighlights:   "not-passed-to-render",
       finalAnchors:               merged.length,
     });
-    console.log("[LEFT_PANEL_LEGACY_DISABLED]", {
+    DEV && console.log("[LEFT_PANEL_LEGACY_DISABLED]", {
       page: currentPage,
       note: "priorityHighlights may remain for Right Panel context only — never fed to PDF overlay",
     });
-    console.log("[LEFT_PANEL_FALLBACK_DISABLED]", {
+    DEV && console.log("[LEFT_PANEL_FALLBACK_DISABLED]", {
       page: currentPage,
       note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors + savedHighlightsStore only",
     });
@@ -1358,11 +1359,13 @@ export default function ThoughtUnitReader() {
         fileUrl: fileUrl?.startsWith('blob:') ? null : fileUrl,
         thoughtUnitsCount: thoughtUnits.length,
         bookId,
+        // IDB document ID lets us reconstruct the blob URL after refresh
+        currentLocalDocumentId,
         timestamp: Date.now(),
       };
       
       localStorage.setItem('thoughtUnitReader_session', JSON.stringify(sessionState));
-      console.log('💾 Session state saved to localStorage');
+      DEV && console.log('💾 Session state saved to localStorage');
     } catch (error) {
       console.warn('Failed to save session state:', error);
     }
@@ -1381,12 +1384,12 @@ export default function ThoughtUnitReader() {
       // Check if session is recent (within 24 hours)
       const age = Date.now() - (sessionState.timestamp || 0);
       if (age > 24 * 60 * 60 * 1000) {
-        console.log('⏰ Session expired, clearing...');
+        DEV && console.log('⏰ Session expired, clearing...');
         localStorage.removeItem('thoughtUnitReader_session');
         return null;
       }
       
-      console.log('📂 Session state restored from localStorage');
+      DEV && console.log('📂 Session state restored from localStorage');
       return sessionState;
     } catch (error) {
       console.warn('Failed to restore session state:', error);
@@ -1404,23 +1407,45 @@ export default function ThoughtUnitReader() {
   // Restore session on mount
   useEffect(() => {
     const restored = restoreSessionState();
-    if (restored) {
-      setViewMode(
-        ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study" || restored.viewMode === "elena")
-          ? restored.viewMode
-          : "reader") as WorkspaceMode
-      );
-      setCurrentPage(restored.currentPage || 1);
-      setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
-      setThemeMode(restored.themeMode || (restored.darkMode ? "dark" : "light") || "dark");
-      setReadingMode(restored.readingMode || ((restored.fontFamily || "").includes("Comic") ? "dyslexia" : "normal"));
-      const VALID_PROFILES: LearningProfile[] = ["standard", "dental", "medical", "surgeon", "dat"];
-      if (restored.learningProfile && VALID_PROFILES.includes(restored.learningProfile as LearningProfile)) {
-        setLearningProfile(restored.learningProfile as LearningProfile);
-      }
-      setFontSize(restored.fontSize || 16);
-      setLineSpacing(restored.lineSpacing || 1.5);
-      // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
+    if (!restored) return;
+
+    setViewMode(
+      ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study" || restored.viewMode === "elena")
+        ? restored.viewMode
+        : "reader") as WorkspaceMode
+    );
+    setCurrentPage(restored.currentPage || 1);
+    setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
+    setThemeMode(restored.themeMode || (restored.darkMode ? "dark" : "light") || "dark");
+    setReadingMode(restored.readingMode || ((restored.fontFamily || "").includes("Comic") ? "dyslexia" : "normal"));
+    const VALID_PROFILES: LearningProfile[] = ["standard", "dental", "medical", "surgeon", "dat"];
+    if (restored.learningProfile && VALID_PROFILES.includes(restored.learningProfile as LearningProfile)) {
+      setLearningProfile(restored.learningProfile as LearningProfile);
+    }
+    setFontSize(restored.fontSize || 16);
+    setLineSpacing(restored.lineSpacing || 1.5);
+
+    // Reconstruct the last-opened PDF from IDB so the reader resumes without re-uploading.
+    if (restored.currentLocalDocumentId) {
+      (async () => {
+        try {
+          const data = await getDocumentFile(restored.currentLocalDocumentId);
+          if (!data) return; // binary was cleared from IDB — user will need to re-upload
+          const blob = new Blob([data], { type: 'application/pdf' });
+          const sessionUrl = createBlobUrl(blob);
+          setCurrentLocalDocumentId(restored.currentLocalDocumentId);
+          setFileUrl(sessionUrl);
+          generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
+          const restoredBookId = restored.bookId || 'book';
+          startBookProcessing(
+            new File([blob], restoredBookId + '.pdf', { type: 'application/pdf' }),
+            restoredBookId,
+            restored.currentPage || 1,
+          );
+        } catch {
+          // Non-fatal — reader starts empty, user can re-upload
+        }
+      })();
     }
   }, []);
 
@@ -1564,7 +1589,7 @@ export default function ThoughtUnitReader() {
       const contentSeed = detectDomainPreset(anchorSample, undefined, uploadedFile?.name);
       if (contentSeed !== "universal") setSharedPresetId(contentSeed);
     }
-    console.log("[LEFT_PANEL_CANONICAL_READY]", {
+    DEV && console.log("[LEFT_PANEL_CANONICAL_READY]", {
       thoughtUnitId: built.units[0]?.id ?? null,
       source: built.units[0]?.source ?? "none",
       page: currentPage,
@@ -1606,7 +1631,7 @@ export default function ThoughtUnitReader() {
   // Log when the budgeted anchor set actually changes (not on every render).
   useEffect(() => {
     if (!safeHighlightAnchors.length) {
-      console.log("[HIGHLIGHT_RENDERED]", {
+      DEV && console.log("[HIGHLIGHT_RENDERED]", {
         page:     currentPage,
         count:    0,
         reason:   "no-grounded-anchors",
@@ -1614,7 +1639,7 @@ export default function ThoughtUnitReader() {
       });
       return;
     }
-    console.log("[HIGHLIGHT_RENDERED]", {
+    DEV && console.log("[HIGHLIGHT_RENDERED]", {
       page:       currentPage,
       count:      safeHighlightAnchors.length,
       ids:        (safeHighlightAnchors as any[]).map((a) => (a as any).evidenceRefId),
@@ -1636,7 +1661,7 @@ export default function ThoughtUnitReader() {
     let cancelled = false;
     getHighlightsForPage(bookId, currentPage).then((saved: SavedHighlight[]) => {
       if (cancelled) return;
-      console.log("[SAVED_HIGHLIGHTS_LOADED]", { bookId, page: currentPage, count: saved.length });
+      DEV && console.log("[SAVED_HIGHLIGHTS_LOADED]", { bookId, page: currentPage, count: saved.length });
       setSavedHighlightAnchors(saved.map((h) => ({
         text: h.text,
         anchorType: h.anchorType as SynthHighlightAnchor["anchorType"],
@@ -1657,7 +1682,7 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     setCurrentPageStudyModel(null);
     setFinalHighlightAnchors([]);
-    console.log("[LEFT_PANEL_STALE_CLEARED]", { reason: "page-or-book-changed", bookId, page: currentPage });
+    DEV && console.log("[LEFT_PANEL_STALE_CLEARED]", { reason: "page-or-book-changed", bookId, page: currentPage });
   }, [bookId, currentPage]);
   const [rightPanelState, setRightPanelState] = useState<RightPanelState>({
     ...DEFAULT_RIGHT_PANEL_STATE,
@@ -1855,7 +1880,7 @@ export default function ThoughtUnitReader() {
   // can never be satisfied by text from a different document or page.
   const activePageTextKey = `${bookId}:${currentPage}`;
   const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
-  console.log("[TRACE PAGE BINDING]", {
+  DEV && console.log("[TRACE PAGE BINDING]", {
     currentPage,
     activePageTextKey,
     textLength: (pageTextByPage.get(activePageTextKey) || "").length,
@@ -1896,7 +1921,7 @@ export default function ThoughtUnitReader() {
   });
   // Keep ref in sync so the finalHighlightAnchors effect can read pageRole without TDZ issues.
   currentPageRoleRef.current = currentPageRole ?? null;
-  console.log("[TRACE LIVE_WIRING]", {
+  DEV && console.log("[TRACE LIVE_WIRING]", {
     deployedCommit: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_DEPLOYED_COMMIT ?? process.env.NEXT_PUBLIC_BUILD_SHA ?? "unknown",
     deployedBuildTime: process.env.NEXT_PUBLIC_BUILD_TIME ?? "unknown",
     bookId,
@@ -1949,7 +1974,7 @@ export default function ThoughtUnitReader() {
         highlightAnchors: MOCK_ANCHORS,
         miniTestItems: [], preReadRecallItems: [],
       };
-      console.log('[DEBUG] injecting page text + studyModel, key:', key);
+      DEV && console.log('[DEBUG] injecting page text + studyModel, key:', key);
       handleStudyModelReady(mockModel as any, key);
     };
     (window as any).__debugGetReadingFocusStore = () => {
@@ -1967,7 +1992,7 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     setCurrentPageStudyModel(null);
     setFinalHighlightAnchors([]);
-    console.log("[HIGHLIGHT_CLEARED]", { reason: "page-changed", pageTruthKey });
+    DEV && console.log("[HIGHLIGHT_CLEARED]", { reason: "page-changed", pageTruthKey });
   }, [pageTruthKey]);
 
   // Auto-select the first anchor when anchors first arrive on a page (speech not playing).
@@ -2068,14 +2093,14 @@ export default function ThoughtUnitReader() {
     const topic = `Page ${currentPage}`;
     const activeUnit = activeCanonicalThoughtUnit ?? canonicalLeftPanelUnits[0] ?? null;
     if (!activeUnit && !currentPageStudyModel) return;
-    console.log("[NOTELAB_SOURCE]", {
+    DEV && console.log("[NOTELAB_SOURCE]", {
       thoughtUnitId: activeUnit?.id ?? null,
       source: activeUnit?.source ?? "page-level fallback",
       page: currentPage,
       sourceText: activeUnit?.exactText.slice(0, 80) ?? null,
       fallbackUsed: !activeUnit || activeUnit.source !== "canonical_left_panel",
     });
-    console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", thoughtUnitId: activeUnit?.id ?? null, destination: "NoteLab" });
+    DEV && console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", thoughtUnitId: activeUnit?.id ?? null, destination: "NoteLab" });
     try {
       const note = activeUnit
         ? buildUltraNote(bookId, currentPage, activeUnit.title, activeUnit.exactText, [], uploadedFile?.name)
@@ -2120,15 +2145,15 @@ export default function ThoughtUnitReader() {
       note.canonicalAnchorId  = activeUnit?.id ?? undefined;
       await saveUltraNote(note);
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
-      console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
-      console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1", destination: "NoteLab" });
+      DEV && console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
+      DEV && console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1", destination: "NoteLab" });
       setSyllabusStudiedPages((prev) => {
         const next = new Set(prev);
         next.add(currentPage);
         try { localStorage.setItem("syllabus_studiedPages", JSON.stringify([...next])); } catch { /* ignore */ }
         return next;
       });
-      console.log("[SYLLABUS_SAVE_STATUS]", { page: currentPage, event: "notelab_saved", bookId, syllabusTocNodes: syllabusToc.length, totalStudied: syllabusStudiedPages.size + 1 });
+      DEV && console.log("[SYLLABUS_SAVE_STATUS]", { page: currentPage, event: "notelab_saved", bookId, syllabusTocNodes: syllabusToc.length, totalStudied: syllabusStudiedPages.size + 1 });
       setSessionNotesCount((n) => n + 1);
       setNoteLabRefreshKey((k) => k + 1);
     } catch (err: any) {
@@ -2140,7 +2165,7 @@ export default function ThoughtUnitReader() {
   const sendCurrentPageToRecallLab = useCallback(async () => {
     const sm = currentPageStudyModel;
     if (!sm) return;
-    console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab" });
+    DEV && console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab" });
     const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
     const set = buildRecallSetFromView(minView, bookId, currentPage, {
       bookTitle: uploadedFile?.name,
@@ -2149,7 +2174,7 @@ export default function ThoughtUnitReader() {
     });
     try {
       await saveRecallSet(set);
-      console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cards: set.cards?.length ?? 0 });
+      DEV && console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cards: set.cards?.length ?? 0 });
     } catch (e) {
       console.error("[RECALLLAB_SAVE_FAILED]", { id: set.id, error: String(e) });
     }
@@ -2197,7 +2222,7 @@ export default function ThoughtUnitReader() {
         email: "guest@local",
         photoURL: null,
       };
-      console.log("✅ Bypass mode enabled - using mock user");
+      DEV && console.log("✅ Bypass mode enabled - using mock user");
       setUser(mockUser as any);
     } else {
       handleRedirectResult().catch(() => {});
@@ -2210,7 +2235,7 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   useEffect(() => {
     if (thoughtUnits.length > 0 && tableOfContents.length > 0) {
-      console.log('🧠 Initializing Chapter Absorption Pipeline');
+      DEV && console.log('🧠 Initializing Chapter Absorption Pipeline');
       
       const pipeline = createChapterAbsorptionPipeline({
         maxConcurrentProcessing: 2,
@@ -2283,7 +2308,7 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    console.log('🧠 Starting chapter absorption process for', smartTOC.length, 'chapters');
+    DEV && console.log('🧠 Starting chapter absorption process for', smartTOC.length, 'chapters');
     
     setAbsorptionState(prev => ({
       ...prev,
@@ -2333,7 +2358,7 @@ export default function ThoughtUnitReader() {
         }
       }));
 
-      console.log('🧠 Chapter absorption complete:', stats);
+      DEV && console.log('🧠 Chapter absorption complete:', stats);
       alert(`Chapter absorption complete! Processed ${stats.totalProcessed} chapters with ${Math.round(stats.successRate * 100)}% success rate.`);
 
     } catch (error) {
@@ -2353,7 +2378,7 @@ export default function ThoughtUnitReader() {
         ...prev,
         isRunning: false
       }));
-      console.log('🧠 Chapter absorption stopped by user');
+      DEV && console.log('🧠 Chapter absorption stopped by user');
     }
   };
 
@@ -2364,7 +2389,7 @@ export default function ThoughtUnitReader() {
         ...prev,
         results: []
       }));
-      console.log('🧠 Chapter absorption cache cleared');
+      DEV && console.log('🧠 Chapter absorption cache cleared');
     }
   };
 
@@ -2558,7 +2583,7 @@ export default function ThoughtUnitReader() {
   // hands a script to Podcast Lab via initialScript.
   const handleExplainItTurnIntoPodcast = useCallback((transcript: ExplainItMessage[]) => {
     const seed = transcript.map((t) => `${t.role === "user" ? "Student" : "Tutor"}: ${t.content}`).join("\n");
-    console.log("[EXPLAIN_IT_TURN_INTO_PODCAST]", { page: explainItContext?.pageNumber, turns: transcript.length });
+    DEV && console.log("[EXPLAIN_IT_TURN_INTO_PODCAST]", { page: explainItContext?.pageNumber, turns: transcript.length });
     setExplainItPodcastSeed(seed);
     setExplainItContext(null);
     trySwitchShellTab("podcast", "podcast");
@@ -2634,7 +2659,7 @@ export default function ThoughtUnitReader() {
   const noteThoughtUnitById = useCallback(async (anchorId: string) => {
     const unit = canonicalLeftPanelUnits.find((u) => u.id === anchorId || u.evidenceRefId === anchorId);
     if (unit) {
-      console.log("[NOTELAB_SOURCE]", {
+      DEV && console.log("[NOTELAB_SOURCE]", {
         thoughtUnitId: unit.id,
         source: unit.source,
         page: unit.page,
@@ -2749,7 +2774,7 @@ export default function ThoughtUnitReader() {
     note.sections = sections;
     note.knowledgeNodeId = pageKgNodeIdRef.current ?? undefined;
     await saveUltraNote(note);
-    console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber, sectionLabels: sections.map((s) => s.label) });
+    DEV && console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber, sectionLabels: sections.map((s) => s.label) });
     setNoteLabRefreshKey((k) => k + 1);
   }, [explainStepContext, bookId, uploadedFile]);
 
@@ -2789,7 +2814,7 @@ export default function ThoughtUnitReader() {
       createdAt: Date.now(),
     };
     await saveRecallSet(set);
-    console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber, tag });
+    DEV && console.log("[EXPLAIN_STEP_RECALLLAB_SAVE]", { id: set.id, page: ctx.pageNumber, tag });
     setLastRecallSetId(set.id);
     setRecallLabRefreshKey((k) => k + 1);
     trySwitchShellTab("study", "study");
@@ -2805,7 +2830,7 @@ export default function ThoughtUnitReader() {
       const guide = existing[0];
       const updated: StudyGuideRecord = { ...guide, mustKnow: [...guide.mustKnow, entry] };
       await saveStudyGuide(updated);
-      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: updated.id, page: ctx.pageNumber, mode: "append" });
+      DEV && console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: updated.id, page: ctx.pageNumber, mode: "append" });
     } else {
       const guide: StudyGuideRecord = {
         id: `sg-${bookId}-${Date.now()}`,
@@ -2825,7 +2850,7 @@ export default function ThoughtUnitReader() {
         createdAt: Date.now(),
       };
       await saveStudyGuide(guide);
-      console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: guide.id, page: ctx.pageNumber, mode: "create" });
+      DEV && console.log("[EXPLAIN_STEP_STUDYGUIDE_SAVE]", { id: guide.id, page: ctx.pageNumber, mode: "create" });
     }
   }, [explainStepContext, bookId, uploadedFile]);
 
@@ -2833,7 +2858,7 @@ export default function ThoughtUnitReader() {
      🔹 Handle Thought Detection
   ========================================================================= */
   const handleThoughtDetected = (thoughtText: string, analysis: any) => {
-    console.log('💭 New thought detected:', { thoughtText: thoughtText.slice(0, 50) + '...', analysis });
+    DEV && console.log('💭 New thought detected:', { thoughtText: thoughtText.slice(0, 50) + '...', analysis });
     
     const newThought = {
       id: Date.now().toString(),
@@ -2887,7 +2912,7 @@ export default function ThoughtUnitReader() {
       }));
       setTableOfContents(legacyToc);
       
-      console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
+      DEV && console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
     }
   }, [bookId, uploadedFile?.name, setTableOfContents]);
 
@@ -2948,7 +2973,7 @@ export default function ThoughtUnitReader() {
       localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
       localStorage.setItem("syllabus_source", "book");
     } catch { /* quota exceeded — ignore */ }
-    console.log("[SYLLABUS_SOURCE]", {
+    DEV && console.log("[SYLLABUS_SOURCE]", {
       fileName:  uploadedFile?.name,
       tocNodes:  autoToc.length,
       pageCount: bundles.length,
@@ -3425,7 +3450,7 @@ export default function ThoughtUnitReader() {
         if (ac.signal.aborted) return;
         const currentToc = useTocStore.getState().getToc(documentId);
         if (!currentToc || currentToc.items.length === 0) {
-          console.log('📑 No TOC from outline - generating fallback from parsed content');
+          DEV && console.log('📑 No TOC from outline - generating fallback from parsed content');
           const fullText = allPageTexts
             .sort((a, b) => a.pageIndex - b.pageIndex)
             .map(p => p.text)
@@ -3446,7 +3471,7 @@ export default function ThoughtUnitReader() {
               level: entry.level || 0,
             }));
             useTocStore.getState().saveToc(documentId, file.name, tocItems, 'heuristic');
-            console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
+            DEV && console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
           }
         } else {
           const storeItems = currentToc.items.map((item: any) => ({
@@ -3458,11 +3483,11 @@ export default function ThoughtUnitReader() {
         }
       }, 500);
 
-      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "detectWhiteboardSections disabled — study model is source" });
+      DEV && console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "detectWhiteboardSections disabled — study model is source" });
       setShowWhiteboardPanel(false);
 
       setBookProcessingStatus({ phase: 'done', progress: 'Ready', pagesProcessed: 0, totalPages: 0 });
-      console.log('✅ Background book processing complete:', {
+      DEV && console.log('✅ Background book processing complete:', {
         pages: allPageTexts.length,
         fileName: file.name,
       });
@@ -3671,10 +3696,10 @@ export default function ThoughtUnitReader() {
             level: entry.level || 0,
           }));
           useTocStore.getState().saveToc(documentId, file.name, tocItems, 'outline');
-          console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
+          DEV && console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
         }
       }).catch(() => {
-        console.log('📑 Initial TOC generation deferred to outline extraction or fallback');
+        DEV && console.log('📑 Initial TOC generation deferred to outline extraction or fallback');
       });
 
       // Phase 2: text extraction + thought-unit parsing.
@@ -3698,7 +3723,7 @@ export default function ThoughtUnitReader() {
   // Initialize enhanced sync system when content is loaded
   useEffect(() => {
     if (pdfPageCount > 1 && thoughtUnits.length > 0 && tableOfContents.length > 0) {
-      console.log('🔄 Initializing enhanced sync system');
+      DEV && console.log('🔄 Initializing enhanced sync system');
       initializeContent(pdfPageCount, thoughtUnits.length, tableOfContents);
       
       // Analyze content density for current page
@@ -3721,7 +3746,7 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     try {
       if (activeShellTab === "reader") {
-        console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
+        DEV && console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
         // Safe chapter-aware navigation with proper error handling
         try {
@@ -3732,7 +3757,7 @@ export default function ThoughtUnitReader() {
             const nearestChapter = syncStore.findNearestChapter(currentPage);
             
             if (nearestChapter && nearestChapter.unitStart && nearestChapter.unitStart > 0) {
-              console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
+              DEV && console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
               
               const chapterStartUnit = nearestChapter.unitStart;
               
@@ -3744,13 +3769,13 @@ export default function ThoughtUnitReader() {
                   unitIndex: chapterStartUnit 
                 }, 'manual');
                 
-                console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+                DEV && console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
                 return; // Success, exit early
               } else {
                 console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, bounds: 1-${thoughtUnits.length}`);
               }
             } else {
-              console.log(`🔄 Tab sync: No valid chapter found for page ${currentPage}`);
+              DEV && console.log(`🔄 Tab sync: No valid chapter found for page ${currentPage}`);
             }
           } else {
             console.warn(`🔄 Tab sync: Sync store not ready or missing findNearestChapter function`);
@@ -3761,7 +3786,7 @@ export default function ThoughtUnitReader() {
           if (fallbackUnit >= 1 && fallbackUnit <= thoughtUnits.length) {
             setCurrentThoughtUnit(fallbackUnit);
             updateSync({ page: currentPage, unitIndex: fallbackUnit }, 'manual');
-            console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${fallbackUnit}`);
+            DEV && console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${fallbackUnit}`);
           } else {
             console.warn(`🔄 Tab sync fallback failed: invalid unit ${fallbackUnit}, bounds: 1-${thoughtUnits.length}`);
           }
@@ -3775,7 +3800,7 @@ export default function ThoughtUnitReader() {
             if (safeUnit !== currentThoughtUnit) {
               setCurrentThoughtUnit(safeUnit);
               updateSync({ page: currentPage, unitIndex: safeUnit }, 'manual');
-              console.log(`🔄 Tab sync final fallback: unit ${safeUnit}`);
+              DEV && console.log(`🔄 Tab sync final fallback: unit ${safeUnit}`);
             }
           } catch (finalError) {
             console.error(`🔄 Tab sync final fallback failed:`, finalError);
@@ -3867,7 +3892,7 @@ export default function ThoughtUnitReader() {
         localStorage.setItem(`surgeonView_flashcards_${bookId}`, JSON.stringify(flashcards));
         localStorage.setItem(`surgeonView_highlights_${bookId}`, JSON.stringify(highlights));
         localStorage.setItem(`surgeonView_hyperchunks_${bookId}`, JSON.stringify(hyperChunks));
-        console.log('💾 Surgeon View data saved to localStorage');
+        DEV && console.log('💾 Surgeon View data saved to localStorage');
       } catch (error) {
         console.warn('Failed to save Surgeon View data:', error);
       }
@@ -3888,7 +3913,7 @@ export default function ThoughtUnitReader() {
         if (savedHighlights) setHighlights(JSON.parse(savedHighlights));
         if (savedChunks) setHyperChunks(JSON.parse(savedChunks));
         
-        console.log('📂 Surgeon View data loaded from localStorage');
+        DEV && console.log('📂 Surgeon View data loaded from localStorage');
       } catch (error) {
         console.warn('Failed to load Surgeon View data:', error);
       }
@@ -4301,12 +4326,12 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    console.log(`📝 Creating ${mode || 'standard'} note for: ${seed.slice(0, 50)}...`);
+    DEV && console.log(`📝 Creating ${mode || 'standard'} note for: ${seed.slice(0, 50)}...`);
 
     try {
       const draft = await buildTopStudentNote(seed, mode || "highYield");
       // For now, just log the note since Right-Brain view is removed
-      console.log("📝 Generated study note:", draft);
+      DEV && console.log("📝 Generated study note:", draft);
       alert("Study note generated! (Right-Brain view has been removed - note logged to console)");
     } catch (error) {
       console.error("Error creating study note:", error);
@@ -4323,7 +4348,7 @@ export default function ThoughtUnitReader() {
   const syncToPage = useCallback((page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
     const reason = opts?.reason || 'PROGRAMMATIC';
     const curPage = currentPageRef.current;
-    console.log(`📄 syncToPage: ${page} (current: ${curPage}) reason: ${reason}`);
+    DEV && console.log(`📄 syncToPage: ${page} (current: ${curPage}) reason: ${reason}`);
 
     // Validate page bounds
     if (page < 1 || (pdfPageCount > 0 && page > pdfPageCount)) {
@@ -4333,7 +4358,7 @@ export default function ThoughtUnitReader() {
 
     // Skip if already on the page (unless it's a scroll event)
     if (page === curPage && reason !== 'SCROLL') {
-      console.log(`📄 Already on page ${page}, skipping`);
+      DEV && console.log(`📄 Already on page ${page}, skipping`);
       return;
     }
 
@@ -4385,7 +4410,7 @@ export default function ThoughtUnitReader() {
       setCurrentPage(page);
       const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
       setCurrentThoughtUnit(unit);
-      console.log("[TRACE pageSync]", {
+      DEV && console.log("[TRACE pageSync]", {
         source: reason,
         documentId: bookId,
         visiblePage: page,
@@ -4401,9 +4426,9 @@ export default function ThoughtUnitReader() {
       }, reason === 'SCROLL' ? 'pdf' : 'manual');
 
       // Auto-whiteboard trigger — legacy concept seeding removed; study model is source
-      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "conceptForPage disabled on page nav — study model is source", page });
+      DEV && console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "conceptForPage disabled on page nav — study model is source", page });
 
-      console.log(`📄 Navigation successful: page ${page}, unit ${unit}`);
+      DEV && console.log(`📄 Navigation successful: page ${page}, unit ${unit}`);
 
     } catch (error) {
       console.error(`📄 Navigation error for page ${page}:`, error);
@@ -4435,7 +4460,7 @@ export default function ThoughtUnitReader() {
       localStorage.setItem("syllabus_toc", JSON.stringify(result.toc));
       localStorage.setItem("syllabus_source", "upload");
     } catch { /* quota exceeded — ignore */ }
-    console.log("[SYLLABUS_SOURCE]", {
+    DEV && console.log("[SYLLABUS_SOURCE]", {
       fileName:  result.fileName,
       tocNodes:  result.toc.length,
       pageCount: result.pages.length,
@@ -4448,7 +4473,7 @@ export default function ThoughtUnitReader() {
       // Try full parse → course plan (requires parseable blocks in the syllabus)
       const allText = result.pages.map((p) => p.text ?? "").join("\n");
       const parsed  = parseSyllabus(allText);
-      console.log("[SYLLABUS_MAPPING_RESULT]", {
+      DEV && console.log("[SYLLABUS_MAPPING_RESULT]", {
         blocks:    parsed.blocks.length,
         courseTitle: parsed.metadata?.courseTitle ?? null,
         source:    "parseSyllabus",
@@ -4464,7 +4489,7 @@ export default function ThoughtUnitReader() {
         }));
         const coursePlan = generateCoursePlan(parsed, tocItems);
         plan = coursePlan.studySchedule;
-        console.log("[SYLLABUS_PLAN_CREATED]", {
+        DEV && console.log("[SYLLABUS_PLAN_CREATED]", {
           source:        "generateCoursePlan",
           scheduleDays:  plan.length,
           coverage:      coursePlan.coverage,
@@ -4483,7 +4508,7 @@ export default function ThoughtUnitReader() {
         estimatedMinutes: 30,
         isExamDay:        n.kind === "exam",
       }));
-      console.log("[SYLLABUS_PLAN_CREATED]", {
+      DEV && console.log("[SYLLABUS_PLAN_CREATED]", {
         source:       "toc-fallback",
         scheduleDays: plan.length,
       });
@@ -4492,9 +4517,9 @@ export default function ThoughtUnitReader() {
     setSyllabusStudyPlan(plan);
     try {
       localStorage.setItem("syllabus_plan", JSON.stringify(plan));
-      console.log("[SYLLABUS_SAVE_STATUS]", { saved: true, key: "syllabus_plan", days: plan.length });
+      DEV && console.log("[SYLLABUS_SAVE_STATUS]", { saved: true, key: "syllabus_plan", days: plan.length });
     } catch {
-      console.log("[SYLLABUS_SAVE_STATUS]", { saved: false, reason: "localStorage quota exceeded" });
+      DEV && console.log("[SYLLABUS_SAVE_STATUS]", { saved: false, reason: "localStorage quota exceeded" });
     }
   }, []);
 
@@ -4727,7 +4752,7 @@ export default function ThoughtUnitReader() {
                 try {
                   const user = await signInWithGoogle();
                   if (user) {
-                    console.log("✅ Signed in:", user.displayName || user.email);
+                    DEV && console.log("✅ Signed in:", user.displayName || user.email);
                   }
                 } catch (error) {
                   console.error("❌ Sign-in error:", error);
@@ -4809,7 +4834,7 @@ export default function ThoughtUnitReader() {
       // safeHighlightAnchors / highlightedAnchorTexts / enrichedCanonicalUnits are
       // memoized at the component top level — accessible here via closure.
 
-      console.log("[LEFT_PANEL_SOURCE]", {
+      DEV && console.log("[LEFT_PANEL_SOURCE]", {
         source:     "canonicalLeftPanelUnits",
         page:       currentPage,
         count:      safeHighlightAnchors.length,
@@ -4831,7 +4856,7 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
-                {console.log("[LEFT_PANEL_INPUT_SOURCES]", {
+                {DEV && console.log("[LEFT_PANEL_INPUT_SOURCES]", {
                   source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
                   safeCount: safeHighlightAnchors.length,
@@ -4976,6 +5001,7 @@ export default function ThoughtUnitReader() {
                     const key = `${bookId}:${pageNumber}`;
                     if (prev.get(key) === text) return prev;
                     const next = new Map(prev);
+                    if (next.size >= 50) next.delete(next.keys().next().value as string);
                     next.set(key, text);
                     return next;
                   })}
@@ -5853,7 +5879,7 @@ export default function ThoughtUnitReader() {
     }
 
     if (activeShellTab === "study") {
-      console.log("[RECALL_TAB_OPEN]", { lastRecallSetId, recallLabRefreshKey });
+      DEV && console.log("[RECALL_TAB_OPEN]", { lastRecallSetId, recallLabRefreshKey });
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
           <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
@@ -6474,7 +6500,7 @@ export default function ThoughtUnitReader() {
           style={{ background: "rgba(0,0,0,0.78)" }}
           onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); } }}
         >
-          {(console.log("[WHITEBOARD_CENTERED_MODAL]", {
+          {(DEV && console.log("[WHITEBOARD_CENTERED_MODAL]", {
             page: currentPage,
             hasStudyModel: !!currentPageStudyModel,
             pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
@@ -6494,7 +6520,7 @@ export default function ThoughtUnitReader() {
               </button>
             </div>
             <div className="flex-1 overflow-auto p-5">
-              {(console.log("[WHITEBOARD_SOURCE]", {
+              {(DEV && console.log("[WHITEBOARD_SOURCE]", {
                 page: currentPage,
                 bookId,
                 thoughtUnitId: activeCanonicalThoughtUnit?.id ?? null,
@@ -6512,7 +6538,7 @@ export default function ThoughtUnitReader() {
                 lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
                 currentPage={currentPage}
                 onAnchorStep={(id) => {
-                  console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
+                  DEV && console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
                   setFocusedEvidenceId(id);
                 }}
                 activeAnchorId={focusedEvidenceId}
@@ -6602,7 +6628,7 @@ export default function ThoughtUnitReader() {
           onVisualize={({ selectedText, explanation, pageContext }) => {
             const concept = selectedText || explanation;
             const context = [explanation, pageContext].filter(Boolean).join("\n\n");
-            console.log("[EXPLAIN_STEP_VISUALIZE]", {
+            DEV && console.log("[EXPLAIN_STEP_VISUALIZE]", {
               page: explainStepContext.pageNumber,
               conceptChars: concept.length,
               contextChars: context.length,
@@ -6664,7 +6690,7 @@ export default function ThoughtUnitReader() {
           onClose={() => setShowLinkModal(false)}
           onSave={(url) => {
             setAttachments((prev) => [...prev, url]);
-            console.log("📎 Link attached:", url);
+            DEV && console.log("📎 Link attached:", url);
             setShowLinkModal(false);
           }}
         />
