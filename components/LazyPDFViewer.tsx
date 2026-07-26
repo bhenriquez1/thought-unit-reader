@@ -7,6 +7,8 @@ import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
 
+const DEV = process.env.NODE_ENV === "development";
+
 // Optimized worker configuration
 try {
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -160,7 +162,7 @@ export default React.memo(function LazyPDFViewer({
   // PDF loading management with enhanced error handling
   const pdfLoadState = usePDFLoading(toSameOrigin(fileUrl), {
     onProgress: (progress) => {
-      console.log(`📄 LazyPDFViewer: Loading progress ${progress}%`);
+      DEV && console.log(`📄 LazyPDFViewer: Loading progress ${progress}%`);
     }
   });
 
@@ -180,7 +182,7 @@ export default React.memo(function LazyPDFViewer({
   // Update parent when page count is available
   useEffect(() => {
     if (pdfLoadState.pageCount !== null && pdfLoadState.pageCount > 0) {
-      console.log(`✅ LazyPDFViewer: Page count available: ${pdfLoadState.pageCount}`);
+      DEV && console.log(`✅ LazyPDFViewer: Page count available: ${pdfLoadState.pageCount}`);
       onPageCount?.(pdfLoadState.pageCount);
     }
   }, [pdfLoadState.pageCount, onPageCount]);
@@ -188,7 +190,7 @@ export default React.memo(function LazyPDFViewer({
   // Handle outline extraction when document is loaded
   useEffect(() => {
     if (pdfLoadState.document && onOutline) {
-      console.log(`📋 LazyPDFViewer: Extracting outline from loaded document`);
+      DEV && console.log(`📋 LazyPDFViewer: Extracting outline from loaded document`);
       
       const extractOutline = async () => {
         try {
@@ -197,10 +199,10 @@ export default React.memo(function LazyPDFViewer({
             const cacheKey = `outline-${fileUrl}`;
             const items = await resolveOutline(pdfLoadState.document!, raw, cacheKey);
             onOutline(items);
-            console.log(`📋 LazyPDFViewer: Outline extracted with ${items.length} items`);
+            DEV && console.log(`📋 LazyPDFViewer: Outline extracted with ${items.length} items`);
           } else {
             onOutline([]);
-            console.log(`📋 LazyPDFViewer: No outline found in document`);
+            DEV && console.log(`📋 LazyPDFViewer: No outline found in document`);
           }
         } catch (error) {
           console.warn(`📋 LazyPDFViewer: Outline extraction failed:`, error);
@@ -232,7 +234,7 @@ export default React.memo(function LazyPDFViewer({
 
   // Enhanced page change handler with performance tracking
   const handlePageChangeWithSync = useCallback((newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
-    console.log(`📄 LazyPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
+    DEV && console.log(`📄 LazyPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
     // Ensure newPage is always at least 1
     const safePage = Math.max(1, newPage);
@@ -254,13 +256,13 @@ export default React.memo(function LazyPDFViewer({
       setPage(safePage, source === 'scroll' ? 'pdf' : 'manual');
       onPageChange(safePage);
       endTimer('render');
-      console.log(`📄 LazyPDFViewer: Successfully navigated to page ${safePage}`);
+      DEV && console.log(`📄 LazyPDFViewer: Successfully navigated to page ${safePage}`);
     } catch (error) {
       console.error(`📄 LazyPDFViewer: Navigation error for page ${safePage}:`, error);
       // Fallback
       try {
         onPageChange(safePage);
-        console.log(`📄 LazyPDFViewer: Fallback navigation succeeded`);
+        DEV && console.log(`📄 LazyPDFViewer: Fallback navigation succeeded`);
       } catch (fallbackError) {
         console.error(`📄 LazyPDFViewer: Fallback navigation failed:`, fallbackError);
       }
@@ -300,7 +302,7 @@ export default React.memo(function LazyPDFViewer({
   // Performance tracking for render operations
   const onPageRenderSuccess = useCallback(() => {
     endTimer('render');
-    console.log(`📊 Page rendered in ${renderTime.toFixed(2)}ms`);
+    DEV && console.log(`📊 Page rendered in ${renderTime.toFixed(2)}ms`);
   }, [endTimer, renderTime]);
 
   // Optimized navigation handlers

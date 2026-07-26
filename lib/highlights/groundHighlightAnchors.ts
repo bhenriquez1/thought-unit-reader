@@ -16,6 +16,8 @@
 
 import { cleanActivePageText, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
 
+const DEV = process.env.NODE_ENV === "development";
+
 export type RawAnchor = {
   text: string;
   anchorType: string;
@@ -116,7 +118,7 @@ function splitIntoSentences(text: string): string[] {
       // recovery candidates. This is what stops "The Chemical Context of Life 29"
       // from being selected as a thesis anchor.
       if (isLikelyHeaderLine(s)) {
-        console.log("[ANCHOR_REJECTED_HEADER]", { text: s.slice(0, 80) });
+        DEV && console.log("[ANCHOR_REJECTED_HEADER]", { text: s.slice(0, 80) });
         return false;
       }
       return true;
