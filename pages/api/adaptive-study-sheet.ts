@@ -124,8 +124,10 @@ function buildPrompts(input: PromptInput): { system: string; user: string } {
     )
     .join("\n");
 
+  // Profile block goes into the USER message, not the system prompt.
+  // This keeps the system prompt (UNIVERSAL_SYSTEM) 100% static, preventing CWE-1336.
   const profileBlock = [
-    `\n── PROFILE: ${profile.label} (${profile.id}) ──`,
+    `── PROFILE: ${profile.label} (${profile.id}) ──`,
     `DOCUMENT TYPE: ${profile.documentType}`,
     `SHEET STYLE: ${profile.sheetStyle}`,
     `\nSECTIONS TO GENERATE (in this exact order):\n${sectionList}`,
@@ -141,11 +143,10 @@ function buildPrompts(input: PromptInput): { system: string; user: string } {
     profile.systemPromptAddendum ? `\n${profile.systemPromptAddendum}` : "",
   ].join("\n");
 
-  const system = UNIVERSAL_SYSTEM + profileBlock;
-
   // ── User prompt ──────────────────────────────────────────────────────────
   const lines: string[] = [
-    `CONCEPT: ${input.concept}`,
+    profileBlock,
+    `\nCONCEPT: ${input.concept}`,
     `SUBJECT AREA: ${input.subjectArea}`,
     `ACTIVE PROFILE: ${input.profileId}`,
   ];
@@ -178,7 +179,7 @@ function buildPrompts(input: PromptInput): { system: string; user: string } {
     `Fill every required section. Do not leave profileId, documentType, sheetStyle, concept, subjectArea, or coreIdea empty.`,
   );
 
-  return { system, user: lines.join("\n") };
+  return { system: UNIVERSAL_SYSTEM, user: lines.join("\n") };
 }
 
 // ── Post-parse: citation integrity ────────────────────────────────────────
