@@ -1,4 +1,6 @@
 // pages/api/summarize.ts
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
@@ -78,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({ summary });
   } catch (err: any) {
-    console.error("Summarize API error:", err?.message || err);
+    DEV && console.error("Summarize API error:", err?.message || err);
     return res.status(500).json({ error: "Failed to summarize." });
   }
 }

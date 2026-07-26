@@ -3,6 +3,8 @@
 // Thinks: "What would a 25 DAT student keep if they had 2 months before the exam?"
 // SECURITY: OPENAI_API_KEY is server-side only, never sent to browser.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { StudyGuideMode, ExamGoal, PriorityLevel } from "@/lib/studyguide/types";
 import { EXAM_GOAL_LABELS } from "@/lib/studyguide/types";
@@ -48,21 +50,16 @@ const MODE_PERSONA: Record<StudyGuideMode, string> = {
   highyield:  "You are a board exam coach. Every sentence chosen because it appears on standardized exams. Nothing decorative. Every fact must be testable.",
 };
 
-function buildSystemPrompt(mode: StudyGuideMode, hasStudyModel?: boolean, examGoal?: ExamGoal, targetScore?: string): string {
-  const groundingNote = hasStudyModel
-    ? `\nIMPORTANT: The source labeled "RIGHT PANEL STUDY MODEL" is the authoritative grounding document. It contains the page thesis, concept blocks, mechanisms, and high-yield anchors already extracted from the book. Your output MUST be grounded in those specific concepts — not generic biology. Every fact, mechanism, and trap you write must be traceable to that source material.\n`
-    : "";
+// Static system prompt — 100% developer-authored text (no user-controlled data).
+// Mode persona, exam goal, and study framing are injected into the user message
+// by buildUserPrompt(), satisfying CWE-1336.
+const STUDY_GUIDE_SYSTEM = `You are an expert study guide architect. Build a focused, exam-ready notebook from source documents.
 
-  const goalLabel = examGoal ? EXAM_GOAL_LABELS[examGoal] : null;
-  const examGoalNote = goalLabel
-    ? `\nSTUDY GOAL: The student is preparing for the ${goalLabel}${targetScore ? ` (target score: ${targetScore})` : ""}. Frame "priority", "datFacts", "traps", and "dailyTasks" specifically around what is tested on the ${goalLabel} — not generic textbook coverage. The goal is not to summarize the book; it is to tell the student what to study, what to skip, and how to remember it for the ${goalLabel}.\n`
-    : "";
-
-  return `${MODE_PERSONA[mode]}
-${groundingNote}${examGoalNote}
 YOUR CORE PHILOSOPHY:
 Do NOT summarize everything. Ask yourself:
 "If this student had only 2 months before the exam and a limited study window per day, what information is actually worth their time?"
+
+The user message specifies the study mode persona, exam goal, and grounding instructions. Follow them exactly.
 
 Filter ruthlessly. Keep only:
 - High-yield concepts that appear on exams
@@ -77,20 +74,20 @@ OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 {
   "chapterTitle": "string — e.g. Chapter 2: The Chemical Context of Life",
   "topic": "string — e.g. Matter, Elements, and Compounds",
-  "priority": "High" | "Medium" | "Low",  // how important this topic is for the stated exam goal
-  "mustKnow": ["string", ...],           // 3–6 core facts every student must know, full sentences
-  "datFacts": ["string", ...],           // 3–8 high-yield testable facts: stats, X→Y, named syndromes
-  "mechanisms": [                         // 1–4 mechanism flowcharts
-    { "title": "string", "steps": ["string", "string", ...] }  // 3–6 steps each
+  "priority": "High" | "Medium" | "Low",
+  "mustKnow": ["string", ...],
+  "datFacts": ["string", ...],
+  "mechanisms": [
+    { "title": "string", "steps": ["string", "string", ...] }
   ],
-  "traps": ["string", ...],              // 2–5 common exam mistakes or contrast pairs
-  "recallQuestions": ["string", ...],    // 4–8 active recall questions (answerable from content)
-  "memoryHooks": ["string", ...],        // 1–4 mnemonics, acronyms, or memorable patterns
-  "dailyTasks": ["string", ...]          // 2–4 concrete daily study tasks, e.g. "Read pages 1-20", "Complete 20 practice questions on enzyme kinetics"
+  "traps": ["string", ...],
+  "recallQuestions": ["string", ...],
+  "memoryHooks": ["string", ...],
+  "dailyTasks": ["string", ...]
 }
 
 RULES:
-- priority: "High" if this topic is heavily tested on the stated exam, "Medium" if occasionally tested, "Low" if rarely tested or background-only
+- priority: "High" if heavily tested, "Medium" if occasionally, "Low" if rarely or background-only
 - mustKnow: complete sentences, exam-level precision
 - datFacts: short, punchy, star-worthy — "X → Y", percentages, names
 - mechanisms: clear step-by-step chains, not definitions
@@ -99,16 +96,27 @@ RULES:
 - memoryHooks: must actually help remember the fact, not just repeat it
 - dailyTasks: concrete and actionable, tied to the source material and exam goal
 - Return ONLY the JSON object — no markdown fences, no explanation`;
-}
 
-function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string, mode: StudyGuideMode, examGoal?: ExamGoal, targetScore?: string): string {
+function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string, mode: StudyGuideMode, hasStudyModel?: boolean, examGoal?: ExamGoal, targetScore?: string): string {
   const modeLabel: Record<StudyGuideMode, string> = {
     dat: "Study Sheet", dental: "Dental School Notes",
     topstudent: "Top Student Notes", examcram: "Exam Cram Notes",
     visual: "Visual Learner Notes", highyield: "High-Yield Notes",
   };
 
-  let prompt = `Build ${modeLabel[mode]} for:\nChapter: ${chapterTitle || "Unknown"}\nTopic: ${topic || "Unknown"}\n`;
+  // Mode persona and exam goal go in the user message (CWE-1336: system prompt must be static).
+  let prompt = `STUDY MODE PERSONA: ${MODE_PERSONA[mode] || MODE_PERSONA["dat"]}\n\n`;
+
+  if (hasStudyModel) {
+    prompt += `IMPORTANT: The source labeled "RIGHT PANEL STUDY MODEL" is the authoritative grounding document. It contains the page thesis, concept blocks, mechanisms, and high-yield anchors already extracted from the book. Your output MUST be grounded in those specific concepts — not generic biology. Every fact, mechanism, and trap you write must be traceable to that source material.\n\n`;
+  }
+
+  if (examGoal) {
+    const goalLabel = EXAM_GOAL_LABELS[examGoal];
+    prompt += `STUDY GOAL: The student is preparing for the ${goalLabel}${targetScore ? ` (target score: ${targetScore})` : ""}. Frame "priority", "datFacts", "traps", and "dailyTasks" specifically around what is tested on the ${goalLabel} — not generic textbook coverage.\n\n`;
+  }
+
+  prompt += `Build ${modeLabel[mode]} for:\nChapter: ${chapterTitle || "Unknown"}\nTopic: ${topic || "Unknown"}\n`;
   if (examGoal) {
     prompt += `Exam Goal: ${EXAM_GOAL_LABELS[examGoal]}${targetScore ? ` (target score: ${targetScore})` : ""}\n`;
   }
@@ -157,7 +165,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    console.error("[STUDYGUIDE_API] OPENAI_API_KEY not set");
+    DEV && console.error("[STUDYGUIDE_API] OPENAI_API_KEY not set");
     res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: "API key not configured" });
     return;
   }
@@ -175,8 +183,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: buildSystemPrompt(mode ?? "dat", hasStudyModel, examGoal, targetScore) },
-          { role: "user",   content: buildUserPrompt(sources, chapterTitle, topic, mode ?? "dat", examGoal, targetScore) },
+          { role: "system", content: STUDY_GUIDE_SYSTEM },
+          { role: "user",   content: buildUserPrompt(sources, chapterTitle, topic, mode ?? "dat", hasStudyModel, examGoal, targetScore) },
         ],
       }),
     });
@@ -185,7 +193,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      console.error("[STUDYGUIDE_API] OpenAI error:", resp.status, errText.slice(0, 200));
+      DEV && console.error("[STUDYGUIDE_API] OpenAI error:", resp.status, errText.slice(0, 200));
       res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: `OpenAI ${resp.status}` });
       return;
     }
@@ -197,7 +205,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       parsed = JSON.parse(raw) as StudyGuideOutputJSON;
     } catch {
-      console.error("[STUDYGUIDE_API] JSON parse failed:", raw.slice(0, 200));
+      DEV && console.error("[STUDYGUIDE_API] JSON parse failed:", raw.slice(0, 200));
       res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: "JSON parse failed" });
       return;
     }
@@ -216,7 +224,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       dailyTasks:       Array.isArray(parsed.dailyTasks)       ? parsed.dailyTasks       : [],
     };
 
-    console.log("[STUDYGUIDE_API_SUCCESS]", {
+    DEV && console.log("[STUDYGUIDE_API_SUCCESS]", {
       mode, chapterTitle, topic, examGoal: examGoal ?? "(none)",
       priority: guide.priority,
       mustKnow: guide.mustKnow.length,
@@ -230,7 +238,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err) {
     clearTimeout(timeout);
     const isAbort = (err as Error)?.name === "AbortError";
-    console.error("[STUDYGUIDE_API]", isAbort ? "timeout" : "error", String(err));
+    DEV && console.error("[STUDYGUIDE_API]", isAbort ? "timeout" : "error", String(err));
     res.status(200).json({
       guide: buildFallback(chapterTitle, topic),
       provider: "fallback",

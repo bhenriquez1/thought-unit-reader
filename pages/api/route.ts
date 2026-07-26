@@ -1,3 +1,5 @@
+const DEV = process.env.NODE_ENV === "development";
+
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
     const summary = completion.choices[0]?.message?.content?.trim() ?? "";
     return NextResponse.json({ summary });
   } catch (err) {
-    console.error("summarize error:", err);
+    DEV && console.error("summarize error:", err);
     return NextResponse.json({ error: "summarize_failed" }, { status: 500 });
   }
 }

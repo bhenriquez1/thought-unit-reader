@@ -254,10 +254,37 @@ const PAGE_TYPE_CARD_GUIDANCE: Record<PageType, string> = {
   mixed:              "e.g. Must Know plus whichever 2-3 cards best match the dominant content",
 };
 
-export function buildSystemPrompt(domain: PageDomain, presetId?: string): string {
+// Returns preset-specific content for the USER message (not system prompt).
+// Moves presetId-derived persona and domain category block out of the system prompt
+// so the system prompt stays fully static and satisfies CWE-1336.
+export function buildPresetUserAugmentation(presetId?: string): string {
   const domainCategoryBlock = buildDomainCategoryBlock(presetId);
 
-  // Coarse domain-level persona (5 categories — fallback when no fine-grained preset)
+  let profileBlock = "";
+  if (presetId && presetId !== "universal") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getProfileExtension } = require("@/lib/insights/expertProfiles/registry") as typeof import("@/lib/insights/expertProfiles/registry");
+      const ext = getProfileExtension(presetId);
+      if (ext?.expertBrain?.persona) {
+        profileBlock = `DOMAIN EXPERT PERSONA: ${ext.expertBrain.persona as string}`;
+      }
+      if ((ext?.expertBrain?.reasoningPriorities as string[] | undefined)?.length) {
+        profileBlock += `\nDOMAIN REASONING PRIORITIES:\n${(ext.expertBrain.reasoningPriorities as string[]).map((p: string, i: number) => `  ${i + 1}. ${p}`).join("\n")}`;
+      }
+    } catch {
+      // registry unavailable — omit profile block
+    }
+  }
+
+  return [domainCategoryBlock, profileBlock].filter(Boolean).join("\n\n");
+}
+
+// System prompt — domain is a validated 5-value server-controlled enum (PageDomain).
+// presetId (arbitrary user string) is NOT passed here — it goes into the user message
+// via buildPresetUserAugmentation() to satisfy CWE-1336.
+export function buildSystemPrompt(domain: PageDomain): string {
+  // Coarse domain-level persona (5 categories)
   const domainRole: Record<PageDomain, string> = {
     math:     "You are a mathematics professor (think: 3Blue1Brown, Gilbert Strang). You make abstract structures intuitive through visual reasoning and precise condition→conclusion statements.",
     science:  "You are a biology/chemistry/physics professor (think: Ninja Nerd, Khan Academy science). You explain mechanisms causally: what triggers what, why it matters biologically, what breaks if conditions change.",
@@ -274,27 +301,8 @@ export function buildSystemPrompt(domain: PageDomain, presetId?: string): string
     general:  "concept → mechanism → significance → application → trap",
   };
 
-  // Fine-grained ExpertProfile persona override — takes precedence over coarse domain
-  // persona when a specific preset is active (e.g. "dental_school" vs. generic "clinical").
-  // Lazy import to avoid circular dependency at module init time.
-  let profilePersona: string | undefined;
-  let profilePriorities: string[] = [];
-  if (presetId && presetId !== "universal") {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { getProfileExtension } = require("@/lib/insights/expertProfiles/registry") as typeof import("@/lib/insights/expertProfiles/registry");
-      const ext = getProfileExtension(presetId);
-      profilePersona   = ext.expertBrain.persona;
-      profilePriorities = ext.expertBrain.reasoningPriorities;
-    } catch {
-      // registry unavailable (e.g. edge runtime) — fall back to coarse domain persona
-    }
-  }
-
-  const persona = profilePersona ?? domainRole[domain] ?? domainRole.general;
-  const priorityBlock = profilePriorities.length > 0
-    ? `\nDOMAIN REASONING PRIORITIES for this subject:\n${profilePriorities.map((p, i) => `  ${i + 1}. ${p}`).join("\n")}`
-    : "";
+  const persona = domainRole[domain] ?? domainRole.general;
+  const priorityBlock = "";
 
   return `${persona}${priorityBlock}
 
@@ -596,7 +604,6 @@ reason field (required for every anchor): 1–2 sentences explaining the REAL WH
   (c) "Understanding this changes what you do next: [concrete action or recognition]"
   NEVER output: "This is an important concept", "Key sentence on this page", "Important for the exam", or any generic label.
   Always name the specific trap, the specific consequence, or the specific decision this knowledge unlocks.
-${domainCategoryBlock}
 ══════════════════════════════════════════════════════════════════════════════
 SECTION 1 is now finalized. SECTION 1.5 below (noteCards) is generated FROM
 these anchors. Everything after that is SECTION 2 — independent elaboration
@@ -802,8 +809,9 @@ export const Stage1SynthesisSchema = z.object({
 });
 export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
 
-export function buildStage1SystemPrompt(_domain: PageDomain, presetId?: string): string {
-  const domainCategoryBlock = buildDomainCategoryBlock(presetId);
+// presetId removed — domain category block for the preset goes in user message via
+// buildPresetUserAugmentation() to satisfy CWE-1336.
+export function buildStage1SystemPrompt(_domain: PageDomain): string {
   return `You are a universal academic educator. Given any textbook page — biology, chemistry, math, history, business, medicine, dental, law, or any other subject — classify the page type first, then generate structured study output.
 
 STEP 1 — CLASSIFY THE PAGE TYPE (required first field: pageType):
@@ -893,7 +901,7 @@ highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never
     (b) "This is high-yield because [specific exam pattern or clinical decision it drives]"
     (c) "Understanding this changes what you do next: [concrete consequence]"
     NEVER write: "This is an important concept", "Key sentence on this page", or any generic label.
-    ALWAYS name the specific trap, the specific consequence, or the specific decision this knowledge drives.${domainCategoryBlock}
+    ALWAYS name the specific trap, the specific consequence, or the specific decision this knowledge drives.
 
 miniTestItems — 3 after-reading comprehension questions.
   Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism or logic). Q3: trap.

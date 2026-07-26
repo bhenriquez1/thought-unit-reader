@@ -234,14 +234,14 @@ export default React.memo(function OptimizedPatternView({
 
   // Load pattern mastery
   useEffect(() => {
-    if (userId) {
-      setIsLoading(true);
-      loadPatternMastery(userId)
-        .then(setPatternMastery)
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+    if (!userId) { setIsLoading(false); return; }
+    let alive = true;
+    setIsLoading(true);
+    loadPatternMastery(userId)
+      .then(data => { if (alive) setPatternMastery(data); })
+      .catch(() => {})
+      .finally(() => { if (alive) setIsLoading(false); });
+    return () => { alive = false; };
   }, [userId]);
 
   // Reset training for new thought unit - optimized to prevent loops

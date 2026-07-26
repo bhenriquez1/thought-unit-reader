@@ -1,4 +1,6 @@
 // pages/api/proxy-pdf.ts
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { Readable } from "node:stream";
 
@@ -61,7 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const buf = Buffer.from(await upstream.arrayBuffer());
     res.send(buf);
   } catch (err: any) {
-    console.error("proxy-pdf error:", err?.message || err);
+    DEV && console.error("proxy-pdf error:", err?.message || err);
     res.status(500).json({ error: "Proxy failed" });
   }
 }

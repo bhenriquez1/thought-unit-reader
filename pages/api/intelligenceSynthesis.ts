@@ -7,6 +7,8 @@
 //   stage=1 → fast path: coreIdea + highlightAnchors + miniTestItems only (~1–3s, 600 tokens)
 //   stage=2 (or unset) → full path: all study fields (~5–15s, 1800 tokens)
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -17,6 +19,7 @@ import {
   Stage1SynthesisSchema,
   buildStage1SystemPrompt,
   buildStage1UserPrompt,
+  buildPresetUserAugmentation,
   type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
@@ -39,9 +42,9 @@ let FORMAT_STAGE1: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT_FULL   = zodTextFormat(TeachingSynthesisSchema,  "teaching_synthesis");
   FORMAT_STAGE1 = zodTextFormat(Stage1SynthesisSchema,    "stage1_synthesis");
-  console.log("[SYNTH:init:schema-ok]");
+  DEV && console.log("[SYNTH:init:schema-ok]");
 } catch (schemaErr) {
-  console.error("[SYNTH:init:SCHEMA_FAIL]", schemaErr instanceof Error ? schemaErr.message : String(schemaErr));
+  DEV && console.error("[SYNTH:init:SCHEMA_FAIL]", schemaErr instanceof Error ? schemaErr.message : String(schemaErr));
 }
 
 const VALID_DOMAINS: PageDomain[] = ["math", "science", "clinical", "fiction", "general"];
@@ -55,12 +58,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (!apiKey) {
-    console.error("[SYNTH:cp0:MISSING_KEY] OPENAI_API_KEY is not set");
+    DEV && console.error("[SYNTH:cp0:MISSING_KEY] OPENAI_API_KEY is not set");
     return res.status(500).json({ error: "AI service is not configured for this deployment." });
   }
 
   if (!FORMAT_FULL || !FORMAT_STAGE1) {
-    console.error("[SYNTH:cp1:SCHEMA_UNINIT]");
+    DEV && console.error("[SYNTH:cp1:SCHEMA_UNINIT]");
     return res.status(500).json({ error: "Schema init failed" });
   }
 
@@ -83,7 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     (typeof pageThesis === "string" ? pageThesis.length : 0) +
     (typeof pageObjective === "string" ? pageObjective.length : 0) +
     rankedConcepts.reduce((s: number, c: any) => s + (typeof c?.text === "string" ? c.text.length : 0), 0);
-  console.log("[SYNTH:received]", {
+  DEV && console.log("[SYNTH:received]", {
     stage,
     page: (body as any).pageNumber ?? null,
     receivedChars,
@@ -91,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     conceptCount: rankedConcepts.length,
   });
   if (receivedChars > 50_000) {
-    console.error("[SYNTH:PAYLOAD_TOO_LARGE] book-level text reached the API — synthesis should be page-scoped", { receivedChars });
+    DEV && console.error("[SYNTH:PAYLOAD_TOO_LARGE] book-level text reached the API — synthesis should be page-scoped", { receivedChars });
   }
 
   const safeDomain: PageDomain = VALID_DOMAINS.includes(domain as PageDomain)
@@ -111,7 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // ── Stage 1: Fast path ─────────────────────────────────────────────────────
   if (stage === "1") {
-    console.log("[SYNTH:stage1:api-start]", {
+    DEV && console.log("[SYNTH:stage1:api-start]", {
       domain: safeDomain,
       conceptCount: safeInput.rankedConcepts.length,
       hasPageThesis: !!safeInput.pageThesis,
@@ -124,15 +127,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
         text: { format: FORMAT_STAGE1 },
         input: [
-          { role: "system", content: buildStage1SystemPrompt(safeDomain, safePresetId) },
-          { role: "user",   content: buildStage1UserPrompt(safeInput) },
+          { role: "system", content: buildStage1SystemPrompt(safeDomain) },
+          { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildStage1UserPrompt(safeInput) },
         ],
       });
-      console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
+      DEV && console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
       const s1 = response.output_parsed;
       if (!s1) return res.status(500).json({ error: "Stage 1: no structured output" });
       const validated = Stage1SynthesisSchema.parse(s1);
-      console.log("[SYNTH:stage1:api-done]", {
+      DEV && console.log("[SYNTH:stage1:api-done]", {
         elapsedMs:      Date.now() - s1Start,
         coreIdea:       validated.coreIdea?.slice(0, 60),
         whyThisMatters: !!validated.whyThisMatters,
@@ -144,13 +147,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(validated);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[SYNTH:stage1:api-error]", { elapsedMs: Date.now() - s1Start, msg });
+      DEV && console.error("[SYNTH:stage1:api-error]", { elapsedMs: Date.now() - s1Start, msg });
       return res.status(500).json({ error: msg.slice(0, 300) });
     }
   }
 
   // ── Stage 2: Full synthesis ─────────────────────────────────────────────────
-  console.log("[SYNTH:cp2:request-start]", {
+  DEV && console.log("[SYNTH:cp2:request-start]", {
     domain: safeDomain,
     rankedConceptCount: safeInput.rankedConcepts.length,
     hasPageThesis:    !!safeInput.pageThesis,
@@ -163,7 +166,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const s2Start = Date.now();
   try {
-    console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
+    DEV && console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
 
     const response = await openai.responses.parse({
       model: "gpt-4o",
@@ -171,25 +174,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       max_output_tokens: 1800,
       text: { format: FORMAT_FULL },
       input: [
-        { role: "system", content: buildSystemPrompt(safeDomain, safePresetId) },
-        { role: "user",   content: buildUserPrompt(safeInput) },
+        { role: "system", content: buildSystemPrompt(safeDomain) },
+        { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildUserPrompt(safeInput) },
       ],
     });
 
     const synthesis = response.output_parsed;
-    console.log("[SYNTH:cp4:openai-returned]", {
+    DEV && console.log("[SYNTH:cp4:openai-returned]", {
       elapsedMs: Date.now() - s2Start,
       hasOutput: !!synthesis,
       rawSnip: JSON.stringify(synthesis ?? {}).slice(0, 300),
     });
 
     if (!synthesis) {
-      console.error("[SYNTH:cp4:null-output]");
+      DEV && console.error("[SYNTH:cp4:null-output]");
       return res.status(500).json({ error: "Model returned no structured output." });
     }
 
     const validated = TeachingSynthesisSchema.parse(synthesis);
-    console.log("[SYNTH:cp5:success]", {
+    DEV && console.log("[SYNTH:cp5:success]", {
       coreIdea:     validated.coreIdea?.slice(0, 80) ?? null,
       mechanism:    validated.mechanism?.slice(0, 80) ?? null,
       conceptCount: validated.concepts?.length ?? 0,
@@ -201,7 +204,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: unknown) {
     const msg   = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack   : undefined;
-    console.error("[SYNTH:error]", {
+    DEV && console.error("[SYNTH:error]", {
       elapsedMs: Date.now() - s2Start,
       message: msg,
       stack: stack?.split("\n").slice(0, 10).join(" | "),

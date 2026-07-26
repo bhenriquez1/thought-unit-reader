@@ -6,6 +6,8 @@
 // the messages array, never into the system prompt. The system prompt is
 // 100% developer-authored static text. This pattern prevents CodeQL CWE-1336.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { VocabExtractRequest, VocabExtractResponse, VocabExtractedWord } from "@/lib/elena/vocabulary";
@@ -29,11 +31,11 @@ function ageVocabLevel(range: ChildAgeRange | undefined): string {
   }
 }
 
-/* ─── Static system prompt ───────────────────────────────────────────────────── */
+/* ─── Static system prompt (100% developer-authored — no user-controlled data) ── */
 
-function buildSystemPrompt(ageRange: ChildAgeRange | undefined): string {
-  const level = ageVocabLevel(ageRange);
-  return `You are a vocabulary educator for young readers (${level}).
+// Age-level framing is injected into the user message (messages array), not here,
+// so this constant stays fully static and satisfies CWE-1336.
+const VOCAB_SYSTEM = `You are a vocabulary educator for young readers. Use the age-appropriate level specified in the user's message.
 
 Extract 3 to 5 vocabulary words from the page content the user provides.
 
@@ -62,7 +64,8 @@ Respond ONLY with valid JSON — no markdown fences, no prose before or after:
 
 function buildMessages(body: VocabExtractRequest): Anthropic.MessageParam[] {
   const bookLabel = (body.bookTitle ?? "").trim() || "their book";
-  let ctx = `Extract vocabulary words from this page`;
+  // Age-level framing goes here (in the messages array), not in the system prompt (CWE-1336).
+  let ctx = `Age level: ${ageVocabLevel(body.ageRange)}\n\nExtract vocabulary words from this page`;
   if (body.bookTitle) ctx += ` of "${bookLabel}"`;
   if (body.currentPage) ctx += ` (page ${body.currentPage})`;
   ctx += `:\n\n<page_content>\n${body.pageText}\n</page_content>`;
@@ -111,7 +114,7 @@ export default async function handler(
 
   try {
     const client   = new Anthropic({ apiKey: anthropicKey });
-    const system   = buildSystemPrompt(body.ageRange);
+    const system   = VOCAB_SYSTEM;
     const messages = buildMessages(body);
 
     const result = await client.messages.create({
@@ -132,15 +135,15 @@ export default async function handler(
         (w) => typeof w.word === "string" && typeof w.definition === "string"
       ).slice(0, 5);
     } catch {
-      console.error("[ELENA_VOCAB] JSON parse failed:", jsonStr.slice(0, 200));
+      DEV && console.error("[ELENA_VOCAB] JSON parse failed:", jsonStr.slice(0, 200));
       return res.status(500).json({ words: [], error: "Could not understand the response. Try again!" });
     }
 
-    if (process.env.NODE_ENV === "development") console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
+    DEV && console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
     return res.status(200).json({ words });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[ELENA_VOCAB_ERROR]", msg);
+    DEV && console.error("[ELENA_VOCAB_ERROR]", msg);
     return res.status(502).json({ words: [], error: "Vocabulary helper is having trouble. Try again!" });
   }
 }

@@ -15,6 +15,7 @@
 // (same behavior as before).
 // SECURITY: API keys are server-side only, never sent to the browser.
 
+const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { DiagnosticQuestion } from "@/lib/studyplan/types";
@@ -97,14 +98,14 @@ async function buildTopicOutline(sourceText: string, bookTitle?: string, chapter
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
     if (!raw) return null;
 
-    console.log("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE]", {
+    DEV && console.log("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE]", {
       lines: raw.split("\n").filter(l => l.trim()).length,
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
     });
     return raw;
   } catch (e) {
-    console.error("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE_ERROR]", String(e));
+    DEV && console.error("[STUDYPLAN_DIAGNOSTIC_CLAUDE_OUTLINE_ERROR]", String(e));
     return null;
   }
 }
@@ -172,7 +173,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    console.error("[STUDYPLAN_DIAGNOSTIC_API] OPENAI_API_KEY not set");
+    DEV && console.error("[STUDYPLAN_DIAGNOSTIC_API] OPENAI_API_KEY not set");
     res.status(200).json({ questions: [], provider: "fallback", error: "API key not configured" });
     return;
   }
@@ -205,7 +206,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      console.error("[STUDYPLAN_DIAGNOSTIC_API] OpenAI error:", resp.status, errText.slice(0, 200));
+      DEV && console.error("[STUDYPLAN_DIAGNOSTIC_API] OpenAI error:", resp.status, errText.slice(0, 200));
       res.status(200).json({ questions: [], provider: "fallback", error: `OpenAI ${resp.status}` });
       return;
     }
@@ -217,7 +218,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       parsed = JSON.parse(raw);
     } catch {
-      console.error("[STUDYPLAN_DIAGNOSTIC_API] JSON parse failed:", raw.slice(0, 200));
+      DEV && console.error("[STUDYPLAN_DIAGNOSTIC_API] JSON parse failed:", raw.slice(0, 200));
       res.status(200).json({ questions: [], provider: "fallback", error: "JSON parse failed" });
       return;
     }
@@ -229,12 +230,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const provider = topicOutline ? "openai+claude" : "openai";
-    console.log("[STUDYPLAN_DIAGNOSTIC_SUCCESS]", { count: questions.length, bookTitle, chapterTitle, provider });
+    DEV && console.log("[STUDYPLAN_DIAGNOSTIC_SUCCESS]", { count: questions.length, bookTitle, chapterTitle, provider });
     res.status(200).json({ questions, provider });
   } catch (err) {
     clearTimeout(timeout);
     const isAbort = (err as Error)?.name === "AbortError";
-    console.error("[STUDYPLAN_DIAGNOSTIC_API]", isAbort ? "timeout" : "error", String(err));
+    DEV && console.error("[STUDYPLAN_DIAGNOSTIC_API]", isAbort ? "timeout" : "error", String(err));
     res.status(200).json({
       questions: [],
       provider: "fallback",

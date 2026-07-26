@@ -1,6 +1,8 @@
 // pages/api/speech-preprocess.ts
 // Server-side OCR repair for speech text. Keeps API key server-side only.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 interface RequestBody {
@@ -63,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => resp.statusText);
-      console.error("[SPEECH_PREPROCESS_API_ERROR]", { status: resp.status, errText: errText.slice(0, 200) });
+      DEV && console.error("[SPEECH_PREPROCESS_API_ERROR]", { status: resp.status, errText: errText.slice(0, 200) });
       return res.status(200).json({ cleaned: text, wasRepaired: false, error: `OpenAI ${resp.status}` });
     }
 
@@ -78,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   } catch (err: unknown) {
     clearTimeout(timeout);
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[SPEECH_PREPROCESS_ERROR]", { message });
+    DEV && console.error("[SPEECH_PREPROCESS_ERROR]", { message });
     return res.status(200).json({ cleaned: text, wasRepaired: false, error: message });
   }
 }

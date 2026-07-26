@@ -1,4 +1,5 @@
 // pages/api/tts.ts
+const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
@@ -82,7 +83,7 @@ function preprocessForBrowserTTS(text: string): string {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!process.env.OPENAI_API_KEY) {
-    console.error("[OPENAI_API_KEY_MISSING] Set OPENAI_API_KEY in .env.local");
+    DEV && console.error("[OPENAI_API_KEY_MISSING] Set OPENAI_API_KEY in .env.local");
   }
   // Quick health check
   if (req.method === "HEAD") return res.status(200).end();
@@ -106,7 +107,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!hasValidOpenAIKey) {
     // DIAGNOSTIC: key missing or invalid — browser fallback will fire
-    console.log("[OPENAI_SPEECH_SKIP]", {
+    DEV && console.log("[OPENAI_SPEECH_SKIP]", {
       reason: "OPENAI_API_KEY missing or invalid",
       hasKey: !!process.env.OPENAI_API_KEY,
       keyPrefix: process.env.OPENAI_API_KEY
@@ -118,12 +119,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const processedScript = preprocessForBrowserTTS(script);
-    console.log("[SPEECH_TEXT_PREPROCESSED]", {
+    DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: processedScript.length,
       provider: "browser",
     });
-    console.log("[SPEECH_FALLBACK_USED]", {
+    DEV && console.log("[SPEECH_FALLBACK_USED]", {
       provider: "browser",
       fallbackReason: "openai-key-missing",
       scriptChars: script.length,
@@ -142,10 +143,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const fmt = (format || "mp3").toLowerCase() as NonNullable<Body["format"]>;
     const mime = FORMAT_TO_MIME[fmt] || "audio/mpeg";
 
-    console.log("[OPENAI_SPEECH_START]", { scriptChars: script.length, voice, format: fmt });
+    DEV && console.log("[OPENAI_SPEECH_START]", { scriptChars: script.length, voice, format: fmt });
 
     const ttsInput = preprocessForTTS(script);
-    console.log("[SPEECH_TEXT_PREPROCESSED]", {
+    DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: ttsInput.length,
       provider: "openai",
@@ -161,7 +162,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const buffer = Buffer.from(await speech.arrayBuffer());
-    console.log("[OPENAI_SPEECH_DONE]", {
+    DEV && console.log("[OPENAI_SPEECH_DONE]", {
       audioBytes: buffer.length,
       mimeType: mime,
       provider: "openai",
@@ -181,19 +182,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(buffer);
   } catch (err: any) {
-    console.error("[OPENAI_SPEECH_ERROR]", {
+    DEV && console.error("[OPENAI_SPEECH_ERROR]", {
       error: err?.message ?? String(err),
       fallback: "browser-speech",
     });
-    console.error("TTS API error:", err?.message || err);
+    DEV && console.error("TTS API error:", err?.message || err);
 
     const processedScript = preprocessForBrowserTTS(script);
-    console.log("[SPEECH_TEXT_PREPROCESSED]", {
+    DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: processedScript.length,
       provider: "browser",
     });
-    console.log("[SPEECH_FALLBACK_USED]", {
+    DEV && console.log("[SPEECH_FALLBACK_USED]", {
       provider: "browser",
       fallbackReason: "openai-error",
       scriptChars: script.length,

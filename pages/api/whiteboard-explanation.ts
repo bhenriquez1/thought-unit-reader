@@ -1,4 +1,6 @@
 // pages/api/whiteboard-explain.ts
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
@@ -153,7 +155,7 @@ Each step: { title, description, visualPrompt, type?, payload?, delayMs? }.
     }
     return res.status(200).json(shaped);
   } catch (err) {
-    console.error("whiteboard-explain error:", err);
+    DEV && console.error("whiteboard-explain error:", err);
     return res.status(200).json(localFallback(concept, context));
   }
 }

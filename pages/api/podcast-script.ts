@@ -3,6 +3,8 @@
 // generate a structured podcast script, returns PodcastScript JSON.
 // NEVER put the OpenAI API key in client-side code.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { buildPodcastPrompt, parsePodcastResponse, buildLocalPodcastScript } from "@/lib/podcast/podcastEngine";
@@ -31,7 +33,7 @@ export default async function handler(
     return res.status(400).json({ error: "Missing context or mode" });
   }
 
-  console.log("[PODCAST_SOURCE]", {
+  DEV && console.log("[PODCAST_SOURCE]", {
     page:            context.pageNumber,
     bookId:          context.bookId,
     mode,
@@ -42,13 +44,13 @@ export default async function handler(
     hasRightPanel:   !!context.studyModel?.pageThesis,
   });
 
-  console.log("[PODCAST_PAGE_CONTEXT]", {
+  DEV && console.log("[PODCAST_PAGE_CONTEXT]", {
     page:       context.pageNumber,
     pageThesis: context.studyModel?.pageThesis?.slice(0, 80) ?? null,
     textChars:  context.pageText?.length ?? 0,
   });
 
-  console.log("[PODCAST_RIGHT_PANEL_CONTEXT]", {
+  DEV && console.log("[PODCAST_RIGHT_PANEL_CONTEXT]", {
     page:               context.pageNumber,
     hasWhyThisMatters:  !!context.studyModel?.studyNotes?.whyThisMatters,
     hasKeyMechanism:    !!context.studyModel?.studyNotes?.keyMechanism,
@@ -58,7 +60,7 @@ export default async function handler(
     visualAnchors:      context.studyModel?.visualAnchors?.length ?? 0,
   });
 
-  console.log("[PODCAST_HIGHLIGHT_EVIDENCE]", {
+  DEV && console.log("[PODCAST_HIGHLIGHT_EVIDENCE]", {
     page:    context.pageNumber,
     count:   context.studyModel?.visualAnchors?.length ?? 0,
     anchors: context.studyModel?.visualAnchors?.slice(0, 5).map((a) => ({
@@ -67,7 +69,7 @@ export default async function handler(
   });
 
   if (context.noteLab?.length > 0) {
-    console.log("[PODCAST_NOTELAB_CONTEXT]", {
+    DEV && console.log("[PODCAST_NOTELAB_CONTEXT]", {
       page:         context.pageNumber,
       notes:        context.noteLab.length,
       sectionCount: context.noteLab.reduce((n, note) => n + (note.sections?.length ?? 0), 0),
@@ -76,7 +78,7 @@ export default async function handler(
   }
 
   if (context.recallLab?.length > 0) {
-    console.log("[PODCAST_RECALL_BREAK]", {
+    DEV && console.log("[PODCAST_RECALL_BREAK]", {
       page:      context.pageNumber,
       sets:      context.recallLab.length,
       cardCount: context.recallLab.reduce((n, r) => n + r.cards.length, 0),
@@ -89,7 +91,7 @@ export default async function handler(
     process.env.OPENAI_API_KEY.length > 20;
 
   if (!hasKey) {
-    console.log("[PODCAST_SCRIPT_CREATED]", {
+    DEV && console.log("[PODCAST_SCRIPT_CREATED]", {
       page: context.pageNumber, mode, source: "local-fallback", reason: "no-openai-key",
     });
     return res.status(200).json(buildLocalPodcastScript(context, mode));
@@ -99,7 +101,7 @@ export default async function handler(
     const theme = MODE_THEMES[mode];
     const userPrompt = buildPodcastPrompt(context, mode);
 
-    console.log("[PODCAST_MODE_STYLE]", {
+    DEV && console.log("[PODCAST_MODE_STYLE]", {
       page:      context.pageNumber,
       mode,
       badge:     theme.badge,
@@ -109,7 +111,7 @@ export default async function handler(
       guestRole: theme.guestRole,
     });
 
-    console.log("[PODCAST_EXTERNAL_VERIFY]", {
+    DEV && console.log("[PODCAST_EXTERNAL_VERIFY]", {
       page:   context.pageNumber,
       mode,
       note:   "External verification segments cite trusted sources by name for clinical/cross-reference modes.",
@@ -154,7 +156,7 @@ export default async function handler(
       chars: s.text.length,
       hasAnchor: !!s.anchorId,
     }));
-    console.log("[PODCAST_TURN_SEQUENCE]", {
+    DEV && console.log("[PODCAST_TURN_SEQUENCE]", {
       page:         context.pageNumber,
       mode,
       totalTurns:   script.totalSegments,
@@ -164,7 +166,7 @@ export default async function handler(
       sequence:     turnSequence.slice(0, 8),
     });
 
-    console.log("[PODCAST_SCRIPT_CREATED]", {
+    DEV && console.log("[PODCAST_SCRIPT_CREATED]", {
       page:      context.pageNumber,
       mode,
       source:    "openai",
@@ -175,7 +177,7 @@ export default async function handler(
 
     return res.status(200).json(script);
   } catch (err: any) {
-    console.error("[PODCAST_SCRIPT_ERROR]", { error: err?.message ?? String(err) });
+    DEV && console.error("[PODCAST_SCRIPT_ERROR]", { error: err?.message ?? String(err) });
     // Fall back to local deterministic script
     return res.status(200).json(buildLocalPodcastScript(context, mode));
   }

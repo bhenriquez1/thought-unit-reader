@@ -1,4 +1,6 @@
 // pages/api/generateMnemonic.ts
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 /**
@@ -50,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.status(200).json({ mnemonic });
   } catch (err) {
-    console.error("❌ Mnemonic API error:", err);
+    DEV && console.error("❌ Mnemonic API error:", err);
     res.status(500).json({ error: "Failed to generate mnemonic" });
   }
 }

@@ -1,6 +1,8 @@
 // pages/api/whiteboard-explain.ts
 // Universal visual teaching engine — subject-agnostic.
 // Visualizes ONLY what is already in the study model (no independent concept invention).
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { generateWhiteboardStepsFromModel, splitMechanism, trunc } from "@/lib/insights/whiteboardFromStudyModel";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
@@ -273,7 +275,6 @@ export default async function handler(
     const modelCtx  = buildModelContext(studyModel);
 
     const system = [
-      profileBlock,
       "You are a visual teaching engine — you draw to teach, not write to explain.",
       "Avrrio style: colored-pencil educational board. Thick curved arrows, labeled structures, cause→effect. No generic text slides.",
       "Produce a whiteboard animation plan as strict JSON:",
@@ -314,7 +315,9 @@ export default async function handler(
     // a fallback source for bare-concept requests with no Left Panel study model at all,
     // never a competing input alongside it (mirrors Current Page speech mode's "anchors
     // first, verbatim text only as its own distinct mode" rule).
+    // profileBlock goes in the user message, not the system prompt, to satisfy CWE-1336.
     const user = [
+      profileBlock ? `LEARNING PROFILE GUIDANCE:\n${profileBlock}` : "",
       modelCtx ? `STUDY MODEL:\n${modelCtx}` : "",
       !modelCtx && pageText ? `PAGE TEXT (excerpt):\n${pageText.slice(0, 600)}` : "",
       `CONCEPT: """${concept || studyModel?.pageThesis || ""}"""`,
@@ -440,7 +443,7 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
+    DEV && console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
 
     return res.status(200).json({
       steps,

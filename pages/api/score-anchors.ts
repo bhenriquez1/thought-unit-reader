@@ -8,6 +8,8 @@
 // It CANNOT invent text. Only pre-grounded PDF spans are scored.
 // Called after groundHighlightAnchors() produces exact PDF spans.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { z } from "zod";
@@ -38,7 +40,7 @@ let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT = zodTextFormat(OutputSchema, "anchor_rankings");
 } catch (e) {
-  console.error("[SCORE_ANCHORS:init:SCHEMA_FAIL]", e);
+  DEV && console.error("[SCORE_ANCHORS:init:SCHEMA_FAIL]", e);
 }
 
 function buildPrompt(input: z.infer<typeof InputSchema>): string {
@@ -102,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const input = parsed.data;
   const userPrompt = buildPrompt(input);
 
-  console.log("[SCORE_ANCHORS:start]", {
+  DEV && console.log("[SCORE_ANCHORS:start]", {
     thesis: input.pageThesis.slice(0, 60),
     anchorCount: input.anchors.length,
   });
@@ -123,14 +125,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!result) return res.status(500).json({ error: "No structured output" });
 
     const validated = OutputSchema.parse(result);
-    console.log("[SCORE_ANCHORS:done]", {
+    DEV && console.log("[SCORE_ANCHORS:done]", {
       scores: validated.rankings.map(r => ({ text: r.text.slice(0, 50), score: r.semanticScore })),
     });
 
     return res.status(200).json(validated);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[SCORE_ANCHORS:error]", msg);
+    DEV && console.error("[SCORE_ANCHORS:error]", msg);
     return res.status(500).json({ error: msg.slice(0, 300) });
   }
 }

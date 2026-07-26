@@ -11,6 +11,8 @@
 // user's own notes) — never a static/copyrighted question bank.
 // SECURITY: API keys are server-side only, never sent to the browser.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { DifficultyLevel, EngineQuestion, QuestionType } from "@/lib/examEngine/types";
@@ -108,7 +110,7 @@ async function buildSkillMap(conceptText: string, topic?: string): Promise<strin
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
     return raw || null;
   } catch (e) {
-    console.error("[EXAM_QUESTION_GEN_SKILLMAP_ERROR]", String(e));
+    DEV && console.error("[EXAM_QUESTION_GEN_SKILLMAP_ERROR]", String(e));
     return null;
   }
 }
@@ -203,7 +205,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    console.error("[EXAM_QUESTION_GEN_API] OPENAI_API_KEY not set");
+    DEV && console.error("[EXAM_QUESTION_GEN_API] OPENAI_API_KEY not set");
     res.status(200).json({ questions: [], provider: "fallback", error: "API key not configured" });
     return;
   }
@@ -244,7 +246,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      console.error("[EXAM_QUESTION_GEN_API] OpenAI error:", resp.status, errText.slice(0, 200));
+      DEV && console.error("[EXAM_QUESTION_GEN_API] OpenAI error:", resp.status, errText.slice(0, 200));
       res.status(200).json({ questions: [], provider: "fallback", error: `OpenAI ${resp.status}` });
       return;
     }
@@ -256,7 +258,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       parsed = JSON.parse(raw);
     } catch {
-      console.error("[EXAM_QUESTION_GEN_API] JSON parse failed:", raw.slice(0, 200));
+      DEV && console.error("[EXAM_QUESTION_GEN_API] JSON parse failed:", raw.slice(0, 200));
       res.status(200).json({ questions: [], provider: "fallback", error: "JSON parse failed" });
       return;
     }
@@ -268,12 +270,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const provider = skillMap ? "openai+claude" : "openai";
-    console.log("[EXAM_QUESTION_GEN_SUCCESS]", { count: questions.length, bookId: body.bookId, conceptId: body.conceptId, provider });
+    DEV && console.log("[EXAM_QUESTION_GEN_SUCCESS]", { count: questions.length, bookId: body.bookId, conceptId: body.conceptId, provider });
     res.status(200).json({ questions, provider });
   } catch (err) {
     clearTimeout(timeout);
     const isAbort = (err as Error)?.name === "AbortError";
-    console.error("[EXAM_QUESTION_GEN_API]", isAbort ? "timeout" : "error", String(err));
+    DEV && console.error("[EXAM_QUESTION_GEN_API]", isAbort ? "timeout" : "error", String(err));
     res.status(200).json({
       questions: [],
       provider: "fallback",

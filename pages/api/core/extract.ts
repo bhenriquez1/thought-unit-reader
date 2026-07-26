@@ -1,3 +1,5 @@
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "crypto";
 import {
@@ -191,7 +193,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     // Validate with Zod
     const validated = CoreExtractResponseSchema.safeParse(response);
     if (!validated.success) {
-      console.error("Core extract validation failed:", validated.error);
+      DEV && console.error("Core extract validation failed:", validated.error);
       // Return truncated safe response
       response.concepts = response.concepts.slice(0, 8);
     }
@@ -205,7 +207,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
     return res.status(200).json(response);
   } catch (error) {
-    console.error("Core extract error:", error);
+    DEV && console.error("Core extract error:", error);
     return res.status(500).json({
       error: "EXTRACTION_FAILED",
       message: error instanceof Error ? error.message : "Unknown error",

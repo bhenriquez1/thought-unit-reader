@@ -543,9 +543,10 @@ export default function UniversalPatternButlerReader({
 
   // Load pattern mastery
   useEffect(() => {
-    if (userId) {
-      loadPatternMastery(userId).then(setPatternMastery);
-    }
+    if (!userId) return;
+    let alive = true;
+    loadPatternMastery(userId).then(data => { if (alive) setPatternMastery(data); }).catch(() => {});
+    return () => { alive = false; };
   }, [userId]);
 
   // 🪜 SCROLL-BASED PAGE NAVIGATION - CONDITIONAL DEBUG LOGGING

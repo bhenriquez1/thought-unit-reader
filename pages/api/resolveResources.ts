@@ -9,6 +9,8 @@
 // Article URLs are validated via HEAD request; unresolvable URLs are omitted silently.
 // Videos: YouTube API resolves exact videoId + timestamp deep-link when key is present.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -47,7 +49,7 @@ let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT = zodTextFormat(ResourcesSchema, "resource_recommendations");
 } catch (e) {
-  console.error("[RESOURCES:init:SCHEMA_FAIL]", e);
+  DEV && console.error("[RESOURCES:init:SCHEMA_FAIL]", e);
 }
 
 // ── Request / Response types ───────────────────────────────────────────────
@@ -242,7 +244,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "pageThesis required" });
   }
 
-  console.log("[RELATED_SEARCH_QUERY]", {
+  DEV && console.log("[RELATED_SEARCH_QUERY]", {
     thesis:       pageThesis.slice(0, 100),
     mechanism:    keyMechanism?.slice(0, 60) ?? null,
     conceptCount: conceptTitles.length,
@@ -278,20 +280,20 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
 
     const parsed = response.output_parsed;
     if (!parsed) {
-      console.error("[RESOURCES:null-output]");
+      DEV && console.error("[RESOURCES:null-output]");
       return res.status(200).json({ articles: [], videos: [] });
     }
 
     const raw = ResourcesSchema.safeParse(parsed);
     if (!raw.success) {
-      console.error("[RESOURCES:parse-fail]", raw.error.message);
+      DEV && console.error("[RESOURCES:parse-fail]", raw.error.message);
       return res.status(200).json({ articles: [], videos: [] });
     }
 
     const data = raw.data;
 
     // [DIAGNOSIS] Log raw article URLs from OpenAI before any URL validation
-    console.log("[RELATED_SOURCE_URLS]", {
+    DEV && console.log("[RELATED_SOURCE_URLS]", {
       articleCount:   data.articles.length,
       articleUrls:    data.articles.map(a => ({ url: a.url, source: a.source, score: a.score })),
       videoCount:     data.videos.length,
@@ -303,9 +305,9 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
       data.articles.map(async (a) => {
         const ok = await isUrlReachable(a.url);
         if (ok) {
-          console.log("[RELATED_URL_VALIDATED]", { url: a.url, source: a.source });
+          DEV && console.log("[RELATED_URL_VALIDATED]", { url: a.url, source: a.source });
         } else {
-          console.log("[RELATED_URL_REJECTED]", { url: a.url, source: a.source, reason: "HEAD check failed" });
+          DEV && console.log("[RELATED_URL_REJECTED]", { url: a.url, source: a.source, reason: "HEAD check failed" });
         }
         return ok ? a : null;
       })
@@ -329,9 +331,9 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
             const tParam = v.timestampSeconds ? `&t=${Math.floor(v.timestampSeconds)}s` : "";
             searchUrl = `https://www.youtube.com/watch?v=${resolved.videoId}${tParam}`;
             isVerified = true;
-            console.log("[RESOURCES:video-resolved]", { channel: v.channel, videoId: resolved.videoId, timestamp: v.timestampLabel });
+            DEV && console.log("[RESOURCES:video-resolved]", { channel: v.channel, videoId: resolved.videoId, timestamp: v.timestampLabel });
           } else {
-            console.log("[RESOURCES:video-fallback]", { channel: v.channel, query: v.searchQuery });
+            DEV && console.log("[RESOURCES:video-fallback]", { channel: v.channel, query: v.searchQuery });
           }
         }
 
@@ -373,7 +375,7 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
             if (ranked?.length) {
               const reranked = ranked.map(r => ({ ...articles[r.index], score: Math.round(r.relevance_score * 100) }));
               articles.splice(0, articles.length, ...reranked);
-              console.log("[COHERE_RERANK_ARTICLES]", { count: reranked.length, topScore: reranked[0]?.score });
+              DEV && console.log("[COHERE_RERANK_ARTICLES]", { count: reranked.length, topScore: reranked[0]?.score });
             }
           }
         }
@@ -392,25 +394,25 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
             const ranked = vidData?.results as Array<{ index: number; relevance_score: number }> | undefined;
             if (ranked?.length) {
               videos = ranked.map(r => ({ ...videos[r.index], score: Math.round(r.relevance_score * 100) }));
-              console.log("[COHERE_RERANK_VIDEOS]", { count: videos.length, topScore: videos[0]?.score });
+              DEV && console.log("[COHERE_RERANK_VIDEOS]", { count: videos.length, topScore: videos[0]?.score });
             }
           }
         }
 
         clearTimeout(cohereTimeout);
       } catch (cohereErr) {
-        console.warn("[COHERE_RERANK_SKIP]", String(cohereErr));
+        DEV && console.warn("[COHERE_RERANK_SKIP]", String(cohereErr));
       }
     }
 
-    console.log("[RELATED_COHERE_RANKED]", {
+    DEV && console.log("[RELATED_COHERE_RANKED]", {
       articleCount:    articles.length,
       videoCount:      videos.length,
       topArticleUrl:   articles[0]?.url ?? null,
       topVideoChannel: videos[0]?.channel ?? null,
     });
 
-    console.log("[RESOURCES:done]", {
+    DEV && console.log("[RESOURCES:done]", {
       articlesValidated: articles.length,
       articlesRequested: data.articles.length,
       videos: videos.length,
@@ -420,7 +422,7 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
     return res.status(200).json({ articles, videos } satisfies ResourcesResponse);
 
   } catch (err) {
-    console.error("[RESOURCES:error]", err instanceof Error ? err.message : err);
+    DEV && console.error("[RESOURCES:error]", err instanceof Error ? err.message : err);
     return res.status(200).json({ articles: [], videos: [] });
   }
 }
