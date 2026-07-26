@@ -20,6 +20,8 @@ import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import { saveWhiteboardAudio, loadWhiteboardAudio, deleteWhiteboardAudio } from "@/lib/db/whiteboardStore";
 
+const DEV = process.env.NODE_ENV === "development";
+
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
   let h = 5381;
@@ -192,6 +194,7 @@ export default function WhiteboardPanel({
   const debounceRef = useRef<number | null>(null);
   const lastCallTsRef = useRef<number>(0); // rate-limit
   const aiAbortRef = useRef<AbortController | null>(null);
+  const aiGenerationRef = useRef<number>(0);
   const illustrationCacheKeyRef = useRef<string | null>(null);
 
   const effectiveConcept = (concept || "").trim();
@@ -335,6 +338,7 @@ export default function WhiteboardPanel({
     aiAbortRef.current?.abort();
     const ctrl = new AbortController();
     aiAbortRef.current = ctrl;
+    const gen = ++aiGenerationRef.current;
 
     setAiImageLoading(true);
     setAiImageError(null);
@@ -385,7 +389,7 @@ export default function WhiteboardPanel({
       setAiImageUrl(data.imageUrl ?? null);
       setAiTeachingScript(data.teachingScript ?? "");
       setIllustrationProfile(learningProfile ?? "standard");
-      console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
+      DEV && console.log("[WHITEBOARD_IMAGE_READY_CLIENT]", { provider: data.provider, scriptChars: (data.teachingScript ?? "").length });
     } catch (err: any) {
       if (err?.name === "AbortError") return; // cancelled — no state update needed
       console.error("[WHITEBOARD_IMAGE_CLIENT_ERROR]", err);
@@ -399,7 +403,9 @@ export default function WhiteboardPanel({
         window.setTimeout(() => setShowFallbackNote(false), 3200);
       }
     } finally {
-      if (!ctrl.signal.aborted) setAiImageLoading(false);
+      // Clear loading only when this is still the most recent request (later requests
+      // increment aiGenerationRef, so an aborted older request won't stomp on theirs).
+      if (gen === aiGenerationRef.current) setAiImageLoading(false);
     }
   }, [effectiveConcept, effectiveContext, provider, isDebugMode, sdxlEndpoint, sdxlModelId, sdxlStylePreset, sdxlNegativePrompt, sdxlSeed]);
 
@@ -414,14 +420,14 @@ export default function WhiteboardPanel({
     lastCallTsRef.current = now;
 
     // cache first
-    console.log("[WHITEBOARD_CACHE_KEY]", { cacheKey, page: currentPage ?? null, hasModel: !!studyModel });
+    DEV && console.log("[WHITEBOARD_CACHE_KEY]", { cacheKey, page: currentPage ?? null, hasModel: !!studyModel });
     const cached = tryCache();
     if (cached) {
       generateAIDrawing(cached.diagramPlan);
       return;
     }
 
-    console.log("[WHITEBOARD_OPENAI_SOURCE]", {
+    DEV && console.log("[WHITEBOARD_OPENAI_SOURCE]", {
       page: currentPage ?? null,
       hasConcept: !!effectiveConcept,
       hasStudyModel: !!studyModel,
@@ -485,7 +491,7 @@ export default function WhiteboardPanel({
       setWbProvider(data.provider ?? (data.aiDisabled ? "fallback" : "unknown"));
 
       // [DIAGNOSIS] Which provider generated these steps
-      console.log("[WHITEBOARD_PROVIDER]", {
+      DEV && console.log("[WHITEBOARD_PROVIDER]", {
         page:          currentPage ?? null,
         provider:      data.provider ?? "unknown",   // "gemini" or "openai" set by whiteboard-explain.ts
         aiDisabled:    data.aiDisabled ?? false,
@@ -504,7 +510,7 @@ export default function WhiteboardPanel({
 
       // Fetch OpenAI TTS for the narration so useAIVoice becomes true
       if (narration && !data.aiDisabled) {
-        console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, fetching: "/api/tts", narrationChars: narration.length, provider: "openai-tts-via-api" });
+        DEV && console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, fetching: "/api/tts", narrationChars: narration.length, provider: "openai-tts-via-api" });
         fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -519,24 +525,24 @@ export default function WhiteboardPanel({
               for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
               const blob = new Blob([arr], { type: mime });
               setAudioBlob(blob);
-              console.log("[WHITEBOARD_TTS_READY]", { narrationChars: narration.length, mimeType: mime, provider: "openai-tts" });
+              DEV && console.log("[WHITEBOARD_TTS_READY]", { narrationChars: narration.length, mimeType: mime, provider: "openai-tts" });
             } else {
-              console.log("[WHITEBOARD_TTS_PROVIDER]", { result: tts?.useBrowserSpeech ? "browser-fallback" : "no-audio", reason: tts?.fallbackReason ?? "unknown" });
+              DEV && console.log("[WHITEBOARD_TTS_PROVIDER]", { result: tts?.useBrowserSpeech ? "browser-fallback" : "no-audio", reason: tts?.fallbackReason ?? "unknown" });
             }
           })
           .catch((err) => console.warn("[WHITEBOARD_TTS_ERROR]", err));
       } else if (data.aiDisabled) {
-        console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, result: "browser-speech-synthesis", reason: "aiDisabled — no API audio fetched" });
+        DEV && console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, result: "browser-speech-synthesis", reason: "aiDisabled — no API audio fetched" });
       }
 
-      console.log("[WHITEBOARD_PLAN_CREATED]", {
+      DEV && console.log("[WHITEBOARD_PLAN_CREATED]", {
         page: currentPage ?? null,
         stepCount: newSteps.length,
         drawTypes: newSteps.map((s) => (s as any).drawType ?? "text"),
         aiDisabled: data.aiDisabled ?? false,
       });
 
-      console.log("[WHITEBOARD_DIAGRAM_STEPS_READY]", {
+      DEV && console.log("[WHITEBOARD_DIAGRAM_STEPS_READY]", {
         page: currentPage ?? null,
         stepCount: newSteps.length,
         aiDisabled: data.aiDisabled ?? false,
@@ -572,7 +578,7 @@ export default function WhiteboardPanel({
     if (studyModel) {
       // WorkspaceSteps renders instantly from noteCards; kick off the
       // AI illustration in the background as the "big visual overview".
-      console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
+      DEV && console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
         page: currentPage ?? null,
         hasThesis: !!(studyModel as any).pageThesis,
         hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
@@ -612,7 +618,7 @@ export default function WhiteboardPanel({
     return () => {
       memCache.delete(cacheKey);
       deleteWhiteboardAudio(cacheKey).catch(() => { /* non-fatal */ });
-      console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
+      DEV && console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

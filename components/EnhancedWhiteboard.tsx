@@ -15,6 +15,8 @@ import {
   chapterAnimationCache
 } from "@/lib/chapterAnimations";
 
+const DEV = process.env.NODE_ENV === "development";
+
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
   let h = 5381;
@@ -464,7 +466,7 @@ export default function EnhancedWhiteboard({
     const transition = detectChapterTransition(currentPage, previousPage, tableOfContents);
     
     if (transition.isTransition && transition.chapterInfo) {
-      console.log(`🎨 Chapter transition detected: ${transition.chapterInfo.title}`);
+      DEV && console.log(`🎨 Chapter transition detected: ${transition.chapterInfo.title}`);
       
       const chapterId = createChapterId(transition.chapterInfo.title, currentPage);
       setCurrentChapter(chapterId);

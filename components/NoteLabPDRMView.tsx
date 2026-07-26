@@ -9,6 +9,8 @@ import { pdrmEngine, type PDRMEntry } from '@/lib/pdrmEngine';
 import { pdrmFirestore } from '@/lib/pdrmFirestore';
 import SmartHourWidget, { type SmartHourSession } from './SmartHourWidget';
 
+const DEV = process.env.NODE_ENV === "development";
+
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface NoteLabPDRMViewProps {
@@ -158,7 +160,7 @@ export default function NoteLabPDRMView({
       // Keep local backup
       safeSetItem(`pdrm-entries-${user.uid}-${bookId}`, JSON.stringify(updatedEntries));
 
-      console.log('💾 PDRM: Entry saved to Firestore and locally', entry);
+      DEV && console.log('💾 PDRM: Entry saved to Firestore and locally', entry);
     } catch (error) {
       console.error("Failed to save PDRM entry:", error);
 
@@ -202,7 +204,7 @@ export default function NoteLabPDRMView({
       );
 
       setCurrentEntry(pdrmEntry);
-      console.log('🧠 PDRM: Generated entry', pdrmEntry);
+      DEV && console.log('🧠 PDRM: Generated entry', pdrmEntry);
     } catch (error) {
       console.error('Failed to generate PDRM entry:', error);
     } finally {
@@ -242,7 +244,7 @@ export default function NoteLabPDRMView({
       // Update local state (will be updated by subscription, but do it immediately)
       setSmartHourSessions(prev => [...prev, session]);
       
-      console.log('⏱️ Smart-Hour: Session saved to Firestore', session);
+      DEV && console.log('⏱️ Smart-Hour: Session saved to Firestore', session);
     } catch (error) {
       console.error('Failed to save Smart-Hour session to Firestore:', error);
       
