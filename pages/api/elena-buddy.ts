@@ -141,7 +141,9 @@ export default async function handler(
 
     const messages: Anthropic.MessageParam[] = [
       ...context,
-      ...body.history.map((m) => ({ role: m.role, content: m.content })),
+      ...body.history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user", content: body.message },
     ];
 
@@ -154,7 +156,7 @@ export default async function handler(
 
     const reply = result.content[0]?.type === "text" ? result.content[0].text.trim() : "";
 
-    console.log("[ELENA_BUDDY]", {
+    if (process.env.NODE_ENV === "development") console.log("[ELENA_BUDDY]", {
       ageRange:    body.ageRange ?? "unknown",
       page:        body.currentPage ?? null,
       replyLength: reply.length,

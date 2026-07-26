@@ -11,6 +11,8 @@ import {
 } from '@/types/patterns';
 import TOCSidebar from '@/components/TOCSidebar';
 
+const DEV = process.env.NODE_ENV === "development";
+
 export default function DATPatternBrowser() {
   const [selectedPattern, setSelectedPattern] = useState<Pattern | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -58,7 +60,7 @@ export default function DATPatternBrowser() {
             localStorage.removeItem('protocol_return_data');
           }
         } catch (error) {
-          console.warn('Failed to parse protocol return data:', error);
+          DEV && console.warn('Failed to parse protocol return data:', error);
         }
         
         // Generate fallback insights if none found

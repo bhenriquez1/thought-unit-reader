@@ -2,6 +2,8 @@
 // Elena Mode workspace — child-learning hub with 9 sections.
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { safeSetItem } from "@/lib/storage/safeStorage";
 import ReadingBuddy    from "@/components/elena/ReadingBuddy";
@@ -270,13 +272,15 @@ function LogSessionButton({
 }) {
   const [logging, setLogging]       = useState(false);
   const [justEarned, setJustEarned] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   async function handleLog() {
     setLogging(true);
     await onLog();
     setLogging(false);
     setJustEarned(true);
-    setTimeout(() => setJustEarned(false), 2500);
+    timerRef.current = setTimeout(() => setJustEarned(false), 2500);
   }
 
   return (
@@ -907,9 +911,12 @@ function VocabularyTab({
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   useEffect(() => {
-    loadVocabWords(profile.id).then(setWords).catch(() => {});
+    let alive = true;
+    loadVocabWords(profile.id).then(w => { if (alive) setWords(w); }).catch(() => {});
+    return () => { alive = false; };
   }, [profile.id]);
 
   const extractWords = useCallback(async () => {
@@ -1391,8 +1398,8 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
       saveChildProfile(p).then(() => null).catch((e: unknown) => e),
       saveRewardState(defaultRewards).then(() => null).catch((e: unknown) => e),
     ]);
-    if (profileErr) console.error("[Elena] saveChildProfile failed:", profileErr);
-    if (rewardErr)  console.error("[Elena] saveRewardState failed:",  rewardErr);
+    if (profileErr) DEV && console.error("[Elena] saveChildProfile failed:", profileErr);
+    if (rewardErr)  DEV && console.error("[Elena] saveRewardState failed:",  rewardErr);
     if (profileErr || rewardErr) {
       const blocked = String(profileErr ?? rewardErr).includes("blocked");
       setPersistenceWarning(

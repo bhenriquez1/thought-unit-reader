@@ -3,7 +3,7 @@
 // Loads vocabulary words from IndexedDB. Requires at least 2 words.
 // Max 6 word pairs per round (12 cards).
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { loadVocabWords } from "@/lib/elena/idbStore";
 import type { VocabWord } from "@/lib/elena/vocabulary";
 
@@ -58,11 +58,15 @@ export default function MemoryMatch({ childProfileId, onBack, onWin }: MemoryMat
   const [disabled,  setDisabled]  = useState(false);
   const [moves,     setMoves]     = useState(0);
   const [gameState, setGameState] = useState<GameState>("idle");
+  const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (flipTimerRef.current) clearTimeout(flipTimerRef.current); }, []);
 
   useEffect(() => {
+    let alive = true;
     loadVocabWords(childProfileId)
-      .then(ws => setWords(ws))
-      .catch(() => setLoadError(true));
+      .then(ws => { if (alive) setWords(ws); })
+      .catch(() => { if (alive) setLoadError(true); });
+    return () => { alive = false; };
   }, [childProfileId]);
 
   const startGame = useCallback(() => {
@@ -104,7 +108,7 @@ export default function MemoryMatch({ childProfileId, onBack, onWin }: MemoryMat
       }
     } else {
       // No match — flip back after delay
-      setTimeout(() => {
+      flipTimerRef.current = setTimeout(() => {
         setFlipped(new Set());
         setDisabled(false);
       }, 1000);

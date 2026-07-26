@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { savePendingExam } from '@/lib/db/examStore';
@@ -50,7 +50,11 @@ export default function ExamGeneratorPage() {
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
   const [books, setBooks] = useState<import('@/lib/apex/bookCatalogue').CatalogueBook[]>([]);
   useEffect(() => {
-    getUserBookCatalogue().then(setBooks).catch(() => setBooks([]));
+    let alive = true;
+    getUserBookCatalogue()
+      .then(b => { if (alive) setBooks(b); })
+      .catch(() => { if (alive) setBooks([]); });
+    return () => { alive = false; };
   }, [catalogueRefreshKey]);
 
   // --- State ---

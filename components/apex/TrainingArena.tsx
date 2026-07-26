@@ -309,6 +309,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
   // End session on unmount
   useEffect(() => {
     return () => {
+      generateCancelRef.current = true;
       if (sessionIdRef.current) {
         const stats = sessionStatsRef.current;
         endSession(sessionIdRef.current, {
@@ -323,6 +324,8 @@ function GenerateTab({ subject }: { subject: Subject }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const generateCancelRef = useRef(false);
+
   const handleGenerate = useCallback(async () => {
     // Start a session on first question
     if (!sessionIdRef.current) {
@@ -330,6 +333,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
       sessionStatsRef.current = { correct: 0, total: 0, patternsTouched: new Set(), trapsTriggered: new Set() };
     }
 
+    generateCancelRef.current = false;
     setGenerating(true);
     setSelectedAnswer("");
     setRevealed(false);
@@ -347,6 +351,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
         difficulty,
         count: 6,
       });
+      if (generateCancelRef.current) return;
       const q = questions[Math.floor(Math.random() * questions.length)];
       if (!q) {
         setActiveQuestion(null);
@@ -368,7 +373,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
         pdrm: { pattern: activeModule.pattern, decisionRule: activeModule.decisionRule, trap: activeModule.trap },
       });
     } finally {
-      setGenerating(false);
+      if (!generateCancelRef.current) setGenerating(false);
     }
   }, [activeModule, subject.id, difficulty, datPlus, questionType, saveGeneratedQuestion, startSession]);
 
@@ -733,9 +738,13 @@ export default function TrainingArena() {
 
   useEffect(() => {
     if (!expanded) return;
+    let alive = true;
     import("@/lib/datApex/idbStore").then(({ loadReadinessState }) => {
-      loadReadinessState("demo-user").then(setReadiness).catch(() => {});
+      loadReadinessState("demo-user")
+        .then(s => { if (alive) setReadiness(s); })
+        .catch(() => {});
     });
+    return () => { alive = false; };
   }, [expanded]);
 
   return (

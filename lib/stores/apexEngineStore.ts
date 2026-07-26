@@ -2,6 +2,8 @@
 // DAT Apex Engine Store — central state for scoring, patterns, sessions, questions
 // Follows the same Zustand + localStorage persist pattern as pdrmStore.ts
 
+const DEV = process.env.NODE_ENV === "development";
+
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
@@ -136,12 +138,12 @@ const rawBookScopedStorage = {
     try {
       localStorage.setItem(APEX_GLOBAL_KEY, JSON.stringify({ state: pick(state, GLOBAL_FIELDS), version: parsed.version }));
     } catch (e) {
-      console.warn('[apexEngineStore] failed to persist global state (quota?):', e);
+      DEV && console.warn('[apexEngineStore] failed to persist global state (quota?):', e);
     }
     try {
       localStorage.setItem(apexBookKey(activeApexBookId), JSON.stringify({ state: pick(state, BOOK_FIELDS), version: parsed.version }));
     } catch (e) {
-      console.warn('[apexEngineStore] failed to persist book state (quota?):', e);
+      DEV && console.warn('[apexEngineStore] failed to persist book state (quota?):', e);
     }
   },
   removeItem(_name: string): void {

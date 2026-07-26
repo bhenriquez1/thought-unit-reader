@@ -21,6 +21,8 @@ interface TUExplanation {
   relatedConcepts: string[];
 }
 
+const DEV = process.env.NODE_ENV === "development";
+
 export default function TUExplainModal({ question, userAnswer, isOpen, onClose }: TUExplainModalProps) {
   const [tuExplanation, setTuExplanation] = useState<TUExplanation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,7 @@ export default function TUExplainModal({ question, userAnswer, isOpen, onClose }
 
       setTuExplanation(tuExplanation);
     } catch (error) {
-      console.error('Failed to generate TU explanation:', error);
+      DEV && console.error('Failed to generate TU explanation:', error);
       // Fallback to basic explanation
       setTuExplanation({
         conceptAnalysis: question.explanation || 'No explanation available.',

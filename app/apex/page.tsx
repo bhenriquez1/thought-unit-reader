@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
@@ -53,12 +53,18 @@ function TodayTab() {
   const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
   const router = useRouter();
   const [launching, setLaunching] = useState(false);
+  const cancelRef = useRef(false);
+  useEffect(() => {
+    cancelRef.current = false;
+    return () => { cancelRef.current = true; };
+  }, []);
 
   const handleStartRecommended = useCallback(async () => {
     if (!currentRecommendation) return;
     setLaunching(true);
     try {
       const gen = await ExamGenerator.fromQuestionBank();
+      if (cancelRef.current) return;
       const baseOpts = examGeneratorUtils.createWeakTopicsPractice(
         patterns,
         currentRecommendation.targetPatterns,
@@ -67,10 +73,11 @@ function TodayTab() {
       const exam = gen.generateExam({ ...baseOpts, difficulty: adaptiveDifficulty });
       const examId = `recommended-${Date.now()}`;
       await savePendingExam(examId, exam);
+      if (cancelRef.current) return;
       safeSetItem("currentExam", JSON.stringify(exam));
       router.push(`/apex/proctor?examId=${examId}`);
     } catch {
-      setLaunching(false);
+      if (!cancelRef.current) setLaunching(false);
     }
   }, [currentRecommendation, patterns, adaptiveDifficulty, router]);
 
@@ -314,6 +321,11 @@ function FullExamsTab() {
   const [seeding, setSeeding]       = useState(false);
   const [seedError, setSeedError]   = useState<string | null>(null);
   const [inProgress, setInProgress] = useState(false);
+  const cancelRef = useRef(false);
+  useEffect(() => {
+    cancelRef.current = false;
+    return () => { cancelRef.current = true; };
+  }, []);
 
   // Check if there's a paused exam in localStorage
   useEffect(() => {
@@ -325,14 +337,18 @@ function FullExamsTab() {
     setSeedError(null);
     try {
       const gen  = await ExamGenerator.fromQuestionBank();
+      if (cancelRef.current) return;
       const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
       const examId = `simulation-${Date.now()}`;
       await savePendingExam(examId, exam);
+      if (cancelRef.current) return;
       safeSetItem("currentExam", JSON.stringify(exam));
       router.push(prometric ? `/apex/proctor?examId=${examId}&prometric=1` : `/apex/proctor?examId=${examId}`);
     } catch {
-      setSeedError("Could not prepare the exam. Please try again.");
-      setSeeding(false);
+      if (!cancelRef.current) {
+        setSeedError("Could not prepare the exam. Please try again.");
+        setSeeding(false);
+      }
     }
   }, [router]);
 
@@ -528,10 +544,12 @@ function ReadinessTab() {
   const { patterns, projection } = useApexEngineStore();
 
   useEffect(() => {
+    let alive = true;
     loadReadinessState("default")
-      .then(s => setIdbState(s))
-      .catch(() => setIdbState(null))
-      .finally(() => setLoading(false));
+      .then(s => { if (alive) setIdbState(s); })
+      .catch(() => { if (alive) setIdbState(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, []);
 
   const LEGACY_IDS = [
@@ -638,10 +656,12 @@ function HistoryTab() {
   const { sessions, scores }    = useApexEngineStore();
 
   useEffect(() => {
+    let alive = true;
     listAttempts()
-      .then(all => setAttempts(all.sort((a, b) => b.startedAt.localeCompare(a.startedAt))))
-      .catch(() => setAttempts([]))
-      .finally(() => setLoading(false));
+      .then(all => { if (alive) setAttempts(all.sort((a, b) => b.startedAt.localeCompare(a.startedAt))); })
+      .catch(() => { if (alive) setAttempts([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, []);
 
   return (
