@@ -99,6 +99,12 @@ const EXPLAIN_PAGE_CHIPS = [
 // Streaming fetch
 // ---------------------------------------------------------------------------
 
+type ApiError = Error & { code?: string };
+
+function makeApiError(message: string, code?: string): ApiError {
+  return Object.assign(new Error(message), { code });
+}
+
 async function streamChiefResident(
   body: object,
   onToken: (text: string) => void,
@@ -112,8 +118,8 @@ async function streamChiefResident(
   });
 
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(errBody.error || `Chief Resident unavailable (${res.status})`);
+    const errBody = await res.json().catch(() => ({})) as { error?: string; code?: string };
+    throw makeApiError(errBody.error || `Chief Resident unavailable (${res.status})`, errBody.code);
   }
 
   const reader = res.body?.getReader();
@@ -130,8 +136,8 @@ async function streamChiefResident(
       const data = line.slice(6).trim();
       if (data === "[DONE]") return accumulated;
       try {
-        const parsed = JSON.parse(data) as { text?: string; error?: string };
-        if (parsed.error) throw new Error(parsed.error);
+        const parsed = JSON.parse(data) as { text?: string; error?: string; code?: string };
+        if (parsed.error) throw makeApiError(parsed.error, parsed.code);
         if (parsed.text) { accumulated += parsed.text; onToken(parsed.text); }
       } catch (e) {
         if ((e as Error).message !== "Unexpected end of JSON input") throw e;
@@ -174,6 +180,7 @@ export default function ChiefResidentModal({
   const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [savingAction, setSavingAction] = useState<"note" | "recall" | "studyguide" | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -220,6 +227,7 @@ export default function ChiefResidentModal({
     abortRef.current = new AbortController();
     setIsStreaming(true);
     setError(null);
+    setErrorCode(null);
 
     const apiMode: TeachingMode = context.mode === "explain-text" ? "explain-text" : "explain-page";
     const claudeMessages = history.map(({ role, content }) => ({ role, content }));
@@ -244,7 +252,11 @@ export default function ChiefResidentModal({
       setTurns(prev => [...prev, { id: `a-${Date.now()}`, role: "assistant", content: full }]);
       setStreamingBuffer("");
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      const err = e as ApiError;
+      if (err.name !== "AbortError") {
+        setError(err.message);
+        setErrorCode(err.code ?? null);
+      }
     } finally {
       setIsStreaming(false);
     }
@@ -469,17 +481,38 @@ export default function ChiefResidentModal({
             </div>
           )}
 
-          {error && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-900/20 px-3 py-2 text-[11.5px] text-rose-300">
-              {error}
-              <button
-                onClick={() => { setError(null); sendToApi(turns, audience); }}
-                className="ml-3 underline text-rose-200 hover:text-white"
-              >
-                Retry
-              </button>
-            </div>
-          )}
+          {error && (() => {
+            const isConfig = errorCode === "missing_configuration";
+            const isAuth   = errorCode === "invalid_api_key";
+            const permanent = isConfig || isAuth;
+            return (
+              <div className={`rounded-lg border px-3 py-2.5 text-[11.5px] ${
+                permanent
+                  ? "border-amber-500/30 bg-amber-900/20 text-amber-200"
+                  : "border-rose-500/30 bg-rose-900/20 text-rose-300"
+              }`}>
+                {isConfig && (
+                  <div className="mb-2 space-y-0.5 font-mono text-[10.5px]">
+                    <div className="font-semibold text-amber-300 mb-1">⚙️ Chief Resident Status</div>
+                    <div>✓ API route reachable</div>
+                    <div>✗ Anthropic API key not detected</div>
+                    <div>✗ Model unavailable</div>
+                    <div>✗ Streaming unavailable</div>
+                    <div className="mt-1 text-amber-400/70">Status: Missing server configuration</div>
+                  </div>
+                )}
+                <span>{error}</span>
+                {!permanent && (
+                  <button
+                    onClick={() => { setError(null); setErrorCode(null); sendToApi(turns, audience); }}
+                    className="ml-3 underline text-rose-200 hover:text-white"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="h-1" />
         </div>
