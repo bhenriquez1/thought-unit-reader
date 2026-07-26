@@ -2928,16 +2928,33 @@ export default function ThoughtUnitReader() {
     const autoToc = buildAutoToc(bundles);
     if (!autoToc.length) return;
 
-    setTableOfContents(
-      autoToc.map((node) => ({
-        title: node.title,
-        pageNumber: node.page,
-        subChapters: node.children?.map((child) => ({
-          title: child.title,
-          pageNumber: child.page,
-        })),
+    const tocEntries = autoToc.map((node) => ({
+      title: node.title,
+      pageNumber: node.page,
+      subChapters: node.children?.map((child) => ({
+        title: child.title,
+        pageNumber: child.page,
       })),
-    );
+    }));
+    setTableOfContents(tocEntries);
+
+    // Write to tocStore so PureTocView (which reads the store directly, not
+    // tableOfContents React state) also reflects the heuristic result.
+    const docId = bookId || 'book';
+    const kindToLevel = (kind: string) => kind === 'subsection' ? 2 : kind === 'section' ? 1 : 0;
+    const storeItems = autoToc.map((node, idx) => ({
+      id: `toc_h_${idx}`,
+      title: node.title,
+      pageNumber: node.page,
+      level: kindToLevel(node.kind),
+      children: node.children?.map((child, cIdx) => ({
+        id: `toc_h_${idx}_${cIdx}`,
+        title: child.title,
+        pageNumber: child.page,
+        level: kindToLevel(child.kind),
+      })),
+    }));
+    useTocStore.getState().saveToc(docId, docId, storeItems, 'heuristic');
   }, [pdfPageCount, thoughtUnits, tableOfContents.length]);
 
   // Syllabus tab's chapter dashboard (Read/Understand/Recall/Mastery, weak

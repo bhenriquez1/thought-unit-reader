@@ -410,7 +410,7 @@ export function groundHighlightAnchors(
     const normedAnchor = normText(anchor.text);
     const anchorIsHeader = isLikelyHeaderLine(anchor.text);
 
-    console.log("[LEFT_PANEL_GROUND_ATTEMPT]", { text: anchor.text.slice(0, 80), role: anchor.anchorType });
+    DEV && console.log("[LEFT_PANEL_GROUND_ATTEMPT]", { text: anchor.text.slice(0, 80), role: anchor.anchorType });
 
     // ── Stage 1: Exact substring match (case-sensitive) ──────────────────
     // Skip exact/normalized echo when the anchor text itself is a header artifact —
@@ -423,8 +423,8 @@ export function groundHighlightAnchors(
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
         : expandToThoughtUnit(anchor.text, anchor.anchorType, sentences, paragraphs);
-      console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
-      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "exact" });
+      DEV && console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
+      DEV && console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "exact" });
       grounded.push({
         ...anchor,
         ...(expansion.spanStart ? { spanStart: expansion.spanStart, spanEnd: expansion.spanEnd } : {}),
@@ -440,8 +440,8 @@ export function groundHighlightAnchors(
       const expansion = hasExplicitSpan
         ? { groundedText: anchor.text }
         : expandToThoughtUnit(anchor.text, anchor.anchorType, sentences, paragraphs);
-      console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
-      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "normalized" });
+      DEV && console.log("[ANCHOR_SELECTED_BODY]", { text: expansion.groundedText.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
+      DEV && console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: expansion.groundedText.slice(0, 80), role: anchor.anchorType, method: "normalized" });
       // Keep anchor.text (or its expanded sentence) — SmartPDFViewer's normForMatch
       // will find it via normalized comparison
       grounded.push({
@@ -455,46 +455,55 @@ export function groundHighlightAnchors(
     }
 
     if (anchorIsHeader) {
-      console.log("[ANCHOR_REJECTED_HEADER]", { text: anchor.text.slice(0, 80), note: "anchor text is a header — recovering body sentence" });
+      DEV && console.log("[ANCHOR_REJECTED_HEADER]", { text: anchor.text.slice(0, 80), note: "anchor text is a header — recovering body sentence" });
     }
 
     // ── Stage 3: Semantic sentence recovery ──────────────────────────────
     // Find the best-scoring sentence from pageText that expresses the same idea.
     // Replace the semantic anchor with exact page text so SmartPDFViewer can locate it.
-    let bestSentence: string | null = null;
-    let bestScore = 0;
 
-    for (const sentence of sentences) {
-      const score = scoreSentenceMatch(anchor, sentence);
-      if (score > bestScore) {
-        bestScore = score;
-        bestSentence = sentence;
+    // Score every candidate in a single pass, then apply a two-step selection:
+    //   1. Primary: highest score wins.
+    //   2. Tie-break (when anchor carries a spanStart position hint): among sentences
+    //      within EPSILON of the top score, prefer the one whose char offset in
+    //      cleanedPage is closest to anchor.spanStart. This resolves duplicate-concept
+    //      cases (e.g., same sentence appears in a chapter intro and the main body).
+    const RECOVERY_THRESHOLD = 0.55;
+    const EPSILON = 0.04;
+
+    // Filter body-only candidates first so the header guard doesn't need post-mutation.
+    const scored = sentences
+      .filter(s => !isLikelyHeaderLine(s))
+      .map(s => ({ sentence: s, score: scoreSentenceMatch(anchor, s) }));
+
+    const maxScore = scored.reduce((m, s) => Math.max(m, s.score), 0);
+    const topCandidates = scored.filter(s => s.score >= maxScore - EPSILON);
+
+    let bestEntry = topCandidates[0] ?? null;
+    // Proximity tie-break: anchor.spanStart is a string char-offset hint from the AI.
+    const spanHint = anchor.spanStart != null ? parseInt(anchor.spanStart as string, 10) : NaN;
+    if (bestEntry && topCandidates.length > 1 && !Number.isNaN(spanHint)) {
+      for (const entry of topCandidates) {
+        const off = cleanedPage.indexOf(entry.sentence);
+        const curOff = cleanedPage.indexOf(bestEntry.sentence);
+        if (off >= 0 && (curOff < 0 || Math.abs(off - spanHint) < Math.abs(curOff - spanHint))) {
+          bestEntry = entry;
+        }
       }
     }
 
-    // Threshold: require strong evidence before accepting a recovered sentence.
-    // 0.45 = at least ~45% key-term overlap plus structural bonus, or very high
-    // term overlap alone. Tuned to accept "iodine deficiency causes goiter" → sentence
-    // containing "iodine", "deficiency", "goiter" while rejecting weak matches.
-    const RECOVERY_THRESHOLD = 0.55;
-
-    // Final guard: never accept a recovered sentence that is itself a header.
-    // (splitIntoSentences already filters these, but guard the result defensively.)
-    if (bestSentence !== null && isLikelyHeaderLine(bestSentence)) {
-      console.log("[ANCHOR_REJECTED_HEADER]", { text: bestSentence.slice(0, 80), note: "recovered candidate was a header" });
-      bestSentence = null;
-      bestScore = 0;
-    }
+    const bestSentence = bestEntry?.sentence ?? null;
+    const bestScore = bestEntry?.score ?? 0;
 
     if (bestSentence !== null && bestScore >= RECOVERY_THRESHOLD) {
-      console.log("[ANCHOR_SELECTED_BODY]", {
+      DEV && console.log("[ANCHOR_SELECTED_BODY]", {
         text:   bestSentence.slice(0, 70),
         kind:   anchor.anchorType,
         score:  Math.round(bestScore * 100) / 100,
         method: "recovered",
         from:   anchor.text.slice(0, 50),
       });
-      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
+      DEV && console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
       const bestIdx = sentences.indexOf(bestSentence);
       const span = !(anchor.spanStart && anchor.spanEnd) && bestIdx !== -1
         ? thoughtUnitSpan(anchor.anchorType, bestSentence, sentences, bestIdx, paragraphs)
@@ -508,17 +517,17 @@ export function groundHighlightAnchors(
         confidence:   bestScore,
       });
     } else {
-      console.log("[GROUND_ANCHOR_REJECTED]", {
+      DEV && console.log("[GROUND_ANCHOR_REJECTED]", {
         text:          anchor.text.slice(0, 70),
         bestScore:     Math.round(bestScore * 100) / 100,
         bestCandidate: bestSentence?.slice(0, 70) ?? "(none)",
       });
-      console.log("[LEFT_PANEL_GROUND_FAILED]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, bestScore: Math.round(bestScore * 100) / 100 });
+      DEV && console.log("[LEFT_PANEL_GROUND_FAILED]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, bestScore: Math.round(bestScore * 100) / 100 });
       // Drop — no highlight is better than a wrong highlight
     }
   }
 
-  console.log("[GROUND_ANCHOR_FINAL]", {
+  DEV && console.log("[GROUND_ANCHOR_FINAL]", {
     input:    anchors.length,
     grounded: grounded.length,
     rejected: anchors.length - grounded.length,
