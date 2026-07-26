@@ -1,14 +1,24 @@
 // pages/api/chief-resident-teaching.ts
-// Adaptive AI teaching session — powers the 🩺 Chief Resident tab in NoteLab.
-// Uses Claude with streaming SSE. Subject and persona are auto-detected from content.
+// Chief Resident adaptive teaching stream — powers ChiefResidentModal and the
+// NoteLab 🩺 tab. Uses the OpenAI Responses API with server-sent events (SSE).
+//
+// SSE format (unchanged from prior Anthropic implementation so the frontend
+// parsers in ChiefResidentModal and ChiefResidentPanel need no changes):
+//   data: {"text":"…"}\n\n   — token delta
+//   data: [DONE]\n\n         — stream complete
+//   data: {"error":"…","code":"…"}\n\n  — classified error (never raw SDK text)
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 export const config = {
   maxDuration: 60,
   api: { bodyParser: { sizeLimit: "64kb" } },
 };
+
+// ---------------------------------------------------------------------------
+// Public types (imported by components and the status route)
+// ---------------------------------------------------------------------------
 
 export type TeachingMode =
   | "teach-page"
@@ -35,17 +45,24 @@ export interface TeachingMessage {
 }
 
 export interface ChiefResidentRequest {
-  sourceText: string;
-  bookTitle?: string;
-  mode: TeachingMode;
-  audience?: TeachingAudience;
-  messages: TeachingMessage[];
-  /** For explain-text mode: the highlighted/selected passage */
+  mode:         TeachingMode;
+  audience?:    TeachingAudience;
+  /** Full source text for the current page / note / study sheet */
+  sourceText:   string;
+  /** Highlighted passage (explain-text mode only) */
   selectedText?: string;
+  /** Document or chapter title for context labelling */
+  title?:        string;
+  /** Conversation history (empty on first turn) */
+  messages:      TeachingMessage[];
+  /** Traceability — used server-side only, never exposed to the model */
+  documentId?:              string;
+  pageNumber?:              number;
+  canonicalThoughtUnitIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
-// System prompt — adapts teaching persona by subject
+// System prompts — all static developer-authored text (no user data)
 // ---------------------------------------------------------------------------
 
 const BASE_SYSTEM = `You are an adaptive AI tutor. You teach interactively from whatever content the learner gives you.
@@ -142,34 +159,37 @@ Rules:
 - Ground all explanations in the source content provided.`;
 
 const AUDIENCE_MODIFIERS: Record<string, string> = {
-  "beginner": "\n\nAUDIENCE: The learner is a complete beginner. Use very simple language, build from first principles, and define any jargon before using it.",
+  "beginner":       "\n\nAUDIENCE: The learner is a complete beginner. Use very simple language, build from first principles, and define any jargon before using it.",
   "dental-student": "\n\nAUDIENCE: The learner is a dental student in pre-clinical years. Connect concepts to dentistry when relevant. Emphasize mechanisms that appear on the DAT and in dental boards.",
-  "dentist": "\n\nAUDIENCE: The learner is a licensed dentist refreshing knowledge. Use clinical terminology freely. Focus on practical applications, clinical pearls, and evidence-based nuances.",
-  "oral-surgeon": "\n\nAUDIENCE: The learner is an oral surgeon or advanced specialist. Use highly technical language. Focus on mechanisms, edge cases, complications, and evidence-based distinctions.",
-  "dat": "\n\nAUDIENCE: The learner is preparing for the DAT exam. Focus on what is high-yield for the DAT: common question patterns, traps, mechanisms the ADA tests, and memory anchors that survive exam-day pressure.",
-  "board-review": "\n\nAUDIENCE: The learner is doing board exam review. Focus on high-yield algorithms, reasoning patterns, and the concepts most commonly tested on boards.",
-  "child": "\n\nAUDIENCE: The learner is a young child (ages 8–12). Use very simple, friendly language. Draw analogies to everyday things they know. Short sentences. Make it fun and encouraging.",
+  "dentist":        "\n\nAUDIENCE: The learner is a licensed dentist refreshing knowledge. Use clinical terminology freely. Focus on practical applications, clinical pearls, and evidence-based nuances.",
+  "oral-surgeon":   "\n\nAUDIENCE: The learner is an oral surgeon or advanced specialist. Use highly technical language. Focus on mechanisms, edge cases, complications, and evidence-based distinctions.",
+  "dat":            "\n\nAUDIENCE: The learner is preparing for the DAT exam. Focus on what is high-yield for the DAT: common question patterns, traps, mechanisms the ADA tests, and memory anchors that survive exam-day pressure.",
+  "board-review":   "\n\nAUDIENCE: The learner is doing board exam review. Focus on high-yield algorithms, reasoning patterns, and the concepts most commonly tested on boards.",
+  "child":          "\n\nAUDIENCE: The learner is a young child (ages 8–12). Use very simple, friendly language. Draw analogies to everyday things they know. Short sentences. Make it fun and encouraging.",
 };
 
 function getSystemPrompt(mode: TeachingMode, audience?: string): string {
   let base: string;
-  if (mode === "rapid-fire") base = RAPID_FIRE_SYSTEM;
+  if      (mode === "rapid-fire")     base = RAPID_FIRE_SYSTEM;
   else if (mode === "explain-mistake") base = EXPLAIN_MISTAKE_SYSTEM;
-  else if (mode === "case-based") base = CASE_BASED_SYSTEM;
-  else if (mode === "explain-text") base = EXPLAIN_TEXT_SYSTEM;
-  else if (mode === "explain-page") base = EXPLAIN_PAGE_SYSTEM;
-  else base = BASE_SYSTEM;
+  else if (mode === "case-based")     base = CASE_BASED_SYSTEM;
+  else if (mode === "explain-text")   base = EXPLAIN_TEXT_SYSTEM;
+  else if (mode === "explain-page")   base = EXPLAIN_PAGE_SYSTEM;
+  else                                base = BASE_SYSTEM;
   if (audience && AUDIENCE_MODIFIERS[audience]) base += AUDIENCE_MODIFIERS[audience];
   return base;
 }
 
 // ---------------------------------------------------------------------------
-// Source context builder
+// Source-context builder — user content stays in input[], never in instructions
 // ---------------------------------------------------------------------------
 
 function buildUserContext(req: ChiefResidentRequest): string {
-  const { sourceText, bookTitle, mode, selectedText } = req;
-  const bookNote = bookTitle ? `Book: "${bookTitle}"\n\n` : "";
+  const { sourceText, title, mode, selectedText, pageNumber } = req;
+  const titleNote   = title      ? `Document: "${title}"\n`      : "";
+  const pageNote    = pageNumber ? `Page: ${pageNumber}\n`        : "";
+  const headerNote  = titleNote + pageNote;
+
   const modeLabel: Record<TeachingMode, string> = {
     "teach-page":        "Current page content to teach from:",
     "teach-note":        "Note to teach from:",
@@ -180,10 +200,62 @@ function buildUserContext(req: ChiefResidentRequest): string {
     "explain-text":      "Full page context:",
     "explain-page":      "Current page content:",
   };
+
   if (mode === "explain-text" && selectedText) {
-    return `${bookNote}HIGHLIGHTED PASSAGE:\n"""\n${selectedText.slice(0, 600)}\n"""\n\n${modeLabel[mode]}\n"""\n${sourceText.trim().slice(0, 2000)}\n"""\n\n---\n\nPlease explain the highlighted passage.`;
+    return (
+      `${headerNote}HIGHLIGHTED PASSAGE:\n"""\n${selectedText.slice(0, 600)}\n"""\n\n` +
+      `${modeLabel[mode]}\n"""\n${sourceText.trim().slice(0, 2000)}\n"""\n\n---\n\nPlease explain the highlighted passage.`
+    );
   }
-  return `${bookNote}${modeLabel[mode]}\n\n${sourceText.trim()}\n\n---\n\nPlease begin the teaching session.`;
+  return `${headerNote}${modeLabel[mode]}\n\n${sourceText.trim()}\n\n---\n\nPlease begin the teaching session.`;
+}
+
+// ---------------------------------------------------------------------------
+// Error → stable code mapping
+// ---------------------------------------------------------------------------
+
+function classifyError(err: unknown): { code: string; friendly: string } {
+  if (err instanceof OpenAI.AuthenticationError) {
+    return {
+      code:     "authentication_failed",
+      friendly: "Chief Resident is not authorized — the API key may be invalid or revoked.",
+    };
+  }
+  if (err instanceof OpenAI.RateLimitError) {
+    return {
+      code:     "rate_limited",
+      friendly: "Chief Resident is temporarily busy. Please retry shortly.",
+    };
+  }
+  if (err instanceof OpenAI.BadRequestError) {
+    const msg = err.message?.toLowerCase() ?? "";
+    if (msg.includes("context_length") || msg.includes("too long") || msg.includes("max_tokens")) {
+      return {
+        code:     "request_too_large",
+        friendly: "This page contains too much material. Select a smaller section.",
+      };
+    }
+    return {
+      code:     "invalid_request",
+      friendly: "Chief Resident encountered an error with this request. Please try again.",
+    };
+  }
+  if (err instanceof OpenAI.APIConnectionTimeoutError) {
+    return {
+      code:     "timeout",
+      friendly: "Chief Resident timed out. Please try again.",
+    };
+  }
+  if (err instanceof OpenAI.InternalServerError || err instanceof OpenAI.APIConnectionError) {
+    return {
+      code:     "upstream_unavailable",
+      friendly: "Chief Resident could not reach the AI service. Please try again.",
+    };
+  }
+  return {
+    code:     "unknown_error",
+    friendly: "Chief Resident encountered an error. Please try again.",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -192,14 +264,13 @@ function buildUserContext(req: ChiefResidentRequest): string {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
-  if (!process.env.ANTHROPIC_API_KEY) {
+
+  if (!process.env.OPENAI_API_KEY) {
     return res.status(503).json({
-      error: "Chief Resident is not available — this deployment is missing required server configuration.",
-      code:  "missing_configuration",
+      error: "Chief Resident is not configured for this deployment.",
+      code:  "configuration_missing",
     });
   }
-
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   if (!req.body || typeof req.body !== "object") {
     return res.status(400).json({ error: "Request body is missing or not JSON. Set Content-Type: application/json." });
@@ -212,55 +283,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "sourceText and mode are required" });
   }
 
-  // Build message array for Claude
-  const claudeMessages: TeachingMessage[] = messages.length === 0
+  // Build conversation input for the Responses API.
+  // On first turn (empty messages), synthesize the initial user context message.
+  const conversationInput: TeachingMessage[] = messages.length === 0
     ? [{ role: "user", content: buildUserContext(body) }]
     : messages;
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
+  // SSE headers — identical to the prior Anthropic implementation so frontend
+  // parsers in ChiefResidentModal and ChiefResidentPanel need no changes.
+  res.setHeader("Content-Type",    "text/event-stream");
+  res.setHeader("Cache-Control",   "no-cache, no-transform");
+  res.setHeader("Connection",      "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
 
+  // Abort the OpenAI request when the client closes the SSE connection
+  // (modal closed, page switched, component unmounted).
+  const abort = new AbortController();
+  res.on("close", () => abort.abort());
+
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const model  = process.env.OPENAI_CHIEF_RESIDENT_MODEL || "gpt-4o";
+
   try {
-    const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: getSystemPrompt(mode, audience),
-      messages: claudeMessages,
-    });
+    const stream = await client.responses.create(
+      {
+        model,
+        stream:       true,
+        instructions: getSystemPrompt(mode, audience),
+        input:        conversationInput as Parameters<typeof client.responses.create>[0]["input"],
+        max_output_tokens: 1024,
+      },
+      { signal: abort.signal },
+    );
 
     for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
+      if (event.type === "response.output_text.delta") {
+        const delta = (event as { type: string; delta: string }).delta ?? "";
+        if (delta) {
+          res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
+        }
       }
     }
 
     res.write("data: [DONE]\n\n");
   } catch (err) {
-    // Classify error so the client can decide whether to offer a Retry button
-    // and show an appropriate message. Never send raw SDK error text.
-    let code = "unknown_error";
-    let friendly: string;
-
-    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-      code    = "invalid_api_key";
-      friendly = "Chief Resident is not authorized — the API key may be invalid or revoked.";
-    } else if (err instanceof Anthropic.RateLimitError) {
-      code    = "rate_limited";
-      friendly = "Chief Resident is busy right now. Please try again in a moment.";
-    } else if (err instanceof Anthropic.APIConnectionTimeoutError) {
-      code    = "timeout";
-      friendly = "Chief Resident timed out. Please try again.";
-    } else if (err instanceof Anthropic.InternalServerError) {
-      code    = "overloaded";
-      friendly = "Chief Resident is temporarily overloaded. Please try again in a moment.";
-    } else if (err instanceof Anthropic.APIConnectionError) {
-      code    = "connection_error";
-      friendly = "Chief Resident could not reach the AI service. Please try again.";
-    } else {
-      friendly = "Chief Resident encountered an error. Please try again.";
+    // Swallow abort errors — client closed the connection intentionally.
+    if (err instanceof Error && err.name === "AbortError") {
+      res.end();
+      return;
     }
+    const { code, friendly } = classifyError(err);
     res.write(`data: ${JSON.stringify({ error: friendly, code })}\n\n`);
   } finally {
     res.end();
