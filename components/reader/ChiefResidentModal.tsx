@@ -317,12 +317,13 @@ export default function ChiefResidentModal({
         const bin = atob(data.audioBase64);
         const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-        const audio = new Audio(URL.createObjectURL(new Blob([arr], { type: data.mimeType || "audio/mpeg" })));
+        const blobUrl = URL.createObjectURL(new Blob([arr], { type: data.mimeType || "audio/mpeg" }));
+        const audio = new Audio(blobUrl);
         audioRef.current = audio;
-        registerActiveAudio(token, audio, () => { audio.pause(); setSpeaking(false); });
+        registerActiveAudio(token, audio, () => { audio.pause(); URL.revokeObjectURL(blobUrl); setSpeaking(false); });
         audio.onplay = () => notifySpeechStart(token, SPEECH_OWNER);
-        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
-        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); setSpeaking(false); };
+        audio.onended = () => { URL.revokeObjectURL(blobUrl); notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
+        audio.onerror = () => { URL.revokeObjectURL(blobUrl); notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); setSpeaking(false); };
         await audio.play();
       } else if (data?.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(data.script || lastAnswer);

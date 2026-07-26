@@ -21,6 +21,8 @@ import { annotationsToLearningCards } from '@/lib/learning/transformers';
 import { buildConnectionGraph } from '@/lib/learning/relations';
 import type { CardRelationType, LearningCard } from '@/lib/learning/model';
 
+const DEV = process.env.NODE_ENV === "development";
+
 interface PureNoteLabViewProps {
   documentId: string;
   userId: string;
@@ -141,7 +143,7 @@ export default function PureNoteLabView({
         }
       }
 
-      console.log(`✅ Imported ${importedCount} items from Surgeon View`);
+      DEV && console.log(`✅ Imported ${importedCount} items from Surgeon View`);
       setImportStatus('done');
       setTimeout(() => setImportStatus('idle'), 2000);
     } catch (error) {

@@ -23,6 +23,8 @@ import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
+const DEV = process.env.NODE_ENV === "development";
+
 interface RecallLabProps {
   onNavigateToPage?: (pageNumber: number) => void;
   /** When provided, only sets for this book are shown */
@@ -116,7 +118,7 @@ const SRS_COLOR: Record<SrsState, string> = {
 async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
   const filtered = bookId ? all.filter((s) => s.bookId === bookId) : all;
-  console.log("[RECALL_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
+  DEV && console.log("[RECALL_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
   return filtered;
 }
 
@@ -143,7 +145,7 @@ export default function RecallLab({
   // Start from LS mirror for instant render; IDB async load fills in on mount
   const [sets, setSets] = useState<RecallSet[]>(() => {
     const sync = loadSetsSync(bookId);
-    console.log("[RECALLLAB_MOUNT]", { setsInStorage: sync.length, lastSetId: lastSetId ?? null });
+    DEV && console.log("[RECALLLAB_MOUNT]", { setsInStorage: sync.length, lastSetId: lastSetId ?? null });
     return sync;
   });
   const [view, setView] = useState<View>({ kind: "dashboard" });
@@ -156,7 +158,7 @@ export default function RecallLab({
       setInitialLoaded(true);
       if (lastSetId) {
         const found = all.find((s) => s.id === lastSetId);
-        console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
+        DEV && console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
         if (found) setView({ kind: "deck", set: found });
       }
     });
@@ -168,7 +170,7 @@ export default function RecallLab({
     if (!initialLoaded) return;
     loadSetsAsync(bookId).then((all) => {
       setSets(all);
-      console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, count: all.length });
+      DEV && console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, count: all.length });
     });
   }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -180,7 +182,7 @@ export default function RecallLab({
     setView({ kind: "dashboard" });
     loadSetsAsync(bookId).then((all) => {
       setSets(all);
-      console.log("[RECALLLAB_BOOKID_CHANGED]", { bookId, count: all.length });
+      DEV && console.log("[RECALLLAB_BOOKID_CHANGED]", { bookId, count: all.length });
     });
   }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -189,7 +191,7 @@ export default function RecallLab({
     const handler = () => {
       loadSetsAsync(bookId).then((all) => {
         setSets(all);
-        console.log("[RECALLLAB_STATE_COUNT]", { count: all.length });
+        DEV && console.log("[RECALLLAB_STATE_COUNT]", { count: all.length });
       });
     };
     window.addEventListener("recall-lab-updated", handler);
@@ -202,7 +204,7 @@ export default function RecallLab({
     loadSetsAsync(bookId).then((all) => {
       setSets(all);
       const found = all.find((s) => s.id === lastSetId);
-      console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: all.length });
+      DEV && console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: all.length });
       if (found) setView({ kind: "deck", set: found });
     });
   }, [lastSetId]); // eslint-disable-line react-hooks/exhaustive-deps

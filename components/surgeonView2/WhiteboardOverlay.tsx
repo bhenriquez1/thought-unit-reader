@@ -6,6 +6,8 @@ import React, { useState, useCallback } from 'react';
 import { useWhiteboardService } from '@/lib/speechWhiteboard';
 import type { WhiteboardStep, WhiteboardGraphNode, WhiteboardGraphEdge } from '@/lib/speechWhiteboard/types';
 
+const DEV = process.env.NODE_ENV === "development";
+
 // ============================================================================
 // Props
 // ============================================================================
@@ -122,7 +124,7 @@ export function WhiteboardOverlay({
   const handleAcceptRule = useCallback(() => {
     const rule = whiteboardService.acceptDecisionRule();
     if (rule) {
-      console.log('Decision rule accepted:', rule);
+      DEV && console.log('Decision rule accepted:', rule);
       // In production, this would add to NoteLab + Study queue
       onAddToStudy?.();
     }
@@ -135,7 +137,7 @@ export function WhiteboardOverlay({
   const handleSaveToNoteLab = useCallback(() => {
     const block = whiteboardService.exportToNoteLab();
     if (block) {
-      console.log('Exported to NoteLab:', block);
+      DEV && console.log('Exported to NoteLab:', block);
       onSaveToNoteLab?.();
     }
   }, [whiteboardService, onSaveToNoteLab]);

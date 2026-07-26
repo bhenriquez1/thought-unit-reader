@@ -20,6 +20,8 @@ import {
   logBlockedDuplicate,
 } from "@/lib/speech/speechController";
 
+const DEV = process.env.NODE_ENV === "development";
+
 const SPEECH_OWNER = "whiteboard" as const;
 
 /* ------------------------------------------------------------------ */
@@ -166,7 +168,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(function Whiteb
     if (idx >= 0 && idx !== currentStepIndex) {
       externalJumpRef.current = true;
       setCurrentStepIndex(idx);
-      console.log("[WHITEBOARD_ANCHOR_JUMP]", { activeAnchorId, idx, title: steps[idx]?.title });
+      DEV && console.log("[WHITEBOARD_ANCHOR_JUMP]", { activeAnchorId, idx, title: steps[idx]?.title });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAnchorId]);

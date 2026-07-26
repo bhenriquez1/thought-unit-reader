@@ -10,6 +10,8 @@ import type { ThoughtUnit } from "@/types/reading";
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
 
+const DEV = process.env.NODE_ENV === "development";
+
 // Define missing types
 interface PatternTag {
   patternId: string;
@@ -311,18 +313,18 @@ export default React.memo(function OptimizedNoteLabView({
       }, 200);
 
       // Load actual notes (simulated for now)
-      setTimeout(() => {
+      const loadTimeout = setTimeout(() => {
         setNotes([]); // Replace with actual note loading
         clearInterval(progressInterval);
-        setLoadingState(prev => ({ 
-          ...prev, 
+        setLoadingState(prev => ({
+          ...prev,
           isLoadingNotes: false,
           progress: 100,
           message: 'Ready to take notes!'
         }));
       }, 2000);
 
-      return () => clearInterval(progressInterval);
+      return () => { clearInterval(progressInterval); clearTimeout(loadTimeout); };
     } else {
       setLoadingState(prev => ({ ...prev, isLoadingNotes: false }));
     }
@@ -491,7 +493,7 @@ export default React.memo(function OptimizedNoteLabView({
         level: note.studyLevel
       }));
       
-      console.log('Study outline:', outline);
+      DEV && console.log('Study outline:', outline);
       alert(`Study outline exported with ${filteredNotes.length} notes!`);
       
       clearInterval(progressInterval);

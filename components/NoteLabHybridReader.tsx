@@ -26,6 +26,8 @@ import {
   type NoteLab_PDRM_Butler_State 
 } from "@/lib/noteLabButlerIntegration";
 
+const DEV = process.env.NODE_ENV === "development";
+
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface NoteLabHybridReaderProps {
@@ -186,6 +188,7 @@ export default function NoteLabHybridReader({
   // Butler System State
   const [butlerAnalysis, setButlerAnalysis] = useState<NoteButlerAnalysis | null>(null);
   const [butlerHighlights, setButlerHighlights] = useState<ButlerHighlight[]>([]);
+  const analysisSessionRef = useRef(0);
   const [speechMode, setSpeechMode] = useState<SpeechMode>('smart');
   const [butlerSpeechOptions, setButlerSpeechOptions] = useState<ButlerSpeechOptions>(DEFAULT_BUTLER_SPEECH);
   
@@ -243,28 +246,32 @@ export default function NoteLabHybridReader({
       const currentUnitText = unitToText(thoughtUnits[currentThoughtUnit - 1]);
       
       if (currentUnitText && currentUnitText.length > 50) {
-        console.log('📝 NoteLab Butler: Analyzing unit text...');
+        DEV && console.log('📝 NoteLab Butler: Analyzing unit text...');
         
         // Debounce analysis to prevent excessive processing
         const timeoutId = setTimeout(() => {
+          const session = ++analysisSessionRef.current;
           const performNoteAnalysis = async () => {
             try {
               // Add loading state
               setButlerAnalysis(null);
               setButlerHighlights([]);
-              
+
               // Standard Butler analysis with timeout
               const analysisPromise = analyzeTextWithButler(currentUnitText);
-              const timeoutPromise = new Promise((_, reject) => 
+              const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Analysis timeout')), 10000)
               );
-              
+
               const baseAnalysis = await Promise.race([analysisPromise, timeoutPromise]) as any;
-              
+
+              // Discard if a newer analysis was started while we were awaiting
+              if (session !== analysisSessionRef.current) return;
+
               // Enhanced note-worthy content analysis
               const noteAnalysis = analyzeForNoteWorthy(currentUnitText);
               const studyQuestions = generateStudyQuestions(currentUnitText);
-              
+
               // Create note-enhanced analysis
               const noteButlerAnalysis: NoteButlerAnalysis = {
                 ...baseAnalysis,
@@ -275,12 +282,11 @@ export default function NoteLabHybridReader({
                 memoryAids: noteAnalysis.examples.slice(0, 3).map(ex => ex.replace(/^.+?:\s*/, '')),
                 visualConcepts: noteAnalysis.processes.slice(0, 4)
               };
-              
+
               setButlerAnalysis(noteButlerAnalysis);
               setButlerHighlights(noteButlerAnalysis.highlights);
-              
-              console.log(`📝 NoteLab Butler analysis complete: ${noteButlerAnalysis.highlights.length} highlights, ${noteAnalysis.keyTerms.length} key terms`);
             } catch (error) {
+              if (session !== analysisSessionRef.current) return;
               console.error('NoteLab Butler analysis error:', error);
               // Graceful fallback - create basic analysis
               const fallbackAnalysis: NoteButlerAnalysis = {
@@ -531,7 +537,7 @@ export default function NoteLabHybridReader({
                   </div>
                 }
                 onLoadSuccess={(pdf) => {
-                  console.log('✅ NoteLab PDF loaded successfully:', pdf.numPages, 'pages');
+                  DEV && console.log('✅ NoteLab PDF loaded successfully:', pdf.numPages, 'pages');
                 }}
                 onLoadError={(error) => {
                   console.error('❌ NoteLab PDF loading error:', error);
@@ -643,7 +649,7 @@ export default function NoteLabHybridReader({
                       
                       setIsGeneratingPDRMNote(true);
                       try {
-                        console.log('📝🔬 Generating PDRM Butler Note...');
+                        DEV && console.log('📝🔬 Generating PDRM Butler Note...');
                         const pdrmNote = await noteLabButlerIntegration.generatePDRMButlerNote(
                           effectiveSelection,
                           {
@@ -661,7 +667,7 @@ export default function NoteLabHybridReader({
                         const formattedNote = noteLabButlerIntegration.formatNoteAsMarkdown(pdrmNote);
                         onGenerateNote?.(formattedNote, undefined, "highYield");
                         
-                        console.log('✅ PDRM Butler Note generated:', pdrmNote.title);
+                        DEV && console.log('✅ PDRM Butler Note generated:', pdrmNote.title);
                       } catch (error) {
                         console.error('❌ PDRM Butler Note generation failed:', error);
                         alert('Failed to generate PDRM Butler note. Please try again.');

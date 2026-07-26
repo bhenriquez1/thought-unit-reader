@@ -73,11 +73,21 @@ export const SmartSpeechControls: React.FC<SmartSpeechControlsProps> = ({
 
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const selectedInsightsRef = useRef<RankedInsight[]>([]);
+  // Refs for state read inside async callbacks — avoids stale closure in auto-advance timer
+  const isPlayingRef = useRef(false);
+  const isPausedRef = useRef(false);
 
   // Check Web Speech API support
   useEffect(() => {
     setIsSupported(isWebSpeechAvailable());
   }, []);
+
+  // Stop speech on unmount to prevent utterances outliving the component
+  useEffect(() => () => { stopSpeech(); }, []);
+
+  // Keep refs in sync with state for use inside async callbacks
+  useEffect(() => { isPlayingRef.current = state.isPlaying; }, [state.isPlaying]);
+  useEffect(() => { isPausedRef.current = state.isPaused; }, [state.isPaused]);
 
   // Update selected insights when config or insights change
   useEffect(() => {
@@ -120,9 +130,10 @@ export const SmartSpeechControls: React.FC<SmartSpeechControlsProps> = ({
           ...prev,
           currentInsightIndex: prev.currentInsightIndex + 1,
         }));
-        // Auto-advance to next
+        // Auto-advance to next — read refs so the timer sees the state at fire
+        // time, not the stale closure value from when the utterance started.
         setTimeout(() => {
-          if (state.isPlaying && !state.isPaused) {
+          if (isPlayingRef.current && !isPausedRef.current) {
             playCurrentInsight();
           }
         }, 500);
