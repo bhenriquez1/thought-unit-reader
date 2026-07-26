@@ -31,11 +31,11 @@ function ageVocabLevel(range: ChildAgeRange | undefined): string {
   }
 }
 
-/* ─── Static system prompt ───────────────────────────────────────────────────── */
+/* ─── Static system prompt (100% developer-authored — no user-controlled data) ── */
 
-function buildSystemPrompt(ageRange: ChildAgeRange | undefined): string {
-  const level = ageVocabLevel(ageRange);
-  return `You are a vocabulary educator for young readers (${level}).
+// Age-level framing is injected into the user message (messages array), not here,
+// so this constant stays fully static and satisfies CWE-1336.
+const VOCAB_SYSTEM = `You are a vocabulary educator for young readers. Use the age-appropriate level specified in the user's message.
 
 Extract 3 to 5 vocabulary words from the page content the user provides.
 
@@ -64,7 +64,8 @@ Respond ONLY with valid JSON — no markdown fences, no prose before or after:
 
 function buildMessages(body: VocabExtractRequest): Anthropic.MessageParam[] {
   const bookLabel = (body.bookTitle ?? "").trim() || "their book";
-  let ctx = `Extract vocabulary words from this page`;
+  // Age-level framing goes here (in the messages array), not in the system prompt (CWE-1336).
+  let ctx = `Age level: ${ageVocabLevel(body.ageRange)}\n\nExtract vocabulary words from this page`;
   if (body.bookTitle) ctx += ` of "${bookLabel}"`;
   if (body.currentPage) ctx += ` (page ${body.currentPage})`;
   ctx += `:\n\n<page_content>\n${body.pageText}\n</page_content>`;
@@ -113,7 +114,7 @@ export default async function handler(
 
   try {
     const client   = new Anthropic({ apiKey: anthropicKey });
-    const system   = buildSystemPrompt(body.ageRange);
+    const system   = VOCAB_SYSTEM;
     const messages = buildMessages(body);
 
     const result = await client.messages.create({
