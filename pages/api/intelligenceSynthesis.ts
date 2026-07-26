@@ -19,6 +19,7 @@ import {
   Stage1SynthesisSchema,
   buildStage1SystemPrompt,
   buildStage1UserPrompt,
+  buildPresetUserAugmentation,
   type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
@@ -126,8 +127,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
         text: { format: FORMAT_STAGE1 },
         input: [
-          { role: "system", content: buildStage1SystemPrompt(safeDomain, safePresetId) },
-          { role: "user",   content: buildStage1UserPrompt(safeInput) },
+          { role: "system", content: buildStage1SystemPrompt(safeDomain) },
+          { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildStage1UserPrompt(safeInput) },
         ],
       });
       DEV && console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
@@ -173,8 +174,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       max_output_tokens: 1800,
       text: { format: FORMAT_FULL },
       input: [
-        { role: "system", content: buildSystemPrompt(safeDomain, safePresetId) },
-        { role: "user",   content: buildUserPrompt(safeInput) },
+        { role: "system", content: buildSystemPrompt(safeDomain) },
+        { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildUserPrompt(safeInput) },
       ],
     });
 
