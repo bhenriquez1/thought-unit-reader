@@ -4,6 +4,8 @@
 // Output: AdaptiveSyllabus with AI-enriched chapters, prerequisites, recommended order.
 // Security: AI may only reference provided candidateIds; page ranges hydrated server-side.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -32,7 +34,7 @@ let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT = zodTextFormat(SyllabusGenerationOutputSchema, "syllabus_generation");
 } catch (e) {
-  console.error("[SYLLABUS_GEN:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
+  DEV && console.error("[SYLLABUS_GEN:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────
@@ -268,7 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     confidence: Number(c.confidence),
   }));
 
-  console.log("[SYLLABUS_GEN:start]", {
+  DEV && console.log("[SYLLABUS_GEN:start]", {
     bookId,
     candidates:    candidates.length,
     docType:       rawClassification.docType,
@@ -295,7 +297,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const parsed = response.output_parsed as ParsedSyllabusOutput | null;
     if (!parsed) {
-      console.error("[SYLLABUS_GEN:null-output]", { bookId });
+      DEV && console.error("[SYLLABUS_GEN:null-output]", { bookId });
       return res.status(500).json({ error: "OpenAI returned null output" });
     }
 
@@ -307,7 +309,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
 
     if (validationIssues.length) {
-      console.log("[SYLLABUS_GEN:validation-issues]", { bookId, count: validationIssues.length, issues: validationIssues });
+      DEV && console.log("[SYLLABUS_GEN:validation-issues]", { bookId, count: validationIssues.length, issues: validationIssues });
     }
 
     // ── Server-side hydration ────────────────────────────────────────────
@@ -338,7 +340,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       validationIssues: validationIssues.length ? validationIssues : null,
     };
 
-    console.log("[SYLLABUS_GEN:ok]", {
+    DEV && console.log("[SYLLABUS_GEN:ok]", {
       bookId,
       chapters:   chapters.length,
       prereqs:    prerequisites.length,
@@ -349,7 +351,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ syllabus });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[SYLLABUS_GEN:error]", { bookId, error: msg });
+    DEV && console.error("[SYLLABUS_GEN:error]", { bookId, error: msg });
     return res.status(500).json({ error: msg });
   }
 }

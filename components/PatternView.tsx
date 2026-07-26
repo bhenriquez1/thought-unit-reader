@@ -137,9 +137,10 @@ export default function PatternView({
 
   // Load pattern mastery
   useEffect(() => {
-    if (userId) {
-      loadPatternMastery(userId).then(setPatternMastery);
-    }
+    if (!userId) return;
+    let alive = true;
+    loadPatternMastery(userId).then(data => { if (alive) setPatternMastery(data); }).catch(() => {});
+    return () => { alive = false; };
   }, [userId]);
 
   // Reset training for new thought unit - optimized to prevent loops

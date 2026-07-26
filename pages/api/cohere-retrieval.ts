@@ -1,6 +1,8 @@
 // pages/api/cohere-retrieval.ts
 // Cohere API — related reading retrieval/ranking, related video ranking, semantic search.
 // Key read from server env only — never exposed to browser.
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export interface CohereRetrievalInput {
@@ -38,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const apiKey = process.env.COHERE_API_KEY?.trim();
   if (!apiKey) {
-    console.error("[COHERE_API_KEY_MISSING] Set COHERE_API_KEY in .env.local");
+    DEV && console.error("[COHERE_API_KEY_MISSING] Set COHERE_API_KEY in .env.local");
     return res.status(503).json({ error: "Cohere not configured" });
   }
 
@@ -101,7 +103,7 @@ Rules:
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      console.error("[COHERE_API_ERROR]", { status: resp.status, body: errText.slice(0, 200) });
+      DEV && console.error("[COHERE_API_ERROR]", { status: resp.status, body: errText.slice(0, 200) });
       return res.status(200).json(buildFallback(topic));
     }
 
@@ -114,7 +116,7 @@ Rules:
       const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
       parsed = JSON.parse(jsonStr);
     } catch {
-      console.warn("[COHERE_PARSE_FAIL]", { raw: raw.slice(0, 200) });
+      DEV && console.warn("[COHERE_PARSE_FAIL]", { raw: raw.slice(0, 200) });
       return res.status(200).json(buildFallback(topic));
     }
 
@@ -131,7 +133,7 @@ Rules:
       provider: "cohere",
     };
 
-    console.log("[COHERE_RETRIEVAL_OK]", {
+    DEV && console.log("[COHERE_RETRIEVAL_OK]", {
       topic: topic.slice(0, 80),
       readingCount: result.relatedReadings.length,
       videoCount:   result.relatedVideos.length,
@@ -140,7 +142,7 @@ Rules:
     return res.status(200).json(result);
 
   } catch (err) {
-    console.error("[COHERE_RETRIEVAL_FAIL]", String(err));
+    DEV && console.error("[COHERE_RETRIEVAL_FAIL]", String(err));
     return res.status(200).json(buildFallback(topic));
   }
 }

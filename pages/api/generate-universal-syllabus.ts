@@ -10,6 +10,8 @@
 // The older route remains active for the existing AdaptiveSyllabusPanel; this
 // route writes to the separate avrrio-syllabus IDB store.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -226,7 +228,7 @@ export default async function handler(
       const raw      = completion.choices[0]?.message?.content?.trim() ?? "";
       const syllabus = parseSyllabusResponse(raw, body.documentId, body.intelligence, candidates);
       if (syllabus) {
-        console.log("[GEN_UNIVERSAL_SYLLABUS_DONE]", {
+        DEV && console.log("[GEN_UNIVERSAL_SYLLABUS_DONE]", {
           documentId:  body.documentId,
           provider:    "openai",
           nodeCount:   syllabus.nodes.length,
@@ -236,9 +238,9 @@ export default async function handler(
         });
         return res.status(200).json({ syllabus, provider: "openai" });
       }
-      console.error("[GEN_UNIVERSAL_SYLLABUS_OPENAI_PARSE_ERROR]", { rawLength: raw.length });
+      DEV && console.error("[GEN_UNIVERSAL_SYLLABUS_OPENAI_PARSE_ERROR]", { rawLength: raw.length });
     } catch (err: any) {
-      console.error("[GEN_UNIVERSAL_SYLLABUS_OPENAI_ERROR]", err?.message ?? String(err));
+      DEV && console.error("[GEN_UNIVERSAL_SYLLABUS_OPENAI_ERROR]", err?.message ?? String(err));
     }
   }
 
@@ -254,7 +256,7 @@ export default async function handler(
       const raw      = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
       const syllabus = parseSyllabusResponse(raw, body.documentId, body.intelligence, candidates);
       if (syllabus) {
-        console.log("[GEN_UNIVERSAL_SYLLABUS_DONE]", {
+        DEV && console.log("[GEN_UNIVERSAL_SYLLABUS_DONE]", {
           documentId:  body.documentId,
           provider:    "anthropic",
           nodeCount:   syllabus.nodes.length,
@@ -268,7 +270,7 @@ export default async function handler(
         error: "Syllabus provider returned unparseable response",
       });
     } catch (err: any) {
-      console.error("[GEN_UNIVERSAL_SYLLABUS_ANTHROPIC_ERROR]", err?.message ?? String(err));
+      DEV && console.error("[GEN_UNIVERSAL_SYLLABUS_ANTHROPIC_ERROR]", err?.message ?? String(err));
       return res.status(502).json({ syllabus: null as any, provider: "anthropic", error: "Syllabus provider failed" });
     }
   }

@@ -3,6 +3,8 @@
 // Accepts a student question + lightweight context snapshot; returns a focused
 // coaching response. Uses OpenAI gpt-4o (same key as other endpoints).
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
@@ -76,7 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const text = response.choices[0]?.message?.content?.trim() ?? "";
     res.status(200).json({ response: text });
   } catch (err: any) {
-    console.error("[AI_COACH_ERROR]", err?.message || err);
+    DEV && console.error("[AI_COACH_ERROR]", err?.message || err);
     res.status(500).json({ error: "Coach unavailable. Please try again." });
   }
 }

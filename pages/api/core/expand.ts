@@ -1,3 +1,5 @@
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { CoreExpandRequest, CoreExpandResponse } from "@/lib/coreConceptSchema";
 
@@ -69,7 +71,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
     return res.status(200).json(response);
   } catch (error) {
-    console.error("Core expand error:", error);
+    DEV && console.error("Core expand error:", error);
     return res.status(500).json({
       error: "EXPAND_FAILED",
       message: error instanceof Error ? error.message : "Unknown error",

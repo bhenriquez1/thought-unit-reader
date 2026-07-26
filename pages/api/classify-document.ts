@@ -12,6 +12,8 @@
 //
 // Provider order: OpenAI (primary) → Anthropic (fallback).
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -264,7 +266,7 @@ export default async function handler(
       const raw = completion.choices[0]?.message?.content?.trim() ?? "";
       const intelligence = parseAiResponse(raw, body.documentId);
       if (intelligence) {
-        console.log("[CLASSIFY_DOCUMENT_DONE]", {
+        DEV && console.log("[CLASSIFY_DOCUMENT_DONE]", {
           documentId: body.documentId,
           provider: "openai",
           primaryDomain: intelligence.classification.primaryDomain,
@@ -275,10 +277,10 @@ export default async function handler(
         return res.status(200).json({ intelligence, provider: "openai" });
       }
       // Valid HTTP response but unparseable content — log internally, fall through to Anthropic
-      console.error("[CLASSIFY_DOCUMENT_OPENAI_PARSE_ERROR]", { rawLength: raw.length });
+      DEV && console.error("[CLASSIFY_DOCUMENT_OPENAI_PARSE_ERROR]", { rawLength: raw.length });
     } catch (err: any) {
       // Log internally; never expose provider error details to the client
-      console.error("[CLASSIFY_DOCUMENT_OPENAI_ERROR]", err?.message ?? String(err));
+      DEV && console.error("[CLASSIFY_DOCUMENT_OPENAI_ERROR]", err?.message ?? String(err));
     }
   }
 
@@ -294,7 +296,7 @@ export default async function handler(
       const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
       const intelligence = parseAiResponse(raw, body.documentId);
       if (intelligence) {
-        console.log("[CLASSIFY_DOCUMENT_DONE]", {
+        DEV && console.log("[CLASSIFY_DOCUMENT_DONE]", {
           documentId: body.documentId,
           provider: "anthropic",
           primaryDomain: intelligence.classification.primaryDomain,
@@ -305,7 +307,7 @@ export default async function handler(
       }
       return res.status(502).json({ intelligence: null as any, provider: "anthropic", error: "Classification provider returned unparseable response" });
     } catch (err: any) {
-      console.error("[CLASSIFY_DOCUMENT_ANTHROPIC_ERROR]", err?.message ?? String(err));
+      DEV && console.error("[CLASSIFY_DOCUMENT_ANTHROPIC_ERROR]", err?.message ?? String(err));
       return res.status(502).json({ intelligence: null as any, provider: "anthropic", error: "Classification provider failed" });
     }
   }

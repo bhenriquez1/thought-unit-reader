@@ -5,6 +5,8 @@
 // Input: concept + subjectArea + optional profileId + canonical source passages.
 // Output: AdaptiveStudySheet validated by Zod structured output.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -37,7 +39,7 @@ let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT = zodTextFormat(AdaptiveStudySheetSchema, "adaptive_study_sheet");
 } catch (e) {
-  console.error("[ADAPTIVE_SHEET:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
+  DEV && console.error("[ADAPTIVE_SHEET:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
 }
 
 // ── Universal system prompt ────────────────────────────────────────────────
@@ -211,12 +213,12 @@ function filterShallowSections(
   for (const section of sections) {
     const content = (section.content ?? "").trim();
     if (content.length < 30) {
-      console.log("[ADAPTIVE_SHEET:section-filtered]", { noteId, label: section.label, reason: "too-short" });
+      DEV && console.log("[ADAPTIVE_SHEET:section-filtered]", { noteId, label: section.label, reason: "too-short" });
       continue;
     }
     const ratio = overlapRatio(tokenize(content), coreTokens);
     if (ratio > 0.75) {
-      console.log("[ADAPTIVE_SHEET:section-filtered]", { noteId, label: section.label, reason: "redundant-with-coreIdea", overlap: ratio.toFixed(2) });
+      DEV && console.log("[ADAPTIVE_SHEET:section-filtered]", { noteId, label: section.label, reason: "redundant-with-coreIdea", overlap: ratio.toFixed(2) });
       continue;
     }
     kept.push(section);
@@ -289,7 +291,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const stableAnchors  = assignStableIds(clampedAnchors);
   const anchorMap      = new Map(stableAnchors.map(a => [a.stableId, a]));
 
-  console.log("[ADAPTIVE_SHEET:start]", {
+  DEV && console.log("[ADAPTIVE_SHEET:start]", {
     noteId,
     concept,
     subjectArea,
@@ -323,7 +325,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const rawSheet = response.output_parsed as AdaptiveStudySheet | null;
     if (!rawSheet) {
-      console.error("[ADAPTIVE_SHEET:null-output]", { noteId });
+      DEV && console.error("[ADAPTIVE_SHEET:null-output]", { noteId });
       return res.status(500).json({ error: "OpenAI returned null output" });
     }
 
@@ -336,7 +338,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ── Required-section validation (run after filter) ────────────────────
     const validationIssues = validateRequiredSections(filteredSections, selectedProfileId);
     if (validationIssues.length) {
-      console.log("[ADAPTIVE_SHEET:validation-issues]", { noteId, issues: validationIssues });
+      DEV && console.log("[ADAPTIVE_SHEET:validation-issues]", { noteId, issues: validationIssues });
     }
 
     // ── Hydrate formula/diagram anchor IDs ────────────────────────────────
@@ -375,7 +377,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       validationIssues:  validationIssues.length ? validationIssues : null,
     };
 
-    console.log("[ADAPTIVE_SHEET:ok]", {
+    DEV && console.log("[ADAPTIVE_SHEET:ok]", {
       noteId,
       concept:         finalSheet.concept,
       selectedProfileId: finalSheet.selectedProfileId,
@@ -386,7 +388,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ sheet: finalSheet, detectedProfile: detectedResult });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[ADAPTIVE_SHEET:error]", { noteId, error: msg });
+    DEV && console.error("[ADAPTIVE_SHEET:error]", { noteId, error: msg });
     return res.status(500).json({ error: msg });
   }
 }

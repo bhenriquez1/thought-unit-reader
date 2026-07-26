@@ -3,6 +3,8 @@
 // Returns only confirmed, exact URLs — items that cannot be resolved are omitted entirely.
 // No API key required: uses Wikipedia's public OpenSearch API.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 interface LinkInput {
@@ -64,7 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     clearTimeout(timer);
   }
 
-  console.log("[RESOLVE_EXT:done]", {
+  DEV && console.log("[RESOLVE_EXT:done]", {
     input: links.length,
     resolved: resolved.length,
     labels: resolved.map((r) => r.label),

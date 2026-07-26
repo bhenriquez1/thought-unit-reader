@@ -427,7 +427,9 @@ export default function StudyGuideLab({
 
   // Load history on mount
   useEffect(() => {
-    getStudyGuidesByBook(bookId).then(setHistory).catch(() => {});
+    let alive = true;
+    getStudyGuidesByBook(bookId).then(data => { if (alive) setHistory(data); }).catch(() => {});
+    return () => { alive = false; };
   }, [bookId]);
 
   // Reset build state when the active document changes — without this, switching

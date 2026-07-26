@@ -112,9 +112,10 @@ export default function PatternTrainingPDFReader(props: PatternTrainingPDFReader
 
   // Load pattern mastery
   useEffect(() => {
-    if (props.userId) {
-      loadPatternMastery(props.userId).then(setPatternMastery);
-    }
+    if (!props.userId) return;
+    let alive = true;
+    loadPatternMastery(props.userId).then(data => { if (alive) setPatternMastery(data); }).catch(() => {});
+    return () => { alive = false; };
   }, [props.userId]);
 
   // Handle text selection for pattern recognition

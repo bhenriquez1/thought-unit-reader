@@ -3,6 +3,8 @@
 // Thinks: "What would a 25 DAT student keep if they had 2 months before the exam?"
 // SECURITY: OPENAI_API_KEY is server-side only, never sent to browser.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { StudyGuideMode, ExamGoal, PriorityLevel } from "@/lib/studyguide/types";
 import { EXAM_GOAL_LABELS } from "@/lib/studyguide/types";
@@ -157,7 +159,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    console.error("[STUDYGUIDE_API] OPENAI_API_KEY not set");
+    DEV && console.error("[STUDYGUIDE_API] OPENAI_API_KEY not set");
     res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: "API key not configured" });
     return;
   }
@@ -185,7 +187,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      console.error("[STUDYGUIDE_API] OpenAI error:", resp.status, errText.slice(0, 200));
+      DEV && console.error("[STUDYGUIDE_API] OpenAI error:", resp.status, errText.slice(0, 200));
       res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: `OpenAI ${resp.status}` });
       return;
     }
@@ -197,7 +199,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       parsed = JSON.parse(raw) as StudyGuideOutputJSON;
     } catch {
-      console.error("[STUDYGUIDE_API] JSON parse failed:", raw.slice(0, 200));
+      DEV && console.error("[STUDYGUIDE_API] JSON parse failed:", raw.slice(0, 200));
       res.status(200).json({ guide: buildFallback(chapterTitle, topic), provider: "fallback", error: "JSON parse failed" });
       return;
     }
@@ -216,7 +218,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       dailyTasks:       Array.isArray(parsed.dailyTasks)       ? parsed.dailyTasks       : [],
     };
 
-    console.log("[STUDYGUIDE_API_SUCCESS]", {
+    DEV && console.log("[STUDYGUIDE_API_SUCCESS]", {
       mode, chapterTitle, topic, examGoal: examGoal ?? "(none)",
       priority: guide.priority,
       mustKnow: guide.mustKnow.length,
@@ -230,7 +232,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err) {
     clearTimeout(timeout);
     const isAbort = (err as Error)?.name === "AbortError";
-    console.error("[STUDYGUIDE_API]", isAbort ? "timeout" : "error", String(err));
+    DEV && console.error("[STUDYGUIDE_API]", isAbort ? "timeout" : "error", String(err));
     res.status(200).json({
       guide: buildFallback(chapterTitle, topic),
       provider: "fallback",

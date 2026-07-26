@@ -1,6 +1,8 @@
 // pages/api/whiteboard-explain.ts
 // Universal visual teaching engine — subject-agnostic.
 // Visualizes ONLY what is already in the study model (no independent concept invention).
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { generateWhiteboardStepsFromModel, splitMechanism, trunc } from "@/lib/insights/whiteboardFromStudyModel";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
@@ -440,7 +442,7 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
+    DEV && console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
 
     return res.status(200).json({
       steps,

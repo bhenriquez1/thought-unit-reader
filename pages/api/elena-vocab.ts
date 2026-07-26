@@ -6,6 +6,8 @@
 // the messages array, never into the system prompt. The system prompt is
 // 100% developer-authored static text. This pattern prevents CodeQL CWE-1336.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { VocabExtractRequest, VocabExtractResponse, VocabExtractedWord } from "@/lib/elena/vocabulary";
@@ -132,15 +134,15 @@ export default async function handler(
         (w) => typeof w.word === "string" && typeof w.definition === "string"
       ).slice(0, 5);
     } catch {
-      console.error("[ELENA_VOCAB] JSON parse failed:", jsonStr.slice(0, 200));
+      DEV && console.error("[ELENA_VOCAB] JSON parse failed:", jsonStr.slice(0, 200));
       return res.status(500).json({ words: [], error: "Could not understand the response. Try again!" });
     }
 
-    if (process.env.NODE_ENV === "development") console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
+    DEV && console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
     return res.status(200).json({ words });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[ELENA_VOCAB_ERROR]", msg);
+    DEV && console.error("[ELENA_VOCAB_ERROR]", msg);
     return res.status(502).json({ words: [], error: "Vocabulary helper is having trouble. Try again!" });
   }
 }

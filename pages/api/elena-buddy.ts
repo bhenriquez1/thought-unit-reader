@@ -15,6 +15,8 @@
 // The system prompt is 100% static developer-authored text so that CodeQL's
 // CWE-1336 (system prompt injection) rule cannot fire.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ReadingBuddyRequest, ReadingBuddyResponse } from "@/lib/elena/readingBuddy";
@@ -156,7 +158,7 @@ export default async function handler(
 
     const reply = result.content[0]?.type === "text" ? result.content[0].text.trim() : "";
 
-    if (process.env.NODE_ENV === "development") console.log("[ELENA_BUDDY]", {
+    DEV && console.log("[ELENA_BUDDY]", {
       ageRange:    body.ageRange ?? "unknown",
       page:        body.currentPage ?? null,
       replyLength: reply.length,
@@ -165,7 +167,7 @@ export default async function handler(
     return res.status(200).json({ reply });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[ELENA_BUDDY_ERROR]", msg);
+    DEV && console.error("[ELENA_BUDDY_ERROR]", msg);
     return res.status(502).json({ reply: "", error: "Reading Buddy is having trouble right now. Try again!" });
   }
 }

@@ -3,6 +3,8 @@
 // Uses the same profile system as the study sheet but prompts for a flowing explanation,
 // not a structured schema. Returns plain text wrapped in { explanation: string }.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import {
@@ -133,7 +135,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({ explanation, level: body.level });
   } catch (err) {
-    console.error("[EXPLAIN_CONCEPT:error]", err instanceof Error ? err.message : String(err));
+    DEV && console.error("[EXPLAIN_CONCEPT:error]", err instanceof Error ? err.message : String(err));
     return res.status(500).json({ error: "Explanation generation failed" });
   }
 }

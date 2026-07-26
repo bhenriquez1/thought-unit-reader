@@ -29,6 +29,7 @@
 // caller can always fall back to the SVG/canvas whiteboard instead of
 // surfacing a raw provider error to the student.
 
+const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
@@ -125,9 +126,7 @@ async function buildTeachingScript(
     context ? `Page context: ${context.slice(0, 1000)}` : null,
   ].filter(Boolean).join("\n\n");
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_DIRECTOR_REQUEST]", { model: "gpt-4o-mini", concept: concept.slice(0, 120), userPromptChars: userPrompt.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_DIRECTOR_REQUEST]", { model: "gpt-4o-mini", concept: concept.slice(0, 120), userPromptChars: userPrompt.length });
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -141,9 +140,7 @@ async function buildTeachingScript(
 
   const script = completion.choices?.[0]?.message?.content?.trim() ?? "";
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_DIRECTOR_RESPONSE]", { scriptChars: script.length, script: script.slice(0, 500) });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_DIRECTOR_RESPONSE]", { scriptChars: script.length, script: script.slice(0, 500) });
 
   return { script, raw: JSON.stringify(completion).slice(0, 4000) };
 }
@@ -183,20 +180,16 @@ async function generateWithOpenAI(prompt: string, debug: boolean): Promise<{ ima
     n: 1,
   };
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_OPENAI_REQUEST]", { ...requestPayload, promptChars: requestPayload.prompt.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_OPENAI_REQUEST]", { ...requestPayload, promptChars: requestPayload.prompt.length });
 
   const result = await openai.images.generate(requestPayload);
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_OPENAI_RESPONSE]", {
-      created: result.created,
-      dataCount: result.data?.length ?? 0,
-      hasB64: !!result.data?.[0]?.b64_json,
-      hasUrl: !!result.data?.[0]?.url,
-    });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_OPENAI_RESPONSE]", {
+    created: result.created,
+    dataCount: result.data?.length ?? 0,
+    hasB64: !!result.data?.[0]?.b64_json,
+    hasUrl: !!result.data?.[0]?.url,
+  });
 
   const item = result.data?.[0];
   const b64 = item?.b64_json;
@@ -220,9 +213,7 @@ async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ i
     },
   };
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_IDEOGRAM_REQUEST]", { ...requestBody.image_request, promptChars: requestBody.image_request.prompt.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_IDEOGRAM_REQUEST]", { ...requestBody.image_request, promptChars: requestBody.image_request.prompt.length });
 
   const resp = await fetch("https://api.ideogram.ai/generate", {
     method: "POST",
@@ -234,9 +225,7 @@ async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ i
   });
   const raw = await resp.text();
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_IDEOGRAM_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_IDEOGRAM_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
 
   if (!resp.ok) throw Object.assign(new Error("Ideogram request failed"), { httpStatus: resp.status, raw });
   const data = JSON.parse(raw);
@@ -289,9 +278,7 @@ async function generateWithSDXL(
     model: modelId,
   };
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_SDXL_REQUEST]", { provider, endpoint, modelId, promptChars: requestBody.prompt.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_SDXL_REQUEST]", { provider, endpoint, modelId, promptChars: requestBody.prompt.length });
 
   const resp = await fetch(endpoint, {
     method: "POST",
@@ -303,9 +290,7 @@ async function generateWithSDXL(
   });
   const raw = await resp.text();
 
-  if (debug || process.env.NODE_ENV !== "production") {
-    console.log("[WHITEBOARD_IMAGE_SDXL_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
-  }
+  DEV && console.log("[WHITEBOARD_IMAGE_SDXL_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
 
   if (!resp.ok) throw Object.assign(new Error("SDXL request failed"), { httpStatus: resp.status, raw });
   const data = JSON.parse(raw);
@@ -334,7 +319,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if (!HAS_OPENAI_KEY) {
     const failureReason = "OPENAI_API_KEY missing — cannot build the visual teaching script (Phase 1).";
-    console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason });
+    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason });
     return res.status(debug ? 200 : 500).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason } }
@@ -344,7 +329,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if (provider === "ideogram" && !process.env.IDEOGRAM_API_KEY) {
     const failureReason = "IDEOGRAM_API_KEY not configured — Ideogram provider is not yet enabled.";
-    console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
+    DEV && console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
     return res.status(debug ? 200 : 501).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
@@ -354,7 +339,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if ((provider === "sdxl" || provider === "sdxlFineTuned") && !resolveSdxlEndpoint(provider, sdxlOptions)) {
     const failureReason = `SDXL endpoint not configured — ${provider === "sdxlFineTuned" ? "fine-tuned SDXL" : "SDXL"} provider is not yet enabled.`;
-    console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
+    DEV && console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
     return res.status(debug ? 200 : 501).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
@@ -371,7 +356,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     if (!script) throw new Error("Empty teaching script returned by gpt-4o-mini");
   } catch (err: any) {
     const failureReason = `Phase 1 (visual teaching script) failed: ${err?.message ?? String(err)}`;
-    console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
+    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
     return res.status(debug ? 200 : 500).json(
       debug
         ? {
@@ -397,11 +382,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       ? await generateWithSDXL(prompt, provider, sdxlOptions, debug)
       : await generateWithOpenAI(prompt, debug);
 
-    console.log("[WHITEBOARD_IMAGE_READY]", { provider, concept: concept.slice(0, 80), scriptChars: script.length });
+    DEV && console.log("[WHITEBOARD_IMAGE_READY]", { provider, concept: concept.slice(0, 80), scriptChars: script.length });
     return res.status(200).json({ imageUrl: drawn.imageUrl, teachingScript: script, provider });
   } catch (err: any) {
     const failureReason = `Phase 2 (${provider} image generation) failed: ${err?.message ?? String(err)}`;
-    console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider, httpStatus: err?.httpStatus });
+    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider, httpStatus: err?.httpStatus });
     return res.status(debug ? 200 : 502).json(
       debug
         ? {

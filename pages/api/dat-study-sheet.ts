@@ -4,6 +4,8 @@
 // Input: concept + subject + optional synthesis context.
 // Output: DATStudySheet validated by Zod structured output.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -21,7 +23,7 @@ let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
   FORMAT = zodTextFormat(DATStudySheetSchema, "dat_study_sheet");
 } catch (e) {
-  console.error("[DAT_SHEET:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
+  DEV && console.error("[DAT_SHEET:init:SCHEMA_FAIL]", e instanceof Error ? e.message : String(e));
 }
 
 const SYSTEM_PROMPT = `You are an experienced DAT instructor creating a one-page visual study sheet.
@@ -100,7 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const clampedAnchors = Array.isArray(anchors) ? anchors.slice(0, 15) : anchors;
 
-  console.log("[DAT_SHEET:start]", { noteId, concept, subjectArea, anchors: clampedAnchors?.length ?? 0 });
+  DEV && console.log("[DAT_SHEET:start]", { noteId, concept, subjectArea, anchors: clampedAnchors?.length ?? 0 });
 
   try {
     const response = await openai.responses.parse({
@@ -115,15 +117,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const sheet = response.output_parsed as DATStudySheet | null;
     if (!sheet) {
-      console.error("[DAT_SHEET:null-output]", { noteId });
+      DEV && console.error("[DAT_SHEET:null-output]", { noteId });
       return res.status(500).json({ error: "OpenAI returned null output" });
     }
 
-    console.log("[DAT_SHEET:ok]", { noteId, concept: sheet.concept });
+    DEV && console.log("[DAT_SHEET:ok]", { noteId, concept: sheet.concept });
     return res.status(200).json({ sheet });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[DAT_SHEET:error]", { noteId, error: msg });
+    DEV && console.error("[DAT_SHEET:error]", { noteId, error: msg });
     return res.status(500).json({ error: msg });
   }
 }

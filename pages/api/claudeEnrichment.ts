@@ -12,6 +12,8 @@
 //
 // Claude must stay grounded to the current page — never invent outside content.
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -118,7 +120,7 @@ Output JSON only. No markdown. Schema:
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Diagnostic: confirm the env variable name is correct in Render / .env.local
-  console.log("[CLAUDE_ENV_CHECK]", {
+  DEV && console.log("[CLAUDE_ENV_CHECK]", {
     ANTHROPIC_API_KEY_loaded: Boolean(process.env.ANTHROPIC_API_KEY),
     note: "If false — add/rename the env variable to ANTHROPIC_API_KEY in Render and redeploy",
   });
@@ -156,7 +158,7 @@ ${anchorSection}
 
 Add all enrichment fields. Output JSON only.`;
 
-  console.log("[CLAUDE_EXPERT_START]", {
+  DEV && console.log("[CLAUDE_EXPERT_START]", {
     page:                    body.pageNumber ?? null,
     domain:                  body.domain,
     pageType:                body.pageType,
@@ -186,7 +188,7 @@ Add all enrichment fields. Output JSON only.`;
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
-      console.error("[CLAUDE_EXPERT_ERROR]", { reason: "JSON parse failed", raw: raw.slice(0, 200) });
+      DEV && console.error("[CLAUDE_EXPERT_ERROR]", { reason: "JSON parse failed", raw: raw.slice(0, 200) });
       return res.status(200).json(emptyOutput());
     }
 
@@ -204,7 +206,7 @@ Add all enrichment fields. Output JSON only.`;
                                 : null,
     };
 
-    console.log("[CLAUDE_EXPERT_DONE]", {
+    DEV && console.log("[CLAUDE_EXPERT_DONE]", {
       page:                   body.pageNumber ?? null,
       deepInsight:            result.deepInsight?.slice(0, 80) ?? null,
       alternativeExplanation: result.alternativeExplanation?.slice(0, 80) ?? null,
@@ -219,7 +221,7 @@ Add all enrichment fields. Output JSON only.`;
 
     return res.status(200).json(result);
   } catch (err: any) {
-    console.error("[CLAUDE_EXPERT_ERROR]", err?.message ?? String(err));
+    DEV && console.error("[CLAUDE_EXPERT_ERROR]", err?.message ?? String(err));
     return res.status(200).json(emptyOutput());
   }
 }
