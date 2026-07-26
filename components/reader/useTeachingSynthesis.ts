@@ -1,4 +1,5 @@
 // components/reader/useTeachingSynthesis.ts
+const DEV = process.env.NODE_ENV === "development";
 // Two-stage teaching synthesis — progressive rendering without blocking the panel.
 //
 // STAGE 1 (fast, ~1–3s): coreIdea + highlightAnchors + miniTestItems
@@ -156,12 +157,12 @@ export function useTeachingSynthesis({
   // No abort in this effect's cleanup — enabled/blocks flicker must not kill a run.
   useEffect(() => {
     if (!enabled) {
-      console.log("[SYNTH:skip]", { reason: "disabled", pageTruthKey });
+      if (DEV) console.log("[SYNTH:skip]", { reason: "disabled", pageTruthKey });
       return;
     }
     const hasBlocksOrText = blocks.length > 0 || (pageText?.length ?? 0) > 500;
     if (!hasBlocksOrText) {
-      console.log("[SYNTH:skip]", { reason: "no blocks and insufficient page text", pageTruthKey });
+      if (DEV) console.log("[SYNTH:skip]", { reason: "no blocks and insufficient page text", pageTruthKey });
       return;
     }
     if (startedKeyRef.current === pageTruthKey) {
@@ -192,7 +193,7 @@ export function useTeachingSynthesis({
     // worth synthesizing from text alone.
     const hasEnoughText = _pageText.length > 500;
 
-    console.log("[SYNTH_PREFLIGHT]", {
+    if (DEV) console.log("[SYNTH_PREFLIGHT]", {
       page: pageNumberRef.current ?? null,
       charCount: _pageText.length,
       blockCount: _blocks.length,
@@ -203,7 +204,7 @@ export function useTeachingSynthesis({
 
     if (!usableBlocks.length && !hasEnoughText) {
       // Don't mark as started — allow a later render (more/better blocks or text) to try.
-      console.log("[SYNTH:skip]", { reason: "no usable blocks and insufficient page text", totalBlocks: _blocks.length, pageTextChars: _pageText.length, pageTruthKey });
+      if (DEV) console.log("[SYNTH:skip]", { reason: "no usable blocks and insufficient page text", totalBlocks: _blocks.length, pageTextChars: _pageText.length, pageTruthKey });
       return;
     }
 
@@ -223,14 +224,14 @@ export function useTeachingSynthesis({
       rankedConcepts: [] as ReturnType<typeof buildSynthesisInput>["rankedConcepts"],
     };
 
-    console.log("[SYNTH_FALLBACK_PAGE_TEXT]", {
+    if (DEV) console.log("[SYNTH_FALLBACK_PAGE_TEXT]", {
       page: pageNumberRef.current ?? null,
       charCount: _pageText.length,
       textPreview: _pageText.slice(0, 100) || null,
       pageTruthKey,
     });
 
-    console.log("[RP_SOURCE_TEXT]", {
+    if (DEV) console.log("[RP_SOURCE_TEXT]", {
       page:     pageNumberRef.current ?? null,
       charCount: _pageText.length,
       first500: _pageText.slice(0, 500) || null,
@@ -276,7 +277,7 @@ export function useTeachingSynthesis({
       };
     }
 
-    console.log("[SYNTH_INPUT]", {
+    if (DEV) console.log("[SYNTH_INPUT]", {
       page:          pageNumberRef.current ?? null,
       textChars:     _pageText.length,
       textPreview:   _pageText.slice(0, 100) || null,
@@ -294,9 +295,9 @@ export function useTeachingSynthesis({
     async function runStages() {
       // ── STAGE 1 ──────────────────────────────────────────────────────────
       synthStartMsRef.current = Date.now();
-      console.log("[OPENAI_STAGE1_START]", { page: pageNumberRef.current, charCount: _pageText.length, mode: "page-text-first" });
-      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, mode: "page-text-first", charCount: _pageText.length });
-      console.log("[OPENAI_STAGE1_INPUT]", {
+      if (DEV) console.log("[OPENAI_STAGE1_START]", { page: pageNumberRef.current, charCount: _pageText.length, mode: "page-text-first" });
+      if (DEV) console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, mode: "page-text-first", charCount: _pageText.length });
+      if (DEV) console.log("[OPENAI_STAGE1_INPUT]", {
         page:          pageNumberRef.current ?? null,
         domain:        stage1Input.domain,
         pageThesis:    stage1Input.pageThesis?.slice(0, 100) ?? null,
@@ -320,7 +321,7 @@ export function useTeachingSynthesis({
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
         // Log raw OpenAI output AND which fields will be filled from pageText (vs came from OpenAI)
-        console.log("[OPENAI_STAGE1_DONE]", {
+        if (DEV) console.log("[OPENAI_STAGE1_DONE]", {
           source:          "openai",
           page:            pageNumberRef.current,
           elapsedMs:       Date.now() - synthStartMsRef.current,
@@ -336,15 +337,15 @@ export function useTeachingSynthesis({
             commonConfusion: s1.commonConfusion === null,
           },
         });
-        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
-        console.log("[RP_PAGE_CLASSIFICATION]", {
+        if (DEV) console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        if (DEV) console.log("[RP_PAGE_CLASSIFICATION]", {
           page:     pageNumberRef.current ?? null,
           pageType: s1.pageType ?? null,
           coreIdea: s1.coreIdea?.slice(0, 80) ?? null,
           elapsedMs: Date.now() - synthStartMsRef.current,
         });
         // Raw Stage 1 output — proves exactly what OpenAI returned before any mapping
-        console.log("[SYNTH_STAGE1_RAW]", {
+        if (DEV) console.log("[SYNTH_STAGE1_RAW]", {
           page:            pageNumberRef.current,
           elapsedMs:       Date.now() - synthStartMsRef.current,
           coreIdea:        s1.coreIdea?.slice(0, 100),
@@ -357,7 +358,7 @@ export function useTeachingSynthesis({
         });
         const stub = makeStubFromStage1(s1, _pageText);
         // Mapped stub — proves what fields makeStubFromStage1 wrote to TeachingSynthesis
-        console.log("[SYNTH_STAGE1_FIELDS]", {
+        if (DEV) console.log("[SYNTH_STAGE1_FIELDS]", {
           page:               pageNumberRef.current,
           mechanism:          stub.mechanism?.slice(0, 100) ?? null,
           application:        stub.application?.slice(0, 100) ?? null,
@@ -365,7 +366,7 @@ export function useTeachingSynthesis({
           memoryAnchor:       stub.memoryAnchor?.slice(0, 100) ?? null,
           trap:               stub.trap?.slice(0, 100) ?? null,
         });
-        console.log("[SYNTH_STAGE1_DONE]", {
+        if (DEV) console.log("[SYNTH_STAGE1_DONE]", {
           page:           pageNumberRef.current,
           elapsedMs:      Date.now() - synthStartMsRef.current,
           coreIdea:       s1.coreIdea?.slice(0, 60),
@@ -388,7 +389,7 @@ export function useTeachingSynthesis({
 
         // Fallback disabled — OpenAI is the sole source of study notes.
         // Log what would have been shown so we can diagnose quality separately.
-        console.log("[OPENAI_STAGE1_FALLBACK_USED]", {
+        if (DEV) console.log("[OPENAI_STAGE1_FALLBACK_USED]", {
           source:    "suppressed",
           page:      pageNumberRef.current,
           reason:    isAbort ? "stage1-timeout-or-abort" : "stage1-network-error",
@@ -396,7 +397,7 @@ export function useTeachingSynthesis({
           charCount: _pageText.length,
           note:      "fallback disabled — showing error UI instead",
         });
-        console.log("[RIGHT_PANEL_SOURCE]", { source: "none", page: pageNumberRef.current, reason: "stage1-failed-no-fallback" });
+        if (DEV) console.log("[RIGHT_PANEL_SOURCE]", { source: "none", page: pageNumberRef.current, reason: "stage1-failed-no-fallback" });
         setStage1Status("error");
         setStatus("error");
         setErrorMessage(isAbort
@@ -408,8 +409,8 @@ export function useTeachingSynthesis({
       if (!stage1Succeeded || mainSignal.aborted) return;
 
       // ── STAGE 2 ──────────────────────────────────────────────────────────
-      console.log("[OPENAI_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
-      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
+      if (DEV) console.log("[OPENAI_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
+      if (DEV) console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
       setStage2Status("loading");
 
       const s2Ctrl = new AbortController();
@@ -423,7 +424,7 @@ export function useTeachingSynthesis({
         const s2 = await synthesizeTeachingOutput(stage2Input, s2Ctrl.signal);
         clearTimeout(s2Timer);
         if (mainSignal.aborted) return;
-        console.log("[OPENAI_STAGE2_DONE]", {
+        if (DEV) console.log("[OPENAI_STAGE2_DONE]", {
           source:       "openai",
           page:         pageNumberRef.current,
           elapsedMs:    Date.now() - synthStartMsRef.current,
@@ -433,8 +434,8 @@ export function useTeachingSynthesis({
           conceptCount: s2.concepts?.length ?? 0,
           anchorCount:  s2.highlightAnchors?.length ?? 0,
         });
-        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage2", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
-        console.log("[SYNTH_STAGE2_DONE]", {
+        if (DEV) console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage2", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        if (DEV) console.log("[SYNTH_STAGE2_DONE]", {
           page: pageNumberRef.current,
           elapsedMs: Date.now() - synthStartMsRef.current,
           coreIdea:     s2.coreIdea?.slice(0, 60),
@@ -443,7 +444,7 @@ export function useTeachingSynthesis({
           anchorCount:  s2.highlightAnchors?.length ?? 0,
         });
         // Log BEFORE applying — proves what Stage 2 returned before merge.
-        console.log("[STAGE2_APPLY]", {
+        if (DEV) console.log("[STAGE2_APPLY]", {
           page:              pageNumberRef.current,
           conceptBlockCount: s2.concepts?.length ?? 0,
           studyFieldCount:   [s2.mechanism, s2.application, s2.misconceptionAlert, s2.memoryAnchor, s2.trap].filter(Boolean).length,
@@ -478,7 +479,7 @@ export function useTeachingSynthesis({
 
         const isS2Timeout = s2Ctrl.signal.aborted && !mainSignal.aborted;
         if (isS2Timeout) {
-          console.log("[SYNTH:stage2:retry]", { reducedConcepts: 2 });
+          if (DEV) console.log("[SYNTH:stage2:retry]", { reducedConcepts: 2 });
           const reducedInput = { ...stage2Input, rankedConcepts: stage2Input.rankedConcepts.slice(0, 2) };
           const retryCtrl  = new AbortController();
           mainSignal.addEventListener("abort", () => retryCtrl.abort(), { once: true });
@@ -505,14 +506,14 @@ export function useTeachingSynthesis({
           } catch (retryErr: any) {
             clearTimeout(retryTimer);
             console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "retry", message: retryErr?.message ?? String(retryErr) });
-            console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 retry also failed — keeping Stage 1 content", message: (retryErr as Error)?.message?.slice(0, 100) ?? "unknown" });
-            console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-retry-failed, stage1 retained" });
+            if (DEV) console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 retry also failed — keeping Stage 1 content", message: (retryErr as Error)?.message?.slice(0, 100) ?? "unknown" });
+            if (DEV) console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-retry-failed, stage1 retained" });
             setStage2Status("error");
           }
         } else {
           console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "initial", message: err?.message ?? String(err) });
-          console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 failed — keeping Stage 1 content", message: (err as Error)?.message?.slice(0, 100) ?? "unknown" });
-          console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-failed, stage1 retained" });
+          if (DEV) console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 failed — keeping Stage 1 content", message: (err as Error)?.message?.slice(0, 100) ?? "unknown" });
+          if (DEV) console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-failed, stage1 retained" });
           setStage2Status("error");
         }
       }
@@ -559,11 +560,11 @@ export function useTeachingSynthesis({
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const _anchorCount = (enrichmentInput as any)?.groundedAnchorCandidates?.length ?? 0;
-        console.log("[CLAUDE_EXPERT_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current, anchorCandidates: _anchorCount });
+        if (DEV) console.log("[CLAUDE_EXPERT_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current, anchorCandidates: _anchorCount });
         const enrichment = await fetchClaudeEnrichment(enrichmentInput, s3Ctrl.signal);
         if (mainSignal.aborted) return;
         const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView || enrichment.expertTrap || enrichment.formulaRule || enrichment.workedExampleLogic || enrichment.practiceCheckpoint);
-        console.log("[CLAUDE_EXPERT_DONE]", {
+        if (DEV) console.log("[CLAUDE_EXPERT_DONE]", {
           page:                   pageNumberRef.current,
           elapsedMs:              Date.now() - synthStartMsRef.current,
           hasAnyField,
