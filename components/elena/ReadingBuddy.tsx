@@ -45,9 +45,12 @@ export default function ReadingBuddy({
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
   const [open,      setOpen]      = useState(defaultOpen ?? false);
-  const bottomRef   = useRef<HTMLDivElement>(null);
-  const inputRef    = useRef<HTMLTextAreaElement>(null);
-  const abortRef    = useRef<AbortController | null>(null);
+  const bottomRef      = useRef<HTMLDivElement>(null);
+  const inputRef       = useRef<HTMLTextAreaElement>(null);
+  const abortRef       = useRef<AbortController | null>(null);
+  const focusTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
+  useEffect(() => () => { if (focusTimerRef.current) clearTimeout(focusTimerRef.current); }, []);
 
   // Reset conversation when reading context changes (new book or page turn)
   const prevContextRef = useRef<string>("");
@@ -76,7 +79,7 @@ export default function ReadingBuddy({
 
   // Focus input when chat opens
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100);
+    if (open) focusTimerRef.current = setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
   const sendMessage = useCallback(async (text: string) => {

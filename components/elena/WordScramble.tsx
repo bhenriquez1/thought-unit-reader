@@ -2,7 +2,7 @@
 // Word Scramble — tap letters in the correct order to spell a vocabulary word.
 // Cycles through the child's word collection one word at a time.
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { loadVocabWords } from "@/lib/elena/idbStore";
 import type { VocabWord } from "@/lib/elena/vocabulary";
 
@@ -39,10 +39,18 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
   const [feedback,  setFeedback]  = useState<"correct" | "wrong" | null>(null);
   const [score,     setScore]     = useState(0);
   const [done,      setDone]      = useState(false);
+  const correctTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrongTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (correctTimerRef.current) clearTimeout(correctTimerRef.current);
+    if (wrongTimerRef.current)   clearTimeout(wrongTimerRef.current);
+  }, []);
 
   useEffect(() => {
+    let alive = true;
     loadVocabWords(childProfileId)
       .then(ws => {
+        if (!alive) return;
         // Shuffle words; prefer reviewing+mastered for a bit of challenge
         const sorted = [...ws].sort((a, b) => {
           const order = { mastered: 0, reviewing: 1, new: 2 };
@@ -52,6 +60,7 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
         if (sorted.length > 0) setTiles(scramble(sorted[0].word));
       })
       .catch(() => {});
+    return () => { alive = false; };
   }, [childProfileId]);
 
   const currentWord = words[wordIdx] ?? null;
@@ -75,7 +84,7 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
     if (attempt === answer) {
       setFeedback("correct");
       setScore(s => s + 1);
-      setTimeout(() => {
+      correctTimerRef.current = setTimeout(() => {
         const next = wordIdx + 1;
         if (next >= words.length) {
           setDone(true);
@@ -89,7 +98,7 @@ export default function WordScramble({ childProfileId, onBack, onWin }: WordScra
       }, 1200);
     } else {
       setFeedback("wrong");
-      setTimeout(() => {
+      wrongTimerRef.current = setTimeout(() => {
         // Return chosen tiles to bank and reset
         setTiles(scramble(currentWord!.word));
         setChosen([]);

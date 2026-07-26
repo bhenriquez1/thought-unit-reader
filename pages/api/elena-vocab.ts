@@ -136,7 +136,7 @@ export default async function handler(
       return res.status(500).json({ words: [], error: "Could not understand the response. Try again!" });
     }
 
-    console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
+    if (process.env.NODE_ENV === "development") console.log("[ELENA_VOCAB]", { page: body.currentPage ?? null, wordCount: words.length });
     return res.status(200).json({ words });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

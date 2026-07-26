@@ -37,7 +37,9 @@ export default function ParentDashboard({ profile, rewards, progress, onClose }:
   const [words, setWords] = useState<VocabWord[]>([]);
 
   useEffect(() => {
-    loadVocabWords(profile.id).then(setWords).catch(() => {});
+    let alive = true;
+    loadVocabWords(profile.id).then(w => { if (alive) setWords(w); }).catch(() => {});
+    return () => { alive = false; };
   }, [profile.id]);
 
   const wordCounts = {
@@ -80,7 +82,7 @@ export default function ParentDashboard({ profile, rewards, progress, onClose }:
           <div>
             <div className="text-white font-bold text-base">{profile.preferredName || profile.displayName}</div>
             {profile.ageRange && (
-              <div className="text-indigo-300 text-xs mt-0.5">Age {profile.ageRange} · {profile.readingLevel ?? "developing"} reader</div>
+              <div className="text-indigo-300 text-xs mt-0.5">Age {profile.ageRange} · {progress?.currentLevel ?? "developing"} reader</div>
             )}
             {profile.interests.length > 0 && (
               <div className="text-slate-400 text-xs mt-1 truncate">
