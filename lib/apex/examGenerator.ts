@@ -1,6 +1,8 @@
 // DAT Apex Exam Generator
 // Core logic for generating practice exams from question banks
 
+const DEV = process.env.NODE_ENV === "development";
+
 import { 
   DATQuestion, 
   ExamConfiguration, 
@@ -57,7 +59,7 @@ export class ExamGenerator {
       const data = await response.json();
       return new ExamGenerator(data.questions);
     } catch (error) {
-      console.error('Failed to load question bank:', error);
+      DEV && console.error('Failed to load question bank:', error);
       // Return with empty question bank as fallback
       return new ExamGenerator([]);
     }

@@ -3,7 +3,7 @@
 // in the style of Gen Chem Mike's handwritten notes.
 // Dark-mode, high-density, fully interactive.
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import type { DATStudySheet, DATDiagram, DATQuestion } from "@/lib/notelab/datStudySheet";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 
@@ -293,8 +293,12 @@ function GenerateButton({
 }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const generate = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -311,6 +315,7 @@ function GenerateButton({
           anchors,
           pageText,
         }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
@@ -319,9 +324,10 @@ function GenerateButton({
       const { sheet } = await res.json() as { sheet: DATStudySheet };
       onSheet(sheet);
     } catch (e) {
+      if ((e as Error).name === "AbortError") return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) setLoading(false);
     }
   }, [note, onSheet]);
 

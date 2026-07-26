@@ -17,6 +17,8 @@ import { useTocStore } from '@/lib/stores/tocStore';
 import { chapterForPage } from '@/lib/apex/bookCatalogue';
 import { writeViewSourceLink } from '@/lib/canonical/viewSourceLink';
 
+const DEV = process.env.NODE_ENV === "development";
+
 const ANSWER_LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
 function buildEngineAttempts(exam: GeneratedExam, attempt: ExamAttempt): QuestionAttempt[] {
@@ -241,11 +243,11 @@ export default function ExamResultsPage() {
           const userId = 'demo-user'; // In a real app, get from auth
           mistakeLogger.logMistakesFromAttempt(userId, attempt, exam.questions);
         } catch (mistakeError) {
-          console.error('Failed to log mistakes:', mistakeError);
+          DEV && console.error('Failed to log mistakes:', mistakeError);
         }
 
       } catch (error) {
-        console.error('Failed to load results:', error);
+        DEV && console.error('Failed to load results:', error);
       } finally {
         setLoading(false);
       }
@@ -268,7 +270,7 @@ export default function ExamResultsPage() {
         if (!cancelled) setRecommendation(rec);
       })
       .catch((error) => {
-        console.error('Failed to build study recommendation:', error);
+        DEV && console.error('Failed to build study recommendation:', error);
         if (!cancelled) setRecommendationError('Could not build a study recommendation for this attempt.');
       });
     return () => {

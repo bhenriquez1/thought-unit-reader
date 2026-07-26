@@ -1,6 +1,8 @@
 // Mistake Logging System with Spaced Repetition for DAT Apex
 // Tracks incorrect answers and schedules review sessions using spaced repetition algorithm
 
+const DEV = process.env.NODE_ENV === "development";
+
 import type { DATQuestion, ExamAttempt } from '@/types/apex-exam';
 import { safeSetItem } from '@/lib/storage/safeStorage';
 
@@ -300,7 +302,7 @@ class MistakeLogger {
       const allMistakes: MistakeEntry[] = stored ? JSON.parse(stored) : [];
       return userId ? allMistakes.filter(m => m.userId === userId) : allMistakes;
     } catch (error) {
-      console.error('Error loading mistakes:', error);
+      DEV && console.error('Error loading mistakes:', error);
       return [];
     }
   }
@@ -376,7 +378,7 @@ class MistakeLogger {
       const stored = localStorage.getItem(this.sessionsKey);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.error('Error loading review sessions:', error);
+      DEV && console.error('Error loading review sessions:', error);
       return [];
     }
   }
@@ -418,7 +420,7 @@ class MistakeLogger {
       const stored = localStorage.getItem(this.statsKey);
       return stored ? JSON.parse(stored) : {};
     } catch (error) {
-      console.error('Error loading stats:', error);
+      DEV && console.error('Error loading stats:', error);
       return {};
     }
   }

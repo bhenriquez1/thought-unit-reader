@@ -44,7 +44,7 @@ const BREAK_DURATION_SECS  = 15 * 60;
 
 /* ─── Types ──────────────────────────────────────────────────────────────────── */
 
-type ExamPhase = "loading" | "examining" | "section-transition" | "break" | "reviewing" | "submitting";
+type ExamPhase = "loading" | "no_exam" | "examining" | "section-transition" | "break" | "reviewing" | "submitting";
 
 interface SectionGroup {
   sectionId:        string;
@@ -110,6 +110,7 @@ export default function ExamProctorPage() {
   /* ─── Load exam ───────────────────────────────────────────────────────────── */
 
   useEffect(() => {
+    let alive = true;
     const params      = new URLSearchParams(window.location.search);
     const examId      = params.get("examId");
     const isPrometric = params.get("prometric") === "1";
@@ -130,7 +131,12 @@ export default function ExamProctorPage() {
         }
       }
 
-      if (!exam) return; // "No Exam Found" screen renders
+      if (!alive) return;
+
+      if (!exam) {
+        setPhase("no_exam");
+        return;
+      }
 
       const sections    = groupBySections(exam);
       const isProctored = !!exam.config.strictMode || isPrometric;
@@ -155,6 +161,7 @@ export default function ExamProctorPage() {
     }
 
     loadExam();
+    return () => { alive = false; };
   }, []);
 
   /* ─── Submit exam ─────────────────────────────────────────────────────────── */
@@ -321,19 +328,22 @@ export default function ExamProctorPage() {
 
   /* ─── Auto-save ───────────────────────────────────────────────────────────── */
 
+  // Auto-save: mount-only effect — uses stateRef so the interval always reads
+  // the latest state without restarting the 30-second clock on every answer.
   useEffect(() => {
-    if (!state) return;
     autoSaveRef.current = setInterval(() => {
+      const s = stateRef.current;
+      if (!s) return;
       setAutoSaveStatus("saving");
       try {
         localStorage.setItem("examProgress", JSON.stringify({
-          exam: state.exam,
+          exam: s.exam,
           currentState: {
-            currentSectionIdx:    state.currentSectionIdx,
-            currentQuestionIdx:   state.currentQuestionIdx,
-            sectionTimeRemaining: state.sectionTimeRemaining,
-            responses:            state.responses,
-            flagged:              Array.from(state.flagged),
+            currentSectionIdx:    s.currentSectionIdx,
+            currentQuestionIdx:   s.currentQuestionIdx,
+            sectionTimeRemaining: s.sectionTimeRemaining,
+            responses:            s.responses,
+            flagged:              Array.from(s.flagged),
           },
         }));
         setAutoSaveStatus("saved");
@@ -342,7 +352,7 @@ export default function ExamProctorPage() {
       }
     }, 30_000);
     return () => { if (autoSaveRef.current) clearInterval(autoSaveRef.current); };
-  }, [state]);
+  }, []);
 
   /* ─── Keyboard shortcuts ──────────────────────────────────────────────────── */
 
@@ -410,7 +420,18 @@ export default function ExamProctorPage() {
 
   /* ─── Phase: loading ──────────────────────────────────────────────────────── */
 
-  if (phase === "loading" || !state) {
+  if (phase === "loading") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4" />
+          <p className="text-gray-300">Loading exam…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "no_exam" || !state) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
         <div className="text-center">
