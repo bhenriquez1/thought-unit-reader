@@ -6,12 +6,12 @@
 // the messages array, never into the system prompt. The system prompt is
 // 100% developer-authored static text. This pattern prevents CodeQL CWE-1336.
 
-const DEV = process.env.NODE_ENV === "development";
-
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { VocabExtractRequest, VocabExtractResponse, VocabExtractedWord } from "@/lib/elena/vocabulary";
 import type { ChildAgeRange } from "@/lib/elena/types";
+
+const DEV = process.env.NODE_ENV === "development";
 
 export const config = {
   maxDuration: 25,
@@ -58,7 +58,6 @@ Respond ONLY with valid JSON — no markdown fences, no prose before or after:
     }
   ]
 }`;
-}
 
 /* ─── Context in messages (never in system) ──────────────────────────────────── */
 
