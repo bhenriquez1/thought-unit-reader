@@ -13,6 +13,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { VocabExtractRequest, VocabExtractResponse, VocabExtractedWord } from "@/lib/elena/vocabulary";
 import type { ChildAgeRange } from "@/lib/elena/types";
 
+const DEV = process.env.NODE_ENV === "development";
+
 export const config = {
   maxDuration: 25,
   api: { bodyParser: { sizeLimit: "128kb" } },
@@ -58,7 +60,6 @@ Respond ONLY with valid JSON — no markdown fences, no prose before or after:
     }
   ]
 }`;
-}
 
 /* ─── Context in messages (never in system) ──────────────────────────────────── */
 
