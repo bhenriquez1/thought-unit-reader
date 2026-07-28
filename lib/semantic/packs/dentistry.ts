@@ -1,0 +1,160 @@
+// lib/semantic/packs/dentistry.ts
+// Dentistry subject pack (Layer 2) — extends Universal with clinical and
+// procedural labels for dental textbooks and board review material.
+//
+// Activation: confidence ≥ 0.55 (tentative), ≥ 0.80 (full pack)
+//
+// Universal specialisations:
+//   process  → Procedure Step
+//   warning  → Danger Zone
+//   high-yield → Board High Yield
+
+import type { SemanticPack, SemanticLabelDefinition } from "../types";
+
+const DENTISTRY_LABELS: SemanticLabelDefinition[] = [
+  {
+    id: "dentistry:definition",
+    canonicalType: "definition",
+    label: "Definition",
+    shortLabel: "Def",
+    icon: "📖",
+    priority: 1,
+    maxPerPage: 5,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:indication",
+    canonicalType: "indication",
+    label: "Indication",
+    shortLabel: "Ind",
+    icon: "✅",
+    priority: 2,
+    maxPerPage: 6,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+    examples: ["An inlay is indicated when the cavity is too large for a direct composite restoration but at least one cusp remains intact."],
+  },
+  {
+    id: "dentistry:contraindication",
+    canonicalType: "contraindication",
+    label: "Contraindication",
+    shortLabel: "CI",
+    icon: "🚫",
+    priority: 2,
+    maxPerPage: 6,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+    examples: ["An inlay is not suitable as an FPD retainer."],
+  },
+  {
+    id: "dentistry:process",
+    canonicalType: "process",
+    label: "Procedure Step",
+    shortLabel: "Step",
+    icon: "🔧",
+    priority: 3,
+    maxPerPage: 8,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:material",
+    canonicalType: "material",
+    label: "Material",
+    shortLabel: "Mat",
+    icon: "🦷",
+    priority: 3,
+    maxPerPage: 6,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:finding",
+    canonicalType: "finding",
+    label: "Clinical Finding",
+    shortLabel: "Finding",
+    icon: "🔍",
+    priority: 3,
+    maxPerPage: 5,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:complication",
+    canonicalType: "complication",
+    label: "Complication",
+    shortLabel: "Comp",
+    icon: "⚠️",
+    priority: 2,
+    maxPerPage: 4,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:clinical-pearl",
+    canonicalType: "clinical-pearl",
+    label: "Clinical Pearl",
+    shortLabel: "Pearl",
+    icon: "💎",
+    priority: 1,
+    maxPerPage: 3,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: true,
+  },
+  {
+    id: "dentistry:high-yield",
+    canonicalType: "high-yield",
+    label: "Board High Yield",
+    shortLabel: "Board HY",
+    icon: "🎯",
+    priority: 1,
+    maxPerPage: 4,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: true,
+  },
+  {
+    id: "dentistry:common-error",
+    canonicalType: "common-error",
+    label: "Common Mistake",
+    shortLabel: "Mistake",
+    icon: "🚩",
+    priority: 2,
+    maxPerPage: 3,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+  {
+    id: "dentistry:core-concept",
+    canonicalType: "core-concept",
+    label: "Core Concept",
+    shortLabel: "Core",
+    icon: "⭐",
+    priority: 2,
+    maxPerPage: 3,
+    requiresExactSourceSpan: true,
+    allowPageSynthesis: false,
+  },
+];
+
+export const DENTISTRY_PACK: SemanticPack = {
+  id: "dentistry",
+  label: "Dentistry",
+  labels: DENTISTRY_LABELS,
+  promptInstructions: [
+    "Identify clinical elements: indications (when to use), contraindications (when NOT to use), procedure steps, materials, clinical findings, complications, clinical pearls, and board-high-yield facts.",
+    "Procedure steps must capture sequence. Use one card per distinct step when multiple steps are present.",
+    "Distinguish indication from contraindication precisely — they are tested as contrast pairs on boards.",
+    "Exact source span required for every highlight. Do not infer clinical facts not stated in the text.",
+  ],
+  rankingRules: [
+    { canonicalType: "indication",       boostFactor: 1.3, reason: "exam staple — what is it used for?" },
+    { canonicalType: "contraindication", boostFactor: 1.4, reason: "board trap — what NOT to use" },
+    { canonicalType: "clinical-pearl",   boostFactor: 1.5, reason: "separates passing from top scores" },
+    { canonicalType: "high-yield",       boostFactor: 1.4, reason: "board priority" },
+    { canonicalType: "complication",     boostFactor: 1.2, reason: "clinical safety" },
+    { canonicalType: "common-error",     boostFactor: 1.2, reason: "avoid predictable exam mistakes" },
+  ],
+  minimumConfidence: 0.55,
+  fallbackPackId: "general",
+};

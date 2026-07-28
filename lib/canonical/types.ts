@@ -6,6 +6,8 @@
 // Stored in IDB store "canonical_units_v1".
 // Never duplicated — consumers reference by ID.
 
+import type { CanonicalSemanticType } from "../semantic/types";
+
 // ────────────────────────────────────────────────────────────────────────────
 // DAT classification
 // ────────────────────────────────────────────────────────────────────────────
@@ -136,6 +138,17 @@ export interface CanonicalThoughtUnit {
    * Assigned post-classification by paragraphScoring.ts.
    */
   semanticLabel?: SemanticLabel;
+  /**
+   * Canonical type from the semantic pack engine (replaces semanticLabel for
+   * new consumers). Assigned alongside semanticLabel during the transition
+   * period; eventually semanticLabel will be derived from this field.
+   */
+  canonicalType?: CanonicalSemanticType;
+  /**
+   * Chapter identifier this unit belongs to — used as the secondary key in
+   * SemanticDomainAssignment IDB lookups.
+   */
+  chapterId?: string;
 
   // ── Provenance ────────────────────────────────────────────────────────────
   /** ID of the UltraNote this unit was originally derived from, if any. */
