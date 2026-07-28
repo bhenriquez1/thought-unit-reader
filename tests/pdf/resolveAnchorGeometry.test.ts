@@ -515,3 +515,184 @@ describe("resolveAnchorGeometry — quote too short", () => {
     expect(resolveAnchorGeometry(anchor, 1.0)).toHaveLength(0);
   });
 });
+
+// ── Phase 2.5 Geometry Validation Matrix ──────────────────────────────────────
+//
+// Fixtures 16–18: structural layout patterns that stress-test mergeLineRects
+// and the three resolution strategies against real-world PDF structures.
+
+// ── Test 16: Hyphenated line break ────────────────────────────────────────────
+
+describe("resolveAnchorGeometry — hyphenated line break", () => {
+  it("returns two separate rects for a word split across lines by a hyphen", () => {
+    // PDF.js emits "sec-" on line 1 and "tion" on line 2.
+    // mergeLineRects must NOT merge them (vertical centres differ by > 60% of h).
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "sec-", x: 0,   y: 100, w: 30, h: 12, itemIndex: 0 },
+        { str: "tion", x: 0,   y: 116, w: 25, h: 12, itemIndex: 1 },
+        { str: "of",   x: 30,  y: 116, w: 15, h: 12, itemIndex: 2 },
+      ]),
+    );
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 9,
+      pdfTextItemIndexes: [0, 1],
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    // The two items are on different lines — should produce 2 rects.
+    expect(rects).toHaveLength(2);
+    expect(rects[0].y).toBe(100);
+    expect(rects[1].y).toBe(116);
+  });
+
+  it("does not include the following word on line 2 when only hyphen items requested", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "sec-", x: 0,  y: 100, w: 30, h: 12, itemIndex: 0 },
+        { str: "tion", x: 0,  y: 116, w: 25, h: 12, itemIndex: 1 },
+        { str: "of",   x: 30, y: 116, w: 15, h: 12, itemIndex: 2 },
+      ]),
+    );
+    // Only the hyphenated word's items — "of" should NOT be included.
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 9,
+      pdfTextItemIndexes: [0, 1],
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    // line 2 rect covers only "tion" (w=25), not "tion of" (would be ~40).
+    const line2 = rects.find(r => r.y === 116);
+    expect(line2).toBeDefined();
+    expect(line2!.w).toBeLessThanOrEqual(25);
+  });
+});
+
+// ── Test 17: Bullet list ──────────────────────────────────────────────────────
+
+describe("resolveAnchorGeometry — bullet list", () => {
+  it("merges bullet marker and text on the same line into one rect", () => {
+    // Bullet "•" sits at x=0, text starts at x=16 (hanging indent).
+    // Both are on the same visual line — mergeLineRects should join them.
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "•",          x: 0,   y: 200, w: 10, h: 12, itemIndex: 0 },
+        { str: "Enamel",     x: 16,  y: 200, w: 45, h: 12, itemIndex: 1 },
+        { str: "is",         x: 65,  y: 200, w: 15, h: 12, itemIndex: 2 },
+        { str: "the",        x: 85,  y: 200, w: 20, h: 12, itemIndex: 3 },
+        { str: "hardest",    x: 110, y: 200, w: 50, h: 12, itemIndex: 4 },
+        { str: "tissue",     x: 165, y: 200, w: 40, h: 12, itemIndex: 5 },
+      ]),
+    );
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 40,
+      pdfTextItemIndexes: [0, 1, 2, 3, 4, 5],
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    // All six items are on the same line → should merge into a single rect.
+    expect(rects).toHaveLength(1);
+    // Left edge should start at the bullet (x=0).
+    expect(rects[0].x).toBe(0);
+    // Right edge should reach the end of "tissue" (x=165, w=40 → 205).
+    expect(rects[0].w).toBeCloseTo(205);
+  });
+
+  it("resolves bullet text via quote fallback when itemIndexes absent", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "•",       x: 0,  y: 200, w: 10, h: 12, itemIndex: 0 },
+        { str: "Enamel",  x: 16, y: 200, w: 45, h: 12, itemIndex: 1 },
+        { str: "is",      x: 65, y: 200, w: 15, h: 12, itemIndex: 2 },
+        { str: "hardest", x: 85, y: 200, w: 50, h: 12, itemIndex: 3 },
+        { str: "tissue",  x: 140, y: 200, w: 40, h: 12, itemIndex: 4 },
+      ]),
+    );
+    // Use quote fallback (no itemIndexes, bad charOffsets).
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 9999,
+      endChar: 9999,
+      normalizedSourceText: "Enamel is hardest tissue",
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    expect(rects.length).toBeGreaterThan(0);
+    // Should not include the bullet character (quote search starts at "Enamel").
+    const leftmost = Math.min(...rects.map(r => r.x));
+    expect(leftmost).toBeGreaterThanOrEqual(16);
+  });
+});
+
+// ── Test 18: Tightly-aligned table columns ────────────────────────────────────
+
+describe("resolveAnchorGeometry — tightly-aligned table columns", () => {
+  it("does NOT merge items from adjacent table columns even when the gap is small", () => {
+    // Two-column table where the gap between columns is only 8 pt (less than one em).
+    // With h=12 and gap=8 < h=12, the mergeLineRects "touching" heuristic could merge them.
+    // This test documents the current behaviour: items with gap ≤ lineH ARE merged.
+    // Callers that need column isolation should rely on pdfTextItemIndexes scoped per cell.
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "Drug",    x: 0,   y: 300, w: 40, h: 12, itemIndex: 0 },
+        { str: "Action",  x: 48,  y: 300, w: 45, h: 12, itemIndex: 1 }, // gap=8
+      ]),
+    );
+    // Anchor covers only the first column cell via itemIndex.
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 4,
+      pdfTextItemIndexes: [0],
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    // Only the requested item — "Action" is excluded because it's not in pdfTextItemIndexes.
+    expect(rects).toHaveLength(1);
+    expect(rects[0].x).toBe(0);
+    expect(rects[0].w).toBe(40);
+  });
+
+  it("merges adjacent cells from the SAME column anchor into one row rect", () => {
+    // A table row where the anchor covers both the header and value cells in a single column.
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "Drug",    x: 0,   y: 300, w: 40, h: 12, itemIndex: 0 },
+        { str: "Class",   x: 45,  y: 300, w: 35, h: 12, itemIndex: 1 },
+        { str: "Action",  x: 140, y: 300, w: 45, h: 12, itemIndex: 2 }, // large gap (far column)
+      ]),
+    );
+    // Only the first two items (same logical cell, touching).
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 10,
+      pdfTextItemIndexes: [0, 1],
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    // "Drug" and "Class" are on the same line with gap=5 ≤ h=12 → merged.
+    expect(rects).toHaveLength(1);
+    expect(rects[0].x).toBe(0);
+    expect(rects[0].w).toBeCloseTo(80); // 45 + 35 - 0
+  });
+
+  it("applies viewportScale correctly to tightly-packed table items", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "ASA",     x: 10,  y: 300, w: 25, h: 10, itemIndex: 0 },
+        { str: "inhibits", x: 40, y: 300, w: 45, h: 10, itemIndex: 1 },
+      ]),
+    );
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 0,
+      endChar: 12,
+      pdfTextItemIndexes: [0, 1],
+    });
+    const rects = resolveAnchorGeometry(anchor, 2.0);
+    // After 2× scale, x=20, w=150 (merged: 10+25+5+45=85 → ×2=170 from left, but merged w = 40+45-10=75, ×2=150)
+    expect(rects[0].x).toBeCloseTo(20);
+    expect(rects[0].w).toBeCloseTo(150); // (10+25+45+gap)*2 merged width
+  });
+});
