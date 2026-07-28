@@ -71,6 +71,45 @@ export type SemanticLabel =
   | 'dat-tip';
 
 // ────────────────────────────────────────────────────────────────────────────
+// Geometry and provenance types
+// ────────────────────────────────────────────────────────────────────────────
+
+/** PDF-point bounding box (scale=1, origin bottom-left of the page). */
+export interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * How reliably the anchor was matched back to PDF.js geometry.
+ * "exact"     — char offsets matched a ParagraphMapping from the bridge.
+ * "normalized" — matched after whitespace normalisation.
+ * "fuzzy"     — matched via quote substring search (no bridge available).
+ * "ocr"       — matched against OCR output; coordinates may drift.
+ * "synthetic" — built without any PDF geometry (e.g. plain-text import).
+ */
+export type GroundingState = "exact" | "normalized" | "fuzzy" | "ocr" | "synthetic";
+
+/**
+ * Write-once metadata describing how a CanonicalThoughtUnit was produced.
+ * Never mutate an existing record; bump extractorVersion and re-generate.
+ */
+export interface CanonicalProvenance {
+  /** Unix timestamp (ms) when this unit was extracted. */
+  readonly extractedAt: number;
+  /** Version of the extractor that populated pdfTextItemIndexes / boundingBoxes. */
+  readonly extractorVersion: number;
+  /** Version of the column-detection / structure algorithm (STRUCTURE_VERSION). */
+  readonly structureVersion: number;
+  /** Version of the paragraph boundary algorithm (PARAGRAPH_ALGORITHM_VERSION). */
+  readonly paragraphAlgorithmVersion: number;
+  /** Whether PDF.js item-level geometry was available when this unit was built. */
+  readonly hasGeometricGrounding: boolean;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Reader highlight coordinates (for "View Source in Reader" navigation)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -87,6 +126,22 @@ export interface ReaderAnchor {
   yPct?: number;
   /** PDF column when two-column layout is detected. */
   column?: 'left' | 'right' | 'full';
+
+  // ── Phase 1B: PDF geometry provenance ──────────────────────────────────────
+  /** The exact source text as it appears in the structured page output. */
+  exactSourceText?: string;
+  /** Whitespace-normalised version of the source text (for change-tolerant lookup). */
+  normalizedSourceText?: string;
+  /** PDF.js textContent.items indexes that cover this anchor's text. */
+  pdfTextItemIndexes?: number[];
+  /** PDF-point bounding boxes (scale=1) for each item in pdfTextItemIndexes. */
+  boundingBoxes?: BoundingBox[];
+  /** How reliably the anchor was grounded to the PDF geometry. */
+  groundingState?: GroundingState;
+  /** 0–1 confidence in the grounding result. */
+  groundingConfidence?: number;
+  /** Schema version — bump when new fields are added to ReaderAnchor. */
+  anchorVersion?: number;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -149,6 +204,23 @@ export interface CanonicalThoughtUnit {
    * SemanticDomainAssignment IDB lookups.
    */
   chapterId?: string;
+
+  // ── Phase 1B: canonical grounding ────────────────────────────────────────
+  /**
+   * Stable content-addressed hash: djb2 of `documentId|pageIndex|normalizedText`.
+   * Stable across re-indexings as long as the text content is unchanged.
+   */
+  canonicalHash?: string;
+  /** Immutable extraction provenance — write-once at build time. */
+  provenance?: CanonicalProvenance;
+  /** Salience 0–1; higher = more important for study. Populated in Phase 1C. */
+  importanceScore?: number;
+  /** 0–1 confidence that canonicalType is correct. Populated in Phase 1C. */
+  semanticConfidence?: number;
+  /** 0–1 confidence that the domain classifier picked the right domain. */
+  domainConfidence?: number;
+  /** Version of the scoring/classification algorithm. Populated in Phase 1C. */
+  scoringVersion?: number;
 
   // ── Provenance ────────────────────────────────────────────────────────────
   /** ID of the UltraNote this unit was originally derived from, if any. */

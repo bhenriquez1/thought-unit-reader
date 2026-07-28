@@ -8,10 +8,49 @@ import {
   type CanonicalThoughtUnit,
   type DatSection,
   type DatUnitType,
+  type BoundingBox,
+  type CanonicalProvenance,
   buildCanonicalId,
   datSectionFromSubject,
 } from './types';
 import { classifyDATSubject } from './classifier';
+import { TextLayerRegistry } from '../page-intelligence/textLayerIndex';
+import { PageBridgeRegistry } from '../page-intelligence/pageBridgeRegistry';
+import { STRUCTURE_VERSION, PARAGRAPH_ALGORITHM_VERSION } from '../pdf/structuredPageText';
+
+// ── Version constants ────────────────────────────────────────────────────────
+
+/** Bump when the anchor enrichment algorithm changes. */
+export const EXTRACTOR_VERSION = 1;
+
+/** Current ReaderAnchor schema version. */
+const ANCHOR_VERSION = 1;
+
+// ── Canonical hash (djb2) ────────────────────────────────────────────────────
+
+function djb2(str: string): string {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function computeCanonicalHash(documentId: string, pageIndex: number, text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
+  return djb2(`${documentId}|${pageIndex}|${normalized}`);
+}
+
+// ── Bounding box helpers ─────────────────────────────────────────────────────
+
+function uniteBBoxes(boxes: Array<{ x: number; y: number; w: number; h: number }>): BoundingBox {
+  if (boxes.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  const x  = Math.min(...boxes.map(b => b.x));
+  const y  = Math.min(...boxes.map(b => b.y));
+  const x2 = Math.max(...boxes.map(b => b.x + b.w));
+  const y2 = Math.max(...boxes.map(b => b.y + b.h));
+  return { x, y, w: x2 - x, h: y2 - y };
+}
 
 // ── Unit type detection via simple lexicon ──────────────────────────────────
 
@@ -121,6 +160,19 @@ export function buildCanonicalUnits(
 
   const now = Date.now();
 
+  // Resolve bridge and text-layer index once per page call.
+  const bridge = PageBridgeRegistry.get(pageIndex);
+  const pageIndex_ = pageIndex; // alias for closure clarity
+  const textIndex = TextLayerRegistry.get(pageIndex_);
+
+  const provenance: CanonicalProvenance = {
+    extractedAt: now,
+    extractorVersion: EXTRACTOR_VERSION,
+    structureVersion: STRUCTURE_VERSION,
+    paragraphAlgorithmVersion: PARAGRAPH_ALGORITHM_VERSION,
+    hasGeometricGrounding: bridge !== undefined,
+  };
+
   return chunks.map((chunk, unitIndex) => {
     const id = buildCanonicalId(documentId, pageIndex, unitIndex);
     const datTopic = detectTopic(chunk.text, datSection);
@@ -128,6 +180,55 @@ export function buildCanonicalUnits(
     const datRelevance = scoreDatRelevance(chunk.text);
 
     const quote = chunk.text.slice(0, 180).replace(/\s+/g, ' ').trim();
+    const normalizedSourceText = chunk.text.replace(/\s+/g, ' ').trim();
+    const canonicalHash = computeCanonicalHash(documentId, pageIndex, chunk.text);
+
+    // ── Anchor enrichment ──────────────────────────────────────────────────
+    let pdfTextItemIndexes: number[] | undefined;
+    let boundingBoxes: BoundingBox[] | undefined;
+    let groundingState: CanonicalThoughtUnit["anchor"]["groundingState"];
+    let groundingConfidence: number | undefined;
+
+    if (bridge) {
+      // Exact match: find a ParagraphMapping whose char span contains this chunk.
+      const mapping = bridge.paragraphMappings.find(
+        m => m.startChar === chunk.startChar ||
+             (m.startChar <= chunk.startChar && chunk.endChar <= m.endChar),
+      );
+
+      if (mapping && mapping.itemIndexes.length > 0) {
+        pdfTextItemIndexes = mapping.itemIndexes;
+        groundingState = "exact";
+        groundingConfidence = 1.0;
+
+        if (textIndex) {
+          const tokenBoxes = pdfTextItemIndexes
+            .map(idx => textIndex.tokens.find(t => t.itemIndex === idx)?.bbox)
+            .filter((b): b is { x: number; y: number; w: number; h: number } => b !== undefined);
+          if (tokenBoxes.length > 0) {
+            boundingBoxes = [uniteBBoxes(tokenBoxes)];
+          }
+        }
+      }
+    }
+
+    // Legacy fallback: if no bridge or mapping not found, try quote-based search
+    // in the TextLayerRegistry's concatenated fullText.
+    if (!groundingState && textIndex) {
+      const quoteNorm = normalizedSourceText.toLowerCase().slice(0, 50);
+      const textNorm = textIndex.fullText.toLowerCase();
+      const pos = textNorm.indexOf(quoteNorm);
+      if (pos !== -1) {
+        const end = pos + quoteNorm.length;
+        const matchedTokens = textIndex.tokens.filter(t => t.endChar > pos && t.startChar < end);
+        if (matchedTokens.length > 0) {
+          pdfTextItemIndexes = matchedTokens.map(t => t.itemIndex);
+          boundingBoxes = [uniteBBoxes(matchedTokens.map(t => t.bbox))];
+          groundingState = "fuzzy";
+          groundingConfidence = 0.5;
+        }
+      }
+    }
 
     const unit: CanonicalThoughtUnit = {
       id,
@@ -140,7 +241,16 @@ export function buildCanonicalUnits(
         startChar: chunk.startChar,
         endChar: chunk.endChar,
         quote,
+        exactSourceText: chunk.text,
+        normalizedSourceText,
+        ...(pdfTextItemIndexes !== undefined && { pdfTextItemIndexes }),
+        ...(boundingBoxes !== undefined && { boundingBoxes }),
+        ...(groundingState !== undefined && { groundingState }),
+        ...(groundingConfidence !== undefined && { groundingConfidence }),
+        anchorVersion: ANCHOR_VERSION,
       },
+      canonicalHash,
+      provenance,
       datSection,
       datTopic,
       datUnitType,
