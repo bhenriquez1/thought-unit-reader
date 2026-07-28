@@ -2,6 +2,7 @@
 // Unified, SSR-safe PDF.js handler (v4) with worker auto-config and text extraction.
 
 import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
+import { buildPageTextIndex, TextLayerRegistry } from "@/lib/page-intelligence/textLayerIndex";
 
 /**
  * Public API
@@ -61,6 +62,9 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
   const pages: string[] = [];
   let totalCharsExtracted = 0;
 
+  // Clear any stale registry entries from a previous document extraction.
+  TextLayerRegistry.clear();
+
   // ✅ Process pages with progress tracking and early text detection
   for (let i = 1; i <= doc.numPages; i++) {
     if (options?.signal?.aborted) {
@@ -79,6 +83,15 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
       ]);
 
       const content = await page.getTextContent();
+
+      // Preserve full PDF.js provenance (item indexes + PDF-coordinate geometry)
+      // BEFORE the map below narrows each item to {str, transform} only.
+      // Scale=1 keeps coordinates in PDF-point space; Phase 2 applies the
+      // render-time viewport transform when drawing overlays.
+      const vp = page.getViewport({ scale: 1.0 });
+      TextLayerRegistry.set(
+        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+      );
 
       // Reconstruct line/paragraph structure from item geometry rather than
       // flattening to a single space-joined string — see lib/pdf/structuredPageText.
@@ -195,6 +208,9 @@ export async function extractPageTextsIncremental(
   const { batchSize = 10, onBatch, signal, onProgress, priorityPage, onPauseCheck } = options;
   const totalPages: number = doc.numPages;
 
+  // Clear stale registry entries from any previous document extraction.
+  TextLayerRegistry.clear();
+
   async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
     try {
       const page = await Promise.race([
@@ -204,6 +220,13 @@ export async function extractPageTextsIncremental(
         ),
       ]);
       const content = await page.getTextContent();
+
+      // Preserve full PDF.js provenance before items are narrowed.
+      const vp = page.getViewport({ scale: 1.0 });
+      TextLayerRegistry.set(
+        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+      );
+
       const normalizedItems = (content.items as any[]).map((item: any) => ({
         str: typeof item?.str === 'string' ? item.str
           : typeof item?.unicode === 'string' ? item.unicode

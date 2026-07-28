@@ -23,6 +23,38 @@ export type PdfTextItem = {
   transform?: number[];
 };
 
+// ── StructuredPageText contract ──────────────────────────────────────────────
+
+/** Bump when the column-detection or paragraph-gap algorithm changes. */
+export const STRUCTURE_VERSION = 1;
+/** Bump when buildStructuredPageText's paragraph boundary logic changes. */
+export const PARAGRAPH_ALGORITHM_VERSION = 1;
+
+/**
+ * Immutable extraction contract produced once per page.
+ * If extraction logic changes, bump the relevant version and regenerate;
+ * never mutate an existing record in place.
+ */
+export interface StructuredPageText {
+  readonly text: string;
+  readonly structureVersion: number;
+  readonly paragraphAlgorithmVersion: number;
+  readonly createdAt: number;
+}
+
+/**
+ * Wrap an already-built page text string in the versioned contract.
+ * Call once per page immediately after buildStructuredPageText().
+ */
+export function makeStructuredPageText(text: string): StructuredPageText {
+  return Object.freeze({
+    text,
+    structureVersion: STRUCTURE_VERSION,
+    paragraphAlgorithmVersion: PARAGRAPH_ALGORITHM_VERSION,
+    createdAt: Date.now(),
+  });
+}
+
 // Items within this many PDF-space units of vertical position are treated as the
 // same visual line (matches the tolerance already used for sort-order grouping).
 const Y_TOLERANCE = 3;
