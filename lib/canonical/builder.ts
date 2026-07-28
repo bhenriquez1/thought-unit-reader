@@ -17,6 +17,7 @@ import { classifyDATSubject } from './classifier';
 import { TextLayerRegistry } from '../page-intelligence/textLayerIndex';
 import { PageBridgeRegistry } from '../page-intelligence/pageBridgeRegistry';
 import { STRUCTURE_VERSION, PARAGRAPH_ALGORITHM_VERSION } from '../pdf/structuredPageText';
+import { scoreChunk, mapToSemanticLabel, SCORING_VERSION } from './semanticScoring';
 
 // ── Version constants ────────────────────────────────────────────────────────
 
@@ -147,18 +148,21 @@ export interface BuildCanonicalUnitsOptions {
   pageIndex: number;
   chunks: RawPageChunk[];
   sourceUltraNoteId?: string;
+  /** 0–1 from the semantic domain classifier — fed into the importanceScore formula. */
+  domainConfidence?: number;
 }
 
 export function buildCanonicalUnits(
   opts: BuildCanonicalUnitsOptions,
 ): CanonicalThoughtUnit[] {
-  const { documentId, bookId, bookTitle, pageIndex, chunks, sourceUltraNoteId } = opts;
+  const { documentId, bookId, bookTitle, pageIndex, chunks, sourceUltraNoteId, domainConfidence } = opts;
 
   const { subject, confidence } = classifyDATSubject(bookId, bookTitle);
   const datSection: DatSection = datSectionFromSubject(subject);
   const classConfidence = confidence === 'high' ? 0.85 : 0.45;
 
   const now = Date.now();
+  const totalUnits = chunks.length;
 
   // Resolve bridge and text-layer index once per page call.
   const bridge = PageBridgeRegistry.get(pageIndex);
@@ -178,6 +182,19 @@ export function buildCanonicalUnits(
     const datTopic = detectTopic(chunk.text, datSection);
     const datUnitType = detectUnitType(chunk.text);
     const datRelevance = scoreDatRelevance(chunk.text);
+
+    // ── Phase 1C: semantic scoring ─────────────────────────────────────────
+    const semantic = scoreChunk(chunk.text, {
+      datRelevance,
+      unitIndex,
+      totalUnits,
+      domainConfidence: domainConfidence ?? classConfidence,
+    });
+
+    if (process.env.NODE_ENV === "development") {
+      // Dev-only diagnostics — never persisted in production
+      console.debug("[semanticScoring]", id, semantic.breakdown);
+    }
 
     const quote = chunk.text.slice(0, 180).replace(/\s+/g, ' ').trim();
     const normalizedSourceText = chunk.text.replace(/\s+/g, ' ').trim();
@@ -251,6 +268,13 @@ export function buildCanonicalUnits(
       },
       canonicalHash,
       provenance,
+      // ── Phase 1C: semantic metadata ────────────────────────────────────────
+      canonicalType:      semantic.canonicalType,
+      semanticLabel:      semantic.semanticLabel,
+      semanticConfidence: semantic.semanticConfidence,
+      importanceScore:    semantic.importanceScore,
+      domainConfidence:   domainConfidence ?? classConfidence,
+      scoringVersion:     SCORING_VERSION,
       datSection,
       datTopic,
       datUnitType,

@@ -190,7 +190,7 @@ export interface CanonicalThoughtUnit {
   /**
    * What kind of learning value this unit carries — used by the highlighting
    * engine to render distinct badge colors in the Reader margin.
-   * Assigned post-classification by paragraphScoring.ts.
+   * Derived from canonicalType via mapToSemanticLabel() in semanticScoring.ts.
    */
   semanticLabel?: SemanticLabel;
   /**
