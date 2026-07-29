@@ -9,6 +9,8 @@ import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel
 import { buildDiagramPlan, type DiagramPlan } from "@/lib/whiteboard/diagramPlan";
 import { getProfileSystemBlock } from "@/lib/learningProfile/profileContext";
 import type { LearningProfile } from "@/types/workspace";
+import { buildRelationshipGraph, type CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
+import { buildDiagramPlanFromGraph } from "@/lib/whiteboard/semanticDiagramLayout";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -232,6 +234,9 @@ export default async function handler(
       focusedAnchorId?: string | null;
       pageNumber?: number | null;
       learningProfile?: LearningProfile;
+      /** Phase 5: canonical thought units — when present, diagram is built from the
+       *  relationship graph without an AI call for structure. */
+      canonicalUnits?: CanonicalEntryInput[];
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
@@ -246,9 +251,50 @@ export default async function handler(
     const rawProfile = body.learningProfile;
     const learningProfile: LearningProfile = (rawProfile && VALID_PROFILES.has(rawProfile)) ? rawProfile : "standard";
     const profileBlock = getProfileSystemBlock(learningProfile);
+    const canonicalUnits = Array.isArray(body.canonicalUnits) && body.canonicalUnits.length > 0
+      ? body.canonicalUnits as CanonicalEntryInput[]
+      : null;
 
-    if (!concept && !studyModel?.pageThesis) {
-      return res.status(400).json({ error: "Missing concept/studyModel" });
+    if (!concept && !studyModel?.pageThesis && !canonicalUnits) {
+      return res.status(400).json({ error: "Missing concept/studyModel/canonicalUnits" });
+    }
+
+    // ── Phase 5: canonical fast path ──────────────────────────────────────────
+    // When canonical units are provided, build the diagram from the relationship
+    // graph directly — no AI call needed for structure. AI narration is still
+    // generated when an API key is available, but structure is deterministic.
+    if (canonicalUnits) {
+      const graph      = buildRelationshipGraph(canonicalUnits);
+      const planTitle  = concept || studyModel?.pageThesis || undefined;
+      const diagramPlan = buildDiagramPlanFromGraph(graph, {
+        title:               planTitle,
+        pageNumber:          pageNumber ?? undefined,
+        sourceThoughtUnitId: focusedAnchorId,
+      });
+
+      // Build WhiteboardStep-compatible steps from diagramPlan.steps.
+      const canonicalSteps: Step[] = diagramPlan.steps.map((s) => ({
+        title:    s.title,
+        content:  s.content,
+        type:     (s.type as Step["type"]) ?? "draw",
+        drawType: s.drawType,
+        nodes:    s.nodes,
+        arrows:   s.arrows,
+        payload:  s.payload,
+        objects:  s.objects ?? ["sketch", "arrow", "label"],
+      }));
+
+      const narration = `This diagram shows ${graph.nodes.length} semantic concept${graph.nodes.length !== 1 ? "s" : ""} ` +
+        `from this page, organized by their canonical relationships. ` +
+        (graph.criticalCount > 0 ? `${graph.criticalCount} critical concept${graph.criticalCount !== 1 ? "s" : ""} are shown first. ` : "") +
+        `Layout: ${graph.suggestedLayout}.`;
+
+      return res.status(200).json({
+        steps: canonicalSteps,
+        narrationScript: narration,
+        diagramPlan,
+        aiDisabled: false,
+      });
     }
 
     const key = process.env.OPENAI_API_KEY?.trim();

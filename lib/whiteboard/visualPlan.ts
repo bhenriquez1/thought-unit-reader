@@ -79,6 +79,106 @@ const SUBJECT_VISUAL_TYPE: Record<string, VisualType> = {
   default:   "flowchart",
 };
 
+// ---------------------------------------------------------------------------
+// Canonical unit visual type mapping (Phase 5)
+// ---------------------------------------------------------------------------
+
+const CANONICAL_VISUAL_TYPE: Partial<Record<string, VisualType>> = {
+  "cause":           "flowchart",
+  "effect":          "flowchart",
+  "process":         "flowchart",
+  "mechanism":       "mechanism",
+  "indication":      "decision-tree",
+  "contraindication": "decision-tree",
+  "decision-point":  "decision-tree",
+  "formula":         "equation-map",
+  "worked-example":  "worked-example",
+  "definition":      "anatomy",
+  "core-concept":    "anatomy",
+  "classification":  "table",
+  "evidence":        "table",
+  "memory-anchor":   "cycle",
+  "high-yield":      "flowchart",
+  "clinical-pearl":  "decision-tree",
+  "treatment":       "flowchart",
+  "relationship":    "mechanism",
+};
+
+export interface CanonicalVisualEntry {
+  id: string;
+  text: string;
+  title?: string;
+  canonicalType?: string;
+  importanceScore?: number;
+  priorityTier?: number;
+}
+
+/**
+ * Build a WhiteboardVisualPlan from canonical thought units (Phase 5).
+ * Populates `sourceCanonicalUnitIds` — previously always left as `[]`.
+ */
+export function buildVisualPlanFromCanonical(
+  entries: CanonicalVisualEntry[],
+  pageTitle?: string,
+): WhiteboardVisualPlan {
+  if (entries.length === 0) {
+    return {
+      subject: "default",
+      topic: pageTitle ?? "Concept",
+      visualType: "flowchart",
+      learningGoal: "Understand the key concepts on this page",
+      requiredLabels: [],
+      sequence: [],
+      warnings: [],
+      sourceCanonicalUnitIds: [],
+    };
+  }
+
+  // Pick visual type from the most common canonical type.
+  const typeCounts = new Map<string, number>();
+  for (const e of entries) {
+    const ct = e.canonicalType ?? "core-concept";
+    typeCounts.set(ct, (typeCounts.get(ct) ?? 0) + 1);
+  }
+  const dominantType = Array.from(typeCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "core-concept";
+  const visualType: VisualType = CANONICAL_VISUAL_TYPE[dominantType] ?? "flowchart";
+
+  // Subject detection from canonical type cluster.
+  const types = new Set(entries.map((e) => e.canonicalType ?? ""));
+  let subject = "default";
+  if (types.has("indication") || types.has("contraindication") || types.has("treatment") || types.has("complication")) subject = "clinical";
+  else if (types.has("formula") || types.has("worked-example")) subject = "chemistry";
+  else if (types.has("mechanism") || types.has("cause") || types.has("effect")) subject = "biology";
+
+  // Required labels from the top entries' titles.
+  const requiredLabels = entries
+    .filter((e) => e.title)
+    .slice(0, 6)
+    .map((e) => e.title!);
+
+  // Sequence from entry titles (or truncated text).
+  const sequence = entries
+    .slice(0, 8)
+    .map((e) => e.title ?? e.text.slice(0, 60).trim())
+    .filter(Boolean);
+
+  // Warnings from warning/contraindication entries.
+  const warnings = entries
+    .filter((e) => e.canonicalType === "warning" || e.canonicalType === "contraindication")
+    .map((e) => e.title ?? e.text.slice(0, 80));
+
+  return {
+    subject,
+    topic: pageTitle ?? (entries[0]?.title ?? "Concept"),
+    visualType,
+    learningGoal: `Understand the semantic relationships between ${entries.length} canonical unit${entries.length !== 1 ? "s" : ""}.`,
+    requiredLabels,
+    sequence,
+    warnings,
+    sourceCanonicalUnitIds: entries.map((e) => e.id),
+  };
+}
+
 /** Build a WhiteboardVisualPlan from a study model and detected subject. */
 export function buildVisualPlanFromStudyModel(
   sm: Record<string, unknown>,
