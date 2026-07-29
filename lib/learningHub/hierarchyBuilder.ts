@@ -71,9 +71,10 @@ function hubLevelFromNodeType(nodeType: SyllabusNode["nodeType"], title: Display
 /* ─── Build a LearningHubNode from a SyllabusNode ─────────────────────────────── */
 
 function toLearningHubNode(
-  node:    SyllabusNode,
-  allNodes: SyllabusNode[],
-  depth:   number = 0,
+  node:      SyllabusNode,
+  allNodes:  SyllabusNode[],
+  depth:     number = 0,
+  statusMap: Readonly<Record<string, LearningHubNodeStatus>> = {},
 ): LearningHubNode {
   const displayTitle = normalizeDisplayTitle(node.title, {
     source:       toDisplaySource(node.source),
@@ -85,7 +86,7 @@ function toLearningHubNode(
   const children: LearningHubNode[] = depth < 3
     ? allNodes
         .filter(n => n.parentId === node.id)
-        .map(n => toLearningHubNode(n, allNodes, depth + 1))
+        .map(n => toLearningHubNode(n, allNodes, depth + 1, statusMap))
     : [];
 
   return {
@@ -93,7 +94,7 @@ function toLearningHubNode(
     displayTitle,
     hubLevel,
     children,
-    status: "not-started",
+    status: statusMap[node.id] ?? "not-started",
   };
 }
 
@@ -116,12 +117,16 @@ function buildSafeFallback(node: SyllabusNode, allNodes: SyllabusNode[]): string
  * Build a LearningHubTree from the flat SyllabusNode list of a UniversalSyllabus.
  * Groups root-level nodes by Part/Unit; ungrouped chapters go into a null group.
  *
- * @param nodes   SyllabusNode[] from UniversalSyllabus.nodes
- * @param order   Recommended node order (nodeIds) from UniversalSyllabus.recommendedOrder
+ * @param nodes      SyllabusNode[] from UniversalSyllabus.nodes
+ * @param order      Recommended node order (nodeIds) from UniversalSyllabus.recommendedOrder
+ * @param statusMap  Optional per-node progress override: nodeId → LearningHubNodeStatus.
+ *                   When provided, each node's status is set from this map instead of
+ *                   defaulting to "not-started". Unrecognised IDs are silently ignored.
  */
 export function buildLearningHubTree(
   nodes: SyllabusNode[],
   order: string[] = [],
+  statusMap: Readonly<Record<string, LearningHubNodeStatus>> = {},
 ): LearningHubTree {
   // Build an ID map for fast lookup
   const byId = new Map<string, SyllabusNode>(nodes.map(n => [n.id, n]));
@@ -135,8 +140,8 @@ export function buildLearningHubTree(
     roots.sort((a, b) => (orderIdx.get(a.id) ?? 999) - (orderIdx.get(b.id) ?? 999));
   }
 
-  // Convert roots to LearningHubNodes
-  const rootHubNodes = roots.map(n => toLearningHubNode(n, nodes));
+  // Convert roots to LearningHubNodes (propagate statusMap into every node)
+  const rootHubNodes = roots.map(n => toLearningHubNode(n, nodes, 0, statusMap));
 
   // Separate parts/units from chapters and ungrouped content
   const parts    = rootHubNodes.filter(n => n.hubLevel === "part" || n.hubLevel === "unit");
