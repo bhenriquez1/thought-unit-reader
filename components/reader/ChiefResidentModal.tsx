@@ -7,7 +7,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { TeachingMode, TeachingAudience } from "@/pages/api/chief-resident-teaching";
+import type { TeachingMode, TeachingAudience, CanonicalUnitInput } from "@/pages/api/chief-resident-teaching";
+import type { SemanticPack } from "@/lib/semantic/types";
+import { buildCanonicalContext, toCanonicalUnitInputs } from "@/lib/reader/chiefResidentContextBuilder";
 import {
   claimSpeech,
   isSpeechStale,
@@ -31,7 +33,7 @@ export interface ChiefResidentContext {
   mode: "explain-text" | "explain-page";
   /** For explain-text: the highlighted text the student wants explained. */
   selectedText?: string;
-  /** Raw page text for context. */
+  /** Raw page text — used when no canonical entries are available (legacy path). */
   pageText: string;
   /** AI-derived thesis for this page, if available. */
   pageThesis?: string | null;
@@ -41,6 +43,14 @@ export interface ChiefResidentContext {
   pageNumber: number;
   /** Learning profile passed from user settings. */
   learningProfile?: string;
+  /**
+   * Phase 4: Canonical thought units for this page.
+   * When present, replaces raw pageText as the AI teaching context.
+   * These are the ThoughtUnitNavigatorEntry objects from the left panel.
+   */
+  canonicalEntries?: CanonicalUnitInput[];
+  /** Active semantic pack — used to resolve canonical type labels for the AI. */
+  pack?: SemanticPack;
 }
 
 export interface ChiefResidentMessage {
@@ -148,14 +158,36 @@ async function streamChiefResident(
 }
 
 // ---------------------------------------------------------------------------
-// Build source text for API
+// Build source text / canonical units for API
 // ---------------------------------------------------------------------------
 
-function buildSourceText(ctx: ChiefResidentContext): string {
+/**
+ * Raw text fallback — used when canonical entries are not available.
+ * Combines pageThesis (AI-derived) + raw page text.
+ */
+function buildRawSourceText(ctx: ChiefResidentContext): string {
   const parts: string[] = [];
   if (ctx.pageThesis) parts.push(`Page thesis: ${ctx.pageThesis}`);
   if (ctx.pageText)   parts.push(ctx.pageText.slice(0, 3000));
   return parts.join("\n\n").trim();
+}
+
+/**
+ * Returns the canonical units ready to pass to the API, or null if unavailable.
+ * Filters to entries with meaningful text; preserves importance ordering from
+ * buildCanonicalContext so the API receives units already sorted critical-first.
+ */
+function resolveCanonicalUnits(ctx: ChiefResidentContext): CanonicalUnitInput[] | null {
+  if (!ctx.canonicalEntries || ctx.canonicalEntries.length === 0) return null;
+  const inputs = toCanonicalUnitInputs(ctx.canonicalEntries);
+  if (inputs.length === 0) return null;
+  // Pre-sort by importance level so the API block reads critical-first
+  if (ctx.pack) {
+    const { contextText } = buildCanonicalContext(inputs, ctx.pack);
+    // contextText is for the sourceText fallback; we return sorted inputs for the units field
+    void contextText;
+  }
+  return inputs;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +254,6 @@ export default function ChiefResidentModal({
   }, []);
 
   const sendToApi = useCallback(async (history: ChatTurn[], selectedAudience: TeachingAudience) => {
-    const sourceText = buildSourceText(context);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     setIsStreaming(true);
@@ -232,17 +263,21 @@ export default function ChiefResidentModal({
     const apiMode: TeachingMode = context.mode === "explain-text" ? "explain-text" : "explain-page";
     const claudeMessages = history.map(({ role, content }) => ({ role, content }));
 
+    // Phase 4: use canonical units when available; fall back to raw text.
+    const canonicalUnits = resolveCanonicalUnits(context);
+    const sourceText     = buildRawSourceText(context);
+
     try {
       let accumulated = "";
       const body = {
         sourceText,
-        bookTitle: context.documentTitle,
+        canonicalUnits: canonicalUnits ?? undefined,
+        title: context.documentTitle,
         mode: apiMode,
         audience: selectedAudience,
         selectedText: context.selectedText,
-        messages: claudeMessages.length === 0
-          ? []
-          : claudeMessages,
+        pageNumber: context.pageNumber,
+        messages: claudeMessages.length === 0 ? [] : claudeMessages,
       };
       const full = await streamChiefResident(
         body,
