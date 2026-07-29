@@ -5156,6 +5156,7 @@ export default function ThoughtUnitReader() {
 
           {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
+            <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
               <StudyGuideLab
                 bookId={bookId}
                 bookTitle={uploadedFile?.name ?? undefined}
@@ -5167,6 +5168,7 @@ export default function ThoughtUnitReader() {
                 onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
                 onPodcastScript={(script) => setStudyGuideScript(script)}
               />
+            </ErrorBoundary>
           </div>
 
           {/* Chief Resident sub-tab — always mounted so session state persists across tab switches */}
@@ -5861,20 +5863,22 @@ export default function ThoughtUnitReader() {
 
     if (activeShellTab === "studyguide") {
       return (
-        <StudyGuideLab
-          bookId={bookId}
-          bookTitle={uploadedFile?.name ?? undefined}
-          currentPage={currentPage}
-          studyModel={currentPageStudyModel}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-          onNavigateToPage={(page) => {
-            syncToPage(page);
-            trySwitchShellTab("reader", "reader");
-          }}
-          onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
-          onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
-          onPodcastScript={(script) => setStudyGuideScript(script)}
-        />
+        <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
+          <StudyGuideLab
+            bookId={bookId}
+            bookTitle={uploadedFile?.name ?? undefined}
+            currentPage={currentPage}
+            studyModel={currentPageStudyModel}
+            pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+            onNavigateToPage={(page) => {
+              syncToPage(page);
+              trySwitchShellTab("reader", "reader");
+            }}
+            onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+            onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+            onPodcastScript={(script) => setStudyGuideScript(script)}
+          />
+        </ErrorBoundary>
       );
     }
 

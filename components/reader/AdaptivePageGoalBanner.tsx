@@ -75,8 +75,16 @@ export default function AdaptivePageGoalBanner({
   // Reset completion state when page changes
   useEffect(() => { setCompleted(false); }, [currentPage]);
 
-  const sessions = useSessionStore(s => s.getSessionsForBook(bookId));
-  const recalls  = useSessionStore(s => s.getRecallsForBook(bookId));
+  const allSessions = useSessionStore(s => s.sessions);
+  const allRecalls  = useSessionStore(s => s.recalls);
+  const sessions = useMemo(
+    () => allSessions.filter(s => s.bookId === bookId),
+    [allSessions, bookId],
+  );
+  const recalls = useMemo(
+    () => allRecalls.filter(r => r.bookId === bookId),
+    [allRecalls, bookId],
+  );
 
   const adaptableUnits = useMemo<AdaptableUnit[]>(() =>
     entries.map(e => ({
