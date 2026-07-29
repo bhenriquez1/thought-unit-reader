@@ -5,7 +5,8 @@
 // Tells the student what to understand before leaving this page.
 
 import React, { useState } from "react";
-import type { AdaptiveMission, LearnerState } from "@/lib/adaptiveGuide/adaptiveGuideEngine";
+import type { AdaptiveMission } from "@/lib/adaptiveGuide/adaptiveGuideEngine";
+import type { LearnerState } from "@/lib/adaptiveGuide/studentProfile";
 
 interface PageGoalBannerProps {
   mission: AdaptiveMission;

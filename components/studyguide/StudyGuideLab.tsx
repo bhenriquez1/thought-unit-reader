@@ -3,7 +3,7 @@
 // Study Guide Architect — builds a top-student notebook from multiple source PDFs + notes.
 // Philosophy: "What would a 25 DAT student keep if they had 2 months before the exam?"
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   STUDY_GUIDE_MODE_LABELS,
   STUDY_GUIDE_MODE_DESCRIPTIONS,
@@ -24,6 +24,10 @@ import { saveRecallSet, stableRecallId } from "@/lib/recalllab/recallStore";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
 import type { PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import AdaptiveGuideView from "./AdaptiveGuideView";
+import { buildAdaptiveGuide, type AdaptableUnit } from "@/lib/adaptiveGuide/adaptiveGuideEngine";
+import { buildStudentProfile } from "@/lib/adaptiveGuide/studentProfile";
+import { useSessionStore } from "@/lib/adaptiveGuide/sessionStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -388,6 +392,20 @@ function buildStudyModelSourceText(sm: CurrentPageStudyModel, pageText?: string)
   return lines.join("\n");
 }
 
+// Maps VisualAnchorRole → engine canonicalType
+const ROLE_TO_CANONICAL: Record<string, string> = {
+  coreIdea:        "thesis",
+  definition:      "definition",
+  mechanism:       "mechanism",
+  exampleEvidence: "application",
+  keyDetail:       "keyDetail",
+  confusionTrap:   "trap",
+  datFact:         "dat_fact",
+  clinicalPearl:   "clinical",
+  memoryHook:      "memoryAnchor",
+  keyAnatomy:      "keyDetail",
+};
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function StudyGuideLab({
@@ -419,11 +437,42 @@ export default function StudyGuideLab({
 
   const [currentGuide, setCurrentGuide] = useState<StudyGuideRecord | null>(null);
   const [history, setHistory]           = useState<StudyGuideRecord[]>([]);
-  const [historyTab, setHistoryTab]     = useState<"build" | "history">("build");
+  const [activeTab, setActiveTab]       = useState<"adaptive" | "build" | "history">("adaptive");
 
   const [noteSaved, setNoteSaved]       = useState(false);
   const [recallSaved, setRecallSaved]   = useState(false);
   const [saveError, setSaveError]       = useState<string | null>(null);
+
+  // ── Adaptive guide ──────────────────────────────────────────────────────────
+
+  const sessions = useSessionStore(s => s.getSessionsForBook(bookId));
+  const recalls  = useSessionStore(s => s.getRecallsForBook(bookId));
+  const hasRealProfileData = sessions.length > 0 || recalls.length > 0;
+
+  const adaptableUnits = useMemo<AdaptableUnit[]>(() =>
+    (studyModel?.visualAnchors ?? []).map(a => ({
+      id:            a.id,
+      text:          a.exactText,
+      title:         a.reason?.slice(0, 60) ?? undefined,
+      canonicalType: ROLE_TO_CANONICAL[a.role] ?? a.role,
+      importanceScore: a.priorityTier
+        ? a.priorityTier * 20
+        : Math.max(10, 100 - (a.priority - 1) * 10),
+      priorityTier:  a.priorityTier,
+      pageNumber:    currentPage,
+    })),
+    [studyModel, currentPage],
+  );
+
+  const studentProfile = useMemo(
+    () => buildStudentProfile(bookId, sessions, recalls),
+    [bookId, sessions, recalls],
+  );
+
+  const adaptiveGuide = useMemo(
+    () => buildAdaptiveGuide(adaptableUnits, studentProfile, currentPage ?? 1),
+    [adaptableUnits, studentProfile, currentPage],
+  );
 
   // Load history on mount
   useEffect(() => {
@@ -442,7 +491,7 @@ export default function StudyGuideLab({
     setChapterTitle("");
     setTopic("");
     setSources(prev => prev.map(s => ({ ...s, text: "", fileName: undefined })));
-    setHistoryTab("build");
+    setActiveTab("adaptive");
     setNoteSaved(false);
     setRecallSaved(false);
     setSaveError(null);
@@ -607,7 +656,7 @@ export default function StudyGuideLab({
       await saveStudyGuide(record);
       const updated = await getStudyGuidesByBook(bookId);
       setHistory(updated);
-      setHistoryTab("build");
+      setActiveTab("build");
 
       console.log("[STUDYGUIDE_GENERATED]", {
         id: record.id, mode, provider: data.provider,
@@ -832,16 +881,22 @@ export default function StudyGuideLab({
           <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Study Sheet</div>
           <div className="text-xs text-slate-500 mt-0.5">Build notes a top student would actually keep.</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <button
-            onClick={() => setHistoryTab("build")}
-            className={`text-xs px-3 py-1 rounded-lg transition-colors ${historyTab === "build" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            onClick={() => setActiveTab("adaptive")}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "adaptive" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            🎯 Adaptive
+          </button>
+          <button
+            onClick={() => setActiveTab("build")}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "build" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
             Build
           </button>
           <button
-            onClick={() => setHistoryTab("history")}
-            className={`text-xs px-3 py-1 rounded-lg transition-colors ${historyTab === "history" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            onClick={() => setActiveTab("history")}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "history" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
             History ({history.length})
           </button>
@@ -849,7 +904,21 @@ export default function StudyGuideLab({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {historyTab === "history" ? (
+        {activeTab === "adaptive" ? (
+          /* ── Adaptive guide ── */
+          <div className="p-3">
+            {adaptableUnits.length === 0 ? (
+              <div className="py-8 text-center text-[12px] text-slate-600 italic">
+                Open a book in the Reader to activate the adaptive guide.
+              </div>
+            ) : (
+              <AdaptiveGuideView
+                guide={adaptiveGuide}
+                callbacks={{ bookId, currentPage, onNavigateToPage, hasRealProfileData }}
+              />
+            )}
+          </div>
+        ) : activeTab === "history" ? (
           /* ── History panel ── */
           <div className="p-4 flex flex-col gap-3">
             {history.length === 0 ? (
@@ -859,7 +928,7 @@ export default function StudyGuideLab({
                 <div
                   key={g.id}
                   className="rounded-xl border border-slate-700 bg-slate-900 p-4 hover:border-teal-700/50 transition-colors cursor-pointer group"
-                  onClick={() => { setCurrentGuide(g); setHistoryTab("build"); }}
+                  onClick={() => { setCurrentGuide(g); setActiveTab("build"); }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
