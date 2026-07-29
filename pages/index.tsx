@@ -573,6 +573,11 @@ export default function ThoughtUnitReader() {
   // inside a useCallback without listing currentPage as a dep (which would
   // recreate the callback and cascade re-renders into TocTree on every page flip).
   const currentPageRef = useRef(1);
+  // Cross-page anchor focus: when a card on a different page is clicked we must
+  // call syncToPage() first, which clears focusedEvidenceId (see the clear-on-
+  // page-change effect below). pendingFocusAnchorId survives the page transition
+  // and is applied as the new focusedEvidenceId once currentPage settles.
+  const [pendingFocusAnchorId, setPendingFocusAnchorId] = useState<string | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
@@ -2074,19 +2079,42 @@ export default function ThoughtUnitReader() {
   // Clicking a highlighted PDF overlay rect (or a Thought Unit card) — focuses the rect,
   // scrolls the left panel to that card, and seeds the Expert Brain context. Does NOT
   // auto-start speech — the user must press Play or "Read This" to hear it.
+  //
+  // Cross-page navigation: when the anchor lives on a different page we call
+  // syncToPage first, then apply the focus via pendingFocusAnchorId (the clear-
+  // on-page-change effect would otherwise wipe it before the new page renders).
   const onPdfHighlightFocus = useCallback((id: string) => {
-    setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
     const text = anchor?.text ?? activeUnit?.exactText ?? null;
     if (text) setFocusSnippet(text);
-  }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
+
+    const anchorPage = (anchor as { page?: number } | undefined)?.page
+      ?? (activeUnit as { page?: number } | undefined)?.page
+      ?? null;
+
+    if (anchorPage && anchorPage !== currentPageRef.current) {
+      // Navigate to the anchor's page first; apply focus after page settles.
+      setPendingFocusAnchorId(id);
+      syncToPage(anchorPage, { reason: "PROGRAMMATIC" });
+    } else {
+      setFocusedEvidenceId(id);
+    }
+  }, [finalHighlightAnchors, canonicalLeftPanelUnits, syncToPage]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
   }, [activeShellTab, currentPage]);
+
+  // Apply a cross-page pending focus after the page transition completes.
+  // Must run AFTER the clear-on-page-change effect above (effects run in order).
+  useEffect(() => {
+    if (!pendingFocusAnchorId) return;
+    setFocusedEvidenceId(pendingFocusAnchorId);
+    setPendingFocusAnchorId(null);
+  }, [currentPage, pendingFocusAnchorId]);
 
   // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
   const sendCurrentPageToNoteLab = useCallback(async () => {

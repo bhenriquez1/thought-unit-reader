@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { tierGlowStyle } from "@/lib/insights/tierStyle";
 
 export interface OverlayRect {
@@ -160,17 +160,25 @@ export default function PdfEvidenceOverlay({
 }) {
   const rectRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
-  // Scroll focused highlight into view when focusedId changes
-  useEffect(() => {
+  // Scroll focused highlight into view when focusedId changes.
+  // useLayoutEffect fires synchronously after DOM mutations so the rect is
+  // guaranteed to exist in rectRefs when the newly-authorized rect appears
+  // (the `rects` prop update and the `focusedId` prop update land in the same
+  // render cycle via the parent's idsToAllow → guarded derivation).
+  useLayoutEffect(() => {
     if (!focusedId) return;
     const el = rectRefs.current.get(focusedId);
     if (el) {
-      console.log("[PDF_FOCUS_RECEIVED]", { focusedId, scrolled: true });
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else {
-      console.log("[PDF_FOCUS_RECEIVED]", { focusedId, scrolled: false, note: "rect not in current page DOM" });
     }
-  }, [focusedId]);
+    // Also try after a paint frame — cross-page navigation delivers rects one
+    // render later and the layout effect may fire before the new page's rects mount.
+    const raf = requestAnimationFrame(() => {
+      const el2 = rectRefs.current.get(focusedId);
+      if (el2) el2.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusedId, rects]); // include rects so we re-run when newly-authorized rects arrive
 
   // Log when highlight rects are rendered
   useEffect(() => {
