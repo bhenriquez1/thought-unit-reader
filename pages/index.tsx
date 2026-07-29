@@ -5106,13 +5106,13 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🩺 Chief Resident"}
+                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Adaptive Study Guide" : "🩺 Chief Resident"}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Study Sheet sub-tab — always mounted to preserve generation state */}
+          {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
               <StudyGuideLab
                 bookId={bookId}
@@ -5210,7 +5210,7 @@ export default function ThoughtUnitReader() {
                     }}
                     className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/15"
                   >
-                    📑 Study Sheet
+                    📑 Adaptive Study Guide
                   </button>
                   <button
                     type="button"
