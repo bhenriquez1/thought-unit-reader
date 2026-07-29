@@ -44,11 +44,31 @@ export interface TeachingMessage {
   content: string;
 }
 
+/**
+ * A single canonical thought unit passed from the client for grounded teaching.
+ * Importance level and type are pre-resolved client-side so the API stays
+ * model-agnostic (no IDB access on the server).
+ */
+export interface CanonicalUnitInput {
+  text:            string;
+  canonicalType?:  string;
+  importanceScore?: number;
+  priorityTier?:   number;
+  title?:          string;
+  page?:           number;
+}
+
 export interface ChiefResidentRequest {
   mode:         TeachingMode;
   audience?:    TeachingAudience;
   /** Full source text for the current page / note / study sheet */
   sourceText:   string;
+  /**
+   * Canonical thought units for this page (Phase 4).
+   * When present, these replace raw sourceText as the teaching context.
+   * Sorted by importance client-side before being sent.
+   */
+  canonicalUnits?: CanonicalUnitInput[];
   /** Highlighted passage (explain-text mode only) */
   selectedText?: string;
   /** Document or chapter title for context labelling */
@@ -181,14 +201,53 @@ function getSystemPrompt(mode: TeachingMode, audience?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Importance helpers (inline — avoids importing lib/reader from the API layer)
+// ---------------------------------------------------------------------------
+
+function importanceLevelFromScore(score: number): string {
+  if (score >= 80) return "critical";
+  if (score >= 55) return "high";
+  if (score >= 30) return "medium";
+  return "reference";
+}
+
+function importanceLevelFromTier(tier: number): string {
+  if (tier >= 5) return "critical";
+  if (tier >= 4) return "high";
+  if (tier >= 3) return "medium";
+  return "reference";
+}
+
+function resolveLevel(u: CanonicalUnitInput): string {
+  if (typeof u.importanceScore === "number") return importanceLevelFromScore(u.importanceScore);
+  if (typeof u.priorityTier   === "number") return importanceLevelFromTier(u.priorityTier);
+  return "medium";
+}
+
+/**
+ * Format canonical units into a structured teaching-context block.
+ * The AI sees type labels and importance levels — not raw unstructured text.
+ */
+function buildCanonicalBlock(units: CanonicalUnitInput[]): string {
+  const lines = units.map((u) => {
+    const ct        = (u.canonicalType ?? "concept").toUpperCase();
+    const level     = resolveLevel(u).toUpperCase();
+    const titleNote = u.title ? ` — "${u.title}"` : "";
+    const text      = u.text.slice(0, 400);
+    return `[${ct}${titleNote} · ${level}] ${text}`;
+  });
+  return `SEMANTIC UNITS (${units.length} concept${units.length !== 1 ? "s" : ""} grounded in source material):\n\n${lines.join("\n")}`;
+}
+
+// ---------------------------------------------------------------------------
 // Source-context builder — user content stays in input[], never in instructions
 // ---------------------------------------------------------------------------
 
 function buildUserContext(req: ChiefResidentRequest): string {
-  const { sourceText, title, mode, selectedText, pageNumber } = req;
-  const titleNote   = title      ? `Document: "${title}"\n`      : "";
-  const pageNote    = pageNumber ? `Page: ${pageNumber}\n`        : "";
-  const headerNote  = titleNote + pageNote;
+  const { sourceText, title, mode, selectedText, pageNumber, canonicalUnits } = req;
+  const titleNote  = title      ? `Document: "${title}"\n` : "";
+  const pageNote   = pageNumber ? `Page: ${pageNumber}\n`  : "";
+  const headerNote = titleNote + pageNote;
 
   const modeLabel: Record<TeachingMode, string> = {
     "teach-page":        "Current page content to teach from:",
@@ -201,13 +260,21 @@ function buildUserContext(req: ChiefResidentRequest): string {
     "explain-page":      "Current page content:",
   };
 
+  // Phase 4: prefer canonical units over raw text when available.
+  // The structured block tells the AI which concepts are high-yield, which are
+  // warnings, etc., so it can calibrate teaching depth and emphasis.
+  const contentBlock =
+    canonicalUnits && canonicalUnits.length > 0
+      ? buildCanonicalBlock(canonicalUnits)
+      : `${modeLabel[mode]}\n\n${sourceText.trim()}`;
+
   if (mode === "explain-text" && selectedText) {
     return (
       `${headerNote}HIGHLIGHTED PASSAGE:\n"""\n${selectedText.slice(0, 600)}\n"""\n\n` +
-      `${modeLabel[mode]}\n"""\n${sourceText.trim().slice(0, 2000)}\n"""\n\n---\n\nPlease explain the highlighted passage.`
+      `${contentBlock}\n\n---\n\nPlease explain the highlighted passage.`
     );
   }
-  return `${headerNote}${modeLabel[mode]}\n\n${sourceText.trim()}\n\n---\n\nPlease begin the teaching session.`;
+  return `${headerNote}${contentBlock}\n\n---\n\nPlease begin the teaching session.`;
 }
 
 // ---------------------------------------------------------------------------
