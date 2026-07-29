@@ -170,6 +170,7 @@ const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTr
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
+const PersonalWorkspaceTab = dynamic(() => import("@/components/workspace/PersonalWorkspaceTab"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
@@ -5134,7 +5135,7 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Adaptive Study Guide" : "🩺 Chief Resident"}
+                  {v === "notes" ? "✍️ Personal Workspace" : v === "studyguide" ? "📑 Adaptive Study Guide" : "🩺 Chief Resident"}
                 </button>
               ))}
             </div>
@@ -5168,126 +5169,14 @@ export default function ThoughtUnitReader() {
             />
           </div>
 
-          {/* Notes sub-tab — always mounted to preserve selected note and edits */}
-          <div className="flex-1 flex overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none" }}>
-            {/* Left: Thought Unit navigation for the currently open note */}
-            <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
-              {notelabNavEntries.length > 0 ? (
-                <ThoughtUnitNavigator
-                  entries={notelabNavEntries}
-                  focusedId={notelabFocusedAnchorId}
-                  onJump={(id) => setNotelabFocusedAnchorId(id)}
-                  presetId={sharedPresetId}
-                />
-              ) : (
-                <div className="px-3 py-4 text-[11px] leading-relaxed text-slate-500">
-                  Open a note to see its thought units here.
-                </div>
-              )}
-            </div>
+          {/* Personal Workspace sub-tab — student's own digital notebook (replaces AI-output Notes tab) */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
+            <PersonalWorkspaceTab
+              bookId={bookId}
+              currentPage={currentPage}
+              onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+            />
 
-            {/* Center: expert notebook card grid (existing note list/grid, reused as-is) */}
-            <div className="flex-1 overflow-y-auto">
-              <ErrorBoundary onError={(error) => console.error('📝 NoteLab Error:', error.message, error.stack)}>
-                <UltraNotesList
-                  bookId={bookId}
-                  refreshKey={noteLabRefreshKey}
-                  onNavigateToPage={(page) => {
-                    syncToPage(page);
-                    trySwitchShellTab("reader", "reader");
-                  }}
-                  onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
-                  onOpenWhiteboard={(note, card) => {
-                    setWbConcept(card?.title || note.topic);
-                    setWbContext(card?.body || note.coreIdea || "");
-                    setShowWhiteboardPanel(true);
-                  }}
-                  onExplainCard={(note, card) => {
-                    openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
-                  }}
-                  onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); setActiveNote(note); }}
-                  focusedAnchorText={notelabFocusedAnchorText}
-                  focusedKnowledgeNodeId={selectedKgNodeId}
-                />
-              </ErrorBoundary>
-            </div>
-
-            {/* Right: Study Tools + Export for the active note */}
-            <div className="w-[200px] flex-shrink-0 overflow-y-auto border-l border-white/10 px-3 py-3 flex flex-col gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Study Tools</span>
-              {notelabActiveNote ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const set = buildRecallSetFromNote(notelabActiveNote, { sourceLabel: "notelab" });
-                      await saveRecallSet(set);
-                      setLastRecallSetId(set.id);
-                      setRecallLabRefreshKey((k) => k + 1);
-                      trySwitchShellTab("study", "study");
-                    }}
-                    className="rounded-md border border-indigo-400/20 bg-indigo-400/10 px-2 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-400/15"
-                  >
-                    🎯 Generate Cards
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      syncToPage(notelabActiveNote.pageNumber);
-                      setNotesSubTab("studyguide");
-                    }}
-                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/15"
-                  >
-                    📑 Adaptive Study Guide
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setWbConcept(notelabActiveNote.topic);
-                      setWbContext(notelabActiveNote.coreIdea || "");
-                      setShowWhiteboardPanel(true);
-                    }}
-                    className="rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-400/15"
-                  >
-                    🖼️ Whiteboard
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { syncToPage(notelabActiveNote.pageNumber); trySwitchShellTab("reader", "reader"); }}
-                    className="rounded-md border border-blue-400/20 bg-blue-400/10 px-2 py-2 text-xs font-semibold text-blue-300 hover:bg-blue-400/15"
-                  >
-                    📍 Go to p.{notelabActiveNote.pageNumber}
-                  </button>
-                  <div className="mt-1 h-px bg-white/8" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Export</span>
-                  <button
-                    type="button"
-                    onClick={() => downloadNoteMarkdown(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📄 Markdown
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadNotePdf(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📑 PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadNoteDocx(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📝 DOCX
-                  </button>
-                </>
-              ) : (
-                <div className="text-xs leading-relaxed text-slate-500">
-                  Open a note to generate cards, build a study sheet, or export.
-                </div>
-              )}
-            </div>
           </div>
         </div>
       );
