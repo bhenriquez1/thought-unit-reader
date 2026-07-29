@@ -15,6 +15,7 @@ import type { HighlightTarget } from '@/lib/readerContracts';
 import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 import type { ReadingCursor } from '@/lib/readingFocus/readingFocusStore';
 import ThoughtUnitNavigator from './reader/ThoughtUnitNavigator';
+import AdaptivePageGoalBanner from './reader/AdaptivePageGoalBanner';
 import ThoughtRoadmap from './reader/ThoughtRoadmap';
 import DecisionProcessMap from './reader/DecisionProcessMap';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
@@ -632,6 +633,14 @@ export default function PureReaderView({
           </div>
 
           <div className="h-px bg-white/8 mx-1" />
+
+          {docId && (
+            <AdaptivePageGoalBanner
+              bookId={docId}
+              currentPage={currentPage}
+              entries={navigatorEntries}
+            />
+          )}
 
           {/* Level 2/4 — Thought Unit Navigator: click a unit to jump + focus + speak. MODE picker lives in its header. */}
           <ThoughtUnitNavigator

@@ -359,6 +359,12 @@ export default function ThoughtUnitNavigator({
     });
   };
 
+  const handleMarkMastered = (entryId: string) => {
+    if (!bookId || !pageNumber) return;
+    markProgress(bookId, pageNumber, entryId, "mastered");
+    setProgressMap(getPageProgress(bookId, pageNumber, entries.map((e) => e.id)));
+  };
+
   const TIER_ACTION_LABEL: Record<number, string> = {
     5: "Understand first",
     4: "Apply",
@@ -579,30 +585,14 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎 Evidence
-                    </button>
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      >
-                        📝 Note
-                      </button>
-                    )}
                     {onOpenRecall && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
+                        title="Quiz me on this"
                       >
-                        🧠 Recall
+                        🎯 Quiz Me
                       </button>
                     )}
                     {onExplain && (
@@ -614,6 +604,38 @@ export default function ThoughtUnitNavigator({
                         💬 Explain
                       </button>
                     )}
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkMastered(entry.id);
+                      }}
+                      className={`text-[9px] transition-colors ${
+                        progressMap.get(entry.id)?.has("mastered")
+                          ? "text-emerald-400"
+                          : "text-white/40 hover:text-emerald-300"
+                      }`}
+                      title="Mark as complete"
+                    >
+                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
+                    </button>
                   </div>
                 </div>
               );
@@ -851,32 +873,14 @@ export default function ThoughtUnitNavigator({
                     );
                   })()}
                   <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎 Evidence
-                    </button>
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Save a note on this anchor"
-                      >
-                        📝 Note
-                      </button>
-                    )}
                     {onOpenRecall && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Open in Recall Lab"
+                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
+                        title="Quiz me on this"
                       >
-                        🧠 Recall
+                        🎯 Quiz Me
                       </button>
                     )}
                     {onExplain && (
@@ -889,6 +893,39 @@ export default function ThoughtUnitNavigator({
                         💬 Explain
                       </button>
                     )}
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        title="Save a note on this anchor"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkMastered(entry.id);
+                      }}
+                      className={`text-[9px] transition-colors ${
+                        progressMap.get(entry.id)?.has("mastered")
+                          ? "text-emerald-400"
+                          : "text-white/40 hover:text-emerald-300"
+                      }`}
+                      title="Mark as complete"
+                    >
+                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
+                    </button>
                   </div>
                 </div>
               );
