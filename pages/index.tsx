@@ -47,6 +47,7 @@ import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPane
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
+import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -5304,27 +5305,28 @@ export default function ThoughtUnitReader() {
                     </button>
                   )}
 
-                  {/* Quick nav grid */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {([
-                      { id: "today",     label: "Today's Plan",   icon: "📅", sub: "What to study now" },
-                      { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
-                      { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
-                      { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
-                    ] as const).map(({ id, label, icon, sub }) => (
-                      <button
-                        key={id}
-                        onClick={() => setHubSubTab(id)}
-                        className="flex items-start gap-3 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-3 text-left hover:bg-slate-800/60 transition-colors"
-                      >
-                        <span className="text-lg mt-0.5">{icon}</span>
-                        <div>
-                          <div className="text-xs font-semibold text-slate-200">{label}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {/* Session launcher — adaptive guide is pre-loaded in reader (Adaptive tab default) */}
+                  <LearningHubLaunchPanel
+                    bookLoaded={!!bookId}
+                    hasWeakAreas={!!(courseWeakAreas && courseWeakAreas.length > 0)}
+                    hasStudyPlan={syllabusStudyPlan.length > 0}
+                    nextTopicLabel={nextTopicRecommendation
+                      ? `${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
+                      : undefined}
+                    onAdaptiveStudy={() => {
+                      if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    onTodaySession={() => setHubSubTab("today")}
+                    onContinueReading={() => trySwitchShellTab("reader", "reader")}
+                    onWeakAreaReview={() => {
+                      const firstWeak = courseWeakAreas?.[0];
+                      if (firstWeak) setCoachQuestion(`Help me review my weak area: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    onExamPrep={() => setHubSubTab("exam")}
+                    onAiCoach={() => setHubSubTab("coach")}
+                  />
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
@@ -5340,7 +5342,7 @@ export default function ThoughtUnitReader() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
-                  {/* Primary CTA — continue where I left off */}
+                  {/* Primary CTA — adaptive study launch with pre-loaded guide */}
                   <button
                     onClick={() => {
                       if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
@@ -5348,8 +5350,13 @@ export default function ThoughtUnitReader() {
                     }}
                     className="w-full rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-600/25 to-indigo-800/20 hover:from-indigo-600/35 hover:to-indigo-800/30 transition-colors p-5 text-left"
                   >
-                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1.5">
-                      {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">
+                        {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                      </div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-800/40 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+                        Adaptive Guide Pre-loaded
+                      </span>
                     </div>
                     <div className="text-sm font-semibold text-white leading-snug">
                       {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
@@ -5580,7 +5587,24 @@ export default function ThoughtUnitReader() {
           {/* Mastery — chapter-level mastery breakdown */}
           {hubSubTab === "mastery" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+                {bookId && (
+                  <button
+                    onClick={() => {
+                      const worstChapter = chapterProgressList
+                        .slice()
+                        .sort((a, b) => (a.progress.masteryPct ?? 0) - (b.progress.masteryPct ?? 0))[0];
+                      const startPage = worstChapter?.chapter.pageRanges[0]?.start;
+                      if (startPage) syncToPage(startPage);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 px-3 py-1.5 rounded-lg bg-indigo-900/30 border border-indigo-500/30 hover:bg-indigo-900/50 transition-colors"
+                  >
+                    Study Weakest Chapter →
+                  </button>
+                )}
+              </div>
               {chapterProgressList.length > 0 ? (
                 <div className="space-y-2.5">
                   {chapterProgressList.map((ch, idx) => {
@@ -5608,14 +5632,36 @@ export default function ThoughtUnitReader() {
           {/* Weak Areas */}
           {hubSubTab === "weak" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+                {courseWeakAreas && courseWeakAreas.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const firstWeak = courseWeakAreas[0];
+                      if (firstWeak) setCoachQuestion(`Give me a targeted review session for: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg bg-rose-900/30 border border-rose-500/30 hover:bg-rose-900/50 transition-colors"
+                  >
+                    Launch Review Session →
+                  </button>
+                )}
+              </div>
               {courseWeakAreas && courseWeakAreas.length > 0 ? (
                 <div className="space-y-2">
                   {courseWeakAreas.map((area: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3">
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setCoachQuestion(`Help me review and improve on: ${area}`);
+                        setHubSubTab("coach");
+                      }}
+                      className="w-full flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3 text-left hover:bg-rose-950/35 hover:border-rose-500/35 transition-colors"
+                    >
                       <span className="text-rose-400 shrink-0">⚠️</span>
-                      <span className="text-xs text-slate-200">{area}</span>
-                    </div>
+                      <span className="text-xs text-slate-200 flex-1">{area}</span>
+                      <span className="text-[9px] text-rose-400/60 shrink-0 font-medium">Coach →</span>
+                    </button>
                   ))}
                 </div>
               ) : (
