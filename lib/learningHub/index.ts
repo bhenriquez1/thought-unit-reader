@@ -3,3 +3,6 @@
 
 export * from "./titleNormalizer";
 export * from "./hierarchyBuilder";
+export * from "./conceptLearningPlan";
+export * from "./semanticToc";
+export * from "./masteryBreakdown";
