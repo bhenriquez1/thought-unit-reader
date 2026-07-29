@@ -579,6 +579,11 @@ export default function ThoughtUnitReader() {
   // page-change effect below). pendingFocusAnchorId survives the page transition
   // and is applied as the new focusedEvidenceId once currentPage settles.
   const [pendingFocusAnchorId, setPendingFocusAnchorId] = useState<string | null>(null);
+  // Stable ref to syncToPage — lets onPdfHighlightFocus call it without listing
+  // syncToPage in its dep array (syncToPage is declared much later in the file;
+  // including it in the dep array causes a TDZ error in the production SSR bundle
+  // because the dep array is evaluated eagerly when the useCallback is created).
+  const syncToPageRef = useRef<((page: number, opts?: { reason?: string }) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
@@ -2096,12 +2101,16 @@ export default function ThoughtUnitReader() {
 
     if (anchorPage && anchorPage !== currentPageRef.current) {
       // Navigate to the anchor's page first; apply focus after page settles.
+      // Use syncToPageRef (not syncToPage directly) to avoid a TDZ crash in the
+      // production SSR bundle — syncToPage is declared ~2300 lines after this
+      // useCallback, so including it in the dep array would evaluate an
+      // uninitialized const when the dependency array is created during render.
       setPendingFocusAnchorId(id);
-      syncToPage(anchorPage, { reason: "PROGRAMMATIC" });
+      syncToPageRef.current?.(anchorPage, { reason: "PROGRAMMATIC" });
     } else {
       setFocusedEvidenceId(id);
     }
-  }, [finalHighlightAnchors, canonicalLeftPanelUnits, syncToPage]);
+  }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
@@ -4489,6 +4498,8 @@ export default function ThoughtUnitReader() {
       }
     }
   }, [pdfPageCount, thoughtUnits.length, bookId, pageTextByPage, clearTransientPriorityPreview, updateSync]);
+  // Keep the ref current so onPdfHighlightFocus always calls the latest syncToPage.
+  syncToPageRef.current = syncToPage;
 
   const handleParsedSyllabus = useCallback((result: {
     fileName: string;
