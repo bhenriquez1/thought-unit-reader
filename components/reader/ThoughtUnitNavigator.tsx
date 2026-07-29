@@ -19,6 +19,14 @@ import { getImportanceTier, tierGlyph, DEFAULT_COLLAPSE_AT_OR_BELOW_STARS } from
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import DomainModeSelector from "./DomainModeSelector";
 import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/thoughtUnitProgress";
+import ImportanceBadge from "./ImportanceBadge";
+import EvidencePanel from "./EvidencePanel";
+import ReaderModeBar from "./ReaderModeBar";
+import SemanticSearch from "./SemanticSearch";
+import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
+import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
+import { useReaderModeStore } from "@/lib/reader/readerModeStore";
+import type { CanonicalSemanticType } from "@/lib/semantic/types";
 
 export interface ThoughtUnitNavigatorEntry {
   id: string;
@@ -47,6 +55,18 @@ export interface ThoughtUnitNavigatorEntry {
   evidenceRefId?: string;
   canonicalUnitId?: string;
   sourceAnchorId?: string;
+
+  // ── Phase 3: Canonical model fields ─────────────────────────────────────────
+  /** Canonical semantic type from the semantic pack engine (Phase 1B/3). Drives
+   *  canonical-type grouping in the adaptive left panel when present. */
+  canonicalType?: CanonicalSemanticType;
+  /** 0–100 importance score from Phase 1C canonical scoring. Takes precedence
+   *  over priorityTier when resolving the ImportanceBadge level. */
+  importanceScore?: number;
+  /** 0–1 semantic classification confidence (Phase 1C). Shown in dev diagnostics. */
+  semanticConfidence?: number;
+  /** How the anchor was grounded against the PDF text layer (Phase 1B/2.5). */
+  groundingState?: "exact" | "normalized" | "fuzzy" | "ocr" | "synthetic";
 }
 
 // Returns true if the given anchorId (from activeSpokenWord) refers to this entry,
@@ -256,6 +276,8 @@ export default function ThoughtUnitNavigator({
     [activeAnchorId, activeWordIndex, activeWord, activeSentText],
   );
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [evidenceEntryId, setEvidenceEntryId] = useState<string | null>(null);
+  const readerMode = useReaderModeStore((s) => s.mode);
 
   // Guided teach-loop / PDF-click focus: scroll the active card into view, same
   // pattern RightPanel.tsx already uses for its own Study Notes cards — without
@@ -313,6 +335,15 @@ export default function ThoughtUnitNavigator({
     }));
   }, [entries, presetId]);
 
+  // Phase 3: canonical-type grouping — active when entries carry canonicalType.
+  // Falls back to the existing kind-based `grouped` path when canonicalType is absent.
+  const activePack = useMemo(() => resolveSemanticPack(presetId), [presetId]);
+  const canonicalGrouping = useMemo(
+    () => groupByCanonicalType(entries, activePack, readerMode),
+    [entries, activePack, readerMode],
+  );
+  const useCanonicalGrouping = canonicalGrouping.semanticActive;
+
   const [progressMap, setProgressMap] = useState<Map<string, Set<ProgressStep>>>(new Map());
 
   useEffect(() => {
@@ -336,16 +367,33 @@ export default function ThoughtUnitNavigator({
     1: "Remember",
   };
 
+  const evidenceEntry = evidenceEntryId
+    ? entries.find((e) => e.id === evidenceEntryId)
+    : null;
+
   const header = (
-    <div className="flex items-center justify-between gap-2 px-1">
-      <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
-        Page Guide
-      </span>
-      {detectedPresetLabel !== undefined && onPresetChange && (
-        <DomainModeSelector
-          detectedPresetLabel={detectedPresetLabel}
-          overridePresetId={overridePresetId ?? null}
-          onChange={onPresetChange}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
+          Page Guide
+        </span>
+        <div className="flex items-center gap-1.5">
+          <ReaderModeBar className="shrink-0" />
+          {detectedPresetLabel !== undefined && onPresetChange && (
+            <DomainModeSelector
+              detectedPresetLabel={detectedPresetLabel}
+              overridePresetId={overridePresetId ?? null}
+              onChange={onPresetChange}
+            />
+          )}
+        </div>
+      </div>
+      {entries.length > 0 && (
+        <SemanticSearch
+          entries={entries}
+          pack={activePack}
+          onSelect={(id) => { onJump(id); }}
+          className="px-1"
         />
       )}
     </div>
@@ -425,30 +473,210 @@ export default function ThoughtUnitNavigator({
     );
   }
 
+  // ── Canonical-type section renderer (Phase 3) ─────────────────────────────
+  function renderCanonicalGroups() {
+    const { groups, byGroup } = canonicalGrouping;
+    const visibleGroups = groups.filter((g) => isGroupVisibleInMode(g, readerMode));
+    return visibleGroups.map((group) => {
+      const groupEntries = byGroup.get(group.id) ?? [];
+      const userToggled = collapsedGroups.has(group.id);
+      const isCollapsed = group.defaultCollapsed !== userToggled;
+      const accentColor = "#94a3b8"; // neutral slate; individual cards show type color
+      return (
+        <React.Fragment key={group.id}>
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.id)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-opacity hover:opacity-90"
+              style={{
+                background: `linear-gradient(90deg, ${accentColor}18 0%, transparent 100%)`,
+                borderLeft: `3px solid ${accentColor}88`,
+              }}
+              data-testid="canonical-group-header"
+            >
+              <span className="text-[11px] leading-none select-none">{group.icon}</span>
+              <span className="text-[10px] font-black uppercase tracking-widest truncate text-white/65">
+                {group.label}
+              </span>
+              <span
+                className="text-[8.5px] rounded-full px-1.5 py-0.5 font-semibold shrink-0 bg-white/8 text-white/45"
+              >
+                {groupEntries.length}
+              </span>
+              <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
+            </button>
+            {!isCollapsed && groupEntries.map((entry) => {
+              const focused = entry.id === focusedId;
+              const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
+              const isActive = focused || isSpeaking;
+              const effectiveSpokenWord = isSpeaking && activeSpokenWord
+                ? { ...activeSpokenWord, anchorId: entry.id }
+                : activeSpokenWord;
+              const entryColor = KIND_COLORS[entry.kind] ?? FALLBACK_COLOR;
+              return (
+                <div
+                  key={entry.id}
+                  ref={isActive ? activeEntryRef : undefined}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onJump(entry.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
+                  className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
+                  style={{
+                    background: isSpeaking
+                      ? entryColor.bg.replace("0.12", "0.25")
+                      : focused ? entryColor.bg.replace("0.12", "0.28") : entryColor.bg,
+                    border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
+                    boxShadow: isSpeaking
+                      ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
+                      : undefined,
+                    transition: "all 0.2s ease",
+                  }}
+                  data-testid="thought-unit-entry"
+                >
+                  {/* Importance badge + canonical type tag */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <ImportanceBadge
+                      importanceScore={entry.importanceScore}
+                      priorityTier={entry.priorityTier}
+                      size="compact"
+                    />
+                    {isSpeaking && (
+                      <span className="animate-pulse text-emerald-300 text-[8px]">◎ live</span>
+                    )}
+                  </div>
+                  <span
+                    className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
+                    data-testid="thought-unit-title"
+                  >
+                    {entry.title ?? deriveCardTitle(entry.text)}
+                  </span>
+                  <span
+                    className="text-[10px] leading-snug text-white/70"
+                    style={isActive ? {
+                      whiteSpace: "normal",
+                      overflowWrap: "anywhere",
+                    } : {
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
+                  </span>
+                  {entry.reason && (
+                    <span className="text-[9px] italic leading-snug text-white/45">
+                      {entry.reason}
+                    </span>
+                  )}
+                  {(entry.page !== undefined || entry.lineRange) && (
+                    <span className="text-[8.5px] text-white/35 tracking-tight">
+                      {entry.page !== undefined ? `Page ${entry.page}` : null}
+                      {entry.page !== undefined && entry.lineRange ? " · " : null}
+                      {entry.lineRange ? `Lines ${entry.lineRange}` : null}
+                    </span>
+                  )}
+                  <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎 Evidence
+                    </button>
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    {onOpenRecall && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        🧠 Recall
+                      </button>
+                    )}
+                    {onExplain && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        💬 Explain
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </React.Fragment>
+      );
+    });
+  }
+
   return (
     <div className="flex flex-col gap-2 px-1.5" data-testid="thought-unit-navigator">
       {header}
+      {/* Evidence panel — shown when a unit's Evidence button is clicked */}
+      {evidenceEntry && (
+        <EvidencePanel
+          sourceQuote={evidenceEntry.text}
+          canonicalType={evidenceEntry.canonicalType}
+          groundingState={evidenceEntry.groundingState}
+          pageNumber={evidenceEntry.page}
+          pack={activePack}
+          onClose={() => setEvidenceEntryId(null)}
+        />
+      )}
+      {/* Summary strip — canonical chips or kind chips */}
       <div className="flex items-center gap-1.5 flex-wrap px-1" data-testid="thought-unit-summary-strip">
-        {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
-          const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
-          const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
-          const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
-          const tier = getImportanceTier(groupIndex);
-          return (
-            <span
-              key={`summary-${id}`}
-              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
-              style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
-              title={`${tier.label} priority`}
-            >
-              <span>{tierGlyph(tier.stars, representativeKind)}</span>
-              <span className="uppercase">{meta.label}</span>
-              {items.length > 1 && <span className="opacity-70">×{items.length}</span>}
-            </span>
-          );
-        })}
+        {useCanonicalGrouping
+          ? canonicalGrouping.groups.filter((g) => isGroupVisibleInMode(g, readerMode)).map((g) => (
+              <span
+                key={`summary-ct-${g.id}`}
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight bg-white/6 text-white/50 border border-white/10"
+                title={g.label}
+              >
+                <span>{g.icon}</span>
+                <span className="uppercase">{g.shortLabel}</span>
+                {(canonicalGrouping.byGroup.get(g.id)?.length ?? 0) > 1 && (
+                  <span className="opacity-70">×{canonicalGrouping.byGroup.get(g.id)?.length}</span>
+                )}
+              </span>
+            ))
+          : grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+              const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
+              const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
+              const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
+              const tier = getImportanceTier(groupIndex);
+              return (
+                <span
+                  key={`summary-${id}`}
+                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
+                  style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
+                  title={`${tier.label} priority`}
+                >
+                  <span>{tierGlyph(tier.stars, representativeKind)}</span>
+                  <span className="uppercase">{meta.label}</span>
+                  {items.length > 1 && <span className="opacity-70">×{items.length}</span>}
+                </span>
+              );
+            })}
       </div>
-      {grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+
+      {/* Main content — canonical groups OR legacy kind groups */}
+      {useCanonicalGrouping ? renderCanonicalGroups() : null}
+      {!useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
@@ -550,16 +778,23 @@ export default function ThoughtUnitNavigator({
                       {tierGlyph(entry.priorityTier, entry.kind)}
                     </span>
                   )}
-                  <span
-                    className="text-[9px] font-semibold uppercase tracking-wide pr-6 flex items-center gap-1"
-                    style={{ color: meta.color }}
-                    data-testid="thought-unit-category"
-                  >
-                    {meta.label}
-                    {isSpeaking && (
-                      <span className="animate-pulse text-emerald-300" style={{ fontSize: "8px" }}>◎ live</span>
-                    )}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className="text-[9px] font-semibold uppercase tracking-wide flex items-center gap-1"
+                      style={{ color: meta.color }}
+                      data-testid="thought-unit-category"
+                    >
+                      {meta.label}
+                      {isSpeaking && (
+                        <span className="animate-pulse text-emerald-300" style={{ fontSize: "8px" }}>◎ live</span>
+                      )}
+                    </span>
+                    <ImportanceBadge
+                      importanceScore={entry.importanceScore}
+                      priorityTier={entry.priorityTier}
+                      size="compact"
+                    />
+                  </div>
                   <span
                     className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
                     data-testid="thought-unit-title"
@@ -615,40 +850,46 @@ export default function ThoughtUnitNavigator({
                       </div>
                     );
                   })()}
-                  {(onExplain || onOpenRecall || onOpenNote) && (
-                    <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                      {onOpenNote && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Save a note on this anchor"
-                        >
-                          📝 Note
-                        </button>
-                      )}
-                      {onOpenRecall && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Open in Recall Lab"
-                        >
-                          🧠 Recall
-                        </button>
-                      )}
-                      {onExplain && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                          className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                          title="Explain this"
-                        >
-                          💬 Explain
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎 Evidence
+                    </button>
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        title="Save a note on this anchor"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    {onOpenRecall && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        title="Open in Recall Lab"
+                      >
+                        🧠 Recall
+                      </button>
+                    )}
+                    {onExplain && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        title="Explain this"
+                      >
+                        💬 Explain
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
