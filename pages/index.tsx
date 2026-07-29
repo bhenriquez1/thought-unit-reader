@@ -48,6 +48,7 @@ import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
+import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -1521,7 +1522,7 @@ export default function ThoughtUnitReader() {
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
   // useKnowledgeGraph must be called after bookId state is declared
-  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+  const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
   useEffect(() => {
@@ -5792,77 +5793,20 @@ export default function ThoughtUnitReader() {
 
           {/* Knowledge Graph — scaffold */}
           {hubSubTab === "graph" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {kgNodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                  <div className="text-4xl">🕸</div>
-                  <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
-                  <div className="text-[12px] text-slate-500 max-w-xs">
-                    Concepts extracted from the book will appear here as you read pages and generate study materials.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-indigo-300">
-                      🕸 {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
-                    </div>
-                    <div className="text-[10px] text-slate-500">Click to navigate</div>
-                  </div>
-                  <div className="space-y-2">
-                    {[...kgNodes]
-                      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
-                      .map((node) => {
-                        const relatedTitles = kgNodes
-                          .filter(n => node.relatedNodeIds.includes(n.id))
-                          .map(n => n.title)
-                          .slice(0, 3);
-                        return (
-                          <button
-                            key={node.id}
-                            onClick={() => {
-                              if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
-                              if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
-                            }}
-                            className="w-full text-left rounded-xl border border-white/10 bg-slate-900/60 p-3 hover:border-indigo-500/40 hover:bg-slate-800/60 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-semibold text-slate-100 truncate">{node.title}</div>
-                                {node.summary && (
-                                  <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{node.summary}</div>
-                                )}
-                                {relatedTitles.length > 0 && (
-                                  <div className="mt-1.5 flex flex-wrap gap-1">
-                                    {relatedTitles.map((t, i) => (
-                                      <span key={i} className="text-[9px] rounded-full bg-slate-800 px-2 py-0.5 text-slate-400 border border-white/10">
-                                        {t}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                {node.sourcePages[0] && (
-                                  <span className="text-[9px] text-slate-500">p.{node.sourcePages[0]}</span>
-                                )}
-                                {node.importance != null && (
-                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                                    node.importance >= 80 ? "bg-yellow-500/20 text-yellow-300" :
-                                    node.importance >= 50 ? "bg-indigo-500/20 text-indigo-300" :
-                                    "bg-slate-700/40 text-slate-400"
-                                  }`}>
-                                    {node.importance >= 80 ? "★ High" : node.importance >= 50 ? "Med" : "Low"}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </>
-              )}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-bold text-indigo-300">🕸 Visual Knowledge Roadmap</div>
+                <div className="text-[10px] text-slate-500">Click a node to navigate · nodes tier by importance</div>
+              </div>
+              <VisualKnowledgeRoadmap
+                nodes={kgNodes}
+                selectedNodeId={kgSelectedNodeId}
+                onNodeClick={(node) => {
+                  kgSetSelectedNodeId(kgSelectedNodeId === node.id ? null : node.id);
+                  if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
+                  if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
+                }}
+              />
             </div>
           )}
         </div>
