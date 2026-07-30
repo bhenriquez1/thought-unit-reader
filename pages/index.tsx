@@ -175,6 +175,7 @@ const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPattern
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
 const PersonalWorkspaceTab = dynamic(() => import("@/components/workspace/PersonalWorkspaceTab"), { ssr: false });
+const LearningSourcesManager = dynamic(() => import("@/components/notelab/LearningSourcesManager"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
@@ -677,7 +678,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching">("notes");
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching" | "sources">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
@@ -5203,25 +5204,38 @@ export default function ThoughtUnitReader() {
     if (activeShellTab === "notelab") {
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
-          <div className="border-b border-white/10 px-4 py-2 flex-shrink-0 flex items-center gap-2">
+          <div className="border-b border-white/10 px-3 py-2 flex-shrink-0 flex items-center gap-2">
             <div className="flex-1">
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
-            <div className="flex gap-1">
-              {(["notes", "studyguide", "teaching"] as const).map(v => (
+            <div className="flex gap-1 flex-wrap">
+              {(["sources", "notes", "studyguide", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
                     notesSubTab === v
                       ? "bg-emerald-600/20 text-emerald-300 border border-emerald-600/30"
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "✍️ Personal Workspace" : v === "studyguide" ? "📑 Adaptive Study Guide" : "🩺 Chief Resident"}
+                  {v === "notes" ? "✍️ Workspace" : v === "studyguide" ? "📑 Study Guide" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Learning Source Graph sub-tab — connected to readingFocusStore.thoughtUnitId */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "sources" ? "flex" : "none", flexDirection: "column" }}>
+            <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
+              <LearningSourcesManager
+                bookId={bookId}
+                currentPage={currentPage}
+                studyModel={currentPageStudyModel}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                refreshKey={noteLabRefreshKey}
+              />
+            </ErrorBoundary>
           </div>
 
           {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
@@ -5254,14 +5268,13 @@ export default function ThoughtUnitReader() {
             />
           </div>
 
-          {/* Personal Workspace sub-tab — student's own digital notebook (replaces AI-output Notes tab) */}
+          {/* Personal Workspace sub-tab — student's own digital notebook */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
             <PersonalWorkspaceTab
               bookId={bookId}
               currentPage={currentPage}
               onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
             />
-
           </div>
         </div>
       );
