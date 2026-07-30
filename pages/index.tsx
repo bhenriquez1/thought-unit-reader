@@ -656,7 +656,10 @@ export default function ThoughtUnitReader() {
   // user straight back out of the upload panel.
   const [syllabusUploadRequested, setSyllabusUploadRequested] = useState(false);
   // Tracks what produced syllabusToc so outline (authoritative) beats heuristic.
-  const [syllabusTocSource, setSyllabusTocSource] = useState<"none" | "heuristic" | "outline">("none");
+  // Persisted so a page reload knows not to overwrite an outline-sourced TOC.
+  const [syllabusTocSource, setSyllabusTocSource] = useState<"none" | "heuristic" | "outline">(() => {
+    try { return (localStorage.getItem("syllabus_toc_source") as "heuristic" | "outline") || "none"; } catch { return "none"; }
+  });
   // Pages studied via the one-brain pipeline: noteLab saved or recallLab saved
   const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
@@ -2953,6 +2956,7 @@ export default function ThoughtUnitReader() {
       setSyllabusSource("book");
       try {
         localStorage.setItem("syllabus_toc", JSON.stringify(outlineNodes));
+        localStorage.setItem("syllabus_toc_source", "outline");
         localStorage.setItem("syllabus_source", "book");
         localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
       } catch { /* quota exceeded */ }
@@ -3056,6 +3060,7 @@ export default function ThoughtUnitReader() {
       localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
       localStorage.setItem("syllabus_pages", JSON.stringify(bundles));
       localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
+      localStorage.setItem("syllabus_toc_source", "heuristic");
       localStorage.setItem("syllabus_source", "book");
     } catch { /* quota exceeded — ignore */ }
     DEV && console.log("[SYLLABUS_SOURCE]", {
@@ -3097,6 +3102,7 @@ export default function ThoughtUnitReader() {
     setSyllabusToc([]);
     setSyllabusTocSource("none");
     setTableOfContents([]);
+    try { localStorage.removeItem("syllabus_toc_source"); } catch { /* ignore */ }
   }, [bookId, uploadedFile?.name]);
 
   /* =========================================================================
