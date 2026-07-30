@@ -155,6 +155,8 @@ interface PureReaderViewProps {
   /** IDB-aware retry callback — when provided, the SmartPDFViewer "Try Again" button
    *  calls this instead of retrying the same blob URL. */
   onPdfRetry?: () => void;
+  /** Brief page thesis from the study model — shown as "Page Mission" in the semantic key. */
+  pageThesis?: string | null;
 }
 
 // Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
@@ -201,6 +203,7 @@ export default function PureReaderView({
   onPdfChipPlay,
   onPdfLoadError,
   onPdfRetry,
+  pageThesis,
 }: PureReaderViewProps) {
   // Render counter — diagnostic for React #185 investigation.
   const prRenderCountRef = useRef(0);
@@ -660,6 +663,7 @@ export default function PureReaderView({
             emptyReason={emptyThoughtUnitReason}
             bookId={docId}
             pageNumber={currentPage}
+            pageThesis={pageThesis}
           />
 
           {/* Level 3 — Process Flow + Decision Rules, derived from the same units above */}
