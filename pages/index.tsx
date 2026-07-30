@@ -54,6 +54,7 @@ import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
 import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
+import { outlineItemsToTocNodes } from "@/lib/toc/tocNodeConverter";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
 import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -654,6 +655,8 @@ export default function ThoughtUnitReader() {
   // below so it doesn't immediately repopulate syllabusToc and bounce the
   // user straight back out of the upload panel.
   const [syllabusUploadRequested, setSyllabusUploadRequested] = useState(false);
+  // Tracks what produced syllabusToc so outline (authoritative) beats heuristic.
+  const [syllabusTocSource, setSyllabusTocSource] = useState<"none" | "heuristic" | "outline">("none");
   // Pages studied via the one-brain pipeline: noteLab saved or recallLab saved
   const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
@@ -2920,51 +2923,67 @@ export default function ThoughtUnitReader() {
      🔹 Handle PDF Outline Extraction (memoized to prevent excessive re-renders)
   ========================================================================= */
   const handleOutlineExtraction = useCallback((tocItems: any[]) => {
-    // Save outline to tocStore when extracted from PDF
-    if (tocItems && tocItems.length > 0) {
-      const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
-      const documentName = uploadedFile?.name || "Document";
-      
-      // Convert TocItem to store format
-      const storeItems = tocItems.map((item: any, idx: number) => ({
-        id: `toc_${idx}_${Date.now()}`,
+    if (!tocItems?.length) return;
+
+    const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+    const documentName = uploadedFile?.name || "Document";
+    const now = Date.now();
+
+    // Build stable store items with nested children preserved
+    const buildStoreItems = (items: any[], level: number): any[] =>
+      items.map((item: any, idx: number) => ({
+        id: `toc_${level}_${idx}_${now}`,
         title: item.title || `Chapter ${idx + 1}`,
         pageNumber: item.pageNumber || 1,
-        level: 0,
-        children: item.items?.map((sub: any, subIdx: number) => ({
-          id: `toc_${idx}_${subIdx}_${Date.now()}`,
-          title: sub.title || `Section ${subIdx + 1}`,
-          pageNumber: sub.pageNumber || 1,
-          level: 1
-        }))
+        level,
+        children: item.items?.length ? buildStoreItems(item.items, level + 1) : undefined,
       }));
-      
-      const tocStore = useTocStore.getState();
-      tocStore.saveToc(documentId, documentName, storeItems, 'outline');
-      
-      // Also update tableOfContents for backward compatibility
-      const legacyToc = tocItems.map((item: any) => ({
-        title: item.title,
-        pageNumber: item.pageNumber || 1,
-        subChapters: item.items?.map((sub: any) => ({
-          title: sub.title,
-          pageNumber: sub.pageNumber || 1
-        }))
-      }));
-      setTableOfContents(legacyToc);
-      
-      DEV && console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
+
+    const storeItems = buildStoreItems(tocItems, 0);
+
+    useTocStore.getState().saveToc(documentId, documentName, storeItems, "outline");
+
+    // Convert to app-level TocNode[] and promote to syllabusToc.
+    // Outline beats heuristic unconditionally — it's the PDF's authoritative structure.
+    const outlineNodes = outlineItemsToTocNodes(storeItems);
+    if (outlineNodes.length > 0) {
+      setSyllabusToc(outlineNodes);
+      setSyllabusTocSource("outline");
+      setSyllabusFileName(uploadedFile?.name || "This book");
+      setSyllabusSource("book");
+      try {
+        localStorage.setItem("syllabus_toc", JSON.stringify(outlineNodes));
+        localStorage.setItem("syllabus_source", "book");
+        localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
+      } catch { /* quota exceeded */ }
     }
+
+    // Legacy tableOfContents for backward-compat consumers
+    const legacyToc = tocItems.map((item: any) => ({
+      title: item.title,
+      pageNumber: item.pageNumber || 1,
+      subChapters: item.items?.map((sub: any) => ({
+        title: sub.title,
+        pageNumber: sub.pageNumber || 1,
+      })),
+    }));
+    setTableOfContents(legacyToc);
+
+    DEV && console.log("[TOC_OUTLINE_EXTRACTED]", { chapters: storeItems.length, nodes: outlineNodes.length, documentId });
   }, [bookId, uploadedFile?.name, setTableOfContents]);
 
   useEffect(() => {
     if (!pdfPageCount || !thoughtUnits.length) return;
     if (tableOfContents.length > 0) return;
 
+    // Prefer real per-page text from pageTextByPage; fall back to thoughtUnits proxy.
+    const hasRealText = bookId && pageTextByPage.size > 0;
     const bundles = Array.from({ length: pdfPageCount }, (_, idx) => {
       const page = idx + 1;
-      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
-      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+      const text = hasRealText
+        ? (pageTextByPage.get(`${bookId}:${page}`) ?? "")
+        : (thoughtUnits[pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1]?.text ?? "");
+      return { page, text };
     });
     const autoToc = buildAutoToc(bundles);
     if (!autoToc.length) return;
@@ -2981,8 +3000,8 @@ export default function ThoughtUnitReader() {
 
     // Write to tocStore so PureTocView (which reads the store directly, not
     // tableOfContents React state) also reflects the heuristic result.
-    const docId = bookId || 'book';
-    const kindToLevel = (kind: string) => kind === 'subsection' ? 2 : kind === 'section' ? 1 : 0;
+    const docId = bookId || "book";
+    const kindToLevel = (kind: string) => kind === "subsection" ? 2 : kind === "section" ? 1 : 0;
     const storeItems = autoToc.map((node, idx) => ({
       id: `toc_h_${idx}`,
       title: node.title,
@@ -2995,8 +3014,8 @@ export default function ThoughtUnitReader() {
         level: kindToLevel(child.kind),
       })),
     }));
-    useTocStore.getState().saveToc(docId, docId, storeItems, 'heuristic');
-  }, [pdfPageCount, thoughtUnits, tableOfContents.length]);
+    useTocStore.getState().saveToc(docId, docId, storeItems, "heuristic");
+  }, [pdfPageCount, thoughtUnits, tableOfContents.length, bookId, pageTextByPage]);
 
   // Syllabus tab's chapter dashboard (Read/Understand/Recall/Mastery, weak
   // areas, next-recommended-topic) used to require a *separate* syllabus
@@ -3010,18 +3029,26 @@ export default function ThoughtUnitReader() {
   // dates when the user has one.
   useEffect(() => {
     if (!pdfPageCount || !thoughtUnits.length) return;
+    // Outline wins — don't overwrite with heuristic if we already have the PDF's
+    // native bookmark structure.
+    if (syllabusTocSource === "outline") return;
     if (syllabusToc.length > 0) return;
     if (syllabusUploadRequested) return;
 
+    // Prefer real per-page text from pageTextByPage; fall back to thoughtUnits proxy.
+    const hasRealText = bookId && pageTextByPage.size > 0;
     const bundles: PageTextBundle[] = Array.from({ length: pdfPageCount }, (_, idx) => {
       const page = idx + 1;
-      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
-      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+      const text = hasRealText
+        ? (pageTextByPage.get(`${bookId}:${page}`) ?? "")
+        : (thoughtUnits[pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1]?.text ?? "");
+      return { page, text };
     });
     const autoToc = buildAutoToc(bundles);
     if (!autoToc.length) return;
 
     setSyllabusToc(autoToc);
+    setSyllabusTocSource("heuristic");
     setSyllabusPages(bundles);
     setSyllabusFileName(uploadedFile?.name || "This book");
     setSyllabusSource("book");
@@ -3035,9 +3062,9 @@ export default function ThoughtUnitReader() {
       fileName:  uploadedFile?.name,
       tocNodes:  autoToc.length,
       pageCount: bundles.length,
-      source:    "buildAutoToc(book-content)",
+      source:    hasRealText ? "buildAutoToc(real-page-text)" : "buildAutoToc(thoughtUnits-proxy)",
     });
-  }, [pdfPageCount, thoughtUnits, syllabusToc.length, uploadedFile?.name, syllabusUploadRequested]);
+  }, [pdfPageCount, thoughtUnits, syllabusToc.length, syllabusTocSource, uploadedFile?.name, syllabusUploadRequested, bookId, pageTextByPage]);
 
   // Sync syllabusToc → tocStore whenever the buildAutoToc result is better
   // than what tocStore already holds (absent, synthetic, or low-quality).
@@ -3068,6 +3095,7 @@ export default function ThoughtUnitReader() {
     const docId = bookId || uploadedFile?.name?.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
     useTocStore.getState().clearToc(docId);
     setSyllabusToc([]);
+    setSyllabusTocSource("none");
     setTableOfContents([]);
   }, [bookId, uploadedFile?.name]);
 
