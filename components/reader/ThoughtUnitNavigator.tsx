@@ -22,6 +22,7 @@ import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/t
 import ImportanceBadge from "./ImportanceBadge";
 import EvidencePanel from "./EvidencePanel";
 import ReaderModeBar from "./ReaderModeBar";
+import TocModeBar from "./TocModeBar";
 import SemanticSearch from "./SemanticSearch";
 import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
 import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
@@ -117,6 +118,29 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   dat_fact:     { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
+
+// Learning-mode: maps canonicalType OR kind → bucket index (0–3; 4 = "other")
+const LEARNING_BUCKET_IDX: Record<string, number> = {
+  // 0 — Foundation (understand first)
+  thesis: 0, conclusion: 0, definition: 0, mechanism: 0, formula: 0,
+  dat_fact: 0, keyDetail: 0, keyAnatomy: 0, anatomy: 0, comparison: 0,
+  "core-concept": 0, relationship: 0, finding: 0, classification: 0, cause: 0, evidence: 0,
+  // 1 — Apply It
+  application: 1, example_step: 1, indication: 1, treatment: 1, "worked-example": 1,
+  // 2 — Watch Out
+  trap: 2, warning: 2, exception: 2, contraindication: 2, "common-error": 2, "decision-point": 2,
+  // 3 — Anchor (commit to memory)
+  clinical: 3, clinical_pearl: 3, memoryAnchor: 3, memory_hook: 3,
+  "clinical-pearl": 3, "memory-anchor": 3,
+};
+
+const LEARNING_BUCKETS = [
+  { id: "foundation", label: "Foundations", icon: "🏗️", color: "#93c5fd", bg: "rgba(147,197,253,0.10)" },
+  { id: "apply",      label: "Apply It",    icon: "⚡",  color: "#fb923c", bg: "rgba(251,146,60,0.10)"  },
+  { id: "watchout",   label: "Watch Out",   icon: "⚠️",  color: "#fca5a5", bg: "rgba(252,165,165,0.10)" },
+  { id: "anchor",     label: "Anchor",      icon: "💡",  color: "#86efac", bg: "rgba(134,239,172,0.10)" },
+  { id: "other",      label: "Other",       icon: "📌",  color: "#94a3b8", bg: "rgba(148,163,184,0.10)" },
+] as const;
 
 // Group display label — currently a passthrough to the preset's own
 // kindGroup label (e.g. "Procedure Step"). Kept as its own function (not
@@ -277,7 +301,8 @@ export default function ThoughtUnitNavigator({
   );
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [evidenceEntryId, setEvidenceEntryId] = useState<string | null>(null);
-  const readerMode = useReaderModeStore((s) => s.mode);
+  const readerMode    = useReaderModeStore((s) => s.mode);
+  const tocViewMode   = useReaderModeStore((s) => s.tocViewMode);
 
   // Guided teach-loop / PDF-click focus: scroll the active card into view, same
   // pattern RightPanel.tsx already uses for its own Study Notes cards — without
@@ -359,6 +384,12 @@ export default function ThoughtUnitNavigator({
     });
   };
 
+  const handleMarkMastered = (entryId: string) => {
+    if (!bookId || !pageNumber) return;
+    markProgress(bookId, pageNumber, entryId, "mastered");
+    setProgressMap(getPageProgress(bookId, pageNumber, entries.map((e) => e.id)));
+  };
+
   const TIER_ACTION_LABEL: Record<number, string> = {
     5: "Understand first",
     4: "Apply",
@@ -388,6 +419,7 @@ export default function ThoughtUnitNavigator({
           )}
         </div>
       </div>
+      <TocModeBar className="self-start" />
       {entries.length > 0 && (
         <SemanticSearch
           entries={entries}
@@ -471,6 +503,172 @@ export default function ThoughtUnitNavigator({
         )}
       </div>
     );
+  }
+
+  // ── Learning-order renderer (Semantic TOC mode: "learning") ─────────────
+  function renderLearningGroups() {
+    const bucketEntries: ThoughtUnitNavigatorEntry[][] = [[], [], [], [], []];
+    for (const entry of entries) {
+      const key = entry.canonicalType ?? (entry.kind as string);
+      const idx = LEARNING_BUCKET_IDX[key] ?? 4;
+      bucketEntries[idx].push(entry);
+    }
+
+    return LEARNING_BUCKETS.map((bucket, bucketIdx) => {
+      const items = bucketEntries[bucketIdx];
+      if (items.length === 0) return null;
+      const userToggled = collapsedGroups.has(bucket.id);
+      const isCollapsed = userToggled;
+      return (
+        <div key={bucket.id} className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => toggleGroup(bucket.id)}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-opacity hover:opacity-90"
+            style={{
+              background: `linear-gradient(90deg, ${bucket.color}22 0%, transparent 100%)`,
+              borderLeft: `3px solid ${bucket.color}`,
+            }}
+          >
+            <span className="text-[11px] leading-none select-none">{bucket.icon}</span>
+            <span
+              className="text-[10px] font-black uppercase tracking-widest truncate"
+              style={{ color: bucket.color }}
+            >
+              {bucket.label}
+            </span>
+            <span className="text-[8.5px] rounded-full px-1.5 py-0.5 font-semibold shrink-0 bg-white/8 text-white/45">
+              {items.length}
+            </span>
+            <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
+          </button>
+          {!isCollapsed && items.map((entry) => {
+            const focused  = entry.id === focusedId;
+            const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
+            const isActive = focused || isSpeaking;
+            const effectiveSpokenWord = isSpeaking && activeSpokenWord
+              ? { ...activeSpokenWord, anchorId: entry.id }
+              : activeSpokenWord;
+            const entryColor = KIND_COLORS[entry.kind] ?? FALLBACK_COLOR;
+            return (
+              <div
+                key={entry.id}
+                ref={isActive ? activeEntryRef : undefined}
+                role="button"
+                tabIndex={0}
+                onClick={() => onJump(entry.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
+                className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
+                style={{
+                  background: isSpeaking
+                    ? entryColor.bg.replace("0.12", "0.25")
+                    : focused ? entryColor.bg.replace("0.12", "0.28") : entryColor.bg,
+                  border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
+                  boxShadow: isSpeaking
+                    ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
+                    : undefined,
+                  transition: "all 0.2s ease",
+                }}
+                data-testid="thought-unit-entry"
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <ImportanceBadge
+                    importanceScore={entry.importanceScore}
+                    priorityTier={entry.priorityTier}
+                    size="compact"
+                  />
+                  {isSpeaking && (
+                    <span className="animate-pulse text-emerald-300 text-[8px]">◎ live</span>
+                  )}
+                </div>
+                <span
+                  className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
+                  data-testid="thought-unit-title"
+                >
+                  {entry.title ?? deriveCardTitle(entry.text)}
+                </span>
+                <span
+                  className="text-[10px] leading-snug text-white/70"
+                  style={isActive ? {
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
+                  } : {
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
+                </span>
+                {entry.reason && (
+                  <span className="text-[9px] italic leading-snug text-white/45">
+                    {entry.reason}
+                  </span>
+                )}
+                {(entry.page !== undefined || entry.lineRange) && (
+                  <span className="text-[8.5px] text-white/35 tracking-tight">
+                    {entry.page !== undefined ? `Page ${entry.page}` : null}
+                    {entry.page !== undefined && entry.lineRange ? " · " : null}
+                    {entry.lineRange ? `Lines ${entry.lineRange}` : null}
+                  </span>
+                )}
+                <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                  {onOpenRecall && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
+                      title="Quiz me on this"
+                    >
+                      🎯 Quiz Me
+                    </button>
+                  )}
+                  {onExplain && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                    >
+                      💬 Explain
+                    </button>
+                  )}
+                  {onOpenNote && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                    >
+                      📝 Note
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                    className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                    title="Show source evidence"
+                  >
+                    🔎
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleMarkMastered(entry.id); }}
+                    className={`text-[9px] transition-colors ${
+                      progressMap.get(entry.id)?.has("mastered")
+                        ? "text-emerald-400"
+                        : "text-white/40 hover:text-emerald-300"
+                    }`}
+                    title="Mark as complete"
+                  >
+                    {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }).filter(Boolean);
   }
 
   // ── Canonical-type section renderer (Phase 3) ─────────────────────────────
@@ -579,30 +777,14 @@ export default function ThoughtUnitNavigator({
                     </span>
                   )}
                   <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎 Evidence
-                    </button>
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      >
-                        📝 Note
-                      </button>
-                    )}
                     {onOpenRecall && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
+                        title="Quiz me on this"
                       >
-                        🧠 Recall
+                        🎯 Quiz Me
                       </button>
                     )}
                     {onExplain && (
@@ -614,6 +796,38 @@ export default function ThoughtUnitNavigator({
                         💬 Explain
                       </button>
                     )}
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkMastered(entry.id);
+                      }}
+                      className={`text-[9px] transition-colors ${
+                        progressMap.get(entry.id)?.has("mastered")
+                          ? "text-emerald-400"
+                          : "text-white/40 hover:text-emerald-300"
+                      }`}
+                      title="Mark as complete"
+                    >
+                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
+                    </button>
                   </div>
                 </div>
               );
@@ -638,9 +852,28 @@ export default function ThoughtUnitNavigator({
           onClose={() => setEvidenceEntryId(null)}
         />
       )}
-      {/* Summary strip — canonical chips or kind chips */}
+      {/* Summary strip — learning buckets, canonical chips, or kind chips */}
       <div className="flex items-center gap-1.5 flex-wrap px-1" data-testid="thought-unit-summary-strip">
-        {useCanonicalGrouping
+        {tocViewMode === "learning"
+          ? LEARNING_BUCKETS.map((b, i) => {
+              const count = entries.filter((e) => {
+                const key = e.canonicalType ?? (e.kind as string);
+                return (LEARNING_BUCKET_IDX[key] ?? 4) === i;
+              }).length;
+              if (count === 0) return null;
+              return (
+                <span
+                  key={b.id}
+                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
+                  style={{ background: b.bg, color: b.color, border: `1px solid ${b.color}44` }}
+                >
+                  <span>{b.icon}</span>
+                  <span className="uppercase">{b.label}</span>
+                  {count > 1 && <span className="opacity-70">×{count}</span>}
+                </span>
+              );
+            })
+          : (tocViewMode === "concept" || useCanonicalGrouping)
           ? canonicalGrouping.groups.filter((g) => isGroupVisibleInMode(g, readerMode)).map((g) => (
               <span
                 key={`summary-ct-${g.id}`}
@@ -674,9 +907,11 @@ export default function ThoughtUnitNavigator({
             })}
       </div>
 
-      {/* Main content — canonical groups OR legacy kind groups */}
-      {useCanonicalGrouping ? renderCanonicalGroups() : null}
-      {!useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+      {/* Main content — learning order, concept, or standard */}
+      {tocViewMode === "learning" && renderLearningGroups()}
+      {tocViewMode === "concept" && renderCanonicalGroups()}
+      {tocViewMode === "standard" && useCanonicalGrouping ? renderCanonicalGroups() : null}
+      {tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
@@ -851,32 +1086,14 @@ export default function ThoughtUnitNavigator({
                     );
                   })()}
                   <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎 Evidence
-                    </button>
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Save a note on this anchor"
-                      >
-                        📝 Note
-                      </button>
-                    )}
                     {onOpenRecall && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Open in Recall Lab"
+                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
+                        title="Quiz me on this"
                       >
-                        🧠 Recall
+                        🎯 Quiz Me
                       </button>
                     )}
                     {onExplain && (
@@ -889,6 +1106,39 @@ export default function ThoughtUnitNavigator({
                         💬 Explain
                       </button>
                     )}
+                    {onOpenNote && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
+                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                        title="Save a note on this anchor"
+                      >
+                        📝 Note
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
+                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
+                      title="Show source evidence"
+                    >
+                      🔎
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkMastered(entry.id);
+                      }}
+                      className={`text-[9px] transition-colors ${
+                        progressMap.get(entry.id)?.has("mastered")
+                          ? "text-emerald-400"
+                          : "text-white/40 hover:text-emerald-300"
+                      }`}
+                      title="Mark as complete"
+                    >
+                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
+                    </button>
                   </div>
                 </div>
               );

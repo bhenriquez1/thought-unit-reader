@@ -47,6 +47,9 @@ import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPane
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
+import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
+import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
+import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -670,7 +673,7 @@ export default function ThoughtUnitReader() {
   // Sub-tab selections within consolidated panels
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
-  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachResponse, setCoachResponse] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -1520,7 +1523,7 @@ export default function ThoughtUnitReader() {
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
   // useKnowledgeGraph must be called after bookId state is declared
-  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+  const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
   useEffect(() => {
@@ -5154,6 +5157,7 @@ export default function ThoughtUnitReader() {
 
           {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
+            <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
               <StudyGuideLab
                 bookId={bookId}
                 bookTitle={uploadedFile?.name ?? undefined}
@@ -5165,6 +5169,7 @@ export default function ThoughtUnitReader() {
                 onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
                 onPodcastScript={(script) => setStudyGuideScript(script)}
               />
+            </ErrorBoundary>
           </div>
 
           {/* Chief Resident sub-tab — always mounted so session state persists across tab switches */}
@@ -5234,6 +5239,7 @@ export default function ThoughtUnitReader() {
               { id: "exam",      label: "Exam Readiness" },
               { id: "graph",     label: "Knowledge Graph" },
               { id: "coach",     label: "AI Coach" },
+              { id: "sources",   label: "Sources" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
@@ -5304,27 +5310,28 @@ export default function ThoughtUnitReader() {
                     </button>
                   )}
 
-                  {/* Quick nav grid */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {([
-                      { id: "today",     label: "Today's Plan",   icon: "📅", sub: "What to study now" },
-                      { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
-                      { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
-                      { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
-                    ] as const).map(({ id, label, icon, sub }) => (
-                      <button
-                        key={id}
-                        onClick={() => setHubSubTab(id)}
-                        className="flex items-start gap-3 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-3 text-left hover:bg-slate-800/60 transition-colors"
-                      >
-                        <span className="text-lg mt-0.5">{icon}</span>
-                        <div>
-                          <div className="text-xs font-semibold text-slate-200">{label}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {/* Session launcher — adaptive guide is pre-loaded in reader (Adaptive tab default) */}
+                  <LearningHubLaunchPanel
+                    bookLoaded={!!bookId}
+                    hasWeakAreas={!!(courseWeakAreas && courseWeakAreas.length > 0)}
+                    hasStudyPlan={syllabusStudyPlan.length > 0}
+                    nextTopicLabel={nextTopicRecommendation
+                      ? `${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
+                      : undefined}
+                    onAdaptiveStudy={() => {
+                      if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    onTodaySession={() => setHubSubTab("today")}
+                    onContinueReading={() => trySwitchShellTab("reader", "reader")}
+                    onWeakAreaReview={() => {
+                      const firstWeak = courseWeakAreas?.[0];
+                      if (firstWeak) setCoachQuestion(`Help me review my weak area: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    onExamPrep={() => setHubSubTab("exam")}
+                    onAiCoach={() => setHubSubTab("coach")}
+                  />
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
@@ -5340,7 +5347,7 @@ export default function ThoughtUnitReader() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
-                  {/* Primary CTA — continue where I left off */}
+                  {/* Primary CTA — adaptive study launch with pre-loaded guide */}
                   <button
                     onClick={() => {
                       if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
@@ -5348,8 +5355,13 @@ export default function ThoughtUnitReader() {
                     }}
                     className="w-full rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-600/25 to-indigo-800/20 hover:from-indigo-600/35 hover:to-indigo-800/30 transition-colors p-5 text-left"
                   >
-                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1.5">
-                      {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">
+                        {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                      </div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-800/40 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+                        Adaptive Guide Pre-loaded
+                      </span>
                     </div>
                     <div className="text-sm font-semibold text-white leading-snug">
                       {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
@@ -5580,7 +5592,24 @@ export default function ThoughtUnitReader() {
           {/* Mastery — chapter-level mastery breakdown */}
           {hubSubTab === "mastery" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+                {bookId && (
+                  <button
+                    onClick={() => {
+                      const worstChapter = chapterProgressList
+                        .slice()
+                        .sort((a, b) => (a.progress.masteryPct ?? 0) - (b.progress.masteryPct ?? 0))[0];
+                      const startPage = worstChapter?.chapter.pageRanges[0]?.start;
+                      if (startPage) syncToPage(startPage);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 px-3 py-1.5 rounded-lg bg-indigo-900/30 border border-indigo-500/30 hover:bg-indigo-900/50 transition-colors"
+                  >
+                    Study Weakest Chapter →
+                  </button>
+                )}
+              </div>
               {chapterProgressList.length > 0 ? (
                 <div className="space-y-2.5">
                   {chapterProgressList.map((ch, idx) => {
@@ -5608,14 +5637,36 @@ export default function ThoughtUnitReader() {
           {/* Weak Areas */}
           {hubSubTab === "weak" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+                {courseWeakAreas && courseWeakAreas.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const firstWeak = courseWeakAreas[0];
+                      if (firstWeak) setCoachQuestion(`Give me a targeted review session for: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg bg-rose-900/30 border border-rose-500/30 hover:bg-rose-900/50 transition-colors"
+                  >
+                    Launch Review Session →
+                  </button>
+                )}
+              </div>
               {courseWeakAreas && courseWeakAreas.length > 0 ? (
                 <div className="space-y-2">
                   {courseWeakAreas.map((area: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3">
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setCoachQuestion(`Help me review and improve on: ${area}`);
+                        setHubSubTab("coach");
+                      }}
+                      className="w-full flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3 text-left hover:bg-rose-950/35 hover:border-rose-500/35 transition-colors"
+                    >
                       <span className="text-rose-400 shrink-0">⚠️</span>
-                      <span className="text-xs text-slate-200">{area}</span>
-                    </div>
+                      <span className="text-xs text-slate-200 flex-1">{area}</span>
+                      <span className="text-[9px] text-rose-400/60 shrink-0 font-medium">Coach →</span>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -5746,77 +5797,33 @@ export default function ThoughtUnitReader() {
 
           {/* Knowledge Graph — scaffold */}
           {hubSubTab === "graph" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {kgNodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                  <div className="text-4xl">🕸</div>
-                  <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
-                  <div className="text-[12px] text-slate-500 max-w-xs">
-                    Concepts extracted from the book will appear here as you read pages and generate study materials.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-indigo-300">
-                      🕸 {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
-                    </div>
-                    <div className="text-[10px] text-slate-500">Click to navigate</div>
-                  </div>
-                  <div className="space-y-2">
-                    {[...kgNodes]
-                      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
-                      .map((node) => {
-                        const relatedTitles = kgNodes
-                          .filter(n => node.relatedNodeIds.includes(n.id))
-                          .map(n => n.title)
-                          .slice(0, 3);
-                        return (
-                          <button
-                            key={node.id}
-                            onClick={() => {
-                              if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
-                              if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
-                            }}
-                            className="w-full text-left rounded-xl border border-white/10 bg-slate-900/60 p-3 hover:border-indigo-500/40 hover:bg-slate-800/60 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-semibold text-slate-100 truncate">{node.title}</div>
-                                {node.summary && (
-                                  <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{node.summary}</div>
-                                )}
-                                {relatedTitles.length > 0 && (
-                                  <div className="mt-1.5 flex flex-wrap gap-1">
-                                    {relatedTitles.map((t, i) => (
-                                      <span key={i} className="text-[9px] rounded-full bg-slate-800 px-2 py-0.5 text-slate-400 border border-white/10">
-                                        {t}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                {node.sourcePages[0] && (
-                                  <span className="text-[9px] text-slate-500">p.{node.sourcePages[0]}</span>
-                                )}
-                                {node.importance != null && (
-                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                                    node.importance >= 80 ? "bg-yellow-500/20 text-yellow-300" :
-                                    node.importance >= 50 ? "bg-indigo-500/20 text-indigo-300" :
-                                    "bg-slate-700/40 text-slate-400"
-                                  }`}>
-                                    {node.importance >= 80 ? "★ High" : node.importance >= 50 ? "Med" : "Low"}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </>
-              )}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-bold text-indigo-300">🕸 Visual Knowledge Roadmap</div>
+                <div className="text-[10px] text-slate-500">Click a node to navigate · nodes tier by importance</div>
+              </div>
+              <VisualKnowledgeRoadmap
+                nodes={kgNodes}
+                selectedNodeId={kgSelectedNodeId}
+                onNodeClick={(node) => {
+                  kgSetSelectedNodeId(kgSelectedNodeId === node.id ? null : node.id);
+                  if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
+                  if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Learning Sources */}
+          {hubSubTab === "sources" && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <ErrorBoundary onError={(error) => console.error("📚 LearningSourcesPanel Error:", error.message)}>
+                <LearningSourcesPanel
+                  bookId={bookId}
+                  kgNodes={kgNodes}
+                  onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                />
+              </ErrorBoundary>
             </div>
           )}
         </div>
@@ -5871,20 +5878,22 @@ export default function ThoughtUnitReader() {
 
     if (activeShellTab === "studyguide") {
       return (
-        <StudyGuideLab
-          bookId={bookId}
-          bookTitle={uploadedFile?.name ?? undefined}
-          currentPage={currentPage}
-          studyModel={currentPageStudyModel}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-          onNavigateToPage={(page) => {
-            syncToPage(page);
-            trySwitchShellTab("reader", "reader");
-          }}
-          onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
-          onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
-          onPodcastScript={(script) => setStudyGuideScript(script)}
-        />
+        <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
+          <StudyGuideLab
+            bookId={bookId}
+            bookTitle={uploadedFile?.name ?? undefined}
+            currentPage={currentPage}
+            studyModel={currentPageStudyModel}
+            pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+            onNavigateToPage={(page) => {
+              syncToPage(page);
+              trySwitchShellTab("reader", "reader");
+            }}
+            onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+            onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+            onPodcastScript={(script) => setStudyGuideScript(script)}
+          />
+        </ErrorBoundary>
       );
     }
 

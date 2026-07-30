@@ -445,8 +445,16 @@ export default function StudyGuideLab({
 
   // ── Adaptive guide ──────────────────────────────────────────────────────────
 
-  const sessions = useSessionStore(s => s.getSessionsForBook(bookId));
-  const recalls  = useSessionStore(s => s.getRecallsForBook(bookId));
+  const allSessions = useSessionStore(s => s.sessions);
+  const allRecalls  = useSessionStore(s => s.recalls);
+  const sessions = useMemo(
+    () => allSessions.filter(s => s.bookId === bookId),
+    [allSessions, bookId],
+  );
+  const recalls = useMemo(
+    () => allRecalls.filter(r => r.bookId === bookId),
+    [allRecalls, bookId],
+  );
   const hasRealProfileData = sessions.length > 0 || recalls.length > 0;
 
   const adaptableUnits = useMemo<AdaptableUnit[]>(() =>

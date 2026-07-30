@@ -13,9 +13,14 @@ import { persist } from "zustand/middleware";
 
 export type ReaderMode = "study" | "exam" | "review";
 
+/** How the left-panel navigator arranges its entries. */
+export type TocViewMode = "standard" | "learning" | "concept";
+
 export interface ReaderModeState {
   mode: ReaderMode;
   setMode: (mode: ReaderMode) => void;
+  tocViewMode: TocViewMode;
+  setTocViewMode: (mode: TocViewMode) => void;
 }
 
 export const useReaderModeStore = create<ReaderModeState>()(
@@ -23,6 +28,8 @@ export const useReaderModeStore = create<ReaderModeState>()(
     (set) => ({
       mode: "study",
       setMode: (mode) => set({ mode }),
+      tocViewMode: "standard",
+      setTocViewMode: (tocViewMode) => set({ tocViewMode }),
     }),
     { name: "avrrio-reader-mode" },
   ),
