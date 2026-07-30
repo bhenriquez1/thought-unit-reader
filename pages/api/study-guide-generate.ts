@@ -24,6 +24,8 @@ type RequestBody = {
   hasStudyModel?: boolean;  // true when RIGHT PANEL STUDY MODEL source is present
   examGoal?: ExamGoal;
   targetScore?: string;
+  profession?: string;
+  learnerStage?: string;
 };
 
 type StudyGuideMechanism = { title: string; steps: string[] };
@@ -89,7 +91,7 @@ OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 RULES:
 - priority: "High" if heavily tested, "Medium" if occasionally, "Low" if rarely or background-only
 - mustKnow: complete sentences, exam-level precision
-- datFacts: short, punchy, star-worthy — "X → Y", percentages, names
+- keyFacts (returned as datFacts field): short, punchy, testable — "X → Y", key numbers, named items
 - mechanisms: clear step-by-step chains, not definitions
 - traps: contrast pairs like "X ≠ Y" or "students confuse A with B"
 - recallQuestions: start with What/Why/How/Where — not yes/no
@@ -97,7 +99,7 @@ RULES:
 - dailyTasks: concrete and actionable, tied to the source material and exam goal
 - Return ONLY the JSON object — no markdown fences, no explanation`;
 
-function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string, mode: StudyGuideMode, hasStudyModel?: boolean, examGoal?: ExamGoal, targetScore?: string): string {
+function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string, mode: StudyGuideMode, hasStudyModel?: boolean, examGoal?: ExamGoal, targetScore?: string, profession?: string, learnerStage?: string): string {
   const modeLabel: Record<StudyGuideMode, string> = {
     dat: "Study Sheet", dental: "Dental School Notes",
     topstudent: "Top Student Notes", examcram: "Exam Cram Notes",
@@ -106,6 +108,21 @@ function buildUserPrompt(sources: Source[], chapterTitle: string, topic: string,
 
   // Mode persona and exam goal go in the user message (CWE-1336: system prompt must be static).
   let prompt = `STUDY MODE PERSONA: ${MODE_PERSONA[mode] || MODE_PERSONA["dat"]}\n\n`;
+
+  const professionPersona: Record<string, string> = {
+    'dental-student':    'The learner is a dental student. Structure the guide with: Definition → Why it matters → Anatomy or material → Clinical sequence → Common mistake → DAT relevance → Recall check.',
+    'dental-resident':   'The learner is a dental resident. Focus on: Clinical indication → Decision point → Procedure sequence → Complication management → Evidence limitation → Case variation.',
+    'medical-student':   'The learner is a medical student. Cover: Pathophysiology → Presentation → Diagnosis → Differential → Management → Clinical pearl → Board-style recall.',
+    'surgeon':           'The learner is a surgeon. Structure as: Preoperative judgment → Anatomical risk → Critical steps → Failure points → Complication response → Postoperative considerations.',
+    'pilot':             'The learner is a pilot. Structure as: System → Normal operation → Checklist → Decision threshold → Failure mode → Emergency response.',
+    'chemistry-student': 'The learner is a chemistry student. Structure as: Concept → Relationship or formula → Variable meaning → Worked method → Common trap → Practice problem.',
+  };
+
+  if (profession && professionPersona[profession]) {
+    prompt += `LEARNER PROFILE: ${professionPersona[profession]}\n\n`;
+  }
+
+  prompt += `LEARNING SEQUENCE: Follow this progression — Orient (what the learner should accomplish) → Understand (core knowledge only) → Connect (how ideas relate) → Apply (clinical/procedural/worked use) → Retrieve (recall check without looking). Select only the sections that fit the source material. Do not force every concept into every category.\n\n`;
 
   if (hasStudyModel) {
     prompt += `IMPORTANT: The source labeled "RIGHT PANEL STUDY MODEL" is the authoritative grounding document. It contains the page thesis, concept blocks, mechanisms, and high-yield anchors already extracted from the book. Your output MUST be grounded in those specific concepts — not generic biology. Every fact, mechanism, and trap you write must be traceable to that source material.\n\n`;
@@ -156,7 +173,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { sources, chapterTitle, topic, mode, hasStudyModel, examGoal, targetScore } = req.body as RequestBody;
+  const { sources, chapterTitle, topic, mode, hasStudyModel, examGoal, targetScore, profession, learnerStage } = req.body as RequestBody;
 
   if (!sources || !Array.isArray(sources) || sources.length === 0) {
     res.status(400).json({ error: "At least one source document is required." });
@@ -184,7 +201,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: STUDY_GUIDE_SYSTEM },
-          { role: "user",   content: buildUserPrompt(sources, chapterTitle, topic, mode ?? "dat", hasStudyModel, examGoal, targetScore) },
+          { role: "user",   content: buildUserPrompt(sources, chapterTitle, topic, mode ?? "dat", hasStudyModel, examGoal, targetScore, profession, learnerStage) },
         ],
       }),
     });

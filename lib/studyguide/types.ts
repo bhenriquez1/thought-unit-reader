@@ -2,6 +2,41 @@
 
 export type StudyGuideMode = 'dat' | 'dental' | 'topstudent' | 'examcram' | 'visual' | 'highyield';
 
+export type LearnerProfession =
+  | 'general'
+  | 'dental-student'
+  | 'dental-resident'
+  | 'medical-student'
+  | 'surgeon'
+  | 'pilot'
+  | 'chemistry-student';
+
+export type LearnerStage = 'student' | 'resident' | 'professional';
+
+export interface LearningContext {
+  profession: LearnerProfession;
+  learnerStage: LearnerStage;
+  bookId: string;
+  chapterId?: string;
+  canonicalUnitIds: string[];
+}
+
+export const LEARNER_PROFESSION_LABELS: Record<LearnerProfession, string> = {
+  'general':           'General',
+  'dental-student':    'Dental Student',
+  'dental-resident':   'Dental Resident',
+  'medical-student':   'Medical Student',
+  'surgeon':           'Surgeon',
+  'pilot':             'Pilot',
+  'chemistry-student': 'Chemistry Student',
+};
+
+export const LEARNER_STAGE_LABELS: Record<LearnerStage, string> = {
+  student:      'Student',
+  resident:     'Resident',
+  professional: 'Professional',
+};
+
 export type ExamGoal = 'dat' | 'mcat' | 'dental-school' | 'medical-school' | 'nursing' | 'biology-exam' | 'custom';
 
 export const EXAM_GOAL_LABELS: Record<ExamGoal, string> = {
@@ -61,6 +96,8 @@ export interface StudyGuideRecord extends StudyGuideOutput {
   mode: StudyGuideMode;
   examGoal?: ExamGoal;
   targetScore?: string;
+  profession?: LearnerProfession;
+  learnerStage?: LearnerStage;
   sourceLabels: string[];
   createdAt: number;
   // Knowledge Graph reference (KG PR 1) — back-filled incrementally, never required.

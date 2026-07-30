@@ -28,6 +28,7 @@ import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchor
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import LearningSources from "@/components/reader/LearningSources";
 
 // Marks the word at activeSpokenWord.wordIndex within this card's own text — same
 // approach as ThoughtUnitNavigator.tsx's renderSnippetWithActiveWord, kept local here
@@ -3063,161 +3064,16 @@ function UltraViewBase({
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
-      {/* ── Related Reading — AI-selected exact articles from NIH/MedlinePlus/NCBI/OpenStax ── */}
-      {hasSynth ? (
-        <PanelSection title="📖 Related Reading">
-          {!resolvedResources.resolved ? (
-            <p className="text-[12px] text-slate-500 italic">Finding resources…</p>
-          ) : exactArticles.length > 0 ? (
-            <ul className="space-y-2">
-              {exactArticles.map((a, i) => (
-                <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
-                  <a
-                    href={a.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex flex-col gap-0.5"
-                    onClick={() => console.log("[RELATED_CLICK_TARGET]", { type: "article", title: a.title, url: a.url, source: a.source })}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[12px] font-medium text-violet-200 group-hover:text-violet-100 leading-snug">{a.title}</span>
-                      <span className="shrink-0 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">{a.score}%</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400">{a.source}</span>
-                    {surgeonTypeLabel && (
-                      <span className="text-[9.5px] font-semibold text-emerald-400/80">Supports: {surgeonTypeLabel}</span>
-                    )}
-                    <span className="text-[10px] text-emerald-300">Exact topic matched · fallback false</span>
-                    <span className="text-[11px] text-slate-300 italic mt-0.5">{a.reason}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[12px] text-slate-500 italic">No exact reading match found for this page.</p>
-          )}
-        </PanelSection>
-      ) : null}
-
-      {/* ── Related Videos — relevance-first ranked across all educational creators ── */}
-      {hasSynth ? (
-        <PanelSection title="📺 Related Videos">
-          {!resolvedResources.resolved ? (
-            <p className="text-[12px] text-slate-500 italic">Finding videos…</p>
-          ) : exactVideos.length > 0 ? (
-            <ul className="space-y-2">
-              {exactVideos.map((v, i) => {
-                const isDirectVideo = v.searchUrl.includes("youtube.com/watch?v=");
-                const hasTimestamp  = isDirectVideo && v.timestampSeconds != null && v.timestampSeconds > 0;
-                // Build timestamp deep-link URL (ensure t= param is present for direct links)
-                const watchUrl = hasTimestamp && v.timestampSeconds
-                  ? (() => {
-                      try {
-                        const u = new URL(v.searchUrl);
-                        u.searchParams.set("t", `${Math.floor(v.timestampSeconds)}s`);
-                        return u.toString();
-                      } catch { return v.searchUrl; }
-                    })()
-                  : v.searchUrl;
-                return (
-                <li key={i} className="rounded-lg border border-white/10 bg-white/4 p-2.5">
-                  <div className="flex flex-col gap-1.5">
-                    {/* Title row */}
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[12px] font-semibold text-red-100 leading-snug">{v.videoTitle}</span>
-                      <span className="shrink-0 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] font-bold text-red-300">{v.score}</span>
-                    </div>
-                    {/* Creator row */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-medium text-slate-300">{v.channel}</span>
-                      {surgeonTypeLabel && (
-                        <span className="text-[9.5px] font-semibold text-emerald-400/80">Supports: {surgeonTypeLabel}</span>
-                      )}
-                      {isDirectVideo ? (
-                        <span className="rounded bg-emerald-900/50 px-1 py-px text-[9px] font-semibold text-emerald-400">▶ verified</span>
-                      ) : (
-                        <span className="rounded bg-slate-700/60 px-1 py-px text-[9px] text-slate-400">search</span>
-                      )}
-                    </div>
-                    {/* Why relevant */}
-                    <p className="text-[11px] text-slate-400 italic leading-snug">{v.reason}</p>
-                    <p className="text-[10px] text-emerald-300">Exact topic matched · fallback false</p>
-                    {/* Timestamp + Watch button */}
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {hasTimestamp && (
-                        <span className="inline-flex items-center gap-1 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                          ⏱ {v.timestampLabel}
-                        </span>
-                      )}
-                      <a
-                        href={watchUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-auto inline-flex items-center gap-1 rounded bg-red-700 hover:bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors"
-                        onClick={() => console.log("[RELATED_CLICK_TARGET]", { type: "video", title: v.videoTitle, url: watchUrl, channel: v.channel, isVerified: v.isVerified ?? isDirectVideo, hasTimestamp })}
-                      >
-                        {v.isVerified ?? isDirectVideo
-                          ? `▶ Watch${hasTimestamp ? " at timestamp" : ""}`
-                          : "🔍 Search YouTube"}
-                      </a>
-                    </div>
-                  </div>
-                </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-[12px] text-slate-500 italic">No exact video match found for this page.</p>
-          )}
-        </PanelSection>
-      ) : null}
-
-      {/* ── Cohere: broad search starting points — shown ONLY when the exact-match
-           pipeline above found nothing for that category, so a verified exact match
-           is never cluttered by unrelated broad-topic search suggestions. ── */}
-      {hasSynth && resolvedResources.resolved && (
-        (resolvedResources.articles.length === 0 && cohereQueries.readings.length > 0) ||
-        (resolvedResources.videos.length === 0 && cohereQueries.videos.length > 0)
-      ) ? (
-        <PanelSection title="🔍 Broad Search (no exact match found)">
-          {resolvedResources.articles.length === 0 && cohereQueries.readings.length > 0 && (
-            <div className="mb-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400/70 mb-1.5">Readings</p>
-              <div className="flex flex-wrap gap-1.5">
-                {cohereQueries.readings.map((q, i) => (
-                  <a
-                    key={i}
-                    href={`https://www.google.com/search?q=${encodeURIComponent(q)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-full border border-violet-500/30 bg-violet-900/20 px-2.5 py-1 text-[11px] text-violet-200 hover:bg-violet-800/40 transition-colors"
-                  >
-                    {q}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-          {resolvedResources.videos.length === 0 && cohereQueries.videos.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-red-400/70 mb-1.5">Videos</p>
-              <div className="flex flex-wrap gap-1.5">
-                {cohereQueries.videos.map((q, i) => (
-                  <a
-                    key={i}
-                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-full border border-red-500/30 bg-red-900/20 px-2.5 py-1 text-[11px] text-red-200 hover:bg-red-800/40 transition-colors"
-                  >
-                    ▶ {q}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-        </PanelSection>
-      ) : null}
+      {/* ── Learning Sources — unified articles + videos panel ── */}
+      <LearningSources
+        hasSynth={hasSynth}
+        resolvedResources={resolvedResources}
+        exactArticles={exactArticles}
+        exactVideos={exactVideos}
+        cohereQueries={cohereQueries}
+        surgeonTypeLabel={surgeonTypeLabel}
+        activeConceptTitle={view?.coreIdea ?? null}
+      />
 
       {/* ── DEV DIAGNOSTIC OVERLAY — only visible when NEXT_PUBLIC_DEBUG_READER=true ── */}
       {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
