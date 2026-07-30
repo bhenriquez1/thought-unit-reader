@@ -149,16 +149,30 @@ function getConfig(rect: OverlayRect): KindConfig {
   return TIER_CONFIG.decision;
 }
 
+// ── Tier helper (also used for packTierLabels override) ───────────────────────
+function getTierForRect(rect: OverlayRect): HighlightTier {
+  const kind = rect.semanticKind as SemanticKind | undefined;
+  if (kind && kind in KIND_TIER) return KIND_TIER[kind];
+  if (rect.level === "trap")    return "danger";
+  if (rect.level === "support") return "step";
+  return "decision";
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function PdfEvidenceOverlay({
   rects,
   focusedId,
   onFocus,
+  packTierLabels,
 }: {
   rects: OverlayRect[];
   focusedId?: string | null;
   onFocus?: (id: string) => void;
+  /** Domain-specific tier label overrides from the active SemanticPack.
+   *  When present, replaces CORE/STEP/APPLY/TRAP/PEARL with domain vocabulary
+   *  (e.g. CONCEPT/FORMULA/APPLY/ERROR/EXAMPLE for a chemistry pack). */
+  packTierLabels?: Partial<Record<HighlightTier, string>>;
 }) {
   const rectRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -266,11 +280,11 @@ export default function PdfEvidenceOverlay({
         // Only render a label on the first line of each highlight target.
         // Continuation lines have IDs like "va-0-L1", "va-0-L2"; first lines are plain IDs.
         const isFirstLine = !rect.id.match(/-L\d+$/);
-        // Left-margin placement: when text starts far enough from the left edge, place the
-        // label in the margin to the left of the highlight. Falls back to above-highlight
-        // when there's no left margin (e.g. narrow pages or flush-left text).
         const hasLeftMargin = rect.left >= 50;
         const tierStyle = tierGlowStyle(rect.priorityTier, cfg.glowColor);
+        // Domain-adaptive label: use packTierLabels override when the active pack provides one.
+        const tier = getTierForRect(rect);
+        const displayLabel = packTierLabels?.[tier] ?? cfg.label;
         return (
           <button
             key={rect.id}
@@ -295,12 +309,11 @@ export default function PdfEvidenceOverlay({
               opacity: dimmed ? 0.45 : 1,
               transition: "opacity 180ms ease, background-color 150ms ease",
             }}
-            aria-label={`${cfg.label || "Evidence"} highlight`}
+            aria-label={`${displayLabel || "Evidence"} highlight`}
           >
-            {/* Margin label — first line only, positioned in the left margin beside the highlight.
-                Shows tier name (CORE / STEP / APPLY / TRAP / PEARL); when reason fits, adds it
-                as a secondary line so students see the rationale without opening the panel. */}
-            {cfg.label && rect.height >= 6 && isFirstLine && (
+            {/* Margin label — first line only. Shows domain-adaptive tier name (e.g. CONCEPT for
+                chemistry, RULE for law); adds a secondary reason line when margin space allows. */}
+            {displayLabel && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
                   position: "absolute",
@@ -329,7 +342,7 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
-                {cfg.label}
+                {displayLabel}
                 {rect.reason && hasLeftMargin && (
                   <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                     {rect.reason.length > 24 ? rect.reason.slice(0, 23) + "…" : rect.reason}

@@ -157,6 +157,9 @@ interface PureReaderViewProps {
   onPdfRetry?: () => void;
   /** Brief page thesis from the study model — shown as "Page Mission" in the semantic key. */
   pageThesis?: string | null;
+  /** Domain-adaptive tier label overrides from the active SemanticPack — forwarded to PdfEvidenceOverlay
+   *  so highlight margin badges use domain vocabulary (e.g. RULE/ANALYSIS for law, CONCEPT/FORMULA for chemistry). */
+  packTierLabels?: Partial<Record<string, string>>;
 }
 
 // Positional tier styles — index 0 = most important (gold), … index 4 = least (cyan).
@@ -204,6 +207,7 @@ export default function PureReaderView({
   onPdfLoadError,
   onPdfRetry,
   pageThesis,
+  packTierLabels,
 }: PureReaderViewProps) {
   // Render counter — diagnostic for React #185 investigation.
   const prRenderCountRef = useRef(0);
@@ -757,6 +761,7 @@ export default function PureReaderView({
               onPdfChipPlay={onPdfChipPlay}
               onLoadError={onPdfLoadError}
               onRetry={onPdfRetry}
+              packTierLabels={packTierLabels}
             />
           </div>
         </div>

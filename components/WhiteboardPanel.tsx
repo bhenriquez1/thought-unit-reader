@@ -96,6 +96,9 @@ type Props = {
   learningProfile?: string;
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
+  /** Preferred layout grammar from the active annotation pack — drives VisualSceneEngine layout selection.
+   *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow. */
+  whiteboardGrammar?: string;
 };
 
 type WhiteboardDebugInfo = {
@@ -141,6 +144,7 @@ export default function WhiteboardPanel({
   recallSubject,
   learningProfile,
   onOpenChiefResident,
+  whiteboardGrammar,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -799,6 +803,7 @@ export default function WhiteboardPanel({
             noteCards={teachNoteCards}
             pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
             onAnchorClick={onAnchorStep ?? undefined}
+            whiteboardGrammar={whiteboardGrammar}
           />
 
           {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}

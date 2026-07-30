@@ -365,6 +365,10 @@ export interface SmartPDFViewerProps {
   onLoadError?: (message: string) => void;
   /** Overrides the default URL-retry with an IDB-aware re-resolve (provided by index.tsx). */
   onRetry?: () => void;
+  /** Domain-adaptive tier label overrides from the active SemanticPack.
+   *  Passed through to PdfEvidenceOverlay to relabel highlight margin badges per domain
+   *  (e.g. CONCEPT/FORMULA/APPLY/ERROR/EXAMPLE for chemistry instead of CORE/STEP/APPLY/TRAP/PEARL). */
+  packTierLabels?: Partial<Record<string, string>>;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -591,6 +595,7 @@ export default function SmartPDFViewer({
   onPdfChipPlay,
   onLoadError,
   onRetry: onRetryProp,
+  packTierLabels,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -1746,6 +1751,7 @@ export default function SmartPDFViewer({
                 <React.Fragment key={`overlay-${highlightKey ?? ""}-${overlayVersion}`}>
                   {/* Dim veil removed — lighter opacity on highlights means veil no longer needed */}
                   <PdfEvidenceOverlay
+                    packTierLabels={packTierLabels}
                     rects={(() => {
                       // Hard render-time guard: suppress any rect not in the current authorized set.
                       // authorizedHighlightIds comes from effectiveHighlightTargets so it always

@@ -65,6 +65,7 @@ import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnch
 import type { SynthHighlightAnchor, NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import { detectDomainPreset } from "@/lib/insights/domainPresets";
+import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
 import { buildThoughtUnitDetail, buildThoughtUnitDetailFromNoteCard, type ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes, getNotesByBook, inferSubject, type NoteSection, type UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, buildRecallSetFromNote, saveRecallSet, getAllRecallSets, getRecallSetsByBook, stableRecallId, type RecallCard, type RecallSet } from "@/lib/recalllab/recallStore";
@@ -848,6 +849,10 @@ export default function ThoughtUnitReader() {
     const seed = detectDomainPreset("", undefined, uploadedFile.name);
     if (seed !== "universal") setSharedPresetId(seed);
   }, [uploadedFile]);
+
+  // Active annotation pack — resolves tier labels and whiteboard grammar from sharedPresetId.
+  // Used to make PDF highlight margin labels and Whiteboard layout domain-adaptive.
+  const activePack = useMemo(() => resolveSemanticPack(sharedPresetId), [sharedPresetId]);
 
   // NoteLab left rail: the active note's raw thought units, mapped to the same
   // entry shape PureReaderView feeds the reader's own ThoughtUnitNavigator.
@@ -5147,6 +5152,7 @@ export default function ThoughtUnitReader() {
                     handleLoadPDF('', uploadedFile?.name, currentLocalDocumentId);
                   } : undefined}
                   pageThesis={currentPageStudyModel?.pageThesis ?? null}
+                  packTierLabels={activePack.tierLabels}
                 />
 
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
@@ -6584,6 +6590,7 @@ export default function ThoughtUnitReader() {
                 knowledgeNodeId={pageKgNodeIdRef.current}
                 learningProfile={learningProfile}
                 onOpenChiefResident={handleOpenChiefResidentExplainPage}
+                whiteboardGrammar={activePack.whiteboardGrammar}
               />
             </div>
           </div>

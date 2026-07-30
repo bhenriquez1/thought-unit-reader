@@ -148,4 +148,6 @@ export const GENERAL_CHEMISTRY_PACK: SemanticPack = {
   ],
   minimumConfidence: 0.55,
   fallbackPackId: "general",
+  tierLabels: { master: "CONCEPT", step: "FORMULA", decision: "APPLY", danger: "ERROR", pearl: "EXAMPLE" },
+  whiteboardGrammar: "pathway",
 };

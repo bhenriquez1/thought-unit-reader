@@ -95,6 +95,26 @@ export interface SemanticLabelDefinition {
   examples?: string[];
 }
 
+// ── Annotation pack visual vocabulary ────────────────────────────────────────
+// Every pack names the 5 highlight tiers in its own domain vocabulary.
+// The PDF overlay renders these labels in the left margin beside each highlight.
+//   master   → gold   — governing concept, thesis, core law
+//   step     → green  — process, mechanism, procedure, formula
+//   decision → blue   — apply, diagnose, choose, compare
+//   danger   → red    — trap, mistake, exception, warning
+//   pearl    → cyan   — expert shortcut, memory anchor, board pearl
+export type AnnotationTier = "master" | "step" | "decision" | "danger" | "pearl";
+
+// The visual grammar hint drives the Whiteboard layout algorithm selection.
+export type WhiteboardGrammar =
+  | "flow"            // Sequential steps — universal default
+  | "anatomy"         // Structure-centered hub diagram — medical/dental
+  | "pathway"         // Reaction/signaling chain — chemistry/biology
+  | "worked-solution" // Vertical step-by-step — math/physics
+  | "timeline"        // Chronological left-right — history/humanities
+  | "system-diagram"  // Block + arrow system — engineering/CS
+  | "case-map";       // Spider map with rule at center — law
+
 export interface SemanticPack {
   id: SemanticDomain | "universal";
   label: string;
@@ -104,6 +124,10 @@ export interface SemanticPack {
   /** Minimum domain confidence (0–1) needed to activate this pack. */
   minimumConfidence: number;
   fallbackPackId: "general";
+  /** Domain-specific names for the 5 Avrrio highlight tiers shown in PDF margin labels. */
+  tierLabels: Record<AnnotationTier, string>;
+  /** Preferred Whiteboard layout algorithm for this domain. */
+  whiteboardGrammar: WhiteboardGrammar;
 }
 
 // ── Domain assignment ────────────────────────────────────────────────────────

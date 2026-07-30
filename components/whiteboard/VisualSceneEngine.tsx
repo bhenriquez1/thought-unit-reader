@@ -189,12 +189,23 @@ function buildEquationLayout(rn: RawNode[]): SceneLayout {
   return { nodes, edges: [], svgW: SVG_W, svgH, grammar: "equation" };
 }
 
-function buildSceneLayout(card: NoteCard): SceneLayout {
+function buildSceneLayout(card: NoteCard, domainGrammar?: string): SceneLayout {
   if (!card.visual || card.visual.nodes.length === 0)
     return { nodes: [], edges: [], svgW: SVG_W, svgH: 0, grammar: "text" };
 
   const rn: RawNode[] = card.visual.nodes.map(n => ({ id: n.id, label: n.label }));
   const re: RawEdge[] = card.visual.arrows.map(a => ({ from: a.from, to: a.to, label: a.label }));
+
+  // Domain grammar hint overrides the card's own drawType for structural layouts:
+  // anatomy/case-map → hub-spoke (central concept + radial relationships)
+  // worked-solution/timeline/pathway → flow (sequential vertical chain)
+  // system-diagram → hub-spoke when many nodes, otherwise flow
+  if (domainGrammar && rn.length >= 3) {
+    if (domainGrammar === "anatomy" || domainGrammar === "case-map")
+      return buildHubSpokeLayout(rn, re);
+    if (domainGrammar === "system-diagram" && rn.length >= 4)
+      return buildHubSpokeLayout(rn, re);
+  }
 
   switch (card.visual.drawType) {
     case "flow":
@@ -229,10 +240,10 @@ function splitNarrations(body: string, count: number): string[] {
 
 // ── Chapter builder ────────────────────────────────────────────────────────────
 
-function buildChapters(cards: NoteCard[]): Chapter[] {
+function buildChapters(cards: NoteCard[], domainGrammar?: string): Chapter[] {
   return cards.map(card => {
     const tier = CARD_TYPE_TIER[card.type] ?? "pearl";
-    const layout = buildSceneLayout(card);
+    const layout = buildSceneLayout(card, domainGrammar);
     const n = layout.nodes.length;
     const nars = splitNarrations(card.body, Math.max(n, 1));
 
@@ -376,10 +387,14 @@ interface Props {
   noteCards: NoteCard[];
   pageTitle?: string | null;
   onAnchorClick?: (nodeId: string) => void;
+  /** Preferred layout grammar from the active annotation pack.
+   *  Biases buildSceneLayout toward the domain's natural visual form
+   *  (anatomy → hub-spoke, pathway → flow, timeline → flow, worked-solution → flow). */
+  whiteboardGrammar?: string;
 }
 
-export default function VisualSceneEngine({ noteCards, pageTitle, onAnchorClick }: Props) {
-  const chapters = useMemo(() => buildChapters(noteCards), [noteCards]);
+export default function VisualSceneEngine({ noteCards, pageTitle, onAnchorClick, whiteboardGrammar }: Props) {
+  const chapters = useMemo(() => buildChapters(noteCards, whiteboardGrammar), [noteCards, whiteboardGrammar]);
 
   // Flat step sequence across all chapters
   const flatSteps = useMemo<FlatStep[]>(() => {
