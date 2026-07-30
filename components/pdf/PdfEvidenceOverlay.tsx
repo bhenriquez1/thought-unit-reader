@@ -204,9 +204,6 @@ export default function PdfEvidenceOverlay({
     }
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Circled Unicode numbers for step badges — ①②③… up to ⑩
-  const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
-
   // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
   // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
   const mechanismChain = useMemo(() => {
@@ -231,7 +228,7 @@ export default function PdfEvidenceOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
-      {/* SVG connector layer — arrows between consecutive mechanism steps + left brace with circled numbers */}
+      {/* SVG connector layer — arrows between consecutive mechanism steps + left brace */}
       {mechanismChain.length >= 2 && (
         <svg
           aria-hidden
@@ -242,7 +239,7 @@ export default function PdfEvidenceOverlay({
               <polygon points="0 0, 7 3, 0 6" fill="#86efac" opacity="0.75" />
             </marker>
           </defs>
-          {/* Left-margin brace spanning first→last mechanism rect, with circled step numbers */}
+          {/* Left-margin brace spanning first→last mechanism rect */}
           {(() => {
             const first = mechanismChain[0];
             const last  = mechanismChain[mechanismChain.length - 1];
@@ -251,37 +248,15 @@ export default function PdfEvidenceOverlay({
             const braceY2 = last.top  + last.height  / 2;
             const mid = (braceY1 + braceY2) / 2;
             return (
-              <g key="mech-brace">
-                <g opacity="0.55">
-                  {/* vertical stem */}
-                  <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
-                  {/* ticks at each step */}
-                  {mechanismChain.map((r) => {
-                    const ty = r.top + r.height / 2;
-                    return <line key={`bt-${r.id}`} x1={braceX + 4} y1={ty} x2={braceX + 8} y2={ty} stroke="#86efac" strokeWidth="1.5" />;
-                  })}
-                  {/* mid pointer */}
-                  <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
-                </g>
-                {/* Circled step numbers next to each brace tick */}
-                {mechanismChain.map((r, i) => {
-                  const ty = r.top + r.height / 2;
-                  return (
-                    <text
-                      key={`bn-${r.id}`}
-                      x={braceX - 3}
-                      y={ty + 4}
-                      fontSize="10"
-                      fontFamily="ui-monospace, SFMono-Regular, monospace"
-                      fontWeight="700"
-                      fill="#86efac"
-                      opacity="0.90"
-                      textAnchor="middle"
-                    >
-                      {CIRCLED[i] ?? `${i + 1}`}
-                    </text>
-                  );
-                })}
+              <g key="mech-brace" opacity="0.55">
+                {/* vertical stem */}
+                <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
+                {/* top tick */}
+                <line x1={braceX + 4} y1={braceY1} x2={braceX + 8} y2={braceY1} stroke="#86efac" strokeWidth="1.5" />
+                {/* bottom tick */}
+                <line x1={braceX + 4} y1={braceY2} x2={braceX + 8} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
+                {/* mid pointer */}
+                <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
               </g>
             );
           })()}
@@ -380,28 +355,20 @@ export default function PdfEvidenceOverlay({
               borderRadius: "6px",
               backgroundColor: activeFocused ? cfg.bgFocused : cfg.bgNormal,
               border: activeFocused ? undefined : tierStyle.border,
-              // Definition anchors: prominent gold left-edge bar like a textbook margin marker.
-              // Trap anchors: red left-edge bar to signal danger.
+              // Definition anchors get a gold left-edge accent — "boxed definition" feel.
               borderLeft: rect.semanticKind === "definition"
-                ? `5px solid rgba(253,224,71,${activeFocused ? 1 : 0.75})`
-                : rect.semanticKind === "trap"
-                ? `4px solid rgba(252,165,165,${activeFocused ? 1 : 0.7})`
+                ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
                 : undefined,
-              boxShadow: rect.semanticKind === "definition"
-                ? activeFocused
-                  ? "-2px 0 8px rgba(253,224,71,0.35)"
-                  : `${tierStyle.boxShadow ? `${tierStyle.boxShadow}, ` : ""}-1px 0 5px rgba(253,224,71,0.18)`
-                : activeFocused ? undefined : tierStyle.boxShadow,
               overflow: "visible",
               opacity: dimmed ? 0.45 : 1,
               transition: "opacity 180ms ease, background-color 150ms ease",
             }}
             aria-label={`${displayLabel || "Evidence"} highlight`}
           >
-            {/* Margin label — first line only. Shows domain-adaptive tier name (e.g. CONCEPT for
-                chemistry, RULE for law); adds a secondary reason line when margin space allows.
-                Trap anchors get a ⚠ prefix; clinical pearls get a 💎 prefix. */}
-            {displayLabel && rect.height >= 6 && isFirstLine && (
+            {/* Margin label — first line only, positioned in the left margin beside the highlight.
+                Shows tier name (CORE / STEP / APPLY / TRAP / PEARL); when reason fits, adds it
+                as a secondary line so students see the rationale without opening the panel. */}
+            {cfg.label && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
                   position: "absolute",
@@ -430,8 +397,7 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
-                {rect.semanticKind === "trap" ? "⚠ " : rect.semanticKind === "dat_fact" ? "⭐ " : (rect.semanticKind === "clinical" || rect.semanticKind === "memoryAnchor") ? "💎 " : ""}
-                {displayLabel}
+                {cfg.label}
                 {rect.reason && hasLeftMargin && (
                   <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                     {rect.reason.length > 24 ? rect.reason.slice(0, 23) + "…" : rect.reason}
