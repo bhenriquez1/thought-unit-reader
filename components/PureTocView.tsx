@@ -66,27 +66,65 @@ export default function PureTocView({
     }
   }, [isClient, documentId, setActiveToc]);
   
-  // Filter items by search
+  // Recursive search: keep an item if it or any descendant matches the query.
+  // Returns a pruned copy of the tree that preserves parent→child paths.
+  const filterTree = useMemo(() => {
+    const matchItem = (item: TocItem, query: string): TocItem | null => {
+      const selfMatch =
+        item.title.toLowerCase().includes(query) ||
+        String(item.pageNumber).includes(query);
+      const matchedChildren = (item.children ?? [])
+        .map((c) => matchItem(c, query))
+        .filter((c): c is TocItem => c !== null);
+      if (selfMatch || matchedChildren.length > 0) {
+        return { ...item, children: matchedChildren.length ? matchedChildren : item.children };
+      }
+      return null;
+    };
+    return (items: TocItem[], query: string): TocItem[] => {
+      if (!query.trim()) return items;
+      return items.map((i) => matchItem(i, query)).filter((i): i is TocItem => i !== null);
+    };
+  }, []);
+
   const filteredItems = useMemo(() => {
     if (!toc?.items) return [];
-    if (!searchQuery.trim()) return toc.items;
-    
-    const query = searchQuery.toLowerCase();
-    return toc.items.filter(item =>
-      item.title.toLowerCase().includes(query) ||
-      String(item.pageNumber).includes(query)
-    );
-  }, [toc, searchQuery]);
-  
-  // Find current chapter based on page
+    return filterTree(toc.items, searchQuery.toLowerCase());
+  }, [toc, searchQuery, filterTree]);
+
+  // Flatten tree for current-location detection (checks all nesting levels)
+  const flatItems = useMemo(() => {
+    const flatten = (items: TocItem[]): TocItem[] =>
+      items.flatMap((i) => [i, ...flatten(i.children ?? [])]);
+    return flatten(toc?.items ?? []);
+  }, [toc]);
+
+  // Find the deepest item whose page ≤ currentPage (most specific location)
   const currentChapter = useMemo(() => {
-    if (!toc?.items?.length) return null;
-    
-    // Find the chapter that contains the current page
-    const sorted = [...toc.items].sort((a, b) => b.pageNumber - a.pageNumber);
-    return sorted.find(item => item.pageNumber <= currentPage);
-  }, [toc, currentPage]);
+    if (!flatItems.length) return null;
+    const sorted = [...flatItems].sort((a, b) => b.pageNumber - a.pageNumber);
+    return sorted.find((item) => (item.pageNumber ?? 0) <= currentPage) ?? null;
+  }, [flatItems, currentPage]);
   
+  // Auto-expand items that contain search matches
+  useEffect(() => {
+    if (!searchQuery.trim() || !toc?.items) return;
+    const parentsWithMatch = new Set<string>();
+    const markParents = (items: TocItem[], parentId: string | null) => {
+      for (const item of items) {
+        const matches =
+          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(item.pageNumber).includes(searchQuery);
+        if (matches && parentId) parentsWithMatch.add(parentId);
+        if (item.children?.length) markParents(item.children, item.id);
+      }
+    };
+    markParents(toc.items, null);
+    if (parentsWithMatch.size > 0) {
+      setExpandedIds((prev) => new Set([...prev, ...parentsWithMatch]));
+    }
+  }, [searchQuery, toc]);
+
   // Toggle expand/collapse
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {

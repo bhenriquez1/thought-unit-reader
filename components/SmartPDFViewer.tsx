@@ -13,6 +13,7 @@ import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
+import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -377,6 +378,17 @@ function toSameOrigin(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** Convert SmartTOCEntry[] (heading-detected) to TocItem[] for onOutline consumers.
+ *  Uses `items` (not `children`) to match the local TocItem shape expected by
+ *  handleOutlineExtraction in pages/index.tsx. */
+function smartEntriesToTocItems(entries: SmartTOCEntry[]): TocItem[] {
+  return entries.map((e) => ({
+    title: e.title,
+    pageNumber: e.pageNumber,
+    items: e.children?.length ? smartEntriesToTocItems(e.children) : undefined,
+  }));
 }
 
 /** Resolve a PDF.js outline tree to {title, pageNumber, items[]} */
@@ -1218,30 +1230,44 @@ export default function SmartPDFViewer({
     }
   }, [pageCount, onPageCount]);
 
-  // Handle outline extraction when document is loaded
+  // Handle outline extraction when document is loaded.
+  // Primary: PDF bookmarks via getOutline() with resolved page numbers.
+  // Fallback: generateSmartTOC heading detection when bookmarks are absent.
   useEffect(() => {
-    if (pdfDocument && onOutline) {
-      console.log(`📋 SmartPDFViewer: Extracting outline from loaded document`);
-      
-      const extractOutline = async () => {
-        try {
-          const raw = await (pdfDocument as any).getOutline?.();
-          if (raw?.length) {
-            const items = await resolveOutline(pdfDocument, raw);
-            onOutline(items);
-            console.log(`📋 SmartPDFViewer: Outline extracted with ${items.length} items`);
-          } else {
-            onOutline([]);
-            console.log(`📋 SmartPDFViewer: No outline found in document`);
-          }
-        } catch (error) {
-          console.warn(`📋 SmartPDFViewer: Outline extraction failed:`, error);
-          onOutline?.([]);
-        }
-      };
+    if (!pdfDocument || !onOutline) return;
 
-      extractOutline();
-    }
+    const extractOutline = async () => {
+      try {
+        const raw = await (pdfDocument as any).getOutline?.();
+        if (raw?.length) {
+          const items = await resolveOutline(pdfDocument, raw);
+          onOutline(items);
+          console.log(`[TOC_OUTLINE_BOOKMARKS]`, { items: items.length });
+          return;
+        }
+      } catch (error) {
+        console.warn(`[TOC_OUTLINE_EXTRACT_FAIL]`, error);
+      }
+
+      // No bookmarks — run smart heading detection so syllabusToc is populated
+      // from real page text rather than the thoughtUnits proxy.
+      try {
+        const result = await generateSmartTOC(pdfDocument);
+        if (result.entries.length > 0) {
+          const tocItems = smartEntriesToTocItems(result.entries);
+          onOutline(tocItems);
+          console.log(`[TOC_SMART_HEADING]`, { source: result.source, items: tocItems.length, ms: Math.round(result.processingTimeMs) });
+        } else {
+          onOutline([]);
+          console.log(`[TOC_NO_STRUCTURE]`);
+        }
+      } catch (error) {
+        console.warn(`[TOC_SMART_TOC_FAIL]`, error);
+        onOutline([]);
+      }
+    };
+
+    extractOutline();
   }, [pdfDocument, onOutline]);
 
   useEffect(() => {

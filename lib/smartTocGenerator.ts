@@ -491,12 +491,15 @@ export async function generateSmartTOC(
       entries = []; // Discard weak outline results
     }
 
-    // Strategy 2: If no outline, try heading detection
+    // Strategy 2: If no outline, try heading detection.
+    // Cap scales with book size: scan up to 30% of pages or 300 max, so large
+    // textbooks (500+ pages) get meaningful coverage instead of just the first 50.
     if (entries.length === 0) {
       hasText = await checkHasText(pdfDocument);
 
       if (hasText) {
-        entries = await extractFromHeadings(pdfDocument);
+        const headingCap = Math.min(Math.ceil(pdfDocument.numPages * 0.3), 300);
+        entries = await extractFromHeadings(pdfDocument, headingCap);
         if (entries.length >= 3) {
           source = 'heading';
         } else {
