@@ -649,9 +649,10 @@ export default function ThoughtUnitNavigator({
         </div>
       )}
 
-      {/* Thin divider + search/domain controls */}
+      {/* Thin divider + mode controls (compact) */}
       <div className="h-px bg-white/8 mx-2" />
       <div className="flex items-center gap-1.5 px-2 py-1">
+        <TocModeBar className="shrink-0" />
         {entries.length > 0 && (
           <SemanticSearch
             entries={entries}
@@ -913,9 +914,10 @@ export default function ThoughtUnitNavigator({
       </div>
 
       {/* Main content — Student Guide (learning order) is the default; concept + standard are power-user modes */}
-      {renderLearningGroups()}
-      {/* (Legacy standard kind-grouping removed — Standard and Learning now share renderLearningGroups) */}
-      {false && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+      {(tocViewMode === "learning" || tocViewMode === "standard") && renderLearningGroups()}
+      {tocViewMode === "concept" && renderCanonicalGroups()}
+      {/* Legacy standard kind-grouping only shown when concept mode is explicitly off and canonical grouping is inactive */}
+      {false && tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
@@ -982,7 +984,7 @@ export default function ThoughtUnitNavigator({
             <div className="h-px flex-1 bg-white/8" />
           </div>
           <div className="px-2 pb-2">
-            <div className="text-[10px] text-white/40">
+            <div className="text-[10px] text-white/40 mb-1.5">
               {!anyRead
                 ? "Start by reading the Core Ideas"
                 : trapEntries.length > 0 && !trapEntries.some(e => progressMap.get(e.id)?.has("read"))
