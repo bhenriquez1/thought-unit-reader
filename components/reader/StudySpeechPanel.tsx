@@ -292,8 +292,22 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   const [open, setOpen]       = useState(primary);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
-  const [voice, setVoice]     = useState<OAIVoice>("alloy");
-  const [speed, setSpeed]     = useState(1.0);
+  const [voice, setVoice]     = useState<OAIVoice>(() => {
+    if (typeof window === "undefined") return "alloy";
+    try {
+      const v = localStorage.getItem("speech_voice");
+      if (v && (["alloy","echo","fable","onyx","nova","shimmer"] as string[]).includes(v)) return v as OAIVoice;
+    } catch { /* ignore */ }
+    return "alloy";
+  });
+  const [speed, setSpeed]     = useState(() => {
+    if (typeof window === "undefined") return 1.0;
+    try {
+      const v = parseFloat(localStorage.getItem("speech_speed") ?? "");
+      if (!isNaN(v)) return Math.max(0.5, Math.min(2.5, v));
+    } catch { /* ignore */ }
+    return 1.0;
+  });
   // Ref mirrors — readable inside async callbacks and event handlers without stale closures.
   const speedRef   = useRef(1.0);
   const segIdxRef  = useRef(0);
@@ -612,6 +626,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Keep refs in sync with state so async handlers always see the latest values.
   useEffect(() => { speedRef.current  = speed;  }, [speed]);
   useEffect(() => { segIdxRef.current = segIdx; }, [segIdx]);
+
+  // Persist voice and speed so they survive page reloads.
+  useEffect(() => { try { localStorage.setItem("speech_voice", voice); } catch { /* ignore */ } }, [voice]);
+  useEffect(() => { try { localStorage.setItem("speech_speed", String(speed)); } catch { /* ignore */ } }, [speed]);
 
   // Reset on mode switch — stops any currently playing audio so mode A's audio
   // doesn't keep running while mode B's UI is shown.

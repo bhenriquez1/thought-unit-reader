@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { claimSpeech, registerActiveUtterance, notifySpeechEnd, notifySpeechError, stopAllSpeech } from "@/lib/speech/speechController";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { Document, Page } from "react-pdf";
 import type { TOCEntry } from "@/lib/tocParser";
@@ -352,27 +353,26 @@ export default function PatternTrainingHybridReader({
   };
 
   // Speech synthesis
+  // Speech synthesis — routed through shared controller to prevent overlap with other surfaces.
+  const narTokenRef = useRef(-1);
   const speakText = (text: string) => {
-    if (speechRef.current) {
-      speechSynthesis.cancel();
-    }
-
+    const token = claimSpeech("hybrid-reader");
+    narTokenRef.current = token;
     const utterance = new SpeechSynthesisUtterance(text);
     if (selectedVoice) utterance.voice = selectedVoice;
     utterance.rate = speechRate;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
-    
     utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    
+    utterance.onend   = () => { notifySpeechEnd(token, "hybrid-reader"); setIsSpeaking(false); };
+    utterance.onerror = () => { notifySpeechError(token, "hybrid-reader", "synth error"); setIsSpeaking(false); };
+    registerActiveUtterance(token, utterance, () => { window.speechSynthesis.cancel(); setIsSpeaking(false); });
     speechRef.current = utterance;
-    speechSynthesis.speak(utterance);
+    window.speechSynthesis.speak(utterance);
   };
 
   const stopSpeaking = () => {
-    speechSynthesis.cancel();
+    stopAllSpeech("patternReader-stop");
     setIsSpeaking(false);
   };
 

@@ -12,8 +12,17 @@
 //   timeline        → horizontal step chain
 //   No visual       → semantic-type-specific card (Master/Step/Decision/Danger/Pearl)
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { NoteCard, NoteCardVisual } from "@/lib/insights/synthesizeTeachingOutput";
+import {
+  claimSpeech,
+  isSpeechStale,
+  registerActiveAudio,
+  notifySpeechEnd,
+  notifySpeechError,
+  stopAllSpeech,
+} from "@/lib/speech/speechController";
+import { synthesizeVoiceFromText } from "@/lib/tts";
 
 // ── Tier config (mirrors Avrrio 5-tier language) ───────────────────────────
 
@@ -370,11 +379,27 @@ interface VisualTeachingStepsProps {
   pageTitle?: string | null;
 }
 
+const SPEECH_OWNER = "whiteboard" as const;
+
+function getStoredVoice(): "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" {
+  if (typeof window === "undefined") return "alloy";
+  try {
+    const v = localStorage.getItem("speech_voice");
+    if (v && ["alloy","echo","fable","onyx","nova","shimmer"].includes(v))
+      return v as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
+  } catch { /* ignore */ }
+  return "alloy";
+}
+
 export default function VisualTeachingSteps({ noteCards, pageTitle }: VisualTeachingStepsProps) {
   const [index, setIndex]       = useState(0);
   const [visible, setVisible]   = useState(true);
   const [entering, setEntering] = useState(false);
   const [direction, setDir]     = useState<"forward" | "back">("forward");
+  const [narState, setNarState] = useState<"idle" | "loading" | "playing">("idle");
+  const narTokenRef = useRef<number>(-1);
+  const narAudioRef = useRef<HTMLAudioElement | null>(null);
+  const narBlobUrlRef = useRef<string | null>(null);
 
   // Reset to first card when note cards change (new page)
   useEffect(() => { setIndex(0); }, [noteCards]);
@@ -404,6 +429,66 @@ export default function VisualTeachingSteps({ noteCards, pageTitle }: VisualTeac
 
   function goNext() { navigateTo(index + 1, "forward"); }
   function goPrev() { navigateTo(index - 1, "back"); }
+
+  function stopNarration() {
+    stopAllSpeech("vts-stop");
+    narAudioRef.current = null;
+    if (narBlobUrlRef.current) { URL.revokeObjectURL(narBlobUrlRef.current); narBlobUrlRef.current = null; }
+    setNarState("idle");
+  }
+
+  async function narrateCard() {
+    if (narState === "loading") return;
+    if (narState === "playing") { stopNarration(); return; }
+
+    const card = noteCards[index];
+    if (!card) return;
+    const script = [card.title, card.body].filter(Boolean).join(". ");
+
+    setNarState("loading");
+    const token = claimSpeech(SPEECH_OWNER);
+    narTokenRef.current = token;
+
+    try {
+      const voice = getStoredVoice();
+      const speedRaw = parseFloat(localStorage.getItem("speech_speed") ?? "1");
+      const speed = isNaN(speedRaw) ? 1 : Math.max(0.5, Math.min(2.5, speedRaw));
+
+      const blob = await synthesizeVoiceFromText(script, { voice, format: "mp3" });
+
+      if (isSpeechStale(token)) { setNarState("idle"); return; }
+
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        narBlobUrlRef.current = url;
+        const audio = new Audio(url);
+        audio.playbackRate = speed;
+        narAudioRef.current = audio;
+        registerActiveAudio(token, audio, () => {
+          audio.pause();
+          if (narBlobUrlRef.current) { URL.revokeObjectURL(narBlobUrlRef.current); narBlobUrlRef.current = null; }
+          setNarState("idle");
+        });
+        audio.onplay  = () => { if (!isSpeechStale(token)) setNarState("playing"); };
+        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); URL.revokeObjectURL(url); narBlobUrlRef.current = null; setNarState("idle"); };
+        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio error"); setNarState("idle"); };
+        audio.play().catch(() => { setNarState("idle"); });
+      } else {
+        // Browser TTS fallback
+        const utt = new SpeechSynthesisUtterance(script);
+        utt.rate = speed;
+        utt.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); setNarState("idle"); };
+        utt.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "synth error"); setNarState("idle"); };
+        window.speechSynthesis.speak(utt);
+        if (!isSpeechStale(token)) setNarState("playing");
+      }
+    } catch {
+      if (!isSpeechStale(token)) setNarState("idle");
+    }
+  }
+
+  // Stop narration when user navigates to a different card
+  useEffect(() => { if (narState !== "idle") stopNarration(); }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (noteCards.length === 0) {
     return (
@@ -480,8 +565,20 @@ export default function VisualTeachingSteps({ noteCards, pageTitle }: VisualTeac
           ← Back
         </button>
 
-        <div className="text-[11px] text-slate-500 text-center min-w-[48px]">
-          {index + 1} / {noteCards.length}
+        <div className="flex flex-col items-center gap-0.5 min-w-[56px]">
+          <button
+            onClick={narrateCard}
+            title={narState === "playing" ? "Stop narration" : "Narrate this card"}
+            className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors"
+            style={{
+              background: narState === "playing" ? "rgba(239,68,68,0.15)" : narState === "loading" ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.05)",
+              border: narState === "playing" ? "1px solid rgba(239,68,68,0.35)" : "1px solid rgba(255,255,255,0.08)",
+              color: narState === "playing" ? "#fca5a5" : narState === "loading" ? "rgba(148,163,184,0.5)" : "rgba(148,163,184,0.6)",
+            }}
+          >
+            {narState === "loading" ? "…" : narState === "playing" ? "⏹" : "🔊"}
+          </button>
+          <div className="text-[10px] text-slate-600">{index + 1} / {noteCards.length}</div>
         </div>
 
         <button

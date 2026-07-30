@@ -16,7 +16,7 @@
 // Not React state on purpose: speech ownership must be resolved
 // synchronously, before any render, the instant a new play is requested.
 
-export type SpeechOwner = "study-speech" | "explain-step" | "explain-it" | "podcast-lab" | "whiteboard" | "chief-resident-modal";
+export type SpeechOwner = "study-speech" | "explain-step" | "explain-it" | "podcast-lab" | "whiteboard" | "chief-resident-modal" | "hybrid-reader";
 
 interface ActiveSpeechHandle {
   token: number;
