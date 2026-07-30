@@ -9,10 +9,18 @@ import {
   STUDY_GUIDE_MODE_DESCRIPTIONS,
   EXAM_GOAL_LABELS,
   DAT_TARGET_SCORES,
+  LEARNER_PROFESSION_LABELS,
+  LEARNER_STAGE_LABELS,
   type StudyGuideMode,
   type StudyGuideRecord,
   type ExamGoal,
+  type LearnerProfession,
+  type LearnerStage,
 } from "@/lib/studyguide/types";
+import {
+  getStoredProfession, setStoredProfession,
+  getStoredLearnerStage, setStoredLearnerStage,
+} from "@/lib/studyguide/learningContext";
 import {
   saveStudyGuide,
   getAllStudyGuides,
@@ -437,7 +445,14 @@ export default function StudyGuideLab({
 
   const [currentGuide, setCurrentGuide] = useState<StudyGuideRecord | null>(null);
   const [history, setHistory]           = useState<StudyGuideRecord[]>([]);
-  const [activeTab, setActiveTab]       = useState<"adaptive" | "build" | "history">("adaptive");
+  const [activeTab, setActiveTab]       = useState<"guide" | "history">("guide");
+
+  const [profession, setProfession]     = useState<LearnerProfession>(() =>
+    typeof window !== 'undefined' ? getStoredProfession() : 'general'
+  );
+  const [learnerStage, setLearnerStage] = useState<LearnerStage>(() =>
+    typeof window !== 'undefined' ? getStoredLearnerStage() : 'student'
+  );
 
   const [noteSaved, setNoteSaved]       = useState(false);
   const [recallSaved, setRecallSaved]   = useState(false);
@@ -499,7 +514,7 @@ export default function StudyGuideLab({
     setChapterTitle("");
     setTopic("");
     setSources(prev => prev.map(s => ({ ...s, text: "", fileName: undefined })));
-    setActiveTab("adaptive");
+    setActiveTab("guide");
     setNoteSaved(false);
     setRecallSaved(false);
     setSaveError(null);
@@ -636,6 +651,8 @@ export default function StudyGuideLab({
           hasStudyModel: !!studyModel,
           examGoal: examGoal ?? undefined,
           targetScore: targetScore ?? undefined,
+          profession: profession,
+          learnerStage: learnerStage,
         }),
       });
 
@@ -652,6 +669,8 @@ export default function StudyGuideLab({
         mode,
         examGoal:      examGoal ?? undefined,
         targetScore:   targetScore ?? undefined,
+        profession:    profession,
+        learnerStage:  learnerStage,
         sourceLabels:  finalSources.map(s => s.label),
         createdAt:     Date.now(),
         ...data.guide,
@@ -664,7 +683,7 @@ export default function StudyGuideLab({
       await saveStudyGuide(record);
       const updated = await getStudyGuidesByBook(bookId);
       setHistory(updated);
-      setActiveTab("build");
+      setActiveTab("guide");
 
       console.log("[STUDYGUIDE_GENERATED]", {
         id: record.id, mode, provider: data.provider,
@@ -886,21 +905,15 @@ export default function StudyGuideLab({
       {/* Header */}
       <div className="flex-shrink-0 border-b border-slate-800 px-5 py-3.5 flex items-center justify-between bg-gradient-to-r from-slate-950 to-slate-900">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Study Sheet</div>
-          <div className="text-xs text-slate-500 mt-0.5">Build notes a top student would actually keep.</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Adaptive Study Guide</div>
+          <div className="text-xs text-slate-500 mt-0.5">Adaptive, profession-aware study notes from your textbook.</div>
         </div>
         <div className="flex gap-1">
           <button
-            onClick={() => setActiveTab("adaptive")}
-            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "adaptive" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+            onClick={() => setActiveTab("guide")}
+            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "guide" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
-            🎯 Adaptive
-          </button>
-          <button
-            onClick={() => setActiveTab("build")}
-            className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${activeTab === "build" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
-          >
-            Build
+            Guide
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -912,66 +925,54 @@ export default function StudyGuideLab({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "adaptive" ? (
-          /* ── Adaptive guide ── */
-          <div className="p-3">
-            {adaptableUnits.length === 0 ? (
-              <div className="py-8 text-center text-[12px] text-slate-600 italic">
-                Open a book in the Reader to activate the adaptive guide.
-              </div>
-            ) : (
-              <AdaptiveGuideView
-                guide={adaptiveGuide}
-                callbacks={{ bookId, currentPage, onNavigateToPage, hasRealProfileData }}
-              />
-            )}
-          </div>
-        ) : activeTab === "history" ? (
-          /* ── History panel ── */
-          <div className="p-4 flex flex-col gap-3">
-            {history.length === 0 ? (
-              <div className="text-sm text-slate-500 text-center py-8">No study guides generated yet.</div>
-            ) : (
-              history.map(g => (
-                <div
-                  key={g.id}
-                  className="rounded-xl border border-slate-700 bg-slate-900 p-4 hover:border-teal-700/50 transition-colors cursor-pointer group"
-                  onClick={() => { setCurrentGuide(g); setActiveTab("build"); }}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{g.topic || g.chapterTitle}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">{g.chapterTitle}</div>
-                      <div className="flex gap-2 mt-1.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-900/60 text-teal-300">
-                          {STUDY_GUIDE_MODE_LABELS[g.mode]}
-                        </span>
-                        <span className="text-[10px] text-slate-600">
-                          {new Date(g.createdAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteStudyGuide(g.id).then(() =>
-                          setHistory(prev => prev.filter(x => x.id !== g.id))
-                        );
-                      }}
-                      className="text-slate-700 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    {g.mustKnow.length} concepts · {g.datFacts.length} DAT facts · {g.recallQuestions.length} questions
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        ) : (
+        {activeTab === "guide" ? (
+          /* ── Unified guide tab ── */
           <div className="flex flex-col gap-0">
+            {/* ── LearningContext selector ── */}
+            <div className="border-b border-slate-800 px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Learner Profile</div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <select
+                  value={profession}
+                  onChange={e => {
+                    const v = e.target.value as LearnerProfession;
+                    setProfession(v);
+                    setStoredProfession(v);
+                  }}
+                  className="flex-1 min-w-0 text-xs rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-2 py-1.5 focus:outline-none focus:border-teal-500"
+                >
+                  {(Object.entries(LEARNER_PROFESSION_LABELS) as [LearnerProfession, string][]).map(([k, label]) => (
+                    <option key={k} value={k}>{label}</option>
+                  ))}
+                </select>
+                <select
+                  value={learnerStage}
+                  onChange={e => {
+                    const v = e.target.value as LearnerStage;
+                    setLearnerStage(v);
+                    setStoredLearnerStage(v);
+                  }}
+                  className="text-xs rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-2 py-1.5 focus:outline-none focus:border-teal-500"
+                >
+                  {(Object.entries(LEARNER_STAGE_LABELS) as [LearnerStage, string][]).map(([k, label]) => (
+                    <option key={k} value={k}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* ── Adaptive guide ── */}
+            {adaptableUnits.length > 0 && (
+              <div className="border-b border-slate-800 p-3">
+                <AdaptiveGuideView
+                  guide={adaptiveGuide}
+                  callbacks={{ bookId, currentPage, onNavigateToPage, hasRealProfileData }}
+                />
+              </div>
+            )}
+
             {/* ── Live Reader context banner ── */}
             {studyModel && (
               <div className="border-b border-teal-900/60 bg-teal-950/30 px-4 py-3 flex items-start gap-3">
@@ -1130,10 +1131,10 @@ export default function StudyGuideLab({
                 className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors shadow-lg shadow-teal-900/30"
               >
                 {loading
-                  ? "Generating Study Sheet…"
-                  : studyModel
-                    ? `📑 Generate ${STUDY_GUIDE_MODE_LABELS[mode]} — Page ${currentPage ?? studyModel.page}`
-                    : `📑 Generate ${STUDY_GUIDE_MODE_LABELS[mode]}`}
+                  ? "Generating Guide…"
+                  : currentGuide
+                    ? "🔄 Update Guide"
+                    : "📑 Generate Guide"}
               </button>
             </div>
 
@@ -1298,6 +1299,50 @@ export default function StudyGuideLab({
                   </div>
                 </div>
               </div>
+            )}
+          </div>
+        ) : (
+          /* ── History panel ── */
+          <div className="p-4 flex flex-col gap-3">
+            {history.length === 0 ? (
+              <div className="text-sm text-slate-500 text-center py-8">No study guides generated yet.</div>
+            ) : (
+              history.map(g => (
+                <div
+                  key={g.id}
+                  className="rounded-xl border border-slate-700 bg-slate-900 p-4 hover:border-teal-700/50 transition-colors cursor-pointer group"
+                  onClick={() => { setCurrentGuide(g); setActiveTab("guide"); }}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{g.topic || g.chapterTitle}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{g.chapterTitle}</div>
+                      <div className="flex gap-2 mt-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-900/60 text-teal-300">
+                          {STUDY_GUIDE_MODE_LABELS[g.mode]}
+                        </span>
+                        <span className="text-[10px] text-slate-600">
+                          {new Date(g.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteStudyGuide(g.id).then(() =>
+                          setHistory(prev => prev.filter(x => x.id !== g.id))
+                        );
+                      }}
+                      className="text-slate-700 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    {g.mustKnow.length} concepts · {g.datFacts.length} DAT facts · {g.recallQuestions.length} questions
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}
