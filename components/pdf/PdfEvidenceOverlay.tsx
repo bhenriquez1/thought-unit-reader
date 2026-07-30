@@ -365,10 +365,9 @@ export default function PdfEvidenceOverlay({
             }}
             aria-label={`${displayLabel || "Evidence"} highlight`}
           >
-            {/* Margin label — first line only, positioned in the left margin beside the highlight.
-                Shows tier name (CORE / STEP / APPLY / TRAP / PEARL); when reason fits, adds it
-                as a secondary line so students see the rationale without opening the panel. */}
-            {cfg.label && rect.height >= 6 && isFirstLine && (
+            {/* Margin label — first line only. Shows domain-adaptive tier name (e.g. CONCEPT for
+                chemistry, RULE for law); adds a secondary reason line when margin space allows. */}
+            {displayLabel && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
                   position: "absolute",
@@ -397,7 +396,7 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
-                {cfg.label}
+                {displayLabel}
                 {rect.reason && hasLeftMargin && (
                   <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                     {rect.reason.length > 24 ? rect.reason.slice(0, 23) + "…" : rect.reason}

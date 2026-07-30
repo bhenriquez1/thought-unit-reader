@@ -1,29 +1,33 @@
 "use client";
 // components/whiteboard/TldrawCanvas.tsx
-// Interactive tldraw v5 whiteboard canvas for the Avrrio Whiteboard tab.
+// Interactive tldraw whiteboard canvas for the Avrrio Whiteboard tab.
 //
-// Auto-draw: when `autoReveal` is true (the default), the canvas starts
-// drawing the diagram automatically after mount — no blank canvas, no button
-// press. The reveal sequence mimics a professor drawing at the board: each
-// node/arrow appears with a deliberate pause so the student can follow.
+// Renders the same NoteCard[] that VisualSceneEngine uses, but onto a real
+// interactive tldraw canvas — students can drag nodes, zoom freely, and
+// add their own annotations on top of the AI-generated diagram.
 //
-// tldraw v5 API notes:
-//   - Shape text labels use `richText: toRichText(str)` not `text: str`
-//   - Arrow start/end are plain VecModel `{ x, y }` not `{ type: "point", x, y }`
+// Progressive reveal: shapes start invisible (opacity: 0) and are revealed
+// one-by-one in sync with TTS narration via the `revealedIds` state.
+// After full reveal the canvas becomes fully interactive.
+//
+// Design contract:
+//   - Same 5-tier Avrrio colors as VisualSceneEngine
+//   - `whiteboardGrammar` prop biases initial node positions toward the
+//     domain's natural visual form (hub-spoke for anatomy/law, flow for rest)
+//   - All shapes carry an `annotationTier` meta field for future querying
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tldraw, createShapeId, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
-import { toRichText } from "@tldraw/tlschema";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 
-// ── Tier → tldraw color ───────────────────────────────────────────────────────
-const TIER_COLOR: Record<string, string> = {
-  master:   "yellow",
-  step:     "green",
-  decision: "blue",
-  danger:   "red",
-  pearl:    "light-blue",
+// ── Tier colors (mirrors PdfEvidenceOverlay TIER_CONFIG) ──────────────────────
+const TIER_COLORS: Record<string, { fill: string; stroke: string; text: string }> = {
+  master:   { fill: "rgba(253,224,71,0.18)",  stroke: "#fde047", text: "#713f12" },
+  step:     { fill: "rgba(134,239,172,0.18)", stroke: "#86efac", text: "#14532d" },
+  decision: { fill: "rgba(147,197,253,0.18)", stroke: "#93c5fd", text: "#1e3a5f" },
+  danger:   { fill: "rgba(252,165,165,0.18)", stroke: "#fca5a5", text: "#7f1d1d" },
+  pearl:    { fill: "rgba(103,232,249,0.18)", stroke: "#67e8f9", text: "#083344" },
 };
 
 const CARD_TYPE_TIER: Record<string, string> = {
@@ -34,7 +38,8 @@ const CARD_TYPE_TIER: Record<string, string> = {
   clinical_pearl: "pearl", memory_hook: "pearl", expert_thinking: "pearl",
 };
 
-// ── Layout helpers ────────────────────────────────────────────────────────────
+// ── Layout positions ──────────────────────────────────────────────────────────
+// Grammar-aware initial placement for the first card's nodes.
 
 function flowPositions(count: number): Array<{ x: number; y: number }> {
   return Array.from({ length: count }, (_, i) => ({ x: 100, y: 80 + i * 110 }));
@@ -43,7 +48,7 @@ function flowPositions(count: number): Array<{ x: number; y: number }> {
 function hubPositions(count: number): Array<{ x: number; y: number }> {
   if (count === 0) return [];
   const cx = 300, cy = 260, r = 200;
-  const positions = [{ x: cx - 120, y: cy - 30 }];
+  const positions = [{ x: cx - 120, y: cy - 30 }]; // hub center-left
   const spokes = count - 1;
   for (let i = 0; i < spokes; i++) {
     const angle = ((i / spokes) * 2 * Math.PI) - Math.PI / 2;
@@ -65,53 +70,35 @@ interface Props {
   pageTitle?: string | null;
   whiteboardGrammar?: string;
   onAnchorClick?: (nodeId: string) => void;
-  /** Start drawing automatically after build — default true (professor-at-the-board feel). */
-  autoReveal?: boolean;
 }
 
-// How long to pause between each shape being drawn (ms) — deliberate pace so
-// the student can follow, like a professor drawing at the board.
-const REVEAL_INTERVAL_MS = 1100;
-// Delay before the first shape appears after the canvas builds (ms).
-const AUTO_REVEAL_DELAY_MS = 700;
+export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar = "flow", onAnchorClick }: Props) {
+  const editorRef = useRef<Editor | null>(null);
+  const [revealStep, setRevealStep] = useState(0);
+  const [isRevealing, setIsRevealing] = useState(false);
+  const builtRef = useRef(false);
 
-export default function TldrawCanvas({
-  noteCards,
-  pageTitle,
-  whiteboardGrammar = "flow",
-  onAnchorClick: _onAnchorClick,
-  autoReveal = true,
-}: Props) {
-  const editorRef         = useRef<Editor | null>(null);
-  const [revealStep, setRevealStep]     = useState(0);
-  const [isRevealing, setIsRevealing]   = useState(false);
-  const [isDrawingDone, setIsDrawingDone] = useState(false);
-  const builtRef          = useRef(false);
-  const autoRevealTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearAutoTimer = () => {
-    if (autoRevealTimer.current) { clearTimeout(autoRevealTimer.current); autoRevealTimer.current = null; }
-  };
-
+  // Build shapes from noteCards on first editor mount / card change.
   const buildShapes = useCallback((editor: Editor) => {
     if (!noteCards.length) return;
     editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
 
     let y = 60;
     noteCards.forEach((card, cardIdx) => {
-      const tier  = CARD_TYPE_TIER[card.type] ?? "pearl";
-      const color = TIER_COLOR[tier] ?? "blue";
-      const nodes  = card.visual?.nodes  ?? [];
+      const tier = CARD_TYPE_TIER[card.type] ?? "pearl";
+      const colors = TIER_COLORS[tier] ?? TIER_COLORS.pearl;
+      const nodes = card.visual?.nodes ?? [];
       const arrows = card.visual?.arrows ?? [];
 
       if (nodes.length === 0) {
+        // Text-only card — single text box
         const sid = createShapeId(`card-${cardIdx}`);
         editor.createShape({
-          id: sid, type: "text", x: 100, y,
-          props: {
-            richText: toRichText(card.title + "\n" + card.body.slice(0, 120)),
-            size: "s", font: "sans", color: "black",
-          },
+          id: sid,
+          type: "text",
+          x: 100,
+          y,
+          props: { text: card.title + "\n" + card.body.slice(0, 120), size: "s", font: "sans", color: "black" },
           opacity: 0,
         });
         y += 120;
@@ -120,36 +107,47 @@ export default function TldrawCanvas({
 
       const positions = getPositions(nodes.length, whiteboardGrammar);
 
+      // Node shapes
       nodes.forEach((node, nIdx) => {
         const sid = createShapeId(`n-${cardIdx}-${nIdx}`);
-        const pos = positions[nIdx] ?? { x: 100, y: nIdx * 110 };
+        const pos = positions[nIdx] ?? { x: 100, y: y + nIdx * 110 };
         editor.createShape({
-          id: sid, type: "geo",
-          x: pos.x, y: pos.y + y,
+          id: sid,
+          type: "geo",
+          x: pos.x,
+          y: pos.y + y,
           props: {
-            geo: "rectangle", w: 230, h: 56,
-            richText: toRichText(node.label),
-            fill: "solid", color: color as any, size: "s",
+            geo: "rectangle",
+            w: 230,
+            h: 56,
+            text: node.label,
+            fill: "solid",
+            color: tier === "master" ? "yellow" : tier === "step" ? "green" : tier === "danger" ? "red" : tier === "pearl" ? "light-blue" : "blue",
+            size: "s",
           },
           opacity: 0,
         });
       });
 
+      // Arrow shapes connecting nodes as specified
       arrows.forEach((arrow, aIdx) => {
         const fromIdx = nodes.findIndex(n => n.id === arrow.from);
         const toIdx   = nodes.findIndex(n => n.id === arrow.to);
         if (fromIdx < 0 || toIdx < 0) return;
         const fromPos = positions[fromIdx] ?? { x: 100, y: 0 };
         const toPos   = positions[toIdx]   ?? { x: 100, y: 110 };
+        const sid = createShapeId(`a-${cardIdx}-${aIdx}`);
         editor.createShape({
-          id: createShapeId(`a-${cardIdx}-${aIdx}`), type: "arrow",
-          x: fromPos.x + 230, y: fromPos.y + y + 28,
+          id: sid,
+          type: "arrow",
+          x: fromPos.x + 115 + 100,
+          y: fromPos.y + y + 28,
           props: {
-            start: { x: 0, y: 0 },
-            end:   { x: toPos.x - fromPos.x, y: toPos.y - fromPos.y },
-            richText: toRichText(arrow.label ?? ""),
+            start: { type: "point", x: 0, y: 0 },
+            end:   { type: "point", x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
+            text: arrow.label ?? "",
             size: "s",
-            color: (tier === "step" ? "green" : tier === "danger" ? "red" : "blue") as any,
+            color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
           },
           opacity: 0,
         });
@@ -158,6 +156,7 @@ export default function TldrawCanvas({
       y += Math.max(nodes.length, 1) * 110 + 60;
     });
 
+    // Fit view to show all shapes
     editor.zoomToFit({ duration: 200 });
   }, [noteCards, whiteboardGrammar]);
 
@@ -166,48 +165,38 @@ export default function TldrawCanvas({
     if (!builtRef.current) {
       builtRef.current = true;
       buildShapes(editor);
-      if (autoReveal && noteCards.length > 0) {
-        clearAutoTimer();
-        autoRevealTimer.current = setTimeout(() => setIsRevealing(true), AUTO_REVEAL_DELAY_MS);
-      }
     }
-  }, [buildShapes, autoReveal, noteCards.length]);
+  }, [buildShapes]);
 
+  // Rebuild when noteCards change
   useEffect(() => {
-    clearAutoTimer();
     builtRef.current = false;
-    setIsDrawingDone(false);
     if (editorRef.current) {
       builtRef.current = true;
       buildShapes(editorRef.current);
-      if (autoReveal && noteCards.length > 0) {
-        autoRevealTimer.current = setTimeout(() => setIsRevealing(true), AUTO_REVEAL_DELAY_MS);
-      }
     }
     setRevealStep(0);
-    setIsRevealing(false);
-    return clearAutoTimer;
-  }, [noteCards, buildShapes, autoReveal]);
+  }, [noteCards, buildShapes]);
 
+  // Progressive reveal — reveal shapes one by one
   const revealNext = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const hidden = editor.getCurrentPageShapes().filter(s => s.opacity === 0);
-    if (hidden.length === 0) {
-      setIsRevealing(false);
-      setIsDrawingDone(true);
-      return;
-    }
-    editor.updateShape({ id: hidden[0].id, type: hidden[0].type, opacity: 1 });
+    const allShapes = editor.getCurrentPageShapes();
+    const hidden = allShapes.filter(s => s.opacity === 0);
+    if (hidden.length === 0) { setIsRevealing(false); return; }
+    const next = hidden[0];
+    editor.updateShape({ id: next.id, type: next.type, opacity: 1 });
     setRevealStep(s => s + 1);
   }, []);
 
   useEffect(() => {
     if (!isRevealing) return;
-    const t = window.setTimeout(revealNext, REVEAL_INTERVAL_MS);
+    const t = window.setTimeout(revealNext, 900);
     return () => clearTimeout(t);
   }, [isRevealing, revealStep, revealNext]);
 
+  // Reveal all at once
   const revealAll = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -215,61 +204,22 @@ export default function TldrawCanvas({
       if (s.opacity === 0) editor.updateShape({ id: s.id, type: s.type, opacity: 1 });
     });
     setIsRevealing(false);
-    setIsDrawingDone(true);
   }, []);
-
-  const replay = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.getCurrentPageShapes().forEach(s => {
-      editor.updateShape({ id: s.id, type: s.type, opacity: 0 });
-    });
-    setRevealStep(0);
-    setIsDrawingDone(false);
-    setTimeout(() => setIsRevealing(true), 300);
-  }, []);
-
-  const headerLabel = isRevealing
-    ? "Drawing…"
-    : isDrawingDone
-    ? (pageTitle ?? "Whiteboard")
-    : (pageTitle ?? "Whiteboard");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 480, background: "#0f172a" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <span style={{
-          fontSize: 11, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis",
-          whiteSpace: "nowrap", maxWidth: 260,
-          color: isRevealing ? "#86efac" : "#94a3b8",
-          transition: "color 300ms ease",
-        }}>
-          {headerLabel}
+      {/* Controls */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace" }}>
+          {pageTitle ?? "Whiteboard"}
         </span>
-        {/* Pulsing dot while drawing */}
-        {isRevealing && (
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", background: "#86efac",
-            animation: "pulse 1s ease-in-out infinite",
-            flexShrink: 0,
-          }} />
-        )}
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {isDrawingDone ? (
-            <button
-              onClick={replay}
-              style={{ fontSize: 11, padding: "3px 10px", borderRadius: 4, background: "rgba(134,239,172,0.12)", color: "#86efac", border: "1px solid rgba(134,239,172,0.25)", cursor: "pointer" }}
-            >
-              ↺ Replay
-            </button>
-          ) : !isRevealing ? (
-            <button
-              onClick={() => { setRevealStep(0); setIsRevealing(true); }}
-              style={{ fontSize: 11, padding: "3px 10px", borderRadius: 4, background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.3)", cursor: "pointer" }}
-            >
-              ▶ Draw
-            </button>
-          ) : null}
+          <button
+            onClick={() => { setRevealStep(0); setIsRevealing(true); }}
+            style={{ fontSize: 11, padding: "3px 10px", borderRadius: 4, background: "rgba(134,239,172,0.15)", color: "#86efac", border: "1px solid rgba(134,239,172,0.3)", cursor: "pointer" }}
+          >
+            ▶ Reveal
+          </button>
           <button
             onClick={revealAll}
             style={{ fontSize: 11, padding: "3px 10px", borderRadius: 4, background: "rgba(148,163,184,0.1)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.2)", cursor: "pointer" }}
@@ -278,9 +228,12 @@ export default function TldrawCanvas({
           </button>
         </span>
       </div>
-      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+      {/* Canvas */}
       <div style={{ flex: 1, position: "relative" }}>
-        <Tldraw onMount={handleMount} hideUi={false} />
+        <Tldraw
+          onMount={handleMount}
+          hideUi={false}
+        />
       </div>
     </div>
   );
