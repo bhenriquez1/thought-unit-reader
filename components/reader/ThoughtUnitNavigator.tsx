@@ -127,26 +127,28 @@ export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
 // Learning-mode: maps canonicalType OR kind → bucket index (0–3; 4 = "other")
+// 0 = CORE IDEAS, 1 = MECHANISMS, 2 = COMMON TRAPS, 3 = HIGH-YIELD FACTS
 const LEARNING_BUCKET_IDX: Record<string, number> = {
-  // 0 — Foundation (understand first)
-  thesis: 0, conclusion: 0, definition: 0, mechanism: 0, formula: 0,
-  dat_fact: 0, keyDetail: 0, keyAnatomy: 0, anatomy: 0, comparison: 0,
+  // 0 — Core Ideas (define and understand first)
+  thesis: 0, conclusion: 0, definition: 0,
+  keyDetail: 0, keyAnatomy: 0, anatomy: 0, comparison: 0,
   "core-concept": 0, relationship: 0, finding: 0, classification: 0, cause: 0, evidence: 0,
-  // 1 — Apply It
+  // 1 — Mechanisms (how it works, processes, application)
+  mechanism: 1, formula: 1,
   application: 1, example_step: 1, indication: 1, treatment: 1, "worked-example": 1,
-  // 2 — Watch Out
+  // 2 — Common Traps (watch out)
   trap: 2, warning: 2, exception: 2, contraindication: 2, "common-error": 2, "decision-point": 2,
-  // 3 — Anchor (commit to memory)
-  clinical: 3, clinical_pearl: 3, memoryAnchor: 3, memory_hook: 3,
+  // 3 — High-Yield Facts (commit to memory)
+  clinical: 3, clinical_pearl: 3, memoryAnchor: 3, memory_hook: 3, dat_fact: 3,
   "clinical-pearl": 3, "memory-anchor": 3,
 };
 
 const LEARNING_BUCKETS = [
-  { id: "foundation", label: "Foundations", icon: "🏗️", color: "#93c5fd", bg: "rgba(147,197,253,0.10)" },
-  { id: "apply",      label: "Apply It",    icon: "⚡",  color: "#fb923c", bg: "rgba(251,146,60,0.10)"  },
-  { id: "watchout",   label: "Watch Out",   icon: "⚠️",  color: "#fca5a5", bg: "rgba(252,165,165,0.10)" },
-  { id: "anchor",     label: "Anchor",      icon: "💡",  color: "#86efac", bg: "rgba(134,239,172,0.10)" },
-  { id: "other",      label: "Other",       icon: "📌",  color: "#94a3b8", bg: "rgba(148,163,184,0.10)" },
+  { id: "foundation", label: "CORE IDEAS",       icon: "●",  color: "#fde047", bg: "rgba(253,224,71,0.09)"  },
+  { id: "apply",      label: "MECHANISMS",       icon: "⚙",  color: "#86efac", bg: "rgba(134,239,172,0.09)" },
+  { id: "watchout",   label: "COMMON TRAPS",     icon: "⚠",  color: "#fca5a5", bg: "rgba(252,165,165,0.09)" },
+  { id: "anchor",     label: "HIGH-YIELD FACTS", icon: "⭐", color: "#67e8f9", bg: "rgba(103,232,249,0.09)" },
+  { id: "other",      label: "NOTES",            icon: "📌", color: "#94a3b8", bg: "rgba(148,163,184,0.09)" },
 ] as const;
 
 // Group display label — currently a passthrough to the preset's own
@@ -523,52 +525,152 @@ export default function ThoughtUnitNavigator({
     );
   }
 
+  // ── Student Guide item — clean bullet-style row ───────────────────────────
+  // Simpler than renderCompactCard: icon bullet + brief reason, no colored stripe.
+  function renderGuideItem(
+    entry: ThoughtUnitNavigatorEntry,
+    bulletIcon: string,
+    bulletColor: string,
+  ) {
+    const focused    = entry.id === focusedId;
+    const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
+    const isActive   = focused || isSpeaking;
+    const briefText  = entry.reason ?? deriveCardTitle(entry.text, 90);
+
+    return (
+      <div
+        key={entry.id}
+        ref={isActive ? activeEntryRef : undefined}
+        role="button"
+        tabIndex={0}
+        onClick={() => onJump(entry.id)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
+        className="group flex items-start gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all"
+        style={{
+          background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
+          borderLeft: `2px solid ${isActive ? bulletColor : "transparent"}`,
+        }}
+        data-testid="thought-unit-entry"
+      >
+        <span
+          className="text-[11px] shrink-0 mt-0.5 select-none"
+          style={{ color: bulletColor, opacity: isActive ? 1 : 0.7 }}
+        >
+          {bulletIcon}
+        </span>
+        <span
+          className="text-[11px] text-white/70 leading-snug flex-1 min-w-0"
+          style={isActive ? { color: "rgba(255,255,255,0.88)" } : {}}
+        >
+          {briefText}
+        </span>
+        {isSpeaking && <span className="animate-pulse text-emerald-400 text-[8px] shrink-0">◎</span>}
+        {focused && onExplain && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+            className="ml-1 text-[9px] text-white/25 hover:text-white/60 shrink-0 transition-colors"
+            title="Explain"
+          >
+            💬
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const evidenceEntry = evidenceEntryId
     ? entries.find((e) => e.id === evidenceEntryId)
     : null;
 
+  // Derive mission completion from progressMap
+  const anyRead = entries.some(e => progressMap.get(e.id)?.has("read"));
+  const coreEntries = entries.filter(e => ["thesis", "definition", "conclusion"].includes(e.kind as string));
+  const coreMastered = coreEntries.some(e => progressMap.get(e.id)?.has("mastered") || progressMap.get(e.id)?.has("read"));
+  const trapEntries = entries.filter(e => ["trap", "warning", "exception"].includes(e.kind as string));
+  const estMinutes = Math.max(1, Math.ceil(entries.length * 22 / 60));
+
   const header = (
-    <div className="flex flex-col gap-1.5">
-      {/* Page Mission strip */}
-      {pageThesis && (
-        <div className="px-2 pt-2 pb-1.5 rounded-lg border border-yellow-400/15 bg-yellow-400/5 mx-1">
-          <div className="text-[7.5px] font-black uppercase tracking-widest text-yellow-400/50 mb-1">
-            ⚡ Page Mission
+    <div className="flex flex-col gap-0">
+      {/* TODAY'S MISSION */}
+      <div className="px-2 pt-2.5 pb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[8px] font-black uppercase tracking-[0.18em] text-white/25">Today&apos;s Mission</span>
+          <div className="flex-1 h-px bg-white/8" />
+        </div>
+        <div className="flex flex-col gap-1.5 pl-0.5">
+          {/* Checkbox: First Read */}
+          <div className="flex items-center gap-2">
+            <div
+              className="w-4 h-4 rounded border flex items-center justify-center text-[9px] font-bold shrink-0 transition-all"
+              style={{
+                background: anyRead ? "rgba(52,211,153,0.18)" : "transparent",
+                borderColor: anyRead ? "rgba(52,211,153,0.55)" : "rgba(255,255,255,0.18)",
+                color: "#34d399",
+              }}
+            >
+              {anyRead ? "✓" : ""}
+            </div>
+            <span className="text-[11px] text-white/65" style={anyRead ? { textDecoration: "line-through", opacity: 0.4 } : {}}>
+              First Read
+            </span>
           </div>
-          <p className="text-[9.5px] text-yellow-100/70 leading-relaxed" style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}>
-            {pageThesis}
+          {/* Checkbox: Master Core Ideas */}
+          <div className="flex items-center gap-2">
+            <div
+              className="w-4 h-4 rounded border flex items-center justify-center text-[9px] font-bold shrink-0 transition-all"
+              style={{
+                background: coreMastered ? "rgba(52,211,153,0.18)" : "transparent",
+                borderColor: coreMastered ? "rgba(52,211,153,0.55)" : "rgba(255,255,255,0.18)",
+                color: "#34d399",
+              }}
+            >
+              {coreMastered ? "✓" : ""}
+            </div>
+            <span className="text-[11px] text-white/65" style={coreMastered ? { textDecoration: "line-through", opacity: 0.4 } : {}}>
+              Master Core Ideas
+            </span>
+          </div>
+          {/* Estimated time */}
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[9.5px] text-white/28">⏱ Estimated: ~{estMinutes} min</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Thin divider */}
+      <div className="h-px bg-white/8 mx-2" />
+
+      {/* Page Thesis */}
+      {pageThesis && (
+        <div className="px-2 py-2">
+          <p className="text-[10px] text-white/50 leading-relaxed italic">
+            {pageThesis.length > 120 ? pageThesis.slice(0, 118) + "…" : pageThesis}
           </p>
         </div>
       )}
-      <div className="flex items-center justify-between gap-2 px-1">
-        <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
-          Semantic Key
-        </span>
-        <div className="flex items-center gap-1.5">
-          <ReaderModeBar className="shrink-0" />
-          {detectedPresetLabel !== undefined && onPresetChange && (
-            <DomainModeSelector
-              detectedPresetLabel={detectedPresetLabel}
-              overridePresetId={overridePresetId ?? null}
-              onChange={onPresetChange}
-            />
-          )}
-        </div>
+
+      {/* Thin divider + mode controls (compact) */}
+      <div className="h-px bg-white/8 mx-2" />
+      <div className="flex items-center gap-1.5 px-2 py-1">
+        <TocModeBar className="shrink-0" />
+        {entries.length > 0 && (
+          <SemanticSearch
+            entries={entries}
+            pack={activePack}
+            onSelect={(id) => { onJump(id); }}
+            className="flex-1 min-w-0"
+          />
+        )}
+        {detectedPresetLabel !== undefined && onPresetChange && (
+          <DomainModeSelector
+            detectedPresetLabel={detectedPresetLabel}
+            overridePresetId={overridePresetId ?? null}
+            onChange={onPresetChange}
+          />
+        )}
+        <ReaderModeBar className="shrink-0" />
       </div>
-      <TocModeBar className="self-start" />
-      {entries.length > 0 && (
-        <SemanticSearch
-          entries={entries}
-          pack={activePack}
-          onSelect={(id) => { onJump(id); }}
-          className="px-1"
-        />
-      )}
     </div>
   );
 
@@ -646,7 +748,7 @@ export default function ThoughtUnitNavigator({
     );
   }
 
-  // ── Learning-order renderer (Semantic TOC mode: "learning") ─────────────
+  // ── Student Guide renderer (default learning-order view) ─────────────────
   function renderLearningGroups() {
     const bucketEntries: ThoughtUnitNavigatorEntry[][] = [[], [], [], [], []];
     for (const entry of entries) {
@@ -658,35 +760,43 @@ export default function ThoughtUnitNavigator({
     return LEARNING_BUCKETS.map((bucket, bucketIdx) => {
       const items = bucketEntries[bucketIdx];
       if (items.length === 0) return null;
-      const userToggled = collapsedGroups.has(bucket.id);
-      const isCollapsed = userToggled;
+      const isCollapsed = collapsedGroups.has(bucket.id);
+
       return (
-        <div key={bucket.id} className="flex flex-col gap-1">
-          <button
-            type="button"
-            onClick={() => toggleGroup(bucket.id)}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-opacity hover:opacity-90"
-            style={{
-              background: `linear-gradient(90deg, ${bucket.color}22 0%, transparent 100%)`,
-              borderLeft: `3px solid ${bucket.color}`,
-            }}
-          >
-            <span className="text-[11px] leading-none select-none">{bucket.icon}</span>
-            <span
-              className="text-[10px] font-black uppercase tracking-widest truncate"
-              style={{ color: bucket.color }}
+        <div key={bucket.id} className="flex flex-col gap-0">
+          {/* Section divider + label row */}
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <div className="h-px flex-1" style={{ background: `${bucket.color}25` }} />
+            <button
+              type="button"
+              onClick={() => toggleGroup(bucket.id)}
+              className="flex items-center gap-1.5 shrink-0 hover:opacity-80 transition-opacity"
             >
-              {bucket.label}
-            </span>
-            <span className="text-[8.5px] rounded-full px-1.5 py-0.5 font-semibold shrink-0 bg-white/8 text-white/45">
-              {items.length}
-            </span>
-            <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
-          </button>
-          {!isCollapsed && items.map((entry) => {
-            const isActive = entry.id === focusedId || matchesAnchor(activeSpokenWord?.anchorId, entry);
-            return renderCompactCard(entry, isActive);
-          })}
+              <span
+                className="text-[8px] font-black uppercase tracking-[0.16em]"
+                style={{ color: bucket.color }}
+              >
+                {bucket.label}
+              </span>
+              <span
+                className="text-[8px] rounded-full px-1 font-semibold"
+                style={{ color: bucket.color, opacity: 0.6 }}
+              >
+                {items.length}
+              </span>
+              <span className="text-[8px] text-white/25">{isCollapsed ? "▸" : "▾"}</span>
+            </button>
+            <div className="h-px flex-1" style={{ background: `${bucket.color}25` }} />
+          </div>
+
+          {/* Items */}
+          {!isCollapsed && (
+            <div className="flex flex-col gap-0.5 pb-1 px-1">
+              {items.map((entry) =>
+                renderGuideItem(entry, bucket.icon, bucket.color)
+              )}
+            </div>
+          )}
         </div>
       );
     }).filter(Boolean);
@@ -804,11 +914,11 @@ export default function ThoughtUnitNavigator({
             })}
       </div>
 
-      {/* Main content — learning order, concept, or standard */}
-      {tocViewMode === "learning" && renderLearningGroups()}
+      {/* Main content — Student Guide (learning order) is the default; concept + standard are power-user modes */}
+      {(tocViewMode === "learning" || tocViewMode === "standard") && renderLearningGroups()}
       {tocViewMode === "concept" && renderCanonicalGroups()}
-      {tocViewMode === "standard" && useCanonicalGrouping ? renderCanonicalGroups() : null}
-      {tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+      {/* Legacy standard kind-grouping only shown when concept mode is explicitly off and canonical grouping is inactive */}
+      {false && tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
@@ -867,6 +977,56 @@ export default function ThoughtUnitNavigator({
           </React.Fragment>
         );
       })}
+
+      {/* ── NEXT STEP ──────────────────────────────────────────────────────── */}
+      {entries.length > 0 && (
+        <div className="flex flex-col gap-0 mt-1">
+          <div className="flex items-center gap-2 px-2 py-1">
+            <div className="h-px flex-1 bg-white/8" />
+            <span className="text-[8px] font-black uppercase tracking-[0.16em] text-white/22 shrink-0">
+              Next Step
+            </span>
+            <div className="h-px flex-1 bg-white/8" />
+          </div>
+          <div className="px-2 pb-2">
+            <div className="text-[10px] text-white/40 mb-1.5">
+              {!anyRead
+                ? "Start by reading the Core Ideas"
+                : trapEntries.length > 0 && !trapEntries.some(e => progressMap.get(e.id)?.has("read"))
+                ? "Review the Common Traps before testing"
+                : "You're ready — test yourself"}
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {onExplain && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const first = entries.find(e => ["thesis","definition"].includes(e.kind as string)) ?? entries[0];
+                    if (first) onExplain(first.id);
+                  }}
+                  className="text-[10px] px-2.5 py-1 rounded-md font-semibold transition-colors"
+                  style={{ background: "rgba(253,224,71,0.10)", border: "1px solid rgba(253,224,71,0.22)", color: "#fde047" }}
+                >
+                  💬 Explain Core
+                </button>
+              )}
+              {onOpenRecall && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const first = entries[0];
+                    if (first) onOpenRecall(first.id);
+                  }}
+                  className="text-[10px] px-2.5 py-1 rounded-md font-semibold transition-colors"
+                  style={{ background: "rgba(103,232,249,0.08)", border: "1px solid rgba(103,232,249,0.18)", color: "#67e8f9" }}
+                >
+                  🧠 Test Yourself
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
