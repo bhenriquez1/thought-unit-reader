@@ -1,4 +1,5 @@
 import type { TocNode } from "./readerContracts";
+import { isBoilerplate } from "./toc/boilerplateFilter";
 
 export interface PageTextBundle {
   page: number;
@@ -194,6 +195,7 @@ function mineContentsPages(pages: PageTextBundle[]): TocNode[] {
       const title = cleanLine(match[1]);
       const targetPage = Number(match[2]);
       if (!title || Number.isNaN(targetPage)) continue;
+      if (isBoilerplate(title)) continue;
       mined.push({
         id: `contents-${page.page}-${title.slice(0, 28)}`,
         title,
@@ -222,6 +224,9 @@ export function buildAutoToc(pages: PageTextBundle[]): TocNode[] {
     const lines = getCandidateLines(page.text);
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i];
+      // Reject publisher addresses, ISBN lines, copyright, URLs, and footer text
+      // before any scoring so they never surface as chapter/section titles.
+      if (isBoilerplate(line)) continue;
       const structuredKind = classifyStructured(line);
 
       if (structuredKind && scoreStructured(line) >= 6) {

@@ -18,8 +18,11 @@ export interface SavedHighlight {
   text: string;          // anchor.exactText — verbatim source span
   anchorType: string;    // VisualAnchorRole, e.g. "coreIdea"
   reason: string;
-  sourceType: "note" | "recall";
-  sourceRefId: string;   // UltraNote id or RecallSet id
+  sourceType: "note" | "recall" | "learning-source";
+  sourceRefId: string;   // UltraNote id, RecallSet id, or LearningSource id
+  // Human-readable provenance label — set when sourceType is "learning-source"
+  // (e.g. "University Lecture", "Peer-reviewed"). Undefined for note/recall sources.
+  sourceName?: string;
   createdAt: number;
 }
 
@@ -153,4 +156,42 @@ export async function getHighlightsForPage(bookId: string, page: number): Promis
 export async function getHighlightsByBook(bookId: string): Promise<SavedHighlight[]> {
   const all = await loadAll();
   return all.filter(h => h.bookId === bookId);
+}
+
+// Saves thought units extracted from a Learning Source as SavedHighlight records.
+// Page defaults to 1 when no textbook page grounding is known.
+export async function saveLearningSourceHighlights(
+  bookId: string,
+  sourceId: string,
+  sourceName: string,
+  units: Array<{ text: string; anchorType: string; reason: string; page?: number }>,
+): Promise<void> {
+  const existing = await loadAll();
+  const existingNormalized = new Set(
+    existing.filter(h => h.bookId === bookId).map(h => normalizeText(h.text))
+  );
+
+  const now = Date.now();
+  const fresh: SavedHighlight[] = [];
+  for (const u of units) {
+    if (!u.text?.trim()) continue;
+    const norm = normalizeText(u.text);
+    if (existingNormalized.has(norm)) continue;
+    existingNormalized.add(norm);
+    fresh.push({
+      id: genId(),
+      bookId,
+      page: u.page ?? 1,
+      text: u.text,
+      anchorType: u.anchorType,
+      reason: u.reason,
+      sourceType: "learning-source",
+      sourceRefId: sourceId,
+      sourceName,
+      createdAt: now,
+    });
+  }
+
+  if (fresh.length === 0) return;
+  await saveAll([...fresh, ...existing]);
 }

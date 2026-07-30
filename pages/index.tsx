@@ -47,10 +47,14 @@ import type { StudySpeechPanelHandle } from "@/components/reader/StudySpeechPane
 import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
+import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
+import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
+import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
 import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
+import { outlineItemsToTocNodes } from "@/lib/toc/tocNodeConverter";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
 import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -170,6 +174,7 @@ const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTr
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
+const PersonalWorkspaceTab = dynamic(() => import("@/components/workspace/PersonalWorkspaceTab"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
@@ -573,6 +578,16 @@ export default function ThoughtUnitReader() {
   // inside a useCallback without listing currentPage as a dep (which would
   // recreate the callback and cascade re-renders into TocTree on every page flip).
   const currentPageRef = useRef(1);
+  // Cross-page anchor focus: when a card on a different page is clicked we must
+  // call syncToPage() first, which clears focusedEvidenceId (see the clear-on-
+  // page-change effect below). pendingFocusAnchorId survives the page transition
+  // and is applied as the new focusedEvidenceId once currentPage settles.
+  const [pendingFocusAnchorId, setPendingFocusAnchorId] = useState<string | null>(null);
+  // Stable ref to syncToPage — lets onPdfHighlightFocus call it without listing
+  // syncToPage in its dep array (syncToPage is declared much later in the file;
+  // including it in the dep array causes a TDZ error in the production SSR bundle
+  // because the dep array is evaluated eagerly when the useCallback is created).
+  const syncToPageRef = useRef<((page: number, opts?: { reason?: string }) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
@@ -640,6 +655,11 @@ export default function ThoughtUnitReader() {
   // below so it doesn't immediately repopulate syllabusToc and bounce the
   // user straight back out of the upload panel.
   const [syllabusUploadRequested, setSyllabusUploadRequested] = useState(false);
+  // Tracks what produced syllabusToc so outline (authoritative) beats heuristic.
+  // Persisted so a page reload knows not to overwrite an outline-sourced TOC.
+  const [syllabusTocSource, setSyllabusTocSource] = useState<"none" | "heuristic" | "outline">(() => {
+    try { return (localStorage.getItem("syllabus_toc_source") as "heuristic" | "outline") || "none"; } catch { return "none"; }
+  });
   // Pages studied via the one-brain pipeline: noteLab saved or recallLab saved
   const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
@@ -659,7 +679,7 @@ export default function ThoughtUnitReader() {
   // Sub-tab selections within consolidated panels
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
-  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachResponse, setCoachResponse] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -1509,7 +1529,7 @@ export default function ThoughtUnitReader() {
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
   // useKnowledgeGraph must be called after bookId state is declared
-  const { nodes: kgNodes } = useKnowledgeGraph(bookId || null);
+  const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
   useEffect(() => {
@@ -2074,12 +2094,31 @@ export default function ThoughtUnitReader() {
   // Clicking a highlighted PDF overlay rect (or a Thought Unit card) — focuses the rect,
   // scrolls the left panel to that card, and seeds the Expert Brain context. Does NOT
   // auto-start speech — the user must press Play or "Read This" to hear it.
+  //
+  // Cross-page navigation: when the anchor lives on a different page we call
+  // syncToPage first, then apply the focus via pendingFocusAnchorId (the clear-
+  // on-page-change effect would otherwise wipe it before the new page renders).
   const onPdfHighlightFocus = useCallback((id: string) => {
-    setFocusedEvidenceId(id);
     const anchor = finalHighlightAnchors.find((a) => (a as { evidenceRefId?: string }).evidenceRefId === id);
     const activeUnit = canonicalLeftPanelUnits.find((u) => u.evidenceRefId === id || u.id === id);
     const text = anchor?.text ?? activeUnit?.exactText ?? null;
     if (text) setFocusSnippet(text);
+
+    const anchorPage = (anchor as { page?: number } | undefined)?.page
+      ?? (activeUnit as { page?: number } | undefined)?.page
+      ?? null;
+
+    if (anchorPage && anchorPage !== currentPageRef.current) {
+      // Navigate to the anchor's page first; apply focus after page settles.
+      // Use syncToPageRef (not syncToPage directly) to avoid a TDZ crash in the
+      // production SSR bundle — syncToPage is declared ~2300 lines after this
+      // useCallback, so including it in the dep array would evaluate an
+      // uninitialized const when the dependency array is created during render.
+      setPendingFocusAnchorId(id);
+      syncToPageRef.current?.(anchorPage, { reason: "PROGRAMMATIC" });
+    } else {
+      setFocusedEvidenceId(id);
+    }
   }, [finalHighlightAnchors, canonicalLeftPanelUnits]);
 
   useEffect(() => {
@@ -2087,6 +2126,14 @@ export default function ThoughtUnitReader() {
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
   }, [activeShellTab, currentPage]);
+
+  // Apply a cross-page pending focus after the page transition completes.
+  // Must run AFTER the clear-on-page-change effect above (effects run in order).
+  useEffect(() => {
+    if (!pendingFocusAnchorId) return;
+    setFocusedEvidenceId(pendingFocusAnchorId);
+    setPendingFocusAnchorId(null);
+  }, [currentPage, pendingFocusAnchorId]);
 
   // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
   const sendCurrentPageToNoteLab = useCallback(async () => {
@@ -2879,51 +2926,68 @@ export default function ThoughtUnitReader() {
      🔹 Handle PDF Outline Extraction (memoized to prevent excessive re-renders)
   ========================================================================= */
   const handleOutlineExtraction = useCallback((tocItems: any[]) => {
-    // Save outline to tocStore when extracted from PDF
-    if (tocItems && tocItems.length > 0) {
-      const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
-      const documentName = uploadedFile?.name || "Document";
-      
-      // Convert TocItem to store format
-      const storeItems = tocItems.map((item: any, idx: number) => ({
-        id: `toc_${idx}_${Date.now()}`,
+    if (!tocItems?.length) return;
+
+    const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+    const documentName = uploadedFile?.name || "Document";
+    const now = Date.now();
+
+    // Build stable store items with nested children preserved
+    const buildStoreItems = (items: any[], level: number): any[] =>
+      items.map((item: any, idx: number) => ({
+        id: `toc_${level}_${idx}_${now}`,
         title: item.title || `Chapter ${idx + 1}`,
         pageNumber: item.pageNumber || 1,
-        level: 0,
-        children: item.items?.map((sub: any, subIdx: number) => ({
-          id: `toc_${idx}_${subIdx}_${Date.now()}`,
-          title: sub.title || `Section ${subIdx + 1}`,
-          pageNumber: sub.pageNumber || 1,
-          level: 1
-        }))
+        level,
+        children: item.items?.length ? buildStoreItems(item.items, level + 1) : undefined,
       }));
-      
-      const tocStore = useTocStore.getState();
-      tocStore.saveToc(documentId, documentName, storeItems, 'outline');
-      
-      // Also update tableOfContents for backward compatibility
-      const legacyToc = tocItems.map((item: any) => ({
-        title: item.title,
-        pageNumber: item.pageNumber || 1,
-        subChapters: item.items?.map((sub: any) => ({
-          title: sub.title,
-          pageNumber: sub.pageNumber || 1
-        }))
-      }));
-      setTableOfContents(legacyToc);
-      
-      DEV && console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
+
+    const storeItems = buildStoreItems(tocItems, 0);
+
+    useTocStore.getState().saveToc(documentId, documentName, storeItems, "outline");
+
+    // Convert to app-level TocNode[] and promote to syllabusToc.
+    // Outline beats heuristic unconditionally — it's the PDF's authoritative structure.
+    const outlineNodes = outlineItemsToTocNodes(storeItems);
+    if (outlineNodes.length > 0) {
+      setSyllabusToc(outlineNodes);
+      setSyllabusTocSource("outline");
+      setSyllabusFileName(uploadedFile?.name || "This book");
+      setSyllabusSource("book");
+      try {
+        localStorage.setItem("syllabus_toc", JSON.stringify(outlineNodes));
+        localStorage.setItem("syllabus_toc_source", "outline");
+        localStorage.setItem("syllabus_source", "book");
+        localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
+      } catch { /* quota exceeded */ }
     }
+
+    // Legacy tableOfContents for backward-compat consumers
+    const legacyToc = tocItems.map((item: any) => ({
+      title: item.title,
+      pageNumber: item.pageNumber || 1,
+      subChapters: item.items?.map((sub: any) => ({
+        title: sub.title,
+        pageNumber: sub.pageNumber || 1,
+      })),
+    }));
+    setTableOfContents(legacyToc);
+
+    DEV && console.log("[TOC_OUTLINE_EXTRACTED]", { chapters: storeItems.length, nodes: outlineNodes.length, documentId });
   }, [bookId, uploadedFile?.name, setTableOfContents]);
 
   useEffect(() => {
     if (!pdfPageCount || !thoughtUnits.length) return;
     if (tableOfContents.length > 0) return;
 
+    // Prefer real per-page text from pageTextByPage; fall back to thoughtUnits proxy.
+    const hasRealText = bookId && pageTextByPage.size > 0;
     const bundles = Array.from({ length: pdfPageCount }, (_, idx) => {
       const page = idx + 1;
-      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
-      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+      const text = hasRealText
+        ? (pageTextByPage.get(`${bookId}:${page}`) ?? "")
+        : (thoughtUnits[pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1]?.text ?? "");
+      return { page, text };
     });
     const autoToc = buildAutoToc(bundles);
     if (!autoToc.length) return;
@@ -2940,8 +3004,8 @@ export default function ThoughtUnitReader() {
 
     // Write to tocStore so PureTocView (which reads the store directly, not
     // tableOfContents React state) also reflects the heuristic result.
-    const docId = bookId || 'book';
-    const kindToLevel = (kind: string) => kind === 'subsection' ? 2 : kind === 'section' ? 1 : 0;
+    const docId = bookId || "book";
+    const kindToLevel = (kind: string) => kind === "subsection" ? 2 : kind === "section" ? 1 : 0;
     const storeItems = autoToc.map((node, idx) => ({
       id: `toc_h_${idx}`,
       title: node.title,
@@ -2954,8 +3018,8 @@ export default function ThoughtUnitReader() {
         level: kindToLevel(child.kind),
       })),
     }));
-    useTocStore.getState().saveToc(docId, docId, storeItems, 'heuristic');
-  }, [pdfPageCount, thoughtUnits, tableOfContents.length]);
+    useTocStore.getState().saveToc(docId, docId, storeItems, "heuristic");
+  }, [pdfPageCount, thoughtUnits, tableOfContents.length, bookId, pageTextByPage]);
 
   // Syllabus tab's chapter dashboard (Read/Understand/Recall/Mastery, weak
   // areas, next-recommended-topic) used to require a *separate* syllabus
@@ -2969,18 +3033,26 @@ export default function ThoughtUnitReader() {
   // dates when the user has one.
   useEffect(() => {
     if (!pdfPageCount || !thoughtUnits.length) return;
+    // Outline wins — don't overwrite with heuristic if we already have the PDF's
+    // native bookmark structure.
+    if (syllabusTocSource === "outline") return;
     if (syllabusToc.length > 0) return;
     if (syllabusUploadRequested) return;
 
+    // Prefer real per-page text from pageTextByPage; fall back to thoughtUnits proxy.
+    const hasRealText = bookId && pageTextByPage.size > 0;
     const bundles: PageTextBundle[] = Array.from({ length: pdfPageCount }, (_, idx) => {
       const page = idx + 1;
-      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
-      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+      const text = hasRealText
+        ? (pageTextByPage.get(`${bookId}:${page}`) ?? "")
+        : (thoughtUnits[pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1]?.text ?? "");
+      return { page, text };
     });
     const autoToc = buildAutoToc(bundles);
     if (!autoToc.length) return;
 
     setSyllabusToc(autoToc);
+    setSyllabusTocSource("heuristic");
     setSyllabusPages(bundles);
     setSyllabusFileName(uploadedFile?.name || "This book");
     setSyllabusSource("book");
@@ -2988,15 +3060,50 @@ export default function ThoughtUnitReader() {
       localStorage.setItem("syllabus_fileName", uploadedFile?.name || "This book");
       localStorage.setItem("syllabus_pages", JSON.stringify(bundles));
       localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
+      localStorage.setItem("syllabus_toc_source", "heuristic");
       localStorage.setItem("syllabus_source", "book");
     } catch { /* quota exceeded — ignore */ }
     DEV && console.log("[SYLLABUS_SOURCE]", {
       fileName:  uploadedFile?.name,
       tocNodes:  autoToc.length,
       pageCount: bundles.length,
-      source:    "buildAutoToc(book-content)",
+      source:    hasRealText ? "buildAutoToc(real-page-text)" : "buildAutoToc(thoughtUnits-proxy)",
     });
-  }, [pdfPageCount, thoughtUnits, syllabusToc.length, uploadedFile?.name, syllabusUploadRequested]);
+  }, [pdfPageCount, thoughtUnits, syllabusToc.length, syllabusTocSource, uploadedFile?.name, syllabusUploadRequested, bookId, pageTextByPage]);
+
+  // Coverage-based TOC upgrade: when pageTextByPage has grown to cover ≥60%
+  // of pages AND we only have a heuristic TOC, re-run buildAutoToc with the
+  // now-available real text to improve chapter detection coverage.
+  // Only fires when source is "heuristic" (never overwrites an outline).
+  // Debounced by the dependency: effect only re-runs when pageTextByPage changes
+  // (which happens page-by-page as the user reads), and the ≥60% guard prevents
+  // churning on every new page.
+  useEffect(() => {
+    if (syllabusTocSource !== "heuristic") return;
+    if (!pdfPageCount || !bookId) return;
+    const coverage = pageTextByPage.size / pdfPageCount;
+    if (coverage < 0.6) return; // wait for 60% page coverage
+    if (syllabusUploadRequested) return;
+
+    const bundles: PageTextBundle[] = Array.from({ length: pdfPageCount }, (_, idx) => {
+      const page = idx + 1;
+      return { page, text: pageTextByPage.get(`${bookId}:${page}`) ?? "" };
+    });
+    const autoToc = buildAutoToc(bundles);
+    if (!autoToc.length || autoToc.length <= syllabusToc.length) return;
+
+    setSyllabusToc(autoToc);
+    setSyllabusPages(bundles);
+    try {
+      localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
+      localStorage.setItem("syllabus_toc_source", "heuristic");
+    } catch { /* quota exceeded */ }
+    DEV && console.log("[SYLLABUS_TOC_UPGRADE]", {
+      prevNodes: syllabusToc.length,
+      newNodes: autoToc.length,
+      coverage: Math.round(coverage * 100),
+    });
+  }, [syllabusTocSource, pdfPageCount, bookId, pageTextByPage, syllabusToc.length, syllabusUploadRequested]);
 
   // Sync syllabusToc → tocStore whenever the buildAutoToc result is better
   // than what tocStore already holds (absent, synthetic, or low-quality).
@@ -3027,7 +3134,9 @@ export default function ThoughtUnitReader() {
     const docId = bookId || uploadedFile?.name?.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
     useTocStore.getState().clearToc(docId);
     setSyllabusToc([]);
+    setSyllabusTocSource("none");
     setTableOfContents([]);
+    try { localStorage.removeItem("syllabus_toc_source"); } catch { /* ignore */ }
   }, [bookId, uploadedFile?.name]);
 
   /* =========================================================================
@@ -4460,6 +4569,8 @@ export default function ThoughtUnitReader() {
       }
     }
   }, [pdfPageCount, thoughtUnits.length, bookId, pageTextByPage, clearTransientPriorityPreview, updateSync]);
+  // Keep the ref current so onPdfHighlightFocus always calls the latest syncToPage.
+  syncToPageRef.current = syncToPage;
 
   const handleParsedSyllabus = useCallback((result: {
     fileName: string;
@@ -5106,14 +5217,15 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "studyguide" ? "📑 Study Sheet" : "🩺 Chief Resident"}
+                  {v === "notes" ? "✍️ Personal Workspace" : v === "studyguide" ? "📑 Adaptive Study Guide" : "🩺 Chief Resident"}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Study Sheet sub-tab — always mounted to preserve generation state */}
+          {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
+            <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
               <StudyGuideLab
                 bookId={bookId}
                 bookTitle={uploadedFile?.name ?? undefined}
@@ -5125,6 +5237,7 @@ export default function ThoughtUnitReader() {
                 onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
                 onPodcastScript={(script) => setStudyGuideScript(script)}
               />
+            </ErrorBoundary>
           </div>
 
           {/* Chief Resident sub-tab — always mounted so session state persists across tab switches */}
@@ -5140,126 +5253,14 @@ export default function ThoughtUnitReader() {
             />
           </div>
 
-          {/* Notes sub-tab — always mounted to preserve selected note and edits */}
-          <div className="flex-1 flex overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none" }}>
-            {/* Left: Thought Unit navigation for the currently open note */}
-            <div className="w-[220px] flex-shrink-0 overflow-y-auto border-r border-white/10 py-2">
-              {notelabNavEntries.length > 0 ? (
-                <ThoughtUnitNavigator
-                  entries={notelabNavEntries}
-                  focusedId={notelabFocusedAnchorId}
-                  onJump={(id) => setNotelabFocusedAnchorId(id)}
-                  presetId={sharedPresetId}
-                />
-              ) : (
-                <div className="px-3 py-4 text-[11px] leading-relaxed text-slate-500">
-                  Open a note to see its thought units here.
-                </div>
-              )}
-            </div>
+          {/* Personal Workspace sub-tab — student's own digital notebook (replaces AI-output Notes tab) */}
+          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
+            <PersonalWorkspaceTab
+              bookId={bookId}
+              currentPage={currentPage}
+              onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+            />
 
-            {/* Center: expert notebook card grid (existing note list/grid, reused as-is) */}
-            <div className="flex-1 overflow-y-auto">
-              <ErrorBoundary onError={(error) => console.error('📝 NoteLab Error:', error.message, error.stack)}>
-                <UltraNotesList
-                  bookId={bookId}
-                  refreshKey={noteLabRefreshKey}
-                  onNavigateToPage={(page) => {
-                    syncToPage(page);
-                    trySwitchShellTab("reader", "reader");
-                  }}
-                  onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
-                  onOpenWhiteboard={(note, card) => {
-                    setWbConcept(card?.title || note.topic);
-                    setWbContext(card?.body || note.coreIdea || "");
-                    setShowWhiteboardPanel(true);
-                  }}
-                  onExplainCard={(note, card) => {
-                    openExplainStepForThoughtUnit(buildThoughtUnitDetailFromNoteCard(card, note));
-                  }}
-                  onActiveNoteChange={(note) => { setNotelabActiveNote(note); setNotelabFocusedAnchorId(null); setActiveNote(note); }}
-                  focusedAnchorText={notelabFocusedAnchorText}
-                  focusedKnowledgeNodeId={selectedKgNodeId}
-                />
-              </ErrorBoundary>
-            </div>
-
-            {/* Right: Study Tools + Export for the active note */}
-            <div className="w-[200px] flex-shrink-0 overflow-y-auto border-l border-white/10 px-3 py-3 flex flex-col gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Study Tools</span>
-              {notelabActiveNote ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const set = buildRecallSetFromNote(notelabActiveNote, { sourceLabel: "notelab" });
-                      await saveRecallSet(set);
-                      setLastRecallSetId(set.id);
-                      setRecallLabRefreshKey((k) => k + 1);
-                      trySwitchShellTab("study", "study");
-                    }}
-                    className="rounded-md border border-indigo-400/20 bg-indigo-400/10 px-2 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-400/15"
-                  >
-                    🎯 Generate Cards
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      syncToPage(notelabActiveNote.pageNumber);
-                      setNotesSubTab("studyguide");
-                    }}
-                    className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/15"
-                  >
-                    📑 Study Sheet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setWbConcept(notelabActiveNote.topic);
-                      setWbContext(notelabActiveNote.coreIdea || "");
-                      setShowWhiteboardPanel(true);
-                    }}
-                    className="rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-400/15"
-                  >
-                    🖼️ Whiteboard
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { syncToPage(notelabActiveNote.pageNumber); trySwitchShellTab("reader", "reader"); }}
-                    className="rounded-md border border-blue-400/20 bg-blue-400/10 px-2 py-2 text-xs font-semibold text-blue-300 hover:bg-blue-400/15"
-                  >
-                    📍 Go to p.{notelabActiveNote.pageNumber}
-                  </button>
-                  <div className="mt-1 h-px bg-white/8" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Export</span>
-                  <button
-                    type="button"
-                    onClick={() => downloadNoteMarkdown(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📄 Markdown
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadNotePdf(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📑 PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadNoteDocx(notelabActiveNote, getStoredProfessionMode())}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
-                  >
-                    📝 DOCX
-                  </button>
-                </>
-              ) : (
-                <div className="text-xs leading-relaxed text-slate-500">
-                  Open a note to generate cards, build a study sheet, or export.
-                </div>
-              )}
-            </div>
           </div>
         </div>
       );
@@ -5306,6 +5307,7 @@ export default function ThoughtUnitReader() {
               { id: "exam",      label: "Exam Readiness" },
               { id: "graph",     label: "Knowledge Graph" },
               { id: "coach",     label: "AI Coach" },
+              { id: "sources",   label: "Sources" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
@@ -5376,27 +5378,28 @@ export default function ThoughtUnitReader() {
                     </button>
                   )}
 
-                  {/* Quick nav grid */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {([
-                      { id: "today",     label: "Today's Plan",   icon: "📅", sub: "What to study now" },
-                      { id: "roadmap",   label: "Book Roadmap",   icon: "🗺",  sub: "Chapter overview" },
-                      { id: "studyplan", label: "Study Plan",     icon: "🧪", sub: "Scheduled sessions" },
-                      { id: "mastery",   label: "Mastery",        icon: "🏆", sub: "Chapter progress" },
-                    ] as const).map(({ id, label, icon, sub }) => (
-                      <button
-                        key={id}
-                        onClick={() => setHubSubTab(id)}
-                        className="flex items-start gap-3 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-3 text-left hover:bg-slate-800/60 transition-colors"
-                      >
-                        <span className="text-lg mt-0.5">{icon}</span>
-                        <div>
-                          <div className="text-xs font-semibold text-slate-200">{label}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {/* Session launcher — adaptive guide is pre-loaded in reader (Adaptive tab default) */}
+                  <LearningHubLaunchPanel
+                    bookLoaded={!!bookId}
+                    hasWeakAreas={!!(courseWeakAreas && courseWeakAreas.length > 0)}
+                    hasStudyPlan={syllabusStudyPlan.length > 0}
+                    nextTopicLabel={nextTopicRecommendation
+                      ? `${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
+                      : undefined}
+                    onAdaptiveStudy={() => {
+                      if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    onTodaySession={() => setHubSubTab("today")}
+                    onContinueReading={() => trySwitchShellTab("reader", "reader")}
+                    onWeakAreaReview={() => {
+                      const firstWeak = courseWeakAreas?.[0];
+                      if (firstWeak) setCoachQuestion(`Help me review my weak area: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    onExamPrep={() => setHubSubTab("exam")}
+                    onAiCoach={() => setHubSubTab("coach")}
+                  />
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-40 text-center text-slate-500">
@@ -5412,7 +5415,7 @@ export default function ThoughtUnitReader() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
-                  {/* Primary CTA — continue where I left off */}
+                  {/* Primary CTA — adaptive study launch with pre-loaded guide */}
                   <button
                     onClick={() => {
                       if (nextTopicRecommendation?.page) syncToPage(nextTopicRecommendation.page);
@@ -5420,8 +5423,13 @@ export default function ThoughtUnitReader() {
                     }}
                     className="w-full rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-600/25 to-indigo-800/20 hover:from-indigo-600/35 hover:to-indigo-800/30 transition-colors p-5 text-left"
                   >
-                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1.5">
-                      {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">
+                        {nextTopicRecommendation ? "Recommended Next" : "Continue Reading"}
+                      </div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-800/40 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+                        Adaptive Guide Pre-loaded
+                      </span>
                     </div>
                     <div className="text-sm font-semibold text-white leading-snug">
                       {nextTopicRecommendation?.chapterTitle ?? uploadedFile?.name ?? "Open book"}
@@ -5652,7 +5660,24 @@ export default function ThoughtUnitReader() {
           {/* Mastery — chapter-level mastery breakdown */}
           {hubSubTab === "mastery" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-indigo-300">🏆 Chapter Mastery</div>
+                {bookId && (
+                  <button
+                    onClick={() => {
+                      const worstChapter = chapterProgressList
+                        .slice()
+                        .sort((a, b) => (a.progress.masteryPct ?? 0) - (b.progress.masteryPct ?? 0))[0];
+                      const startPage = worstChapter?.chapter.pageRanges[0]?.start;
+                      if (startPage) syncToPage(startPage);
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                    className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 px-3 py-1.5 rounded-lg bg-indigo-900/30 border border-indigo-500/30 hover:bg-indigo-900/50 transition-colors"
+                  >
+                    Study Weakest Chapter →
+                  </button>
+                )}
+              </div>
               {chapterProgressList.length > 0 ? (
                 <div className="space-y-2.5">
                   {chapterProgressList.map((ch, idx) => {
@@ -5680,14 +5705,36 @@ export default function ThoughtUnitReader() {
           {/* Weak Areas */}
           {hubSubTab === "weak" && (
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-rose-300">⚠️ Weak Areas</div>
+                {courseWeakAreas && courseWeakAreas.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const firstWeak = courseWeakAreas[0];
+                      if (firstWeak) setCoachQuestion(`Give me a targeted review session for: ${firstWeak}`);
+                      setHubSubTab("coach");
+                    }}
+                    className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg bg-rose-900/30 border border-rose-500/30 hover:bg-rose-900/50 transition-colors"
+                  >
+                    Launch Review Session →
+                  </button>
+                )}
+              </div>
               {courseWeakAreas && courseWeakAreas.length > 0 ? (
                 <div className="space-y-2">
                   {courseWeakAreas.map((area: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3">
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setCoachQuestion(`Help me review and improve on: ${area}`);
+                        setHubSubTab("coach");
+                      }}
+                      className="w-full flex items-start gap-3 rounded-lg border border-rose-500/20 bg-rose-950/20 px-4 py-3 text-left hover:bg-rose-950/35 hover:border-rose-500/35 transition-colors"
+                    >
                       <span className="text-rose-400 shrink-0">⚠️</span>
-                      <span className="text-xs text-slate-200">{area}</span>
-                    </div>
+                      <span className="text-xs text-slate-200 flex-1">{area}</span>
+                      <span className="text-[9px] text-rose-400/60 shrink-0 font-medium">Coach →</span>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -5818,77 +5865,33 @@ export default function ThoughtUnitReader() {
 
           {/* Knowledge Graph — scaffold */}
           {hubSubTab === "graph" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {kgNodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                  <div className="text-4xl">🕸</div>
-                  <div className="text-sm font-medium text-slate-300">Knowledge Graph</div>
-                  <div className="text-[12px] text-slate-500 max-w-xs">
-                    Concepts extracted from the book will appear here as you read pages and generate study materials.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-indigo-300">
-                      🕸 {kgNodes.length} Concept{kgNodes.length !== 1 ? "s" : ""} Mapped
-                    </div>
-                    <div className="text-[10px] text-slate-500">Click to navigate</div>
-                  </div>
-                  <div className="space-y-2">
-                    {[...kgNodes]
-                      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
-                      .map((node) => {
-                        const relatedTitles = kgNodes
-                          .filter(n => node.relatedNodeIds.includes(n.id))
-                          .map(n => n.title)
-                          .slice(0, 3);
-                        return (
-                          <button
-                            key={node.id}
-                            onClick={() => {
-                              if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
-                              if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
-                            }}
-                            className="w-full text-left rounded-xl border border-white/10 bg-slate-900/60 p-3 hover:border-indigo-500/40 hover:bg-slate-800/60 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-semibold text-slate-100 truncate">{node.title}</div>
-                                {node.summary && (
-                                  <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{node.summary}</div>
-                                )}
-                                {relatedTitles.length > 0 && (
-                                  <div className="mt-1.5 flex flex-wrap gap-1">
-                                    {relatedTitles.map((t, i) => (
-                                      <span key={i} className="text-[9px] rounded-full bg-slate-800 px-2 py-0.5 text-slate-400 border border-white/10">
-                                        {t}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                {node.sourcePages[0] && (
-                                  <span className="text-[9px] text-slate-500">p.{node.sourcePages[0]}</span>
-                                )}
-                                {node.importance != null && (
-                                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                                    node.importance >= 80 ? "bg-yellow-500/20 text-yellow-300" :
-                                    node.importance >= 50 ? "bg-indigo-500/20 text-indigo-300" :
-                                    "bg-slate-700/40 text-slate-400"
-                                  }`}>
-                                    {node.importance >= 80 ? "★ High" : node.importance >= 50 ? "Med" : "Low"}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </>
-              )}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-bold text-indigo-300">🕸 Visual Knowledge Roadmap</div>
+                <div className="text-[10px] text-slate-500">Click a node to navigate · nodes tier by importance</div>
+              </div>
+              <VisualKnowledgeRoadmap
+                nodes={kgNodes}
+                selectedNodeId={kgSelectedNodeId}
+                onNodeClick={(node) => {
+                  kgSetSelectedNodeId(kgSelectedNodeId === node.id ? null : node.id);
+                  if (node.sourcePages[0]) { syncToPage(node.sourcePages[0]); trySwitchShellTab("reader", "reader"); }
+                  if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Learning Sources */}
+          {hubSubTab === "sources" && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <ErrorBoundary onError={(error) => console.error("📚 LearningSourcesPanel Error:", error.message)}>
+                <LearningSourcesPanel
+                  bookId={bookId}
+                  kgNodes={kgNodes}
+                  onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                />
+              </ErrorBoundary>
             </div>
           )}
         </div>
@@ -5943,20 +5946,22 @@ export default function ThoughtUnitReader() {
 
     if (activeShellTab === "studyguide") {
       return (
-        <StudyGuideLab
-          bookId={bookId}
-          bookTitle={uploadedFile?.name ?? undefined}
-          currentPage={currentPage}
-          studyModel={currentPageStudyModel}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-          onNavigateToPage={(page) => {
-            syncToPage(page);
-            trySwitchShellTab("reader", "reader");
-          }}
-          onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
-          onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
-          onPodcastScript={(script) => setStudyGuideScript(script)}
-        />
+        <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
+          <StudyGuideLab
+            bookId={bookId}
+            bookTitle={uploadedFile?.name ?? undefined}
+            currentPage={currentPage}
+            studyModel={currentPageStudyModel}
+            pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+            onNavigateToPage={(page) => {
+              syncToPage(page);
+              trySwitchShellTab("reader", "reader");
+            }}
+            onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+            onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+            onPodcastScript={(script) => setStudyGuideScript(script)}
+          />
+        </ErrorBoundary>
       );
     }
 
