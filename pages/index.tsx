@@ -5145,6 +5145,7 @@ export default function ThoughtUnitReader() {
                     setPdfSourceFailed(false);
                     handleLoadPDF('', uploadedFile?.name, currentLocalDocumentId);
                   } : undefined}
+                  pageThesis={currentPageStudyModel?.pageThesis ?? null}
                 />
 
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}

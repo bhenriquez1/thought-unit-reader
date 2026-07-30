@@ -257,6 +257,29 @@ function resolveEmptyDisplay(reason: string | null | undefined): {
   };
 }
 
+// ── Compact label + icon for each kind ────────────────────────────────────────
+// Maps a ParagraphKind to the short 4–5 char label shown in the semantic key.
+const KIND_SHORT_LABEL: Record<string, { label: string; icon: string }> = {
+  thesis:       { label: "CORE",   icon: "⚡" },
+  definition:   { label: "CORE",   icon: "⚡" },
+  conclusion:   { label: "CORE",   icon: "⚡" },
+  mechanism:    { label: "STEP",   icon: "⚙" },
+  formula:      { label: "STEP",   icon: "⚙" },
+  application:  { label: "STEP",   icon: "⚙" },
+  keyDetail:    { label: "DETAIL", icon: "🔍" },
+  keyAnatomy:   { label: "DETAIL", icon: "🔍" },
+  comparison:   { label: "DETAIL", icon: "🔍" },
+  trap:         { label: "TRAP",   icon: "⚠" },
+  warning:      { label: "RISK",   icon: "⚠" },
+  exception:    { label: "RISK",   icon: "⚠" },
+  contraindication: { label: "RISK", icon: "⚠" },
+  clinical:     { label: "PEARL",  icon: "💎" },
+  clinical_pearl: { label: "PEARL", icon: "💎" },
+  memoryAnchor: { label: "PEARL",  icon: "💎" },
+  dat_fact:     { label: "PEARL",  icon: "💎" },
+};
+const KIND_SHORT_FALLBACK = { label: "NOTE", icon: "📌" };
+
 export default function ThoughtUnitNavigator({
   entries,
   focusedId,
@@ -271,6 +294,7 @@ export default function ThoughtUnitNavigator({
   emptyReason,
   bookId,
   pageNumber,
+  pageThesis,
 }: {
   entries: ThoughtUnitNavigatorEntry[];
   focusedId?: string | null;
@@ -290,6 +314,8 @@ export default function ThoughtUnitNavigator({
   emptyReason?: string | null;
   bookId?: string;
   pageNumber?: number;
+  /** Brief page thesis shown as the "Page Mission" strip at the top of the panel. */
+  pageThesis?: string | null;
 }) {
   // Primitive subscriptions — each selector returns a primitive so Zustand's
   // Object.is check succeeds when the value is unchanged, preventing this component
@@ -405,15 +431,123 @@ export default function ThoughtUnitNavigator({
     1: "Remember",
   };
 
+  // ── Compact semantic key card — the primary card layout ───────────────────
+  // One tight row per anchor: colored stripe | short label | brief reason/title
+  // Expands to 2 lines + Explain button when this card is focused/active.
+  function renderCompactCard(
+    entry: ThoughtUnitNavigatorEntry,
+    isRef: boolean,
+  ) {
+    const focused    = entry.id === focusedId;
+    const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
+    const isActive   = focused || isSpeaking;
+    const colors     = KIND_COLORS[entry.kind] ?? FALLBACK_COLOR;
+    const shortMeta  = KIND_SHORT_LABEL[entry.kind] ?? KIND_SHORT_FALLBACK;
+    const briefText  = entry.reason ?? deriveCardTitle(entry.text, 72);
+
+    return (
+      <div
+        key={entry.id}
+        ref={isRef ? activeEntryRef : undefined}
+        role="button"
+        tabIndex={0}
+        onClick={() => { console.log("[PARENT_WRITE:ThoughtUnitNavigator] onJump", entry.id); onJump(entry.id); }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
+        className="group flex items-start gap-2 px-2 py-1.5 cursor-pointer rounded-lg transition-all"
+        style={{
+          background: isActive ? colors.bg.replace("0.12", "0.20") : "transparent",
+          border: `1px solid ${colors.color}${isSpeaking ? "99" : focused ? "55" : "00"}`,
+          boxShadow: isSpeaking ? `0 0 8px ${colors.color}33` : undefined,
+        }}
+        data-testid="thought-unit-entry"
+      >
+        {/* Color stripe */}
+        <div
+          className="w-[3px] rounded-full shrink-0 mt-0.5"
+          style={{ background: colors.color, minHeight: isActive ? 34 : 16, alignSelf: "stretch" }}
+        />
+
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+          {/* Label row */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className="text-[7.5px] font-black uppercase tracking-widest shrink-0"
+              style={{ color: colors.color }}
+            >
+              {shortMeta.icon} {shortMeta.label}
+            </span>
+            {isSpeaking && (
+              <span className="animate-pulse text-emerald-400 text-[7px] shrink-0">◎ live</span>
+            )}
+            {focused && onExplain && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
+                className="ml-auto text-[8px] text-white/35 hover:text-white/70 transition-colors shrink-0"
+                title="Explain this"
+              >
+                💬
+              </button>
+            )}
+          </div>
+
+          {/* Brief text — 1 line normally, 2 lines when active */}
+          <span
+            className="text-[10px] text-white/75 leading-snug break-words"
+            style={isActive ? { whiteSpace: "normal" } : {
+              display: "-webkit-box",
+              WebkitLineClamp: 1,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {briefText}
+          </span>
+
+          {/* Full verbatim text shown only when focused */}
+          {isActive && entry.reason && (
+            <span
+              className="text-[9px] text-white/45 italic leading-snug"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {entry.text}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const evidenceEntry = evidenceEntryId
     ? entries.find((e) => e.id === evidenceEntryId)
     : null;
 
   const header = (
     <div className="flex flex-col gap-1.5">
+      {/* Page Mission strip */}
+      {pageThesis && (
+        <div className="px-2 pt-2 pb-1.5 rounded-lg border border-yellow-400/15 bg-yellow-400/5 mx-1">
+          <div className="text-[7.5px] font-black uppercase tracking-widest text-yellow-400/50 mb-1">
+            ⚡ Page Mission
+          </div>
+          <p className="text-[9.5px] text-yellow-100/70 leading-relaxed" style={{
+            display: "-webkit-box",
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}>
+            {pageThesis}
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 px-1">
         <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 shrink-0">
-          Page Guide
+          Semantic Key
         </span>
         <div className="flex items-center gap-1.5">
           <ReaderModeBar className="shrink-0" />
@@ -550,128 +684,8 @@ export default function ThoughtUnitNavigator({
             <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
           </button>
           {!isCollapsed && items.map((entry) => {
-            const focused  = entry.id === focusedId;
-            const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
-            const isActive = focused || isSpeaking;
-            const effectiveSpokenWord = isSpeaking && activeSpokenWord
-              ? { ...activeSpokenWord, anchorId: entry.id }
-              : activeSpokenWord;
-            const entryColor = KIND_COLORS[entry.kind] ?? FALLBACK_COLOR;
-            return (
-              <div
-                key={entry.id}
-                ref={isActive ? activeEntryRef : undefined}
-                role="button"
-                tabIndex={0}
-                onClick={() => onJump(entry.id)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
-                className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
-                style={{
-                  background: isSpeaking
-                    ? entryColor.bg.replace("0.12", "0.25")
-                    : focused ? entryColor.bg.replace("0.12", "0.28") : entryColor.bg,
-                  border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
-                  boxShadow: isSpeaking
-                    ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
-                    : focused ? `0 0 8px ${entryColor.color}38, inset 0 0 3px ${entryColor.color}0a` : undefined,
-                  transition: "all 0.2s ease",
-                }}
-                data-testid="thought-unit-entry"
-              >
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <ImportanceBadge
-                    importanceScore={entry.importanceScore}
-                    priorityTier={entry.priorityTier}
-                    size="compact"
-                  />
-                  {isSpeaking && (
-                    <span className="animate-pulse text-emerald-300 text-[8px]">◎ live</span>
-                  )}
-                </div>
-                <span
-                  className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
-                  data-testid="thought-unit-title"
-                >
-                  {entry.title ?? deriveCardTitle(entry.text)}
-                </span>
-                <span
-                  className="text-[10px] leading-snug text-white/70"
-                  style={isActive ? {
-                    whiteSpace: "normal",
-                    overflowWrap: "anywhere",
-                  } : {
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                  }}
-                >
-                  {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
-                </span>
-                {entry.reason && (
-                  <span className="text-[9px] italic leading-snug text-white/45">
-                    {entry.reason}
-                  </span>
-                )}
-                {(entry.page !== undefined || entry.lineRange) && (
-                  <span className="text-[8.5px] text-white/35 tracking-tight">
-                    {entry.page !== undefined ? `Page ${entry.page}` : null}
-                    {entry.page !== undefined && entry.lineRange ? " · " : null}
-                    {entry.lineRange ? `Lines ${entry.lineRange}` : null}
-                  </span>
-                )}
-                <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                  {onOpenRecall && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
-                      title="Quiz me on this"
-                    >
-                      🎯 Quiz Me
-                    </button>
-                  )}
-                  {onExplain && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                    >
-                      💬 Explain
-                    </button>
-                  )}
-                  {onOpenNote && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                    >
-                      📝 Note
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                    className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                    title="Show source evidence"
-                  >
-                    🔎
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleMarkMastered(entry.id); }}
-                    className={`text-[9px] transition-colors ${
-                      progressMap.get(entry.id)?.has("mastered")
-                        ? "text-emerald-400"
-                        : "text-white/40 hover:text-emerald-300"
-                    }`}
-                    title="Mark as complete"
-                  >
-                    {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
-                  </button>
-                </div>
-              </div>
-            );
+            const isActive = entry.id === focusedId || matchesAnchor(activeSpokenWord?.anchorId, entry);
+            return renderCompactCard(entry, isActive);
           })}
         </div>
       );
@@ -712,132 +726,8 @@ export default function ThoughtUnitNavigator({
               <span className="ml-auto text-[9px] text-white/30">{isCollapsed ? "▸" : "▾"}</span>
             </button>
             {!isCollapsed && groupEntries.map((entry) => {
-              const focused = entry.id === focusedId;
-              const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
-              const isActive = focused || isSpeaking;
-              const effectiveSpokenWord = isSpeaking && activeSpokenWord
-                ? { ...activeSpokenWord, anchorId: entry.id }
-                : activeSpokenWord;
-              const entryColor = KIND_COLORS[entry.kind] ?? FALLBACK_COLOR;
-              return (
-                <div
-                  key={entry.id}
-                  ref={isActive ? activeEntryRef : undefined}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onJump(entry.id)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump(entry.id); }}
-                  className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
-                  style={{
-                    background: isSpeaking
-                      ? entryColor.bg.replace("0.12", "0.25")
-                      : focused ? entryColor.bg.replace("0.12", "0.28") : entryColor.bg,
-                    border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
-                    boxShadow: isSpeaking
-                      ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
-                      : focused ? `0 0 8px ${entryColor.color}38, inset 0 0 3px ${entryColor.color}0a` : undefined,
-                    transition: "all 0.2s ease",
-                  }}
-                  data-testid="thought-unit-entry"
-                >
-                  {/* Importance badge + canonical type tag */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <ImportanceBadge
-                      importanceScore={entry.importanceScore}
-                      priorityTier={entry.priorityTier}
-                      size="compact"
-                    />
-                    {isSpeaking && (
-                      <span className="animate-pulse text-emerald-300 text-[8px]">◎ live</span>
-                    )}
-                  </div>
-                  <span
-                    className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
-                    data-testid="thought-unit-title"
-                  >
-                    {entry.title ?? deriveCardTitle(entry.text)}
-                  </span>
-                  <span
-                    className="text-[10px] leading-snug text-white/70"
-                    style={isActive ? {
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                    } : {
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
-                  </span>
-                  {entry.reason && (
-                    <span className="text-[9px] italic leading-snug text-white/45">
-                      {entry.reason}
-                    </span>
-                  )}
-                  {(entry.page !== undefined || entry.lineRange) && (
-                    <span className="text-[8.5px] text-white/35 tracking-tight">
-                      {entry.page !== undefined ? `Page ${entry.page}` : null}
-                      {entry.page !== undefined && entry.lineRange ? " · " : null}
-                      {entry.lineRange ? `Lines ${entry.lineRange}` : null}
-                    </span>
-                  )}
-                  <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    {onOpenRecall && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
-                        title="Quiz me on this"
-                      >
-                        🎯 Quiz Me
-                      </button>
-                    )}
-                    {onExplain && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      >
-                        💬 Explain
-                      </button>
-                    )}
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      >
-                        📝 Note
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMarkMastered(entry.id);
-                      }}
-                      className={`text-[9px] transition-colors ${
-                        progressMap.get(entry.id)?.has("mastered")
-                          ? "text-emerald-400"
-                          : "text-white/40 hover:text-emerald-300"
-                      }`}
-                      title="Mark as complete"
-                    >
-                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
-                    </button>
-                  </div>
-                </div>
-              );
+              const isActive = entry.id === focusedId || matchesAnchor(activeSpokenWord?.anchorId, entry);
+              return renderCompactCard(entry, isActive);
             })}
           </div>
         </React.Fragment>
@@ -970,192 +860,10 @@ export default function ThoughtUnitNavigator({
               <span className="ml-auto text-[9px] text-white/35">{isCollapsed ? "▸" : "▾"}</span>
             </button>
             {!isCollapsed && items.map((entry) => {
-              const focused = entry.id === focusedId;
-              const isSpeaking = matchesAnchor(activeSpokenWord?.anchorId, entry);
-              if (isSpeaking) {
-                console.log("[THOUGHT_UNIT_LEFTPANEL_TARGET]", {
-                  entryId: entry.id,
-                  anchorId: activeSpokenWord?.anchorId,
-                  isSpeaking: true,
-                  matchedBy: activeSpokenWord?.anchorId === entry.id ? "id"
-                    : activeSpokenWord?.anchorId === entry.evidenceRefId ? "evidenceRefId"
-                    : activeSpokenWord?.anchorId === entry.canonicalUnitId ? "canonicalUnitId"
-                    : "sourceAnchorId",
-                });
-              }
-              const isActive = focused || isSpeaking;
-              // Normalize anchorId to entry.id so renderSnippetWithActiveWord's internal
-              // guard (activeSpokenWord.anchorId !== entryId) matches correctly even when
-              // the speech system used an alias (evidenceRefId, canonicalUnitId, etc.).
-              const effectiveSpokenWord = isSpeaking && activeSpokenWord
-                ? { ...activeSpokenWord, anchorId: entry.id }
-                : activeSpokenWord;
-              return (
-                <div
-                  key={entry.id}
-                  ref={isActive ? activeEntryRef : undefined}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => { console.log("[PARENT_WRITE:ThoughtUnitNavigator] onJump", entry.id); onJump(entry.id); }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { console.log("[PARENT_WRITE:ThoughtUnitNavigator] onJump (key)", entry.id); onJump(entry.id); } }}
-                  className="group relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer"
-                  style={{
-                    background: isSpeaking
-                      ? meta.bg.replace("0.12", "0.25")
-                      : focused ? meta.bg.replace("0.12", "0.28") : meta.bg,
-                    border: `1px solid ${meta.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
-                    boxShadow: isSpeaking
-                      ? `0 0 10px ${meta.color}44, inset 0 0 6px ${meta.color}10`
-                      : focused ? `0 0 8px ${meta.color}38, inset 0 0 3px ${meta.color}0a` : undefined,
-                    transition: "all 0.2s ease",
-                  }}
-                  data-testid="thought-unit-entry"
-                >
-                  {entry.priorityTier !== undefined && (
-                    <span
-                      className="absolute top-1 right-1.5 text-[7px] tracking-tighter text-white/45"
-                      title={`Priority ${entry.priorityTier}/5`}
-                      data-testid="anchor-priority-stars"
-                    >
-                      {tierGlyph(entry.priorityTier, entry.kind)}
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      className="text-[9px] font-semibold uppercase tracking-wide flex items-center gap-1"
-                      style={{ color: meta.color }}
-                      data-testid="thought-unit-category"
-                    >
-                      {meta.label}
-                      {isSpeaking && (
-                        <span className="animate-pulse text-emerald-300" style={{ fontSize: "8px" }}>◎ live</span>
-                      )}
-                    </span>
-                    <ImportanceBadge
-                      importanceScore={entry.importanceScore}
-                      priorityTier={entry.priorityTier}
-                      size="compact"
-                    />
-                  </div>
-                  <span
-                    className="text-[10.5px] font-semibold leading-snug text-white/90 whitespace-normal break-words"
-                    data-testid="thought-unit-title"
-                  >
-                    {entry.title ?? deriveCardTitle(entry.text)}
-                  </span>
-                  <span
-                    className="text-[10px] leading-snug text-white/70"
-                    style={isActive ? {
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                    } : {
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderSnippetWithActiveWord(entry.text, effectiveSpokenWord, entry.id)}
-                  </span>
-                  {entry.reason && (
-                    <span className="text-[9px] italic leading-snug text-white/45" data-testid="thought-unit-explanation">
-                      {entry.reason}
-                    </span>
-                  )}
-                  {(entry.page !== undefined || entry.lineRange) && (
-                    <span className="text-[8.5px] text-white/35 tracking-tight" data-testid="thought-unit-location">
-                      {entry.page !== undefined ? `Page ${entry.page}` : null}
-                      {entry.page !== undefined && entry.lineRange ? " · " : null}
-                      {entry.lineRange ? `Lines ${entry.lineRange}` : null}
-                    </span>
-                  )}
-                  {(() => {
-                    const progress = progressMap.get(entry.id);
-                    if (!progress || progress.size === 0) return null;
-                    const steps: { key: ProgressStep; label: string }[] = [
-                      { key: "read", label: "Read" },
-                      { key: "speech", label: "Speech" },
-                      { key: "explained", label: "Explained" },
-                      { key: "quiz", label: "Quiz" },
-                      { key: "mastered", label: "Mastered" },
-                    ];
-                    return (
-                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
-                        {steps.map(({ key, label }) => (
-                          <span
-                            key={key}
-                            className={`text-[8px] tracking-tight ${progress.has(key) ? "text-emerald-400" : "text-white/20"}`}
-                          >
-                            {progress.has(key) ? "✔" : "○"} {label}
-                          </span>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  <div className="self-end flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                    {onOpenRecall && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenRecall(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-indigo-300 transition-colors"
-                        title="Quiz me on this"
-                      >
-                        🎯 Quiz Me
-                      </button>
-                    )}
-                    {onExplain && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Explain this"
-                      >
-                        💬 Explain
-                      </button>
-                    )}
-                    {onOpenNote && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onOpenNote(entry.id); }}
-                        className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                        title="Save a note on this anchor"
-                      >
-                        📝 Note
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setEvidenceEntryId(entry.id); }}
-                      className="text-[9px] text-white/40 hover:text-white/80 transition-colors"
-                      title="Show source evidence"
-                    >
-                      🔎
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMarkMastered(entry.id);
-                      }}
-                      className={`text-[9px] transition-colors ${
-                        progressMap.get(entry.id)?.has("mastered")
-                          ? "text-emerald-400"
-                          : "text-white/40 hover:text-emerald-300"
-                      }`}
-                      title="Mark as complete"
-                    >
-                      {progressMap.get(entry.id)?.has("mastered") ? "✓ Done" : "✓ Done"}
-                    </button>
-                  </div>
-                </div>
-              );
+              const isActive = entry.id === focusedId || matchesAnchor(activeSpokenWord?.anchorId, entry);
+              return renderCompactCard(entry, isActive);
             })}
           </div>
-          {groupIndex < grouped.length - 1 && (
-            <div className="flex justify-center py-0.5">
-              <span className="text-[9px] text-white/20">↓</span>
-            </div>
-          )}
           </React.Fragment>
         );
       })}
