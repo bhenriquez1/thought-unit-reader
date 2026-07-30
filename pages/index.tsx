@@ -3071,6 +3071,40 @@ export default function ThoughtUnitReader() {
     });
   }, [pdfPageCount, thoughtUnits, syllabusToc.length, syllabusTocSource, uploadedFile?.name, syllabusUploadRequested, bookId, pageTextByPage]);
 
+  // Coverage-based TOC upgrade: when pageTextByPage has grown to cover ≥60%
+  // of pages AND we only have a heuristic TOC, re-run buildAutoToc with the
+  // now-available real text to improve chapter detection coverage.
+  // Only fires when source is "heuristic" (never overwrites an outline).
+  // Debounced by the dependency: effect only re-runs when pageTextByPage changes
+  // (which happens page-by-page as the user reads), and the ≥60% guard prevents
+  // churning on every new page.
+  useEffect(() => {
+    if (syllabusTocSource !== "heuristic") return;
+    if (!pdfPageCount || !bookId) return;
+    const coverage = pageTextByPage.size / pdfPageCount;
+    if (coverage < 0.6) return; // wait for 60% page coverage
+    if (syllabusUploadRequested) return;
+
+    const bundles: PageTextBundle[] = Array.from({ length: pdfPageCount }, (_, idx) => {
+      const page = idx + 1;
+      return { page, text: pageTextByPage.get(`${bookId}:${page}`) ?? "" };
+    });
+    const autoToc = buildAutoToc(bundles);
+    if (!autoToc.length || autoToc.length <= syllabusToc.length) return;
+
+    setSyllabusToc(autoToc);
+    setSyllabusPages(bundles);
+    try {
+      localStorage.setItem("syllabus_toc", JSON.stringify(autoToc));
+      localStorage.setItem("syllabus_toc_source", "heuristic");
+    } catch { /* quota exceeded */ }
+    DEV && console.log("[SYLLABUS_TOC_UPGRADE]", {
+      prevNodes: syllabusToc.length,
+      newNodes: autoToc.length,
+      coverage: Math.round(coverage * 100),
+    });
+  }, [syllabusTocSource, pdfPageCount, bookId, pageTextByPage, syllabusToc.length, syllabusUploadRequested]);
+
   // Sync syllabusToc → tocStore whenever the buildAutoToc result is better
   // than what tocStore already holds (absent, synthetic, or low-quality).
   // This ensures DAT Apex chapter selection always reads real chapter data.
