@@ -1,8 +1,9 @@
 // lib/pdfjs-handler.ts
 // Unified, SSR-safe PDF.js handler (v4) with worker auto-config and text extraction.
 
-import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
+import { buildStructuredPageTextFull } from "@/lib/pdf/structuredPageText";
 import { buildPageTextIndex, TextLayerRegistry } from "@/lib/page-intelligence/textLayerIndex";
+import { PageBridgeRegistry } from "@/lib/page-intelligence/pageBridgeRegistry";
 
 /**
  * Public API
@@ -64,6 +65,7 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
 
   // Clear any stale registry entries from a previous document extraction.
   TextLayerRegistry.clear();
+  PageBridgeRegistry.clear();
 
   // ✅ Process pages with progress tracking and early text detection
   for (let i = 1; i <= doc.numPages; i++) {
@@ -95,15 +97,18 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
 
       // Reconstruct line/paragraph structure from item geometry rather than
       // flattening to a single space-joined string — see lib/pdf/structuredPageText.
-      const normalizedItems = (content.items as any[]).map((item: any) => ({
+      // itemIndex is set here so the bridge can map paragraphs back to PDF.js items.
+      const normalizedItems = (content.items as any[]).map((item: any, idx: number) => ({
         // v4 items have `str`; keep fallbacks for safety
         str: typeof item?.str === "string" ? item.str
           : typeof item?.unicode === "string" ? item.unicode
           : typeof item?.text === "string" ? item.text
           : "",
         transform: item?.transform,
+        itemIndex: idx,
       }));
-      const pageText = buildStructuredPageText(normalizedItems);
+      const { text: pageText, bridge } = buildStructuredPageTextFull(normalizedItems);
+      PageBridgeRegistry.set(i - 1, bridge);
 
       pages.push(pageText);
       totalCharsExtracted += pageText.length;
@@ -210,6 +215,7 @@ export async function extractPageTextsIncremental(
 
   // Clear stale registry entries from any previous document extraction.
   TextLayerRegistry.clear();
+  PageBridgeRegistry.clear();
 
   async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
     try {
@@ -227,14 +233,17 @@ export async function extractPageTextsIncremental(
         buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
       );
 
-      const normalizedItems = (content.items as any[]).map((item: any) => ({
+      const normalizedItems = (content.items as any[]).map((item: any, idx: number) => ({
         str: typeof item?.str === 'string' ? item.str
           : typeof item?.unicode === 'string' ? item.unicode
           : typeof item?.text === 'string' ? item.text
           : '',
         transform: item?.transform,
+        itemIndex: idx,
       }));
-      return { pageIndex: i, text: buildStructuredPageText(normalizedItems) };
+      const { text, bridge } = buildStructuredPageTextFull(normalizedItems);
+      PageBridgeRegistry.set(i - 1, bridge);
+      return { pageIndex: i, text };
     } catch {
       return { pageIndex: i, text: '' };
     }
