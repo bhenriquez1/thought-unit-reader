@@ -21,7 +21,67 @@
 export type PdfTextItem = {
   str?: string;
   transform?: number[];
+  /** 0-based index of this item in the page's textContent.items array. */
+  itemIndex?: number;
 };
+
+// ── StructuredPageBridge — paragraph→item-index mapping ──────────────────────
+
+/**
+ * Maps one paragraph in the structured text output back to the PDF.js item
+ * indexes that produced it, and records the paragraph's char span in the
+ * structured text so callers can look it up by ReaderAnchor char offsets.
+ */
+export interface ParagraphMapping {
+  /** Start character offset of this paragraph in the structured text output. */
+  startChar: number;
+  /** End character offset (exclusive) of this paragraph in the structured text output. */
+  endChar: number;
+  /** PDF.js item indexes (positions in textContent.items) that contributed to this paragraph. */
+  itemIndexes: number[];
+}
+
+/**
+ * Provenance bridge produced alongside the structured text.
+ * Lets downstream consumers (buildCanonicalUnits) map paragraph char offsets
+ * back to the original PDF.js item indexes for bounding-box retrieval.
+ */
+export interface StructuredPageBridge {
+  /** One entry per paragraph in the structured text, in reading order. */
+  paragraphMappings: ParagraphMapping[];
+}
+
+// ── StructuredPageText contract ──────────────────────────────────────────────
+
+/** Bump when the column-detection or paragraph-gap algorithm changes. */
+export const STRUCTURE_VERSION = 1;
+/** Bump when buildStructuredPageText's paragraph boundary logic changes. */
+export const PARAGRAPH_ALGORITHM_VERSION = 1;
+
+/**
+ * Immutable extraction contract produced once per page.
+ * If extraction logic changes, bump the relevant version and regenerate;
+ * never mutate an existing record in place.
+ */
+export interface StructuredPageText {
+  readonly text: string;
+  readonly structureVersion: number;
+  readonly paragraphAlgorithmVersion: number;
+  readonly createdAt: number;
+}
+
+/**
+ * Wrap an already-built page text string in the versioned contract.
+ * Call once per page immediately after buildStructuredPageText().
+ */
+export function makeStructuredPageText(text: string): StructuredPageText {
+  return Object.freeze({
+    text,
+    structureVersion: STRUCTURE_VERSION,
+    paragraphAlgorithmVersion: PARAGRAPH_ALGORITHM_VERSION,
+    createdAt: Date.now(),
+  });
+}
 
 // Items within this many PDF-space units of vertical position are treated as the
 // same visual line (matches the tolerance already used for sort-order grouping).
@@ -68,13 +128,19 @@ function detectColumnSplit(items: PdfTextItem[]): number | null {
   return relPos >= 0.25 && relPos <= 0.75 ? gapMid : null;
 }
 
+// Internal result type for the full column builder.
+interface ColumnResult {
+  text: string;
+  /** Item indexes grouped by paragraph, in reading order. */
+  paragraphItems: number[][];
+}
+
 /**
- * Reconstruct reading-order text from a set of items that all belong to the same
- * column (or the full page when no column split is detected). Sorts items top-to-
- * bottom then left-to-right, groups into lines by Y proximity, and classifies
- * line gaps as wrapped lines vs. paragraph breaks.
+ * Reconstruct reading-order text from items in one column (or the full page).
+ * Returns both the text and a per-paragraph record of which PDF.js item indexes
+ * contributed — used by buildStructuredPageTextFull() to assemble the bridge.
  */
-function buildColumn(items: PdfTextItem[]): string {
+function buildColumnFull(items: PdfTextItem[]): ColumnResult {
   const sorted = [...items].sort((a, b) => {
     const ay = a.transform?.[5] ?? 0;
     const by = b.transform?.[5] ?? 0;
@@ -83,21 +149,26 @@ function buildColumn(items: PdfTextItem[]): string {
     return (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0);
   });
 
-  const lines: { y: number; text: string }[] = [];
+  const lines: { y: number; text: string; itemIdxs: number[] }[] = [];
   for (const item of sorted) {
     const y = item.transform?.[5] ?? 0;
     const str = item.str ?? "";
     const last = lines[lines.length - 1];
     if (last && Math.abs(last.y - y) <= Y_TOLERANCE) {
       last.text += (last.text.endsWith(" ") || str.startsWith(" ") ? "" : " ") + str;
+      if (item.itemIndex !== undefined) last.itemIdxs.push(item.itemIndex);
     } else {
-      lines.push({ y, text: str });
+      lines.push({ y, text: str, itemIdxs: item.itemIndex !== undefined ? [item.itemIndex] : [] });
     }
   }
 
   for (const line of lines) line.text = line.text.replace(/\s+/g, " ").trim();
   const nonEmpty = lines.filter(l => l.text.length > 0);
-  if (nonEmpty.length <= 1) return nonEmpty.map(l => l.text).join(" ").trim();
+
+  if (nonEmpty.length === 0) return { text: "", paragraphItems: [] };
+  if (nonEmpty.length === 1) {
+    return { text: nonEmpty[0].text.trim(), paragraphItems: [nonEmpty[0].itemIdxs] };
+  }
 
   // Median gap between consecutive line baselines ≈ single-line spacing on this page.
   const gaps: number[] = [];
@@ -106,26 +177,44 @@ function buildColumn(items: PdfTextItem[]): string {
   const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 0;
 
   let out = nonEmpty[0].text;
+  const paragraphItems: number[][] = [];
+  let currentItems: number[] = [...nonEmpty[0].itemIdxs];
+
   for (let i = 1; i < nonEmpty.length; i++) {
     const gap = gaps[i - 1];
     const prevText = nonEmpty[i - 1].text;
     const nextText = nonEmpty[i].text;
 
     if (medianGap > 0 && gap > medianGap * PARAGRAPH_GAP_MULTIPLIER) {
+      paragraphItems.push(currentItems);
+      currentItems = [...nonEmpty[i].itemIdxs];
       out += "\n\n" + nextText;
       continue;
     }
 
     // Merge hyphenated words split across a line wrap: "...exam-" + "ple" -> "...example"
     if (/[A-Za-z]-$/.test(prevText) && /^[a-z]/.test(nextText)) {
+      currentItems = [...currentItems, ...nonEmpty[i].itemIdxs];
       out = out.slice(0, -1) + nextText;
       continue;
     }
 
+    currentItems = [...currentItems, ...nonEmpty[i].itemIdxs];
     out += " " + nextText;
   }
+  paragraphItems.push(currentItems);
 
-  return out.replace(/[ \t]+/g, " ").trim();
+  return { text: out.replace(/[ \t]+/g, " ").trim(), paragraphItems };
+}
+
+/**
+ * Reconstruct reading-order text from a set of items that all belong to the same
+ * column (or the full page when no column split is detected). Sorts items top-to-
+ * bottom then left-to-right, groups into lines by Y proximity, and classifies
+ * line gaps as wrapped lines vs. paragraph breaks.
+ */
+function buildColumn(items: PdfTextItem[]): string {
+  return buildColumnFull(items).text;
 }
 
 /**
@@ -152,4 +241,71 @@ export function buildStructuredPageText(items: PdfTextItem[]): string {
   }
 
   return buildColumn(filtered).replace(/[ \t]+/g, " ").trim();
+}
+
+// ── Bridge computation helpers ────────────────────────────────────────────────
+
+/**
+ * Given the assembled structured text and the per-paragraph item-index arrays
+ * (in reading order), compute ParagraphMapping entries whose char offsets match
+ * what extractParagraphs() produces when splitting the same text on /\n\s*\n/.
+ */
+function buildBridgeFromText(text: string, allParagraphItems: number[][]): StructuredPageBridge {
+  if (!text || allParagraphItems.length === 0) return { paragraphMappings: [] };
+
+  const paragraphMappings: ParagraphMapping[] = [];
+  const sep = "\n\n";
+  const parts = text.split(sep);
+  let offset = 0;
+  let paraIdx = 0;
+
+  for (const part of parts) {
+    if (part.trim().length > 0) {
+      paragraphMappings.push({
+        startChar: offset,
+        endChar: offset + part.length,
+        itemIndexes: allParagraphItems[paraIdx] ?? [],
+      });
+    }
+    offset += part.length + sep.length;
+    paraIdx++;
+  }
+
+  return { paragraphMappings };
+}
+
+/**
+ * Like buildStructuredPageText() but also returns a StructuredPageBridge that
+ * maps each paragraph's char offsets back to the PDF.js item indexes that
+ * produced it. The text output is byte-for-byte identical to buildStructuredPageText().
+ *
+ * Requires items to have itemIndex populated (done by pdfjs-handler before calling).
+ * If itemIndex is absent on all items the bridge will still be produced but with
+ * empty itemIndexes arrays — callers treat that as a "fuzzy" grounding.
+ */
+export function buildStructuredPageTextFull(items: PdfTextItem[]): { text: string; bridge: StructuredPageBridge } {
+  const filtered = items.filter(it => typeof it.str === "string" && it.str.trim().length > 0);
+  if (filtered.length === 0) return { text: "", bridge: { paragraphMappings: [] } };
+
+  const columnSplit = detectColumnSplit(filtered);
+
+  let text: string;
+  let allParagraphItems: number[][];
+
+  if (columnSplit !== null) {
+    const left  = filtered.filter(it => (it.transform?.[4] ?? 0) <  columnSplit);
+    const right = filtered.filter(it => (it.transform?.[4] ?? 0) >= columnSplit);
+    const leftResult  = buildColumnFull(left);
+    const rightResult = buildColumnFull(right);
+    const leftText  = leftResult.text.trim();
+    const rightText = rightResult.text.trim();
+    text = [leftText, rightText].filter(Boolean).join("\n\n").replace(/[ \t]+/g, " ").trim();
+    allParagraphItems = [...leftResult.paragraphItems, ...rightResult.paragraphItems];
+  } else {
+    const result = buildColumnFull(filtered);
+    text = result.text.replace(/[ \t]+/g, " ").trim();
+    allParagraphItems = result.paragraphItems;
+  }
+
+  return { text, bridge: buildBridgeFromText(text, allParagraphItems) };
 }

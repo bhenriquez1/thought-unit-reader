@@ -127,6 +127,14 @@ export interface HighlightTarget {
   /** Best-effort "X–Y" line locator estimated from character offset within the page
    *  text — see ThoughtUnitNavigatorEntry.lineRange for why this is an approximation. */
   lineRange?: string;
+  /** Phase 2.5: PDF.js item indexes for anchor-driven geometry lookup (Phase 1B).
+   *  When present, resolveTargetGeometry uses Strategy 1 (exact item index) instead
+   *  of falling back to quote search or DOM span matching. */
+  pdfTextItemIndexes?: number[];
+  /** Phase 2.5: Grounding state from the canonical anchor.
+   *  "synthetic" means no PDF geometry was ever extracted — overlay is suppressed.
+   *  All other states (exact/normalized/fuzzy/ocr) attempt geometry resolution. */
+  groundingState?: "exact" | "normalized" | "fuzzy" | "ocr" | "synthetic";
 }
 
 export interface ParagraphSignal {

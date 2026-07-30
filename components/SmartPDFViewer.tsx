@@ -13,6 +13,7 @@ import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
+import { resolveTargetGeometry } from "@/lib/pdf/resolveAnchorGeometry";
 import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
@@ -1082,6 +1083,41 @@ export default function SmartPDFViewer({
 
       const rects: OverlayRect[] = [];
       highlightTargets!.forEach((target) => {
+        // ── Anchor-driven fast path (Phase 2.5) ──────────────────────────────
+        // Attempt geometry resolution via TextLayerRegistry before falling back
+        // to DOM span matching. Synthetic anchors are suppressed entirely.
+        if (target.groundingState === "synthetic") {
+          console.log("[GEOMETRY_RESOLUTION]", { id: target.evidenceRefId, source: "none", reason: "synthetic" });
+          return;
+        }
+        const anchorGeo = resolveTargetGeometry(
+          target.page - 1,
+          target.text,
+          effectiveZoom,
+          target.pdfTextItemIndexes,
+          target.groundingState,
+        );
+        if (anchorGeo.rects.length > 0) {
+          console.log("[GEOMETRY_RESOLUTION]", {
+            id: target.evidenceRefId,
+            source: anchorGeo.source,
+            rects: anchorGeo.rects.length,
+          });
+          anchorGeo.rects.forEach((b, bIdx) => {
+            rects.push({
+              id: bIdx === 0 ? target.evidenceRefId : `${target.evidenceRefId}-${bIdx}`,
+              top:    b.y - 1,
+              left:   b.x,
+              width:  b.w,
+              height: Math.min(Math.max(13, b.h + 3), 40),
+              level:  target.level,
+              semanticKind: target.kind as OverlayRect["semanticKind"],
+              priorityTier: target.priorityTier,
+            });
+          });
+          return;
+        }
+        // Fall through to DOM-based matching (logged as "legacy-dom" below).
         // Use normForConcat (not normForMatch) so the anchor matches concatText format:
         // both strip punctuation with [^\w\s]->" ", ensuring "substance." matches "substance".
         const baseText = normForConcat(target.normalizedText);
