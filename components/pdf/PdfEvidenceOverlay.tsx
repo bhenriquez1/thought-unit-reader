@@ -235,6 +235,11 @@ export default function PdfEvidenceOverlay({
       )}
       {rects.filter(shouldRender).map((rect) => {
         const focused = focusedId === rect.id;
+        // When any highlight is active, dim all others — "surgeon's spotlight" effect.
+        // Continuation lines share a base ID (e.g. "va-0-L1" belongs to "va-0") so check prefix too.
+        const baseId = rect.id.replace(/-L\d+$/, "");
+        const activeFocused = focused || (!!focusedId && baseId === focusedId);
+        const dimmed = !!focusedId && !activeFocused;
         const cfg = getConfig(rect);
         // Only render a label on the first line of each highlight target.
         // Continuation lines have IDs like "va-0-L1", "va-0-L2"; first lines are plain IDs.
@@ -249,18 +254,20 @@ export default function PdfEvidenceOverlay({
             key={rect.id}
             type="button"
             ref={(el) => { if (el) rectRefs.current.set(rect.id, el); else rectRefs.current.delete(rect.id); }}
-            onClick={() => onFocus?.(rect.id)}
-            className={`pointer-events-auto absolute transition-colors ${focused ? cfg.ringClass : ""}`}
+            onClick={() => onFocus?.(baseId)}
+            className={`pointer-events-auto absolute ${activeFocused ? cfg.ringClass : ""}`}
             style={{
               top: rect.top,
               left: rect.left,
               width: rect.width,
               height: rect.height,
               borderRadius: "6px",
-              backgroundColor: focused ? cfg.bgFocused : cfg.bgNormal,
-              boxShadow: focused ? undefined : tierStyle.boxShadow,
-              border: focused ? undefined : tierStyle.border,
+              backgroundColor: activeFocused ? cfg.bgFocused : cfg.bgNormal,
+              boxShadow: activeFocused ? undefined : tierStyle.boxShadow,
+              border: activeFocused ? undefined : tierStyle.border,
               overflow: "visible",
+              opacity: dimmed ? 0.28 : 1,
+              transition: "opacity 180ms ease, background-color 150ms ease",
             }}
             aria-label={`${cfg.label || "Evidence"} highlight`}
           >
@@ -287,7 +294,7 @@ export default function PdfEvidenceOverlay({
                   whiteSpace: "nowrap",
                   background: cfg.badgeBg,
                   color: cfg.badgeColor,
-                  opacity: focused ? 1 : 0.82,
+                  opacity: activeFocused ? 1 : 0.82,
                   userSelect: "none",
                   maxWidth: hasLeftMargin ? Math.max(52, rect.left - 8) : 96,
                   overflow: "hidden",

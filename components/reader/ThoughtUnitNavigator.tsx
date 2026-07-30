@@ -98,24 +98,31 @@ function deriveCardTitle(text: string, maxLen = 60): string {
 // (via getKindLabel) — so the navigator's visual identity doesn't shift
 // every time the detected/overridden preset changes. Exported so the Level 4
 // page roadmap (ThoughtRoadmap) renders the same groups in matching colors.
+// Colors aligned with PdfEvidenceOverlay's 5-tier Avrrio Highlight Language so
+// clicking a left-panel card and the matching PDF highlight always share the same color:
+//   MASTER   = yellow  (thesis / definition)
+//   STEP     = green   (mechanism / formula)
+//   DECISION = blue    (application / comparison / keyDetail / keyAnatomy)
+//   DANGER   = red     (trap)
+//   PEARL    = cyan    (clinical / memoryAnchor / dat_fact)
 export const KIND_COLORS: Record<string, { color: string; bg: string }> = {
   // MASTER — yellow
   thesis:       { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
   definition:   { color: "#fde047", bg: "rgba(253,224,71,0.12)" },
-  // PROCEDURE — blue
-  mechanism:    { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
-  formula:      { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
-  // DECISION — orange
-  application:  { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  comparison:   { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  keyDetail:    { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  keyAnatomy:   { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  // TRAP — red
+  // STEP — green (procedure / action / mechanism)
+  mechanism:    { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  formula:      { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  // DECISION — blue (apply / compare / context)
+  application:  { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  comparison:   { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  keyDetail:    { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  keyAnatomy:   { color: "#93c5fd", bg: "rgba(147,197,253,0.12)" },
+  // DANGER — red
   trap:         { color: "#fca5a5", bg: "rgba(252,165,165,0.12)" },
-  // PEARL — green
-  clinical:     { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
-  memoryAnchor: { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
-  dat_fact:     { color: "#86efac", bg: "rgba(134,239,172,0.12)" },
+  // PEARL — cyan (clinical pearl / memory anchor / exam trap)
+  clinical:     { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
+  memoryAnchor: { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
+  dat_fact:     { color: "#67e8f9", bg: "rgba(103,232,249,0.12)" },
 };
 export const FALLBACK_COLOR = { color: "#cbd5e1", bg: "rgba(203,213,225,0.10)" };
 
@@ -566,7 +573,7 @@ export default function ThoughtUnitNavigator({
                   border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
                   boxShadow: isSpeaking
                     ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
-                    : undefined,
+                    : focused ? `0 0 8px ${entryColor.color}38, inset 0 0 3px ${entryColor.color}0a` : undefined,
                   transition: "all 0.2s ease",
                 }}
                 data-testid="thought-unit-entry"
@@ -728,7 +735,7 @@ export default function ThoughtUnitNavigator({
                     border: `1px solid ${entryColor.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
                     boxShadow: isSpeaking
                       ? `0 0 10px ${entryColor.color}44, inset 0 0 6px ${entryColor.color}10`
-                      : undefined,
+                      : focused ? `0 0 8px ${entryColor.color}38, inset 0 0 3px ${entryColor.color}0a` : undefined,
                     transition: "all 0.2s ease",
                   }}
                   data-testid="thought-unit-entry"
@@ -999,7 +1006,7 @@ export default function ThoughtUnitNavigator({
                     border: `1px solid ${meta.color}${isSpeaking ? "cc" : focused ? "88" : "33"}`,
                     boxShadow: isSpeaking
                       ? `0 0 10px ${meta.color}44, inset 0 0 6px ${meta.color}10`
-                      : undefined,
+                      : focused ? `0 0 8px ${meta.color}38, inset 0 0 3px ${meta.color}0a` : undefined,
                     transition: "all 0.2s ease",
                   }}
                   data-testid="thought-unit-entry"
