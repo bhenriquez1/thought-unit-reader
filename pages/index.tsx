@@ -49,6 +49,7 @@ import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
 import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
+import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -672,7 +673,7 @@ export default function ThoughtUnitReader() {
   // Sub-tab selections within consolidated panels
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
-  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach">("overview");
+  const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachResponse, setCoachResponse] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -5238,6 +5239,7 @@ export default function ThoughtUnitReader() {
               { id: "exam",      label: "Exam Readiness" },
               { id: "graph",     label: "Knowledge Graph" },
               { id: "coach",     label: "AI Coach" },
+              { id: "sources",   label: "Sources" },
             ] as const).map(({ id, label }) => (
               <button
                 key={id}
@@ -5809,6 +5811,19 @@ export default function ThoughtUnitReader() {
                   if (node.canonicalAnchorId) setFocusedEvidenceId(node.canonicalAnchorId);
                 }}
               />
+            </div>
+          )}
+
+          {/* Learning Sources */}
+          {hubSubTab === "sources" && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <ErrorBoundary onError={(error) => console.error("📚 LearningSourcesPanel Error:", error.message)}>
+                <LearningSourcesPanel
+                  bookId={bookId}
+                  kgNodes={kgNodes}
+                  onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                />
+              </ErrorBoundary>
             </div>
           )}
         </div>
