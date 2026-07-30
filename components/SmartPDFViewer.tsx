@@ -1012,6 +1012,7 @@ export default function SmartPDFViewer({
         level: OverlayRect["level"],
         semanticKind: OverlayRect["semanticKind"],
         priorityTier?: OverlayRect["priorityTier"],
+        reason?: OverlayRect["reason"],
       ): OverlayRect[] {
         if (!matched.length) return [];
         const byLine = new Map<number, DOMRect[]>();
@@ -1045,6 +1046,7 @@ export default function SmartPDFViewer({
             level,
             semanticKind,
             priorityTier,
+            reason,
             top: top - 1,                    // shift up 1px for marker-swipe feel
             left,
             width,
@@ -1113,6 +1115,7 @@ export default function SmartPDFViewer({
               level:  target.level,
               semanticKind: target.kind as OverlayRect["semanticKind"],
               priorityTier: target.priorityTier,
+              reason: target.reason,
             });
           });
           return;
@@ -1163,14 +1166,14 @@ export default function SmartPDFViewer({
             return; // Skip — no partial misleading highlights
           }
           const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
-          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier);
+          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason);
           console.log("[AI_HIGHLIGHT:matched]", { id: target.evidenceRefId, via: "fallback", lines: fbRects.length });
           rects.push(...fbRects);
           return;
         }
 
         const matchedSpans = spansForRange(location.startIdx, location.endIdx);
-        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier);
+        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason);
         console.log("[AI_HIGHLIGHT:matched]", {
           id: target.evidenceRefId, kind: target.kind,
           text: target.text?.slice(0, 50),
