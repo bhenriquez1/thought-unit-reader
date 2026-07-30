@@ -13,7 +13,7 @@ import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteS
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
-import VisualTeachingSteps from "@/components/whiteboard/VisualTeachingSteps";
+import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
@@ -794,10 +794,11 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* ── VisualTeachingSteps: semantic-type-aware progressive visual teaching ─────── */}
-          <VisualTeachingSteps
+          {/* ── VisualSceneEngine: progressive animated diagram teaching ──────────────────── */}
+          <VisualSceneEngine
             noteCards={teachNoteCards}
             pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+            onAnchorClick={onAnchorStep ?? undefined}
           />
 
           {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}
