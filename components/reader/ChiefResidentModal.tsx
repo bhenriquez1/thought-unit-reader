@@ -72,18 +72,8 @@ interface ChiefResidentModalProps {
 }
 
 // ---------------------------------------------------------------------------
-// Audience config
+// Audience config (labels kept for potential future display; badge removed)
 // ---------------------------------------------------------------------------
-
-const AUDIENCE_LABEL: Record<string, string> = {
-  "dental-student": "Dental Student",
-  "dat":            "DAT Prep",
-  "beginner":       "Beginner",
-  "dentist":        "Dentist",
-  "oral-surgeon":   "Oral Surgeon",
-  "board-review":   "Board Review",
-  "child":          "Child",
-};
 
 // ---------------------------------------------------------------------------
 // Quick-reply chips
@@ -422,11 +412,15 @@ export default function ChiefResidentModal({
           <span className="text-[12.5px] font-bold text-white/85 tracking-wide">🩺 Chief Resident</span>
           <span className="text-[11px] text-white/35 font-medium">— {modeLabel}</span>
           <div className="ml-auto flex items-center gap-2">
-            {/* Teaching style — auto-detected from uploaded book */}
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border border-emerald-600/30 bg-emerald-900/20 text-emerald-300">
-              <span className="text-[10px]">👤</span>
-              {AUDIENCE_LABEL[teachingAudience] ?? teachingAudience}
-            </span>
+            {/* Detected context — sourced from the open PDF, not a learner persona */}
+            {context.documentTitle && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border border-emerald-600/30 bg-emerald-900/20 text-emerald-300">
+                <span className="text-[10px]">📖</span>
+                {context.documentTitle.length > 32
+                  ? context.documentTitle.slice(0, 32) + "…"
+                  : context.documentTitle}
+              </span>
+            )}
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"

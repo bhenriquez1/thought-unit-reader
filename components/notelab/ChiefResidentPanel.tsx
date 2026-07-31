@@ -146,15 +146,6 @@ async function streamTeachingSession(
 // Main component
 // ---------------------------------------------------------------------------
 
-const AUDIENCE_LABEL: Record<string, string> = {
-  "dental-student": "Dental Student",
-  "dat":            "DAT Prep",
-  "beginner":       "Beginner",
-  "dentist":        "Dentist",
-  "oral-surgeon":   "Oral Surgeon",
-  "board-review":   "Board Review",
-  "child":          "Child",
-};
 
 export default function ChiefResidentPanel({
   studyModel,
@@ -319,13 +310,15 @@ export default function ChiefResidentPanel({
             </p>
           </div>
 
-          {/* Teaching style — auto-detected from uploaded book */}
-          <div className="mb-4 flex items-center gap-2">
-            <div className="text-[10px] text-white/35 uppercase tracking-wider">Teaching style</div>
-            <span className="px-2.5 py-1 rounded-full text-[11px] border border-emerald-500/40 bg-emerald-900/25 text-emerald-300 font-medium">
-              {AUDIENCE_LABEL[teachingAudience] ?? teachingAudience}
-            </span>
-          </div>
+          {/* Detected context — sourced from the open PDF, not a learner persona */}
+          {bookTitle && (
+            <div className="mb-4 flex items-center gap-1.5">
+              <div className="text-[10px] text-white/35 uppercase tracking-wider">Reading</div>
+              <span className="px-2.5 py-1 rounded-full text-[11px] border border-emerald-500/40 bg-emerald-900/25 text-emerald-300 font-medium">
+                {bookTitle.length > 36 ? bookTitle.slice(0, 36) + "…" : bookTitle}
+              </span>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-900/20 px-3 py-2 text-[11.5px] text-rose-300">

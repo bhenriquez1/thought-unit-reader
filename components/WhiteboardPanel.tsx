@@ -19,8 +19,14 @@ const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
+import {
+  computeVSGState, noteCardsToCanonicalEntries,
+  type VSGState, type VisualSceneGraph,
+} from "@/lib/whiteboard/visualSceneGraph";
+import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
 import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import { saveWhiteboardAudio, loadWhiteboardAudio, deleteWhiteboardAudio } from "@/lib/db/whiteboardStore";
+import { stopAllSpeech } from "@/lib/speech/speechController";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -101,6 +107,12 @@ type Props = {
   /** Preferred layout grammar from the active annotation pack — drives VisualSceneEngine layout selection.
    *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow. */
   whiteboardGrammar?: string;
+  /**
+   * Phase 1 — canonical thought units for this page.
+   * When provided, the VSG is built directly from these; otherwise the panel
+   * falls back to deriving them from noteCards in the study model.
+   */
+  canonicalEntries?: CanonicalEntryInput[];
 };
 
 type WhiteboardDebugInfo = {
@@ -147,6 +159,7 @@ export default function WhiteboardPanel({
   learningProfile,
   onOpenChiefResident,
   whiteboardGrammar,
+  canonicalEntries,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -186,6 +199,21 @@ export default function WhiteboardPanel({
     if (Array.isArray(sm.noteCards) && sm.noteCards.length > 0) return sm.noteCards as NoteCard[];
     try { return deriveNoteCardsFromStudyModel(sm as CurrentPageStudyModel); } catch { return []; }
   }, [studyModel]);
+
+  const vsgState = useMemo((): VSGState => {
+    const entries =
+      canonicalEntries && canonicalEntries.length > 0
+        ? canonicalEntries
+        : noteCardsToCanonicalEntries(teachNoteCards);
+    return computeVSGState(entries, whiteboardGrammar ?? "flow", {
+      pageNumber: currentPage,
+    });
+  }, [canonicalEntries, teachNoteCards, whiteboardGrammar, currentPage]);
+
+  // Stable key for localStorage canvas persistence — scoped to book + page.
+  const canvasStorageKey = bookId && currentPage != null
+    ? `${bookId}_p${currentPage}`
+    : undefined;
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -802,11 +830,23 @@ export default function WhiteboardPanel({
           )}
 
           {/* ── Interactive canvas ─────────────────────────────────────────── */}
-          {teachNoteCards.length > 0 && (
+          {vsgState.status === "empty" ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "#64748b", fontSize: 13 }}>
+              {vsgState.reason}
+            </div>
+          ) : (
             <div style={{ position: "relative" }}>
+              {vsgState.status === "error" && (
+                <div style={{ padding: "6px 12px", background: "rgba(239,68,68,0.1)", borderBottom: "1px solid rgba(239,68,68,0.2)", fontSize: 11, color: "#fca5a5" }}>
+                  Diagram engine error — showing basic canvas. {vsgState.error}
+                </div>
+              )}
               <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
                 <button
-                  onClick={() => setCanvasMode("tldraw")}
+                  onClick={() => {
+                    stopAllSpeech("canvas-mode-switch");
+                    setCanvasMode("tldraw");
+                  }}
                   style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
                     background: canvasMode === "tldraw" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
@@ -817,7 +857,10 @@ export default function WhiteboardPanel({
                   Canvas
                 </button>
                 <button
-                  onClick={() => setCanvasMode("visual")}
+                  onClick={() => {
+                    stopAllSpeech("canvas-mode-switch");
+                    setCanvasMode("visual");
+                  }}
                   style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
                     background: canvasMode === "visual" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
@@ -828,23 +871,28 @@ export default function WhiteboardPanel({
                   Animated
                 </button>
               </div>
-              {canvasMode === "tldraw" ? (
-                <div style={{ height: 520 }}>
-                  <TldrawCanvas
-                    noteCards={teachNoteCards}
-                    pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-                    onAnchorClick={onAnchorStep ?? undefined}
-                    whiteboardGrammar={whiteboardGrammar}
-                  />
-                </div>
-              ) : (
+              {/* Both views stay mounted so tldraw editor state (student annotations) is
+                  preserved across Canvas ↔ Animated switches. CSS display toggles visibility. */}
+              <div style={{ height: 520, display: canvasMode === "tldraw" ? "block" : "none" }}>
+                <TldrawCanvas
+                  noteCards={teachNoteCards}
+                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  onAnchorClick={onAnchorStep ?? undefined}
+                  activeAnchorId={activeAnchorId}
+                  whiteboardGrammar={whiteboardGrammar}
+                  vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
+                  storageKey={canvasStorageKey}
+                />
+              </div>
+              <div style={{ display: canvasMode === "visual" ? "block" : "none" }}>
                 <VisualSceneEngine
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
                   whiteboardGrammar={whiteboardGrammar}
+                  vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                 />
-              )}
+              </div>
             </div>
           )}
 

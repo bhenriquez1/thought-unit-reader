@@ -322,6 +322,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // the current playing state without stale closures. True when speech is
   // actively producing audio (playing or loading the next segment).
   const isPlayingRef = useRef(false);
+  // Tracks the last unit ID that speech itself navigated to (via setThoughtUnit).
+  // Used to distinguish speech-driven focus changes from user-initiated ones.
+  const speechDrivenUnitIdRef = useRef<string | null>(null);
   // Bridge local PlayState → shared ReadingFocusStore so PDF overlay, ThoughtUnitNavigator,
   // and scroll guards can read playback state without subscribing to this component's local state.
   function updatePlayState(state: PlayState) {
@@ -645,12 +648,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   }, [mode]);
 
   // Stop audio when the active thought unit changes — but only for user-initiated
-  // selections. Speech itself advances selectedUnitId via setThoughtUnit(); if we
-  // called stopAudio() here unconditionally, speech would self-cancel on every
-  // segment boundary. isPlayingRef guards against that feedback loop.
+  // selections. Speech itself advances selectedUnitId via setThoughtUnit() and stamps
+  // speechDrivenUnitIdRef first; we skip stopAudio() only for those speech-originated
+  // changes, so a user clicking a different unit while audio plays still stops it.
   useEffect(() => {
     if (!selectedUnitId) return;
-    if (isPlayingRef.current) return;
+    if (isPlayingRef.current && selectedUnitId === speechDrivenUnitIdRef.current) return;
     stopAudio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUnitId]);
@@ -1274,6 +1277,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       const focusId = matchedId ?? lastMatchedId;
       if (focusId) {
         if (DEV) console.log("[SPEECH_EYE_FOCUS]", { segIdx: i, evidenceRefId: focusId, exact: !!matchedId, source: matchedUnit ? "canonical-unit" : matchedExpert ? "visual-anchor" : "nearest-carried" });
+        speechDrivenUnitIdRef.current = focusId;
         useReadingFocusStore.getState().setThoughtUnit(focusId);
       }
       if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
@@ -1328,6 +1332,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (seg.evidenceRefId) {
         if (DEV) console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
         if (DEV) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
+        speechDrivenUnitIdRef.current = seg.evidenceRefId;
         useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
       }
 
@@ -1542,6 +1547,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       setEyeRole(seg.role ?? mode);
       setEyeTier(seg.tier ?? null);
       if (seg.evidenceRefId) {
+        speechDrivenUnitIdRef.current = seg.evidenceRefId;
         useReadingFocusStore.getState().setThoughtUnit(seg.evidenceRefId);
         if (DEV) console.log("[SPEECH_EYE_FOCUS]", {
           segIdx: i, mode, evidenceRefId: seg.evidenceRefId, role: seg.role,
