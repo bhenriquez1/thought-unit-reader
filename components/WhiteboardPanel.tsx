@@ -26,6 +26,7 @@ import {
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
 import type { NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import { saveWhiteboardAudio, loadWhiteboardAudio, deleteWhiteboardAudio } from "@/lib/db/whiteboardStore";
+import { stopAllSpeech } from "@/lib/speech/speechController";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -836,7 +837,10 @@ export default function WhiteboardPanel({
               )}
               <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
                 <button
-                  onClick={() => setCanvasMode("tldraw")}
+                  onClick={() => {
+                    stopAllSpeech("canvas-mode-switch");
+                    setCanvasMode("tldraw");
+                  }}
                   style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
                     background: canvasMode === "tldraw" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
@@ -847,7 +851,10 @@ export default function WhiteboardPanel({
                   Canvas
                 </button>
                 <button
-                  onClick={() => setCanvasMode("visual")}
+                  onClick={() => {
+                    stopAllSpeech("canvas-mode-switch");
+                    setCanvasMode("visual");
+                  }}
                   style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
                     background: canvasMode === "visual" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
@@ -858,17 +865,18 @@ export default function WhiteboardPanel({
                   Animated
                 </button>
               </div>
-              {canvasMode === "tldraw" ? (
-                <div style={{ height: 520 }}>
-                  <TldrawCanvas
-                    noteCards={teachNoteCards}
-                    pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-                    onAnchorClick={onAnchorStep ?? undefined}
-                    whiteboardGrammar={whiteboardGrammar}
-                    vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
-                  />
-                </div>
-              ) : (
+              {/* Both views stay mounted so tldraw editor state (student annotations) is
+                  preserved across Canvas ↔ Animated switches. CSS display toggles visibility. */}
+              <div style={{ height: 520, display: canvasMode === "tldraw" ? "block" : "none" }}>
+                <TldrawCanvas
+                  noteCards={teachNoteCards}
+                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  onAnchorClick={onAnchorStep ?? undefined}
+                  whiteboardGrammar={whiteboardGrammar}
+                  vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
+                />
+              </div>
+              <div style={{ display: canvasMode === "visual" ? "block" : "none" }}>
                 <VisualSceneEngine
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
@@ -876,7 +884,7 @@ export default function WhiteboardPanel({
                   whiteboardGrammar={whiteboardGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                 />
-              )}
+              </div>
             </div>
           )}
 
