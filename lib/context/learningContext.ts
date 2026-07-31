@@ -23,7 +23,7 @@ function detectAudienceFromTitle(title: string): string {
   if (/oral.?surg/.test(t)) return "oral-surgeon";
   if (/pediatric|child/.test(t)) return "child";
   if (/beginner|intro|basic/.test(t)) return "beginner";
-  return "dental-student";
+  return "student";
 }
 
 export interface LearningContextState {
@@ -76,7 +76,7 @@ export const useCurrentLearningContext = create<CurrentLearningContext>((set) =>
   totalPages: 0,
   selectedText: "",
   activeConcept: null,
-  teachingAudience: "dental-student",
+  teachingAudience: "student",
   whiteboardGrammar: "flow",
   readerAnchor: null,
 

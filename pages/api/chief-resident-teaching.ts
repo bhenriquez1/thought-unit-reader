@@ -31,6 +31,7 @@ export type TeachingMode =
   | "explain-page";
 
 export type TeachingAudience =
+  | "student"
   | "beginner"
   | "dental-student"
   | "dentist"
@@ -84,6 +85,13 @@ export interface ChiefResidentRequest {
 // ---------------------------------------------------------------------------
 // System prompts — all static developer-authored text (no user data)
 // ---------------------------------------------------------------------------
+
+// Prepended to every system prompt to enforce page-content authority over
+// any learner-profile or domain-persona inference.
+const CONTENT_AUTHORITY = `CONTENT AUTHORITY — applies to every response:
+The page content and source material provided are authoritative. Never introduce a professional domain, diagnosis, procedure, clinical specialty, or example that is not directly supported by the content provided. The learner level controls explanation depth and language complexity only — it must never override the detected subject matter or page topic. When learner profile and page topic conflict, always follow the page topic.
+
+`;
 
 const BASE_SYSTEM = `You are an adaptive AI tutor. You teach interactively from whatever content the learner gives you.
 
@@ -178,14 +186,17 @@ Rules:
 - Do NOT start with "Great question!" or "Interesting!" Just respond directly.
 - Ground all explanations in the source content provided.`;
 
+// Depth/tone modifiers only — no domain injection. Subject is always determined
+// from the page content, never from the learner profile.
 const AUDIENCE_MODIFIERS: Record<string, string> = {
-  "beginner":       "\n\nAUDIENCE: The learner is a complete beginner. Use very simple language, build from first principles, and define any jargon before using it.",
-  "dental-student": "\n\nAUDIENCE: The learner is a dental student in pre-clinical years. Connect concepts to dentistry when relevant. Emphasize mechanisms that appear on the DAT and in dental boards.",
-  "dentist":        "\n\nAUDIENCE: The learner is a licensed dentist refreshing knowledge. Use clinical terminology freely. Focus on practical applications, clinical pearls, and evidence-based nuances.",
-  "oral-surgeon":   "\n\nAUDIENCE: The learner is an oral surgeon or advanced specialist. Use highly technical language. Focus on mechanisms, edge cases, complications, and evidence-based distinctions.",
-  "dat":            "\n\nAUDIENCE: The learner is preparing for the DAT exam. Focus on what is high-yield for the DAT: common question patterns, traps, mechanisms the ADA tests, and memory anchors that survive exam-day pressure.",
-  "board-review":   "\n\nAUDIENCE: The learner is doing board exam review. Focus on high-yield algorithms, reasoning patterns, and the concepts most commonly tested on boards.",
-  "child":          "\n\nAUDIENCE: The learner is a young child (ages 8–12). Use very simple, friendly language. Draw analogies to everyday things they know. Short sentences. Make it fun and encouraging.",
+  "student":        "",
+  "beginner":       "\n\nDEPTH: The learner is a complete beginner. Build from first principles, define jargon before using it, and keep sentences short.",
+  "dental-student": "\n\nDEPTH: Pre-clinical student. Explain mechanisms step-by-step; assume basic science knowledge but no clinical experience yet.",
+  "dentist":        "\n\nDEPTH: Licensed practitioner refreshing knowledge. Use clinical terminology freely; focus on practical applications and evidence-based nuances.",
+  "oral-surgeon":   "\n\nDEPTH: Advanced specialist. Use highly technical language; focus on mechanisms, edge cases, complications, and evidence-based distinctions.",
+  "dat":            "\n\nDEPTH: Exam-prep learner. Emphasize high-yield patterns, common question traps, and memory anchors that hold up under exam pressure.",
+  "board-review":   "\n\nDEPTH: Board-review learner. Focus on high-yield algorithms, reasoning patterns, and the concepts most commonly tested.",
+  "child":          "\n\nDEPTH: Young child (ages 8–12). Use very simple, friendly language; short sentences; analogies to everyday things; make it fun.",
 };
 
 function getSystemPrompt(mode: TeachingMode, audience?: string): string {
@@ -197,7 +208,7 @@ function getSystemPrompt(mode: TeachingMode, audience?: string): string {
   else if (mode === "explain-page")   base = EXPLAIN_PAGE_SYSTEM;
   else                                base = BASE_SYSTEM;
   if (audience && AUDIENCE_MODIFIERS[audience]) base += AUDIENCE_MODIFIERS[audience];
-  return base;
+  return CONTENT_AUTHORITY + base;
 }
 
 // ---------------------------------------------------------------------------
