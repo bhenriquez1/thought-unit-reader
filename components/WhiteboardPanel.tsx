@@ -13,7 +13,6 @@ import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteS
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
-import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
 import dynamic from "next/dynamic";
 const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";

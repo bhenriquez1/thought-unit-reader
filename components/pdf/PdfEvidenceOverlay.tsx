@@ -205,6 +205,7 @@ export default function PdfEvidenceOverlay({
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
+  // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
   const mechanismChain = useMemo(() => {
     return rects
       .filter(r => r.semanticKind === "mechanism" && !r.id.match(/-L\d+$/) && shouldRender(r))
