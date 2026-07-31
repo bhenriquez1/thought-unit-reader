@@ -11,11 +11,20 @@
 //   Narration panel outside the canvas shows the concept body as each shape reveals.
 //   Shape reveal order is deterministic: nodeCard order → nodes first, arrows after.
 //
+// Phase 3 — One Brain sync:
+//   canvas→world: clicking a grounded shape fires onAnchorClick with its sourceId
+//   world→canvas: activeAnchorId prop selects and centers on the matching shape
+//
+// Phase 4 — Persistence + export:
+//   Canvas snapshots saved to localStorage under SNAP_PREFIX+storageKey,
+//   restored on next mount to preserve student annotations across navigation.
+//   SVG export button exports the current canvas as a downloadable file.
+//
 // Design contract:
 //   - Same 5-tier Avrrio colors as VisualSceneEngine
 //   - `whiteboardGrammar` prop biases initial node positions toward the
 //     domain's natural visual form (hub-spoke for anatomy/law, flow for rest)
-//   - All shapes carry an `annotationTier` meta field for future querying
+//   - All shapes carry deterministic IDs for snapshot reconciliation
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tldraw, createShapeId, type Editor } from "@tldraw/tldraw";
@@ -31,6 +40,7 @@ const TIER_COLORS: Record<string, { fill: string; stroke: string; text: string }
   danger:   { fill: "rgba(252,165,165,0.18)", stroke: "#fca5a5", text: "#7f1d1d" },
   pearl:    { fill: "rgba(103,232,249,0.18)", stroke: "#67e8f9", text: "#083344" },
 };
+void TIER_COLORS; // referenced indirectly via CARD_TYPE_TIER
 
 const CARD_TYPE_TIER: Record<string, string> = {
   must_know: "master", master_concepts: "master", why_this_matters: "master",
@@ -94,7 +104,12 @@ const SELECT_STYLE: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.2)",
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+// localStorage key prefix for persisted canvas snapshots (Phase 4)
+const SNAP_PREFIX = "wb_canvas_";
+
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   noteCards: NoteCard[];
@@ -105,9 +120,17 @@ interface Props {
   vsg?: VisualSceneGraph;
   /** Phase 3: when set, selects and centers on the shape whose sourceId matches. */
   activeAnchorId?: string | null;
+  /** Phase 4: when provided, the canvas snapshot is saved to localStorage under this key
+   *  and restored on the next mount — preserving student annotations across navigation. */
+  storageKey?: string;
 }
 
-export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar = "flow", onAnchorClick, vsg, activeAnchorId }: Props) {
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function TldrawCanvas({
+  noteCards, pageTitle, whiteboardGrammar = "flow",
+  onAnchorClick, vsg, activeAnchorId, storageKey,
+}: Props) {
   const editorRef = useRef<Editor | null>(null);
   const builtRef  = useRef(false);
 
@@ -119,55 +142,65 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
   const [totalShapes,   setTotalShapes]    = useState(0);
 
   // Refs for stable callbacks (avoid stale closures in timeouts)
-  const revealIndexRef    = useRef(-1);
+  const revealIndexRef     = useRef(-1);
   const orderedShapeIdsRef = useRef<ReturnType<typeof createShapeId>[]>([]);
   const narrationMapRef    = useRef<Map<string, string>>(new Map());
 
   // ── Phase 3 One Brain sync refs ───────────────────────────────────────────
-  // sourceId → tldraw shapeId (for outside→canvas highlight)
   const sourceIdToShapeIdRef = useRef<Map<string, string>>(new Map());
-  // tldraw shapeId → sourceId (for canvas→outside click-to-focus)
   const shapeIdToSourceIdRef = useRef<Map<string, string>>(new Map());
-  // Stable ref so the store listener never captures a stale onAnchorClick
-  const onAnchorClickRef = useRef(onAnchorClick);
+  const onAnchorClickRef     = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
-  // Store listener unsubscribe handle
   const storeUnsubRef = useRef<(() => void) | null>(null);
-  // Latest VSG accessible inside buildShapes without adding it to useCallback deps
-  const vsgRef = useRef(vsg);
+  const vsgRef        = useRef(vsg);
   useEffect(() => { vsgRef.current = vsg; }, [vsg]);
 
-  // Keep ref in sync with state
+  // ── Phase 4 persistence refs ──────────────────────────────────────────────
+  const noteCardsRef    = useRef(noteCards);
+  const storageKeyRef   = useRef(storageKey);
+  useEffect(() => { noteCardsRef.current = noteCards; }, [noteCards]);
+  useEffect(() => { storageKeyRef.current = storageKey; }, [storageKey]);
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveUnsubRef    = useRef<(() => void) | null>(null);
+
+  // ── Keep revealIndex ref in sync with state ───────────────────────────────
   const setRevealIndex = useCallback((n: number) => {
     revealIndexRef.current = n;
     setRevealIndexState(n);
   }, []);
 
-  // ── Build shapes from noteCards ───────────────────────────────────────────
+  // ── Shared anchor helpers (used by buildShapes and rebuildRefsFromCards) ──
+
+  const makeVsgLabelMap = useCallback((): Map<string, string> => {
+    const m = new Map<string, string>();
+    if (vsgRef.current) {
+      for (const node of vsgRef.current.nodes) {
+        m.set(node.label.trim().toLowerCase(), node.sourceId);
+      }
+    }
+    return m;
+  }, []); // only reads the vsgRef
+
+  const makeAnchorSourceId = useCallback(
+    (labelMap: Map<string, string>, cardIdx: number, cardTitle: string): string => {
+      const key = cardTitle.trim().toLowerCase();
+      return labelMap.get(key)
+        ?? `nc_${cardIdx}_${cardTitle.slice(0, 20).replace(/\s+/g, "_")}`;
+    },
+    [],
+  );
+
+  // ── Build shapes from noteCards (fresh canvas) ───────────────────────────
   const buildShapes = useCallback((editor: Editor) => {
     if (!noteCards.length) return;
     editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
 
-    // Reset reveal and One Brain bookkeeping
     orderedShapeIdsRef.current   = [];
     narrationMapRef.current      = new Map();
     sourceIdToShapeIdRef.current = new Map();
     shapeIdToSourceIdRef.current = new Map();
 
-    // Build label→sourceId lookup from VSG when available so clicks use real entry IDs.
-    // Falls back to computing the ID from the noteCardsToCanonicalEntries formula.
-    const vsgLabelMap = new Map<string, string>(); // normalised label → sourceId
-    if (vsgRef.current) {
-      for (const node of vsgRef.current.nodes) {
-        vsgLabelMap.set(node.label.trim().toLowerCase(), node.sourceId);
-      }
-    }
-
-    const anchorSourceId = (cardIdx: number, cardTitle: string): string => {
-      const key = cardTitle.trim().toLowerCase();
-      return vsgLabelMap.get(key)
-        ?? `nc_${cardIdx}_${cardTitle.slice(0, 20).replace(/\s+/g, "_")}`;
-    };
+    const vsgLabelMap = makeVsgLabelMap();
 
     const registerAnchor = (sid: ReturnType<typeof createShapeId>, sourceId: string) => {
       sourceIdToShapeIdRef.current.set(sourceId, String(sid));
@@ -176,19 +209,21 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
 
     let y = 60;
     noteCards.forEach((card, cardIdx) => {
-      const tier    = CARD_TYPE_TIER[card.type] ?? "pearl";
-      const nodes   = card.visual?.nodes ?? [];
-      const arrows  = card.visual?.arrows ?? [];
+      const tier   = CARD_TYPE_TIER[card.type] ?? "pearl";
+      const nodes  = card.visual?.nodes ?? [];
+      const arrows = card.visual?.arrows ?? [];
+      const anchorId = makeAnchorSourceId(vsgLabelMap, cardIdx, card.title);
 
       if (nodes.length === 0) {
         const sid = createShapeId(`card-${cardIdx}`);
         editor.createShape({
-          id: sid, type: "text", x: 100, y, opacity: 0,
+          id: sid, type: "text", x: 100, y,
           props: { text: card.title + "\n" + card.body.slice(0, 120), size: "s", font: "sans", color: "black" },
-        });
+        } as any); // opacity:0 not in narrow union; set below
+        editor.updateShape({ id: sid, type: "text", opacity: 0 });
         orderedShapeIdsRef.current.push(sid);
         narrationMapRef.current.set(sid, card.body);
-        registerAnchor(sid, anchorSourceId(cardIdx, card.title));
+        registerAnchor(sid, anchorId);
         y += 120;
         return;
       }
@@ -199,21 +234,20 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
         const sid = createShapeId(`n-${cardIdx}-${nIdx}`);
         const pos = positions[nIdx] ?? { x: 100, y: y + nIdx * 110 };
         editor.createShape({
-          id: sid, type: "geo", x: pos.x, y: pos.y + y, opacity: 0,
+          id: sid, type: "geo", x: pos.x, y: pos.y + y,
           props: {
             geo: "rectangle", w: 230, h: 56, text: node.label, fill: "solid", size: "s",
-            color: tier === "master" ? "yellow" : tier === "step" ? "green"
-                 : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
+            color: tier === "master" ? "yellow" : tier === "step"   ? "green"
+                 : tier === "danger" ? "red"    : tier === "pearl"  ? "light-blue" : "blue",
           },
-        });
+        } as any);
+        editor.updateShape({ id: sid, type: "geo", opacity: 0 });
         orderedShapeIdsRef.current.push(sid);
-        // First node of a card gets full card body; subsequent nodes get just their label
         narrationMapRef.current.set(sid, nIdx === 0
           ? (card.title ? `${card.title}\n\n${card.body}` : card.body)
           : node.label,
         );
-        // First node is the One Brain anchor for this card
-        if (nIdx === 0) registerAnchor(sid, anchorSourceId(cardIdx, card.title));
+        if (nIdx === 0) registerAnchor(sid, anchorId);
       });
 
       arrows.forEach((arrow, aIdx) => {
@@ -225,15 +259,15 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
         const sid = createShapeId(`a-${cardIdx}-${aIdx}`);
         editor.createShape({
           id: sid, type: "arrow",
-          x: fromPos.x + 115 + 100, y: fromPos.y + y + 28, opacity: 0,
+          x: fromPos.x + 115 + 100, y: fromPos.y + y + 28,
           props: {
             start: { type: "point", x: 0, y: 0 },
             end:   { type: "point", x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
             text: arrow.label ?? "", size: "s",
             color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
           },
-        });
-        // Arrows reveal after their nodes but carry no narration text
+        } as any);
+        editor.updateShape({ id: sid, type: "arrow", opacity: 0 });
         orderedShapeIdsRef.current.push(sid);
         if (arrow.label) narrationMapRef.current.set(sid, arrow.label);
       });
@@ -242,12 +276,80 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
     });
 
     setTotalShapes(orderedShapeIdsRef.current.length);
-    editor.zoomToFit({ duration: 200 });
-  }, [noteCards, whiteboardGrammar]);
+    editor.zoomToFit();
+  }, [noteCards, whiteboardGrammar, makeVsgLabelMap, makeAnchorSourceId]);
 
+  // ── Rebuild index refs from noteCards without touching the canvas ─────────
+  // Used after restoring a saved snapshot so the reveal controller still works.
+  const rebuildRefsFromCards = useCallback((cards: NoteCard[]) => {
+    orderedShapeIdsRef.current   = [];
+    narrationMapRef.current      = new Map();
+    sourceIdToShapeIdRef.current = new Map();
+    shapeIdToSourceIdRef.current = new Map();
+
+    const vsgLabelMap = makeVsgLabelMap();
+
+    const registerAnchor = (sid: ReturnType<typeof createShapeId>, sourceId: string) => {
+      sourceIdToShapeIdRef.current.set(sourceId, String(sid));
+      shapeIdToSourceIdRef.current.set(String(sid), sourceId);
+    };
+
+    cards.forEach((card, cardIdx) => {
+      const nodes  = card.visual?.nodes ?? [];
+      const arrows = card.visual?.arrows ?? [];
+      const anchorId = makeAnchorSourceId(vsgLabelMap, cardIdx, card.title);
+
+      if (nodes.length === 0) {
+        const sid = createShapeId(`card-${cardIdx}`);
+        orderedShapeIdsRef.current.push(sid);
+        narrationMapRef.current.set(sid, card.body);
+        registerAnchor(sid, anchorId);
+        return;
+      }
+
+      nodes.forEach((node, nIdx) => {
+        const sid = createShapeId(`n-${cardIdx}-${nIdx}`);
+        orderedShapeIdsRef.current.push(sid);
+        narrationMapRef.current.set(sid, nIdx === 0
+          ? (card.title ? `${card.title}\n\n${card.body}` : card.body)
+          : node.label);
+        if (nIdx === 0) registerAnchor(sid, anchorId);
+      });
+
+      arrows.forEach((arrow, aIdx) => {
+        const sid = createShapeId(`a-${cardIdx}-${aIdx}`);
+        orderedShapeIdsRef.current.push(sid);
+        if (arrow.label) narrationMapRef.current.set(sid, arrow.label);
+      });
+    });
+
+    setTotalShapes(orderedShapeIdsRef.current.length);
+  }, [makeVsgLabelMap, makeAnchorSourceId]);
+
+  // ── Mount handler ─────────────────────────────────────────────────────────
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
-    if (!builtRef.current) {
+
+    // Phase 4: try to restore a saved snapshot before building from scratch
+    const key = storageKeyRef.current;
+    let restored = false;
+    if (key) {
+      try {
+        const saved = localStorage.getItem(SNAP_PREFIX + key);
+        if (saved) {
+          const snapshot = JSON.parse(saved);
+          editor.loadSnapshot(snapshot);
+          // Rebuild ordered refs from current noteCards so reveal controller works
+          rebuildRefsFromCards(noteCardsRef.current);
+          builtRef.current = true;
+          restored = true;
+        }
+      } catch {
+        // malformed or incompatible snapshot — fall through to fresh build
+      }
+    }
+
+    if (!restored && !builtRef.current) {
       builtRef.current = true;
       buildShapes(editor);
     }
@@ -264,10 +366,33 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
       },
       { scope: "session", source: "user" },
     );
-  }, [buildShapes]);
 
-  // Unsubscribe store listener on unmount
-  useEffect(() => () => { storeUnsubRef.current?.(); }, []);
+    // Phase 4: auto-save on user-initiated document changes (debounced 1.5 s)
+    saveUnsubRef.current?.();
+    if (key) {
+      saveUnsubRef.current = editor.store.listen(
+        () => {
+          if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+          saveDebounceRef.current = setTimeout(() => {
+            try {
+              const snap = editor.getSnapshot();
+              localStorage.setItem(SNAP_PREFIX + key, JSON.stringify(snap));
+            } catch {
+              // quota exceeded or private browsing — silently ignore
+            }
+          }, 1500);
+        },
+        { scope: "document", source: "user" },
+      );
+    }
+  }, [buildShapes, rebuildRefsFromCards]);
+
+  // Cleanup all store listeners and pending debounce on unmount
+  useEffect(() => () => {
+    storeUnsubRef.current?.();
+    saveUnsubRef.current?.();
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+  }, []);
 
   // Rebuild when noteCards change; reset controller state
   useEffect(() => {
@@ -297,10 +422,10 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
   }, [setRevealIndex]);
 
   const handlePrev = useCallback(() => {
-    const editor   = editorRef.current;
+    const editor  = editorRef.current;
     if (!editor) return;
-    const ordered  = orderedShapeIdsRef.current;
-    const currIdx  = revealIndexRef.current;
+    const ordered = orderedShapeIdsRef.current;
+    const currIdx = revealIndexRef.current;
     if (currIdx < 0) return;
     const sid   = ordered[currIdx];
     const shape = editor.getShape(sid);
@@ -358,9 +483,33 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
     editor.select(sid as ReturnType<typeof createShapeId>);
     const bounds = editor.getShapePageBounds(sid as ReturnType<typeof createShapeId>);
     if (bounds) {
-      editor.centerOnPoint({ x: bounds.midX, y: bounds.midY }, { duration: 300 });
+      editor.centerOnPoint({ x: bounds.midX, y: bounds.midY });
     }
   }, [activeAnchorId]);
+
+  // Phase 4: SVG export
+  const handleExport = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    try {
+      const shapeIds = [...editor.getCurrentPageShapeIds()];
+      if (!shapeIds.length) return;
+      // getSvgString is the stable tldraw v2 export API (returns { svg: string })
+      const result = await (editor as any).getSvgString(shapeIds, { background: false });
+      const svgStr: string | undefined = typeof result === "string" ? result : result?.svg;
+      if (!svgStr) return;
+      const blob = new Blob([svgStr], { type: "image/svg+xml" });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement("a"), {
+        href: url,
+        download: `${storageKeyRef.current ?? "whiteboard"}.svg`,
+      });
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // export not supported in this environment — silently ignore
+    }
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -433,6 +582,11 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
             <option value="normal">Normal</option>
             <option value="fast">Fast</option>
           </select>
+
+          {/* Export SVG (Phase 4) */}
+          <button onClick={handleExport} title="Export canvas as SVG" style={BTN_MUTED}>
+            ↓ SVG
+          </button>
         </span>
       </div>
 

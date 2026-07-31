@@ -159,6 +159,7 @@ export default function WhiteboardPanel({
   learningProfile,
   onOpenChiefResident,
   whiteboardGrammar,
+  canonicalEntries,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -208,6 +209,11 @@ export default function WhiteboardPanel({
       pageNumber: currentPage,
     });
   }, [canonicalEntries, teachNoteCards, whiteboardGrammar, currentPage]);
+
+  // Stable key for localStorage canvas persistence — scoped to book + page.
+  const canvasStorageKey = bookId && currentPage != null
+    ? `${bookId}_p${currentPage}`
+    : undefined;
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -875,6 +881,7 @@ export default function WhiteboardPanel({
                   activeAnchorId={activeAnchorId}
                   whiteboardGrammar={whiteboardGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
+                  storageKey={canvasStorageKey}
                 />
               </div>
               <div style={{ display: canvasMode === "visual" ? "block" : "none" }}>
