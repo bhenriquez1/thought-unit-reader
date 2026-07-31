@@ -22,7 +22,6 @@ import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/t
 import ImportanceBadge from "./ImportanceBadge";
 import EvidencePanel from "./EvidencePanel";
 import ReaderModeBar from "./ReaderModeBar";
-import TocModeBar from "./TocModeBar";
 import SemanticSearch from "./SemanticSearch";
 import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
 import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
@@ -650,10 +649,9 @@ export default function ThoughtUnitNavigator({
         </div>
       )}
 
-      {/* Thin divider + mode controls (compact) */}
+      {/* Thin divider + search/domain controls */}
       <div className="h-px bg-white/8 mx-2" />
       <div className="flex items-center gap-1.5 px-2 py-1">
-        <TocModeBar className="shrink-0" />
         {entries.length > 0 && (
           <SemanticSearch
             entries={entries}
@@ -915,8 +913,7 @@ export default function ThoughtUnitNavigator({
       </div>
 
       {/* Main content — Student Guide (learning order) is the default; concept + standard are power-user modes */}
-      {(tocViewMode === "learning" || tocViewMode === "standard") && renderLearningGroups()}
-      {tocViewMode === "concept" && renderCanonicalGroups()}
+      {renderLearningGroups()}
       {/* (Legacy standard kind-grouping removed — Standard and Learning now share renderLearningGroups) */}
       {false && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;

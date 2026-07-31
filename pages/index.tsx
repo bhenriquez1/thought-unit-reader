@@ -5213,7 +5213,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1 flex-wrap">
-              {(["sources", "notes", "studyguide", "teaching"] as const).map(v => (
+              {(["sources", "notes", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
@@ -5223,27 +5223,14 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "✍️ Workspace" : v === "studyguide" ? "📑 Study Guide" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
+                  {v === "notes" ? "✍️ Workspace" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Learning Source Graph sub-tab — connected to readingFocusStore.thoughtUnitId */}
+          {/* Sources — Adaptive Guide (top) + Learning Source Graph (below) */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "sources" ? "flex" : "none", flexDirection: "column" }}>
-            <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
-              <LearningSourcesManager
-                bookId={bookId}
-                currentPage={currentPage}
-                studyModel={currentPageStudyModel}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
-                refreshKey={noteLabRefreshKey}
-              />
-            </ErrorBoundary>
-          </div>
-
-          {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
-          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
             <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
               <StudyGuideLab
                 bookId={bookId}
@@ -5255,6 +5242,16 @@ export default function ThoughtUnitReader() {
                 onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
                 onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
                 onPodcastScript={(script) => setStudyGuideScript(script)}
+              />
+            </ErrorBoundary>
+            <div className="h-px bg-white/10 mx-3 shrink-0" />
+            <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
+              <LearningSourcesManager
+                bookId={bookId}
+                currentPage={currentPage}
+                studyModel={currentPageStudyModel}
+                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+                refreshKey={noteLabRefreshKey}
               />
             </ErrorBoundary>
           </div>
