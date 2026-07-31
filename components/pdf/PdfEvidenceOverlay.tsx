@@ -205,12 +205,18 @@ export default function PdfEvidenceOverlay({
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
-  // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
   const mechanismChain = useMemo(() => {
     return rects
       .filter(r => r.semanticKind === "mechanism" && !r.id.match(/-L\d+$/) && shouldRender(r))
       .sort((a, b) => a.top - b.top);
   }, [rects]);
+
+  // Step indices for mechanism rects — used to render 1/2/3 sequence numbers.
+  const mechanismStepIndex = useMemo(() => {
+    const idx = new Map<string, number>();
+    mechanismChain.forEach((r, i) => idx.set(r.id, i + 1));
+    return idx;
+  }, [mechanismChain]);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
@@ -299,12 +305,19 @@ export default function PdfEvidenceOverlay({
               height: rect.height,
               borderRadius: "6px",
               backgroundColor: activeFocused ? cfg.bgFocused : cfg.bgNormal,
-              boxShadow: activeFocused ? undefined : tierStyle.boxShadow,
               border: activeFocused ? undefined : tierStyle.border,
-              // Definition anchors get a gold left-edge accent — "boxed definition" feel.
+              // Definition anchors: prominent gold left-edge bar like a textbook margin marker.
+              // Trap anchors: red left-edge bar to signal danger.
               borderLeft: rect.semanticKind === "definition"
-                ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
+                ? `5px solid rgba(253,224,71,${activeFocused ? 1 : 0.75})`
+                : rect.semanticKind === "trap"
+                ? `4px solid rgba(252,165,165,${activeFocused ? 1 : 0.7})`
                 : undefined,
+              boxShadow: rect.semanticKind === "definition"
+                ? activeFocused
+                  ? "-2px 0 8px rgba(253,224,71,0.35)"
+                  : `${tierStyle.boxShadow ? `${tierStyle.boxShadow}, ` : ""}-1px 0 5px rgba(253,224,71,0.18)`
+                : activeFocused ? undefined : tierStyle.boxShadow,
               overflow: "visible",
               opacity: dimmed ? 0.45 : 1,
               transition: "opacity 180ms ease, background-color 150ms ease",
@@ -312,7 +325,8 @@ export default function PdfEvidenceOverlay({
             aria-label={`${displayLabel || "Evidence"} highlight`}
           >
             {/* Margin label — first line only. Shows domain-adaptive tier name (e.g. CONCEPT for
-                chemistry, RULE for law); adds a secondary reason line when margin space allows. */}
+                chemistry, RULE for law); adds a secondary reason line when margin space allows.
+                Trap anchors get a ⚠ prefix; clinical pearls get a 💎 prefix. */}
             {displayLabel && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
@@ -342,12 +356,37 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
+                {rect.semanticKind === "trap" ? "⚠ " : (rect.semanticKind === "clinical" || rect.semanticKind === "memoryAnchor") ? "💎 " : ""}
                 {displayLabel}
                 {rect.reason && hasLeftMargin && (
                   <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
                     {rect.reason.length > 24 ? rect.reason.slice(0, 23) + "…" : rect.reason}
                   </span>
                 )}
+              </span>
+            )}
+            {/* Step number badge for mechanism sequence — shows 1/2/3 inside the highlight rect. */}
+            {rect.semanticKind === "mechanism" && isFirstLine && mechanismStepIndex.has(baseId) && rect.height >= 8 && (
+              <span
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  right: 4,
+                  fontSize: 7,
+                  lineHeight: "11px",
+                  fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                  fontWeight: 700,
+                  background: "rgba(20,83,45,0.90)",
+                  color: "#86efac",
+                  borderRadius: "3px",
+                  padding: "1px 4px",
+                  pointerEvents: "none",
+                  userSelect: "none",
+                  opacity: activeFocused ? 1 : 0.85,
+                }}
+              >
+                {mechanismStepIndex.get(baseId)}
               </span>
             )}
           </button>
