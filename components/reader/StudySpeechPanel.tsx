@@ -318,9 +318,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   type PlayState = "idle" | "loading" | "playing" | "paused" | "error";
   const [playState, setPlayState] = useState<PlayState>("idle");
+  // Ref mirror of playState for async callbacks and effects that need to read
+  // the current playing state without stale closures. True when speech is
+  // actively producing audio (playing or loading the next segment).
+  const isPlayingRef = useRef(false);
   // Bridge local PlayState → shared ReadingFocusStore so PDF overlay, ThoughtUnitNavigator,
   // and scroll guards can read playback state without subscribing to this component's local state.
   function updatePlayState(state: PlayState) {
+    isPlayingRef.current = state === 'playing' || state === 'loading';
     setPlayState(state);
     const storeState: 'idle' | 'playing' | 'paused' | 'loading' =
       state === 'playing' ? 'playing'
@@ -639,10 +644,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Stop audio when the active thought unit changes so previous concept's audio
-  // doesn't keep playing while a new unit is focused.
+  // Stop audio when the active thought unit changes — but only for user-initiated
+  // selections. Speech itself advances selectedUnitId via setThoughtUnit(); if we
+  // called stopAudio() here unconditionally, speech would self-cancel on every
+  // segment boundary. isPlayingRef guards against that feedback loop.
   useEffect(() => {
     if (!selectedUnitId) return;
+    if (isPlayingRef.current) return;
     stopAudio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUnitId]);
