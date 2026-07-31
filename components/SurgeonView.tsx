@@ -45,7 +45,6 @@ export default function SurgeonView({
     selectedAnnotationId,
     setActiveDocument,
     setActiveChapter,
-    setActivePage,
     setPendingHighlight,
     confirmHighlight,
     cancelHighlight,
@@ -76,9 +75,7 @@ export default function SurgeonView({
     setActiveChapter(chapterId || null);
   }, [chapterId, setActiveChapter]);
 
-  useEffect(() => {
-    setActivePage(pageIndex);
-  }, [pageIndex, setActivePage]);
+  // setActivePage is now driven by the annotationStore CLC subscription (Phase 3 One Brain).
 
   // Get annotations for current page
   const pageAnnotations = useMemo(() => {

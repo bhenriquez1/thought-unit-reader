@@ -576,6 +576,7 @@ export default function ThoughtUnitReader() {
     currentPage,
     setDocumentId: setCurrentLocalDocumentId,
     setBookId,
+    setDocumentTitle,
     setPage: setCurrentPage,
     setTotalPages,
   } = useCurrentLearningContext();
@@ -1545,6 +1546,8 @@ export default function ThoughtUnitReader() {
   // bookId and setBookId come from useCurrentLearningContext (declared near top of component).
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+  // Keep documentTitle in CLC in sync with bookId (the PDF filename without extension).
+  useEffect(() => { if (bookId) setDocumentTitle(bookId); }, [bookId, setDocumentTitle]);
   // useKnowledgeGraph must be called after bookId is available
   const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
 

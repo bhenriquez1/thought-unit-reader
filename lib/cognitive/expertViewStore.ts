@@ -523,13 +523,22 @@ export const useExpertViewStore = create<ExpertViewStore>()(
   )
 );
 
-// Phase 2 One Brain: auto-sync current page from CurrentLearningContext.
-// setDocument is NOT subscribed here — it requires documentTitle which is not
-// in CurrentLearningContext yet (planned for Phase 3).
+// Phase 3 One Brain: auto-sync document + page from CurrentLearningContext.
+// documentTitle is now part of CLC so setDocument can be fully subscribed.
 if (typeof window !== 'undefined') {
   useCurrentLearningContext.subscribe((state, prev) => {
+    const store = useExpertViewStore.getState();
+    if (
+      state.documentId !== prev.documentId ||
+      state.documentTitle !== prev.documentTitle ||
+      state.totalPages !== prev.totalPages
+    ) {
+      if (state.documentId && state.documentTitle) {
+        store.setDocument(state.documentId, state.documentTitle, state.totalPages);
+      }
+    }
     if (state.currentPage !== prev.currentPage) {
-      useExpertViewStore.getState().setPage(Math.max(1, state.currentPage));
+      store.setPage(Math.max(1, state.currentPage));
     }
   });
 }

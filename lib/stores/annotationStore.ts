@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { getDbInstance } from '@/lib/firebase';
 import { useCourseContextStore } from './courseContextStore';
+import { useCurrentLearningContext } from '../context/learningContext';
 import { 
   collection, 
   doc, 
@@ -881,6 +882,18 @@ export function getPDRMBgColorForType(type: 'P' | 'D' | 'R' | 'M'): string {
     M: 'bg-yellow-600/20'
   };
   return colors[type];
+}
+
+// Phase 3 One Brain: auto-sync active page from CurrentLearningContext.
+// annotationStore uses 0-based pageIndex; CLC uses 1-based currentPage.
+// setActiveDocument is NOT subscribed here — it requires userId which is
+// managed by the auth layer, not CurrentLearningContext.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (state.currentPage !== prev.currentPage) {
+      useAnnotationStore.getState().setActivePage(Math.max(0, state.currentPage - 1));
+    }
+  });
 }
 
 export default useAnnotationStore;
