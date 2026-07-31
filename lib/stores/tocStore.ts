@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 export interface TocItem {
   id: string;
@@ -412,6 +413,15 @@ export function isTocLowQuality(toc: DocumentToc): boolean {
   const unique = new Set(items.map((it) => it.title.trim().toLowerCase()));
   if (unique.size === 1) return true;
   return false;
+}
+
+// Phase 5 One Brain: auto-track active document in TOC store via CLC.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (state.documentId !== prev.documentId && state.documentId) {
+      useTocStore.getState().setActiveToc(state.documentId);
+    }
+  });
 }
 
 export default useTocStore;
