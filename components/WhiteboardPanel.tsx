@@ -799,17 +799,16 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* ── Interactive canvas ─────────────────────────────────────────── */}
-          {teachNoteCards.length > 0 && (
-            <div style={{ height: 520 }}>
-              <TldrawCanvas
-                noteCards={teachNoteCards}
-                pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-                onAnchorClick={onAnchorStep ?? undefined}
-                whiteboardGrammar={whiteboardGrammar}
-              />
-            </div>
-          )}
+          {/* ── Interactive canvas — always mounted; auto-draws when noteCards arrive ── */}
+          <div style={{ height: 520 }}>
+            <TldrawCanvas
+              noteCards={teachNoteCards}
+              pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+              onAnchorClick={onAnchorStep ?? undefined}
+              whiteboardGrammar={whiteboardGrammar}
+              autoReveal
+            />
+          </div>
 
           {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}
           {!studyModel && (
