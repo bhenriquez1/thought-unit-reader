@@ -13,6 +13,7 @@ import type {
   TocNode,
   ExtractionMode,
 } from './types';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 // ============================================================================
 // State Interface
@@ -255,5 +256,18 @@ export const usePageContextStore = create<PageContextStore>()(
     }
   )
 );
+
+// Phase 2 One Brain: auto-sync page + document from CurrentLearningContext.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    const store = usePageContextStore.getState();
+    if (state.documentId !== prev.documentId || state.totalPages !== prev.totalPages) {
+      if (state.documentId) store.setDocument(state.documentId, state.totalPages);
+    }
+    if (state.currentPage !== prev.currentPage) {
+      store.setPage(state.currentPage);
+    }
+  });
+}
 
 export default usePageContextStore;

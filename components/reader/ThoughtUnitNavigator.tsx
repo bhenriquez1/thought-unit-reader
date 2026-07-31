@@ -22,7 +22,6 @@ import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/t
 import ImportanceBadge from "./ImportanceBadge";
 import EvidencePanel from "./EvidencePanel";
 import ReaderModeBar from "./ReaderModeBar";
-import TocModeBar from "./TocModeBar";
 import SemanticSearch from "./SemanticSearch";
 import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
 import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
@@ -650,10 +649,9 @@ export default function ThoughtUnitNavigator({
         </div>
       )}
 
-      {/* Thin divider + mode controls (compact) */}
+      {/* Thin divider + search/domain controls */}
       <div className="h-px bg-white/8 mx-2" />
       <div className="flex items-center gap-1.5 px-2 py-1">
-        <TocModeBar className="shrink-0" />
         {entries.length > 0 && (
           <SemanticSearch
             entries={entries}
@@ -915,16 +913,12 @@ export default function ThoughtUnitNavigator({
       </div>
 
       {/* Main content — Student Guide (learning order) is the default; concept + standard are power-user modes */}
-      {(tocViewMode === "learning" || tocViewMode === "standard") && renderLearningGroups()}
-      {tocViewMode === "concept" && renderCanonicalGroups()}
-      {/* Legacy standard kind-grouping only shown when concept mode is explicitly off and canonical grouping is inactive */}
-      {false && tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+      {renderLearningGroups()}
+      {/* (Legacy standard kind-grouping removed — Standard and Learning now share renderLearningGroups) */}
+      {false && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
-        // Adaptive Thought Unit Engine: groups arrive in the preset's own expert-priority
-        // order, so ordinal position doubles as an importance tier — low tiers (Supporting/
-        // Minor) start collapsed, same as an expert skimming past the supporting detail.
         const tier = getImportanceTier(groupIndex);
         const userToggled = collapsedGroups.has(id);
         const defaultCollapsed = tier.stars <= DEFAULT_COLLAPSE_AT_OR_BELOW_STARS;
@@ -932,7 +926,6 @@ export default function ThoughtUnitNavigator({
         return (
           <React.Fragment key={id}>
           <div className="flex flex-col gap-1">
-            {/* Full-width colored chapter header — replaces old small-dot layout */}
             <button
               type="button"
               onClick={() => toggleGroup(id)}

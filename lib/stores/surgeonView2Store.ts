@@ -20,6 +20,7 @@ import type {
   ReasoningLens,
 } from '../surgeonView2/types';
 import { clusterConcepts, detectPearls } from '../surgeonView2/clustering';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 // ============================================================================
 // Cache Types
@@ -39,10 +40,6 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 // ============================================================================
 
 interface SurgeonView2State {
-  // Document
-  documentId: string | null;
-  currentPage: number;
-
   // Concepts & Clustering
   concepts: CoreConceptV2[];
   clusters: ConceptCluster[];
@@ -68,10 +65,6 @@ interface SurgeonView2State {
 
   // Per-page cache
   pageCache: Record<string, PageCache>;
-
-  // Actions
-  setDocument: (documentId: string) => void;
-  setCurrentPage: (page: number) => void;
 
   // Concept management
   setConcepts: (concepts: CoreConceptV2[], pageNumber: number) => void;
@@ -152,8 +145,6 @@ export const useSurgeonView2Store = create<SurgeonView2State>()(
   persist(
     (set, get) => ({
       // Initial state
-      documentId: null,
-      currentPage: 1,
       concepts: [],
       clusters: [],
       pearls: [],
@@ -167,42 +158,10 @@ export const useSurgeonView2Store = create<SurgeonView2State>()(
       extractionProgress: 0,
       pageCache: {},
 
-      // Document management
-      setDocument: (documentId: string) => {
-        set({ documentId, currentPage: 1, concepts: [], clusters: [], pearls: [] });
-      },
-
-      setCurrentPage: (page: number) => {
-        const { documentId, pageCache } = get();
-
-        // Check cache first
-        if (documentId) {
-          const cached = get().getCachedPage(documentId, page);
-          if (cached) {
-            set({
-              currentPage: page,
-              concepts: cached.concepts,
-              clusters: cached.clusters,
-              pearls: cached.pearls,
-            });
-            return;
-          }
-        }
-
-        // Clear current concepts when no cache
-        set({
-          currentPage: page,
-          concepts: [],
-          clusters: [],
-          pearls: [],
-          selectedConceptId: null,
-          selectedPearlId: null,
-        });
-      },
-
       // Concept management
       setConcepts: (concepts: CoreConceptV2[], pageNumber: number) => {
-        const { documentId } = get();
+        // documentId lives in CurrentLearningContext — read via .getState() (no hook needed).
+        const { documentId } = useCurrentLearningContext.getState();
 
         // Auto-cluster concepts
         const clusters = clusterConcepts(concepts);
@@ -303,10 +262,9 @@ export const useSurgeonView2Store = create<SurgeonView2State>()(
       },
 
       jumpToSource: (anchor: SourceAnchor) => {
-        set({
-          highlightedAnchor: anchor,
-          currentPage: anchor.pageIndex + 1, // Convert 0-based to 1-based
-        });
+        // Navigate the reader to the anchor's page via CurrentLearningContext.
+        useCurrentLearningContext.getState().setPage(anchor.pageIndex + 1);
+        set({ highlightedAnchor: anchor });
       },
 
       // Filter management

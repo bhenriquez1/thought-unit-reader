@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useCurrentLearningContext } from '../context/learningContext';
 import type {
   SurgeonEngineState,
   ExtractedUnit,
@@ -507,5 +508,16 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
     }
   )
 );
+
+// Phase 3 One Brain: auto-sync current page from CurrentLearningContext.
+// setBook is NOT subscribed here — it requires domain (exam type) which is
+// managed independently in this store and not part of CurrentLearningContext.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (state.currentPage !== prev.currentPage) {
+      useSurgeonEngineStore.getState().setPageContext(state.currentPage);
+    }
+  });
+}
 
 export default useSurgeonEngineStore;

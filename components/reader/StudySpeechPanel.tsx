@@ -639,6 +639,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
+  // Stop audio when the active thought unit changes so previous concept's audio
+  // doesn't keep playing while a new unit is focused.
+  useEffect(() => {
+    if (!selectedUnitId) return;
+    stopAudio();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUnitId]);
+
   // Page sentences — built whenever activePageText changes, regardless of mode, so
   // "Read From Click" can jump into Current Page playback from any mode.
   const [fpSentences, setFpSentences] = useState<string[]>([]);
@@ -844,7 +852,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
     // Canonical units are the single source of truth. If not yet available
     // (synthesis still running), segments stay empty and play() shows loading state.
-    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId });
+    const next = buildSpeechTimeline({ thoughtUnits, mode, activePageText, presetId, selectedUnitId });
     if (DEV) console.log("[SPEECH_SET_SEGMENTS]", next.length);
     setSegments(next);
     segmentsRef.current = next;
@@ -904,7 +912,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       resumeSegIdxRef.current = 0;
     }
     prevModeRef.current = mode;
-  }, [studyModel, mode, pageNumber, activePageText, thoughtUnits]);
+  }, [studyModel, mode, pageNumber, activePageText, thoughtUnits, selectedUnitId, highlightedAnchorTexts, presetId]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
 

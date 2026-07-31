@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useCurrentLearningContext } from '../context/learningContext';
 import type {
   DocId,
   PageIndex,
@@ -521,5 +522,25 @@ export const useExpertViewStore = create<ExpertViewStore>()(
     }
   )
 );
+
+// Phase 3 One Brain: auto-sync document + page from CurrentLearningContext.
+// documentTitle is now part of CLC so setDocument can be fully subscribed.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    const store = useExpertViewStore.getState();
+    if (
+      state.documentId !== prev.documentId ||
+      state.documentTitle !== prev.documentTitle ||
+      state.totalPages !== prev.totalPages
+    ) {
+      if (state.documentId && state.documentTitle) {
+        store.setDocument(state.documentId, state.documentTitle, state.totalPages);
+      }
+    }
+    if (state.currentPage !== prev.currentPage) {
+      store.setPage(Math.max(1, state.currentPage));
+    }
+  });
+}
 
 export default useExpertViewStore;
