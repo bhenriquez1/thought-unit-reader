@@ -168,6 +168,7 @@ import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
+import { useCurrentLearningContext } from "@/lib/context/learningContext";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -565,8 +566,19 @@ export default function ThoughtUnitReader() {
     return url;
   };
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  // IDB documentId of the currently open PDF — used by the IDB-aware retry callback.
-  const [currentLocalDocumentId, setCurrentLocalDocumentId] = useState<string | null>(null);
+  // ── CurrentLearningContext: single source of truth for document + page ──
+  // pages/index.tsx is the sole writer. All stores that previously held their
+  // own currentPage / documentId copies read from here (Phase 1: writer wired;
+  // Phase 2: downstream stores migrated to subscribers).
+  const {
+    documentId: currentLocalDocumentId,
+    bookId,
+    currentPage,
+    setDocumentId: setCurrentLocalDocumentId,
+    setBookId,
+    setPage: setCurrentPage,
+    setTotalPages,
+  } = useCurrentLearningContext();
   // True when PDF.js fails to load the source file (distinct from text-analysis failures).
   const [pdfSourceFailed, setPdfSourceFailed] = useState(false);
 
@@ -575,7 +587,6 @@ export default function ThoughtUnitReader() {
   // Global Zoom Store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
 
-  const [currentPage, setCurrentPage] = useState(1);
   // Stable ref that mirrors currentPage — lets syncToPage read the latest page
   // inside a useCallback without listing currentPage as a dep (which would
   // recreate the callback and cascade re-renders into TocTree on every page flip).
@@ -596,6 +607,8 @@ export default function ThoughtUnitReader() {
   // Clear PDF source failure when a new source URL is set (fresh upload or IDB reload).
   useEffect(() => { if (fileUrl) setPdfSourceFailed(false); }, [fileUrl]);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
+  // Keep totalPages in the learning context store in sync with the PDF renderer.
+  useEffect(() => { if (pdfPageCount > 0) setTotalPages(pdfPageCount); }, [pdfPageCount, setTotalPages]);
   const [pdfLoadingState, setPdfLoadingState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -1529,10 +1542,10 @@ export default function ThoughtUnitReader() {
   // Attachments + modal
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [bookId, setBookId] = useState<string>("default-book");
+  // bookId and setBookId come from useCurrentLearningContext (declared near top of component).
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
-  // useKnowledgeGraph must be called after bookId state is declared
+  // useKnowledgeGraph must be called after bookId is available
   const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
