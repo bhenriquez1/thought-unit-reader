@@ -1,7 +1,7 @@
 // components/SmartPDFViewer.tsx
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
@@ -1597,6 +1597,26 @@ export default function SmartPDFViewer({
       )
     : null;
 
+  // Memoize the authorized-rect filter so PdfEvidenceOverlay receives a stable
+  // array reference. Without this, the inline IIFE in JSX creates a new array
+  // on every render (including karaoke word-ticks at 4–30 Hz), causing
+  // useLayoutEffect inside PdfEvidenceOverlay to fire at the same rate and
+  // spam scrollIntoView — visible as highlight flicker during TTS playback.
+  const guardedRects = useMemo(() => {
+    const idsToAllow = [
+      ...(authorizedHighlightIds ?? []),
+      ...(focusedEvidenceId ? [focusedEvidenceId] : []),
+    ];
+    if (idsToAllow.length === 0) return [];
+    const allowed = new Set(
+      idsToAllow.flatMap(id => [
+        id,
+        ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id)),
+      ])
+    );
+    return overlayRects.filter(r => allowed.has(r.id));
+  }, [overlayRects, authorizedHighlightIds, focusedEvidenceId]);
+
   return (
     <div
       className="relative h-full w-full bg-gray-900"
@@ -1752,31 +1772,7 @@ export default function SmartPDFViewer({
                   {/* Dim veil removed — lighter opacity on highlights means veil no longer needed */}
                   <PdfEvidenceOverlay
                     packTierLabels={packTierLabels}
-                    rects={(() => {
-                      // Hard render-time guard: suppress any rect not in the current authorized set.
-                      // authorizedHighlightIds comes from effectiveHighlightTargets so it always
-                      // reflects the live studyModel anchors — stale rects are invisible even if
-                      // they survived in overlayRects state past a highlightKey change.
-                      // The focused anchor (e.g. clicked from the Thought Unit Navigator) is always
-                      // allowed even if it fell outside the paint budget's authorized set — otherwise
-                      // clicking a budget-excluded thought unit would have no rect to jump to.
-                      const idsToAllow = [
-                        ...(authorizedHighlightIds ?? []),
-                        ...(focusedEvidenceId ? [focusedEvidenceId] : []),
-                      ];
-                      if (idsToAllow.length === 0) {
-                        if (overlayRects.length > 0) {
-                          console.log("[OVERLAY_DOM_CLEANUP] no authorized IDs — suppressing", overlayRects.length, "rects");
-                        }
-                        return [];
-                      }
-                      const allowed = new Set(idsToAllow.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
-                      const guarded = overlayRects.filter(r => allowed.has(r.id));
-                      if (guarded.length !== overlayRects.length) {
-                        console.log("[OVERLAY_DOM_CLEANUP] guard filtered", overlayRects.length, "→", guarded.length, "rects");
-                      }
-                      return guarded;
-                    })()}
+                    rects={guardedRects}
                     focusedId={focusedEvidenceId}
                     onFocus={onEvidenceFocus}
                   />

@@ -1322,8 +1322,6 @@ export default function ThoughtUnitReader() {
     annotations: storeAnnotations,
     viewMode: annotationViewMode,
     pendingHighlight,
-    setActiveDocument,
-    setActivePage,
     addAnnotation,
     updateAnnotation: updateStoreAnnotation,
     deleteAnnotation: deleteStoreAnnotation,
