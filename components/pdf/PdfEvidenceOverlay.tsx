@@ -204,6 +204,9 @@ export default function PdfEvidenceOverlay({
     }
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Circled Unicode numbers for step badges — ①②③… up to ⑩
+  const CIRCLED = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
+
   // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
   // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
   const mechanismChain = useMemo(() => {
@@ -212,16 +215,23 @@ export default function PdfEvidenceOverlay({
       .sort((a, b) => a.top - b.top);
   }, [rects]);
 
-  // Step indices for mechanism rects — used to render 1/2/3 sequence numbers.
+  // Step indices for mechanism rects — used to render circled step numbers in brace.
   const mechanismStepIndex = useMemo(() => {
     const idx = new Map<string, number>();
     mechanismChain.forEach((r, i) => idx.set(r.id, i + 1));
     return idx;
   }, [mechanismChain]);
 
+  // ── Comparison connector: bidirectional ↕ arrow between consecutive comparison rects ──
+  const comparisonChain = useMemo(() => {
+    return rects
+      .filter(r => r.semanticKind === "comparison" && !r.id.match(/-L\d+$/) && shouldRender(r))
+      .sort((a, b) => a.top - b.top);
+  }, [rects]);
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
-      {/* SVG connector layer — arrows between consecutive mechanism steps + left brace */}
+      {/* SVG connector layer — arrows between consecutive mechanism steps + left brace with circled numbers */}
       {mechanismChain.length >= 2 && (
         <svg
           aria-hidden
@@ -232,7 +242,7 @@ export default function PdfEvidenceOverlay({
               <polygon points="0 0, 7 3, 0 6" fill="#86efac" opacity="0.75" />
             </marker>
           </defs>
-          {/* Left-margin brace spanning first→last mechanism rect */}
+          {/* Left-margin brace spanning first→last mechanism rect, with circled step numbers */}
           {(() => {
             const first = mechanismChain[0];
             const last  = mechanismChain[mechanismChain.length - 1];
@@ -241,15 +251,37 @@ export default function PdfEvidenceOverlay({
             const braceY2 = last.top  + last.height  / 2;
             const mid = (braceY1 + braceY2) / 2;
             return (
-              <g key="mech-brace" opacity="0.55">
-                {/* vertical stem */}
-                <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
-                {/* top tick */}
-                <line x1={braceX + 4} y1={braceY1} x2={braceX + 8} y2={braceY1} stroke="#86efac" strokeWidth="1.5" />
-                {/* bottom tick */}
-                <line x1={braceX + 4} y1={braceY2} x2={braceX + 8} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
-                {/* mid pointer */}
-                <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
+              <g key="mech-brace">
+                <g opacity="0.55">
+                  {/* vertical stem */}
+                  <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
+                  {/* ticks at each step */}
+                  {mechanismChain.map((r) => {
+                    const ty = r.top + r.height / 2;
+                    return <line key={`bt-${r.id}`} x1={braceX + 4} y1={ty} x2={braceX + 8} y2={ty} stroke="#86efac" strokeWidth="1.5" />;
+                  })}
+                  {/* mid pointer */}
+                  <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
+                </g>
+                {/* Circled step numbers next to each brace tick */}
+                {mechanismChain.map((r, i) => {
+                  const ty = r.top + r.height / 2;
+                  return (
+                    <text
+                      key={`bn-${r.id}`}
+                      x={braceX - 3}
+                      y={ty + 4}
+                      fontSize="10"
+                      fontFamily="ui-monospace, SFMono-Regular, monospace"
+                      fontWeight="700"
+                      fill="#86efac"
+                      opacity="0.90"
+                      textAnchor="middle"
+                    >
+                      {CIRCLED[i] ?? `${i + 1}`}
+                    </text>
+                  );
+                })}
               </g>
             );
           })()}
@@ -272,6 +304,47 @@ export default function PdfEvidenceOverlay({
                 opacity="0.65"
                 markerEnd="url(#mech-arrow)"
               />
+            );
+          })}
+        </svg>
+      )}
+
+      {/* Comparison connector — bidirectional ↕ between consecutive comparison rects */}
+      {comparisonChain.length >= 2 && (
+        <svg
+          aria-hidden
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+        >
+          <defs>
+            <marker id="cmp-arrow-up" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <polygon points="3 0, 6 6, 0 6" fill="#93c5fd" opacity="0.75" />
+            </marker>
+            <marker id="cmp-arrow-dn" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto-start-reverse">
+              <polygon points="3 0, 6 6, 0 6" fill="#93c5fd" opacity="0.75" />
+            </marker>
+          </defs>
+          {comparisonChain.slice(0, -1).map((rect, i) => {
+            const next = comparisonChain[i + 1];
+            const x = Math.max(4, Math.min(rect.left, next.left) - 14);
+            const y1 = rect.top + rect.height - 2;
+            const y2 = next.top + 2;
+            if (y2 - y1 < 4) return null;
+            return (
+              <g key={`cmp-${i}`} opacity="0.60">
+                <line
+                  x1={x} y1={y1} x2={x} y2={y2}
+                  stroke="#93c5fd" strokeWidth="1.5"
+                  markerStart="url(#cmp-arrow-up)"
+                  markerEnd="url(#cmp-arrow-dn)"
+                />
+                <text
+                  x={x - 2} y={(y1 + y2) / 2 + 4}
+                  fontSize="8" fontFamily="ui-monospace, monospace" fontWeight="700"
+                  fill="#93c5fd" opacity="0.80" textAnchor="middle"
+                >
+                  ↕
+                </text>
+              </g>
             );
           })}
         </svg>
@@ -357,7 +430,7 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
-                {rect.semanticKind === "trap" ? "⚠ " : (rect.semanticKind === "clinical" || rect.semanticKind === "memoryAnchor") ? "💎 " : ""}
+                {rect.semanticKind === "trap" ? "⚠ " : rect.semanticKind === "dat_fact" ? "⭐ " : (rect.semanticKind === "clinical" || rect.semanticKind === "memoryAnchor") ? "💎 " : ""}
                 {displayLabel}
                 {rect.reason && hasLeftMargin && (
                   <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
@@ -366,30 +439,7 @@ export default function PdfEvidenceOverlay({
                 )}
               </span>
             )}
-            {/* Step number badge for mechanism sequence — shows 1/2/3 inside the highlight rect. */}
-            {rect.semanticKind === "mechanism" && isFirstLine && mechanismStepIndex.has(baseId) && rect.height >= 8 && (
-              <span
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  top: 2,
-                  right: 4,
-                  fontSize: 7,
-                  lineHeight: "11px",
-                  fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                  fontWeight: 700,
-                  background: "rgba(20,83,45,0.90)",
-                  color: "#86efac",
-                  borderRadius: "3px",
-                  padding: "1px 4px",
-                  pointerEvents: "none",
-                  userSelect: "none",
-                  opacity: activeFocused ? 1 : 0.85,
-                }}
-              >
-                {mechanismStepIndex.get(baseId)}
-              </span>
-            )}
+            {/* Circled step numbers are now rendered in the SVG brace margin — no in-rect badge needed */}
           </button>
         );
       })}
