@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import type { TeachingMode, TeachingAudience, CanonicalUnitInput } from "@/pages/api/chief-resident-teaching";
 import type { SemanticPack } from "@/lib/semantic/types";
 import { buildCanonicalContext, toCanonicalUnitInputs } from "@/lib/reader/chiefResidentContextBuilder";
+import { useCurrentLearningContext } from "@/lib/context/learningContext";
 import {
   claimSpeech,
   isSpeechStale,
@@ -74,15 +75,15 @@ interface ChiefResidentModalProps {
 // Audience config
 // ---------------------------------------------------------------------------
 
-const AUDIENCES: { key: TeachingAudience; label: string; short: string }[] = [
-  { key: "dental-student", label: "Dental Student",  short: "D.S." },
-  { key: "dat",            label: "DAT Prep",        short: "DAT"  },
-  { key: "beginner",       label: "Beginner",        short: "Beg." },
-  { key: "dentist",        label: "Dentist",         short: "DDS"  },
-  { key: "oral-surgeon",   label: "Oral Surgeon",    short: "OS"   },
-  { key: "board-review",   label: "Board Review",    short: "Brd." },
-  { key: "child",          label: "Child",           short: "Kid"  },
-];
+const AUDIENCE_LABEL: Record<string, string> = {
+  "dental-student": "Dental Student",
+  "dat":            "DAT Prep",
+  "beginner":       "Beginner",
+  "dentist":        "Dentist",
+  "oral-surgeon":   "Oral Surgeon",
+  "board-review":   "Board Review",
+  "child":          "Child",
+};
 
 // ---------------------------------------------------------------------------
 // Quick-reply chips
@@ -206,7 +207,7 @@ export default function ChiefResidentModal({
   initialTurns,
   onTurnsChange,
 }: ChiefResidentModalProps) {
-  const [audience, setAudience] = useState<TeachingAudience>("dental-student");
+  const teachingAudience = useCurrentLearningContext(state => state.teachingAudience) as TeachingAudience;
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [streamingBuffer, setStreamingBuffer] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -216,7 +217,6 @@ export default function ChiefResidentModal({
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [savingAction, setSavingAction] = useState<"note" | "recall" | "studyguide" | null>(null);
   const [speaking, setSpeaking] = useState(false);
-  const [showAudiencePicker, setShowAudiencePicker] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -253,7 +253,8 @@ export default function ChiefResidentModal({
     };
   }, []);
 
-  const sendToApi = useCallback(async (history: ChatTurn[], selectedAudience: TeachingAudience) => {
+  const sendToApi = useCallback(async (history: ChatTurn[], selectedAudience?: TeachingAudience) => {
+    const audience = selectedAudience ?? teachingAudience;
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     setIsStreaming(true);
@@ -274,7 +275,7 @@ export default function ChiefResidentModal({
         canonicalUnits: canonicalUnits ?? undefined,
         title: context.documentTitle,
         mode: apiMode,
-        audience: selectedAudience,
+        audience: audience,
         selectedText: context.selectedText,
         pageNumber: context.pageNumber,
         messages: claudeMessages.length === 0 ? [] : claudeMessages,
@@ -295,7 +296,7 @@ export default function ChiefResidentModal({
     } finally {
       setIsStreaming(false);
     }
-  }, [context]);
+  }, [context, teachingAudience]);
 
   // Auto-start on mount
   useEffect(() => {
@@ -316,7 +317,7 @@ export default function ChiefResidentModal({
         : `Let's discuss page ${context.pageNumber}.`,
     };
     setTurns([firstTurn]);
-    sendToApi([firstTurn], audience);
+    sendToApi([firstTurn]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -327,12 +328,7 @@ export default function ChiefResidentModal({
     const userTurn: ChatTurn = { id: `u-${Date.now()}`, role: "user", content };
     const next = [...turns, userTurn];
     setTurns(next);
-    await sendToApi(next, audience);
-  };
-
-  const handleAudienceChange = (newAudience: TeachingAudience) => {
-    setAudience(newAudience);
-    setShowAudiencePicker(false);
+    await sendToApi(next);
   };
 
   const handleSpeakAnswer = async () => {
@@ -403,7 +399,6 @@ export default function ChiefResidentModal({
     }
   };
 
-  const selectedAudienceMeta = AUDIENCES.find(a => a.key === audience);
   const modeLabel = context.mode === "explain-text" ? "Explain This" : "Explain Page";
   const modeIcon = context.mode === "explain-text" ? "💬" : "🎓";
 
@@ -427,32 +422,11 @@ export default function ChiefResidentModal({
           <span className="text-[12.5px] font-bold text-white/85 tracking-wide">🩺 Chief Resident</span>
           <span className="text-[11px] text-white/35 font-medium">— {modeLabel}</span>
           <div className="ml-auto flex items-center gap-2">
-            {/* Audience pill */}
-            <div className="relative">
-              <button
-                onClick={() => setShowAudiencePicker(v => !v)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border border-emerald-600/30 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/35 transition-colors"
-              >
-                <span className="text-[10px]">👤</span>
-                {selectedAudienceMeta?.label}
-                <span className="text-[9px] text-emerald-400/60">▼</span>
-              </button>
-              {showAudiencePicker && (
-                <div className="absolute right-0 top-full mt-1 z-10 w-40 bg-gray-900 border border-gray-700 rounded-xl shadow-xl overflow-hidden">
-                  {AUDIENCES.map(a => (
-                    <button
-                      key={a.key}
-                      onClick={() => handleAudienceChange(a.key)}
-                      className={`w-full text-left px-3 py-2 text-[11px] hover:bg-white/10 transition-colors ${
-                        a.key === audience ? "text-emerald-300 font-semibold" : "text-white/60"
-                      }`}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Teaching style — auto-detected from uploaded book */}
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border border-emerald-600/30 bg-emerald-900/20 text-emerald-300">
+              <span className="text-[10px]">👤</span>
+              {AUDIENCE_LABEL[teachingAudience] ?? teachingAudience}
+            </span>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
@@ -540,7 +514,7 @@ export default function ChiefResidentModal({
                 <span>{error}</span>
                 {!permanent && (
                   <button
-                    onClick={() => { setError(null); setErrorCode(null); sendToApi(turns, audience); }}
+                    onClick={() => { setError(null); setErrorCode(null); sendToApi(turns); }}
                     className="ml-3 underline text-rose-200 hover:text-white"
                   >
                     Retry

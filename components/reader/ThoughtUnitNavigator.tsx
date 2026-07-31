@@ -982,40 +982,12 @@ export default function ThoughtUnitNavigator({
             <div className="h-px flex-1 bg-white/8" />
           </div>
           <div className="px-2 pb-2">
-            <div className="text-[10px] text-white/40 mb-1.5">
+            <div className="text-[10px] text-white/40">
               {!anyRead
                 ? "Start by reading the Core Ideas"
                 : trapEntries.length > 0 && !trapEntries.some(e => progressMap.get(e.id)?.has("read"))
                 ? "Review the Common Traps before testing"
-                : "You're ready — test yourself"}
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {onExplain && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const first = entries.find(e => ["thesis","definition"].includes(e.kind as string)) ?? entries[0];
-                    if (first) onExplain(first.id);
-                  }}
-                  className="text-[10px] px-2.5 py-1 rounded-md font-semibold transition-colors"
-                  style={{ background: "rgba(253,224,71,0.10)", border: "1px solid rgba(253,224,71,0.22)", color: "#fde047" }}
-                >
-                  💬 Explain Core
-                </button>
-              )}
-              {onOpenRecall && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const first = entries[0];
-                    if (first) onOpenRecall(first.id);
-                  }}
-                  className="text-[10px] px-2.5 py-1 rounded-md font-semibold transition-colors"
-                  style={{ background: "rgba(103,232,249,0.08)", border: "1px solid rgba(103,232,249,0.18)", color: "#67e8f9" }}
-                >
-                  🧠 Test Yourself
-                </button>
-              )}
+                : "You're ready — open Expert Brain to test yourself"}
             </div>
           </div>
         </div>

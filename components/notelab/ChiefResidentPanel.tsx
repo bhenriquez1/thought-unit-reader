@@ -9,6 +9,7 @@ import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { TeachingMode, TeachingAudience } from "@/pages/api/chief-resident-teaching";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { useCurrentLearningContext } from "@/lib/context/learningContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -145,15 +146,15 @@ async function streamTeachingSession(
 // Main component
 // ---------------------------------------------------------------------------
 
-const AUDIENCE_OPTIONS: { key: TeachingAudience; label: string }[] = [
-  { key: "dental-student", label: "Dental Student" },
-  { key: "dat",            label: "DAT Prep" },
-  { key: "beginner",       label: "Beginner" },
-  { key: "dentist",        label: "Dentist" },
-  { key: "oral-surgeon",   label: "Oral Surgeon" },
-  { key: "board-review",   label: "Board Review" },
-  { key: "child",          label: "Child" },
-];
+const AUDIENCE_LABEL: Record<string, string> = {
+  "dental-student": "Dental Student",
+  "dat":            "DAT Prep",
+  "beginner":       "Beginner",
+  "dentist":        "Dentist",
+  "oral-surgeon":   "Oral Surgeon",
+  "board-review":   "Board Review",
+  "child":          "Child",
+};
 
 export default function ChiefResidentPanel({
   studyModel,
@@ -164,8 +165,8 @@ export default function ChiefResidentPanel({
   activeNote,
   onRecallSaved,
 }: ChiefResidentPanelProps) {
+  const teachingAudience = useCurrentLearningContext(state => state.teachingAudience) as TeachingAudience;
   const [selectedMode, setSelectedMode] = useState<TeachingMode | null>(null);
-  const [audience, setAudience] = useState<TeachingAudience>("dental-student");
   const [sessionMessages, setSessionMessages] = useState<TeachingTurn[]>([]);
   const [streamingBuffer, setStreamingBuffer] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -221,7 +222,7 @@ export default function ChiefResidentPanel({
     try {
       let accumulated = "";
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode, audience, messages: [] },
+        { sourceText: src, bookTitle, mode, audience: teachingAudience, messages: [] },
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -233,7 +234,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [getSourceText, bookTitle]);
+  }, [getSourceText, bookTitle, teachingAudience]);
 
   const sendUserReply = useCallback(async () => {
     const msg = userInput.trim();
@@ -252,7 +253,7 @@ export default function ChiefResidentPanel({
     try {
       let accumulated = "";
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode: selectedMode, audience, messages: updatedMessages },
+        { sourceText: src, bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages },
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -265,7 +266,7 @@ export default function ChiefResidentPanel({
       setIsStreaming(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [userInput, isStreaming, selectedMode, audience, sessionMessages, getSourceText, bookTitle]);
+  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle]);
 
   const requestSummary = useCallback(async () => {
     if (isStreaming || !selectedMode) return;
@@ -282,7 +283,7 @@ export default function ChiefResidentPanel({
     try {
       let accumulated = "";
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode: selectedMode, audience, messages: updatedMessages },
+        { sourceText: src, bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages },
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -294,7 +295,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [isStreaming, selectedMode, audience, sessionMessages, getSourceText, bookTitle]);
+  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle]);
 
   const sendToRecall = useCallback(async () => {
     if (!activeNote) return;
@@ -318,24 +319,12 @@ export default function ChiefResidentPanel({
             </p>
           </div>
 
-          {/* Audience selector */}
-          <div className="mb-4">
-            <div className="text-[10px] text-white/35 uppercase tracking-wider mb-1.5">Teaching audience</div>
-            <div className="flex flex-wrap gap-1.5">
-              {AUDIENCE_OPTIONS.map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => setAudience(opt.key)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors ${
-                    audience === opt.key
-                      ? "bg-emerald-700/40 border-emerald-500/60 text-emerald-200 font-semibold"
-                      : "bg-white/5 border-white/10 text-white/45 hover:bg-white/10"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          {/* Teaching style — auto-detected from uploaded book */}
+          <div className="mb-4 flex items-center gap-2">
+            <div className="text-[10px] text-white/35 uppercase tracking-wider">Teaching style</div>
+            <span className="px-2.5 py-1 rounded-full text-[11px] border border-emerald-500/40 bg-emerald-900/25 text-emerald-300 font-medium">
+              {AUDIENCE_LABEL[teachingAudience] ?? teachingAudience}
+            </span>
           </div>
 
           {error && (
