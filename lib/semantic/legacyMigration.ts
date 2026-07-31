@@ -86,3 +86,7 @@ const CANONICAL_TO_KIND: Record<CanonicalSemanticType, ParagraphKind> = {
 export function kindFromCanonicalType(type: CanonicalSemanticType): ParagraphKind {
   return CANONICAL_TO_KIND[type];
 }
+
+// Aliases used by lib/semantic/index.ts re-exports (kept for call-site stability)
+export const legacySemanticLabelToCanonical = migrateSemanticLabel;
+export const paragraphKindToCanonical       = canonicalTypeFromKind;

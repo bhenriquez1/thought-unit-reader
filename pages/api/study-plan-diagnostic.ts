@@ -93,7 +93,7 @@ async function buildTopicOutline(sourceText: string, bookTitle?: string, chapter
         role: "user",
         content: `BOOK: ${bookTitle || "Unknown"}\nCHAPTER/UNIT: ${chapterTitle || "Unknown"}\n\n${sourceText}`,
       }],
-    } as Parameters<typeof client.messages.create>[0]);
+    } as Parameters<typeof client.messages.create>[0]) as Anthropic.Message;
 
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
     if (!raw) return null;

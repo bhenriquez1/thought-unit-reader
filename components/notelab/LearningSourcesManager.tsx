@@ -110,7 +110,7 @@ export default function LearningSourcesManager({
     const anchor = studyModel.visualAnchors?.find(
       a => a.id === activeUnitId || (a as any).evidenceRefId === activeUnitId
     );
-    return anchor ? (anchor.text ?? null) : null;
+    return anchor ? (anchor.exactText ?? null) : null;
   }, [activeUnitId, studyModel]);
 
   // Load sources whenever bookId or refreshKey changes

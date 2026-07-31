@@ -105,7 +105,7 @@ async function buildSkillMap(conceptText: string, topic?: string): Promise<strin
         role: "user",
         content: `TOPIC: ${topic || "Unknown"}\n\n${conceptText}`,
       }],
-    } as Parameters<typeof client.messages.create>[0]);
+    } as Parameters<typeof client.messages.create>[0]) as Anthropic.Message;
 
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
     return raw || null;

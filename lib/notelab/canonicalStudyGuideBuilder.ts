@@ -227,7 +227,7 @@ export function buildStudyGuideFromCanonical(
     const ct = entry.canonicalType;
     if (!shouldIncludeForLevel(ct, learnerLevel)) continue;
 
-    const meta = (ct && SECTION_META[ct]) ?? DEFAULT_META;
+    const meta = (ct ? SECTION_META[ct] : null) ?? DEFAULT_META;
 
     // Merge same-type sections for new learners; keep only first for advanced
     const dedupeKey = ct ?? entry.id;
