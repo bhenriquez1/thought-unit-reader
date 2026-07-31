@@ -22,6 +22,7 @@ import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/t
 import ImportanceBadge from "./ImportanceBadge";
 import EvidencePanel from "./EvidencePanel";
 import ReaderModeBar from "./ReaderModeBar";
+import TocModeBar from "./TocModeBar";
 import SemanticSearch from "./SemanticSearch";
 import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
 import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
