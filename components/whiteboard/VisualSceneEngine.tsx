@@ -9,6 +9,7 @@ import React, {
   useState, useEffect, useCallback, useRef, useMemo,
 } from "react";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
 import {
   claimSpeech, isSpeechStale,
   registerActiveAudio, notifySpeechEnd, notifySpeechError,
@@ -391,6 +392,8 @@ interface Props {
    *  Biases buildSceneLayout toward the domain's natural visual form
    *  (anatomy → hub-spoke, pathway → flow, timeline → flow, worked-solution → flow). */
   whiteboardGrammar?: string;
+  /** Phase 1: typed scene graph — accepted but not yet consumed (Phase 2 wires it). */
+  vsg?: VisualSceneGraph;
 }
 
 export default function VisualSceneEngine({ noteCards, pageTitle, onAnchorClick, whiteboardGrammar }: Props) {
