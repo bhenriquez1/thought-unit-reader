@@ -134,7 +134,6 @@ export default function PureSurgeonView({
   const {
     annotations = {},
     setActiveDocument = () => {},
-    setActivePage = () => {},
     addAnnotation = async () => '',
     getAnnotationsForPage = () => [],
     getHighlightsOnly = () => [],
@@ -213,14 +212,7 @@ export default function PureSurgeonView({
     }
   }, [isClient, safeDocumentId, safeUserId, setActiveDocument]);
 
-  useEffect(() => {
-    if (!isClient) return;
-    try {
-      setActivePage(Math.max(0, currentPage - 1));
-    } catch (e) {
-      console.error('Failed to set active page:', e);
-    }
-  }, [isClient, currentPage, setActivePage]);
+  // setActivePage is driven by the annotationStore CLC subscription (Phase 3 One Brain).
 
   // Page Change: Auto PDRM Generation (incremental)
   useEffect(() => {

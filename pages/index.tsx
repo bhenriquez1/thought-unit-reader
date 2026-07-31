@@ -104,7 +104,6 @@ import { useZoomStore } from "@/lib/stores/zoomStore";
 import { usePdrmStore } from "@/lib/stores/pdrmStore";
 import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
 import { useHighlightStore } from "@/lib/stores/highlightStore";
-import { useFocusCycleStore } from "@/lib/stores/focusCycleStore";
 import { extractParagraphBlocks, findBestMatchingBlock } from "@/lib/paragraphMap";
 import {
   DEFAULT_RIGHT_PANEL_STATE,

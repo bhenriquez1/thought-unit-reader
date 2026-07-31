@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { safeSetItem } from '@/lib/storage/safeStorage';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 const quotaSafeStorage = {
   getItem: (key: string) => {
@@ -239,3 +240,20 @@ export const useFocusCycleStore = create<FocusCycleState>()(
     }
   )
 );
+
+// Phase 4 One Brain: auto-bind timer context to the current reading position.
+// bindContext had zero callers; the CLC subscription activates it so the
+// Focus Cycle card always reflects where the user is reading.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (
+      state.documentId !== prev.documentId ||
+      state.currentPage !== prev.currentPage
+    ) {
+      useFocusCycleStore.getState().bindContext({
+        documentId: state.documentId,
+        page: state.currentPage,
+      });
+    }
+  });
+}
