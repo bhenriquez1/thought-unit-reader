@@ -14,6 +14,8 @@ export interface OverlayRect {
   /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
    *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
   priorityTier?: number;
+  /** ≤10-word rationale from the AI anchor — shown in margin label when space allows. */
+  reason?: string;
 }
 
 // All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
@@ -87,7 +89,7 @@ interface KindConfig {
 //   Active-word box (SmartPDFViewer): 0.85          — clear moving indicator
 const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   master: {
-    label:      "MASTER",
+    label:      "CORE",
     bgNormal:   "rgba(253,224,71,0.20)",
     bgFocused:  "rgba(253,224,71,0.34)",
     restGlow:   "0 0 2px rgba(253,224,71,0.18)",
@@ -107,7 +109,7 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     glowColor:  "134,239,172",
   },
   decision: {
-    label:      "DECISION",
+    label:      "APPLY",
     bgNormal:   "rgba(147,197,253,0.18)",
     bgFocused:  "rgba(147,197,253,0.30)",
     restGlow:   "0 0 2px rgba(147,197,253,0.16)",
@@ -117,7 +119,7 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
     glowColor:  "147,197,253",
   },
   danger: {
-    label:      "DANGER",
+    label:      "TRAP",
     bgNormal:   "rgba(252,165,165,0.22)",
     bgFocused:  "rgba(252,165,165,0.36)",
     restGlow:   "0 0 2px rgba(252,165,165,0.20)",
@@ -147,16 +149,30 @@ function getConfig(rect: OverlayRect): KindConfig {
   return TIER_CONFIG.decision;
 }
 
+// ── Tier helper (also used for packTierLabels override) ───────────────────────
+function getTierForRect(rect: OverlayRect): HighlightTier {
+  const kind = rect.semanticKind as SemanticKind | undefined;
+  if (kind && kind in KIND_TIER) return KIND_TIER[kind];
+  if (rect.level === "trap")    return "danger";
+  if (rect.level === "support") return "step";
+  return "decision";
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function PdfEvidenceOverlay({
   rects,
   focusedId,
   onFocus,
+  packTierLabels,
 }: {
   rects: OverlayRect[];
   focusedId?: string | null;
   onFocus?: (id: string) => void;
+  /** Domain-specific tier label overrides from the active SemanticPack.
+   *  When present, replaces CORE/STEP/APPLY/TRAP/PEARL with domain vocabulary
+   *  (e.g. CONCEPT/FORMULA/APPLY/ERROR/EXAMPLE for a chemistry pack). */
+  packTierLabels?: Partial<Record<HighlightTier, string>>;
 }) {
   const rectRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -188,8 +204,8 @@ export default function PdfEvidenceOverlay({
     }
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── SVG connectors: dashed arrows linking consecutive mechanism highlights ──
-  // Collect first-line mechanism rects (no -L suffix), sorted top-to-bottom.
+  // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
+  // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
   const mechanismChain = useMemo(() => {
     return rects
       .filter(r => r.semanticKind === "mechanism" && !r.id.match(/-L\d+$/) && shouldRender(r))
@@ -198,7 +214,7 @@ export default function PdfEvidenceOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
-      {/* SVG connector layer — arrows between consecutive mechanism steps */}
+      {/* SVG connector layer — arrows between consecutive mechanism steps + left brace */}
       {mechanismChain.length >= 2 && (
         <svg
           aria-hidden
@@ -209,13 +225,33 @@ export default function PdfEvidenceOverlay({
               <polygon points="0 0, 7 3, 0 6" fill="#86efac" opacity="0.75" />
             </marker>
           </defs>
+          {/* Left-margin brace spanning first→last mechanism rect */}
+          {(() => {
+            const first = mechanismChain[0];
+            const last  = mechanismChain[mechanismChain.length - 1];
+            const braceX = Math.max(4, Math.min(...mechanismChain.map(r => r.left)) - 10);
+            const braceY1 = first.top + first.height / 2;
+            const braceY2 = last.top  + last.height  / 2;
+            const mid = (braceY1 + braceY2) / 2;
+            return (
+              <g key="mech-brace" opacity="0.55">
+                {/* vertical stem */}
+                <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
+                {/* top tick */}
+                <line x1={braceX + 4} y1={braceY1} x2={braceX + 8} y2={braceY1} stroke="#86efac" strokeWidth="1.5" />
+                {/* bottom tick */}
+                <line x1={braceX + 4} y1={braceY2} x2={braceX + 8} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
+                {/* mid pointer */}
+                <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
+              </g>
+            );
+          })()}
           {mechanismChain.slice(0, -1).map((rect, i) => {
             const next = mechanismChain[i + 1];
             const x1 = rect.left + rect.width / 2;
             const y1 = rect.top + rect.height + 2;
             const x2 = next.left + next.width / 2;
             const y2 = next.top - 4;
-            // Cubic bezier: control points bend the arrow slightly for visual clarity
             const cy = (y1 + y2) / 2;
             const d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
             return (
@@ -244,11 +280,11 @@ export default function PdfEvidenceOverlay({
         // Only render a label on the first line of each highlight target.
         // Continuation lines have IDs like "va-0-L1", "va-0-L2"; first lines are plain IDs.
         const isFirstLine = !rect.id.match(/-L\d+$/);
-        // Left-margin placement: when text starts far enough from the left edge, place the
-        // label in the margin to the left of the highlight. Falls back to above-highlight
-        // when there's no left margin (e.g. narrow pages or flush-left text).
         const hasLeftMargin = rect.left >= 50;
         const tierStyle = tierGlowStyle(rect.priorityTier, cfg.glowColor);
+        // Domain-adaptive label: use packTierLabels override when the active pack provides one.
+        const tier = getTierForRect(rect);
+        const displayLabel = packTierLabels?.[tier] ?? cfg.label;
         return (
           <button
             key={rect.id}
@@ -265,14 +301,19 @@ export default function PdfEvidenceOverlay({
               backgroundColor: activeFocused ? cfg.bgFocused : cfg.bgNormal,
               boxShadow: activeFocused ? undefined : tierStyle.boxShadow,
               border: activeFocused ? undefined : tierStyle.border,
+              // Definition anchors get a gold left-edge accent — "boxed definition" feel.
+              borderLeft: rect.semanticKind === "definition"
+                ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
+                : undefined,
               overflow: "visible",
-              opacity: dimmed ? 0.28 : 1,
+              opacity: dimmed ? 0.45 : 1,
               transition: "opacity 180ms ease, background-color 150ms ease",
             }}
-            aria-label={`${cfg.label || "Evidence"} highlight`}
+            aria-label={`${displayLabel || "Evidence"} highlight`}
           >
-            {/* Margin label — first line only, positioned in the left margin beside the highlight */}
-            {cfg.label && rect.height >= 6 && isFirstLine && (
+            {/* Margin label — first line only. Shows domain-adaptive tier name (e.g. CONCEPT for
+                chemistry, RULE for law); adds a secondary reason line when margin space allows. */}
+            {displayLabel && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
                   position: "absolute",
@@ -301,7 +342,12 @@ export default function PdfEvidenceOverlay({
                   textOverflow: "ellipsis",
                 }}
               >
-                {cfg.label}
+                {displayLabel}
+                {rect.reason && hasLeftMargin && (
+                  <span style={{ display: "block", fontSize: 7, fontWeight: 400, opacity: 0.78, marginTop: 1, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                    {rect.reason.length > 24 ? rect.reason.slice(0, 23) + "…" : rect.reason}
+                  </span>
+                )}
               </span>
             )}
           </button>

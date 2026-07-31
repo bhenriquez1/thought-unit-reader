@@ -21,4 +21,6 @@ export const GENERAL_PACK: SemanticPack = {
   ],
   minimumConfidence: 0,
   fallbackPackId: "general",
+  tierLabels: { master: "CORE", step: "STEP", decision: "APPLY", danger: "TRAP", pearl: "PEARL" },
+  whiteboardGrammar: "flow",
 };

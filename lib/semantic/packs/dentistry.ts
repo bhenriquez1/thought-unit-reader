@@ -157,4 +157,6 @@ export const DENTISTRY_PACK: SemanticPack = {
   ],
   minimumConfidence: 0.55,
   fallbackPackId: "general",
+  tierLabels: { master: "CORE", step: "PROCEDURE", decision: "CLINICAL", danger: "TRAP", pearl: "PEARL" },
+  whiteboardGrammar: "anatomy",
 };

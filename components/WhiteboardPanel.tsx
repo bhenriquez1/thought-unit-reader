@@ -14,6 +14,8 @@ import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallSto
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
+import dynamic from "next/dynamic";
+const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
@@ -96,6 +98,9 @@ type Props = {
   learningProfile?: string;
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
+  /** Preferred layout grammar from the active annotation pack — drives VisualSceneEngine layout selection.
+   *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow. */
+  whiteboardGrammar?: string;
 };
 
 type WhiteboardDebugInfo = {
@@ -141,6 +146,7 @@ export default function WhiteboardPanel({
   recallSubject,
   learningProfile,
   onOpenChiefResident,
+  whiteboardGrammar,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
   const [loading, setLoading] = useState(false);
@@ -183,6 +189,7 @@ export default function WhiteboardPanel({
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
+  const [canvasMode, setCanvasMode] = useState<"tldraw" | "visual">("tldraw");
   const [zoom, setZoom] = useState(0.95); // not "too zoomed" by default
   const [justGenerated, setJustGenerated] = useState(false); // brief glow when new steps land
   const [justDetected, setJustDetected] = useState(false);   // shows "Diagram detected" pill
@@ -794,12 +801,52 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* ── VisualSceneEngine: progressive animated diagram teaching ──────────────────── */}
-          <VisualSceneEngine
-            noteCards={teachNoteCards}
-            pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-            onAnchorClick={onAnchorStep ?? undefined}
-          />
+          {/* ── Interactive canvas ─────────────────────────────────────────── */}
+          {teachNoteCards.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
+                <button
+                  onClick={() => setCanvasMode("tldraw")}
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
+                    background: canvasMode === "tldraw" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
+                    color: canvasMode === "tldraw" ? "#86efac" : "#94a3b8",
+                    border: canvasMode === "tldraw" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
+                  }}
+                >
+                  Canvas
+                </button>
+                <button
+                  onClick={() => setCanvasMode("visual")}
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
+                    background: canvasMode === "visual" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
+                    color: canvasMode === "visual" ? "#86efac" : "#94a3b8",
+                    border: canvasMode === "visual" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
+                  }}
+                >
+                  Animated
+                </button>
+              </div>
+              {canvasMode === "tldraw" ? (
+                <div style={{ height: 520 }}>
+                  <TldrawCanvas
+                    noteCards={teachNoteCards}
+                    pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                    onAnchorClick={onAnchorStep ?? undefined}
+                    whiteboardGrammar={whiteboardGrammar}
+                  />
+                </div>
+              ) : (
+                <VisualSceneEngine
+                  noteCards={teachNoteCards}
+                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  onAnchorClick={onAnchorStep ?? undefined}
+                  whiteboardGrammar={whiteboardGrammar}
+                />
+              )}
+            </div>
+          )}
 
           {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}
           {!studyModel && (
