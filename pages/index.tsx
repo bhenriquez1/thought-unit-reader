@@ -82,6 +82,7 @@ import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/Ex
 import ExplainItChat from "@/components/reader/ExplainItChat";
 import type { ExplainItContext, ExplainItMessage } from "@/lib/explainIt/types";
 import ChiefResidentModal, { type ChiefResidentContext } from "@/components/reader/ChiefResidentModal";
+import PdfContextMenu from "@/components/pdf/PdfContextMenu";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -710,6 +711,7 @@ export default function ThoughtUnitReader() {
   const explainItTurnsRef = useRef<Map<string, ExplainItMessage[]>>(new Map());
   const [chiefResidentContext, setChiefResidentContext] = useState<ChiefResidentContext | null>(null);
   const chiefResidentTurnsRef = useRef<Map<string, import("@/components/reader/ChiefResidentModal").ChiefResidentMessage[]>>(new Map());
+  const [pdfContextMenu, setPdfContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
   const [explainItPodcastSeed, setExplainItPodcastSeed] = useState<string | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
@@ -2643,6 +2645,22 @@ export default function ThoughtUnitReader() {
       learningProfile,
     });
   }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+
+  // Chief Resident Modal — "Active Concept" scope (explain-text with concept title as selection)
+  const handleOpenChiefResidentExplainConcept = useCallback(() => {
+    if (!activeCanonicalThoughtUnit) return;
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setChiefResidentContext({
+      mode: "explain-text",
+      selectedText: activeCanonicalThoughtUnit.title,
+      pageText,
+      pageThesis: sm?.pageThesis ?? null,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+      learningProfile,
+    });
+  }, [activeCanonicalThoughtUnit, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
@@ -5002,7 +5020,15 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
+              <div
+                className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700"
+                {...sel.bind}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const hasSelection = (sel.selectionText?.trim().length ?? 0) > 0;
+                  setPdfContextMenu({ x: e.clientX, y: e.clientY, hasSelection });
+                }}
+              >
                 {DEV && console.log("[LEFT_PANEL_INPUT_SOURCES]", {
                   source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
@@ -5209,6 +5235,8 @@ export default function ThoughtUnitReader() {
                 onOpenWhiteboard={handleOpenWhiteboardPanel}
                 onOpenExplainStep={handleOpenChiefResidentExplainStep}
                 onOpenExplainIt={handleOpenChiefResidentExplainPage}
+                onOpenExplainConcept={handleOpenChiefResidentExplainConcept}
+                selectionText={sel.selectionText ?? ""}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
@@ -6736,6 +6764,35 @@ export default function ThoughtUnitReader() {
             setChiefResidentContext(null);
             setShowWhiteboardPanel(true);
           }}
+        />
+      )}
+
+      {/* PDF right-click context menu */}
+      {pdfContextMenu && (
+        <PdfContextMenu
+          x={pdfContextMenu.x}
+          y={pdfContextMenu.y}
+          onClose={() => setPdfContextMenu(null)}
+          items={[
+            ...(pdfContextMenu.hasSelection ? [
+              {
+                icon: "💬",
+                label: "Explain Selection",
+                onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainStep(); },
+              },
+            ] : []),
+            {
+              icon: "🎓",
+              label: "Explain This Page",
+              separator: pdfContextMenu.hasSelection,
+              onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainPage(); },
+            },
+            {
+              icon: "🎨",
+              label: "Open Whiteboard",
+              onClick: () => { setPdfContextMenu(null); handleOpenWhiteboardPanel(); },
+            },
+          ]}
         />
       )}
 

@@ -597,11 +597,14 @@ interface RightPanelProps {
   activeParagraphText?: string | null;
   /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
   onSpeechExplainSegment?: (id: string) => void;
-  /** Study Tools column triggers — Whiteboard / Explain This Step / Explain It panels are
-   *  rendered by the caller (pages/index.tsx); RightPanel only surfaces the entry points. */
+  /** Study Tools column triggers — Whiteboard / Chief Resident are rendered by the caller. */
   onOpenWhiteboard?: () => void;
   onOpenExplainStep?: () => void;
   onOpenExplainIt?: () => void;
+  /** Opens Chief Resident focused on the currently active concept (explain-text with concept title). */
+  onOpenExplainConcept?: () => void;
+  /** Live text selection from the PDF viewer — used to enable/disable the "Selected Text" scope. */
+  selectionText?: string;
   canonicalLeftPanelUnits?: ExpertAnchor[];
   activeThoughtUnit?: ExpertAnchor | null;
   /** Seeded question sent directly to the ExplainStep tutor from an Expert Brain sub-action. */
@@ -852,6 +855,8 @@ export function RightPanel({
   onOpenWhiteboard,
   onOpenExplainStep,
   onOpenExplainIt,
+  onOpenExplainConcept,
+  selectionText = "",
   canonicalLeftPanelUnits = [],
   activeThoughtUnit = null,
   onAskExpert,
@@ -859,6 +864,7 @@ export function RightPanel({
 }: RightPanelProps) {
   // Reading position from the single source of truth — no prop-drilling.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
+  const [crScope, setCrScope] = React.useState<"page" | "selection" | "concept">("page");
 
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1709,24 +1715,66 @@ export function RightPanel({
               <span>🎨</span> Whiteboard
             </button>
             <button
-              onClick={onOpenExplainStep}
-              disabled={!onOpenExplainStep}
-              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <span>💬</span> Explain This Step
-            </button>
-            <button
-              onClick={onOpenExplainIt}
-              disabled={!onOpenExplainIt}
-              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <span>🎓</span> Explain It
-            </button>
-            <button
               onClick={openShadowRecall}
               className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2 text-[11px] font-medium text-violet-300 hover:bg-violet-500/15 transition-colors"
             >
               <span>🕶</span> Shadow Recall
+            </button>
+          </div>
+
+          {/* ── Chief Resident scope selector ───────────────────────────── */}
+          <div className="rounded-xl border border-white/8 bg-white/2 p-3">
+            <div className="text-[10px] text-white/35 uppercase tracking-wider mb-2">Ask Chief Resident</div>
+            {/* Scope chips */}
+            <div className="flex gap-1 mb-2.5">
+              {([
+                { key: "page",      label: "Current Page",   enabled: true },
+                { key: "selection", label: "Selected Text",  enabled: selectionText.length > 0 },
+                { key: "concept",   label: "Active Concept", enabled: !!activeThoughtUnit },
+              ] as const).map(({ key, label, enabled }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => enabled && setCrScope(key)}
+                  disabled={!enabled}
+                  className={`flex-1 px-1.5 py-1 rounded-md text-[10px] border transition-colors ${
+                    crScope === key && enabled
+                      ? "bg-emerald-700/35 border-emerald-500/50 text-emerald-200 font-semibold"
+                      : enabled
+                      ? "bg-white/4 border-white/8 text-white/50 hover:bg-white/8"
+                      : "bg-white/2 border-white/5 text-white/20 cursor-not-allowed"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Context preview */}
+            {crScope === "selection" && selectionText && (
+              <div className="mb-2 text-[10.5px] text-white/40 italic line-clamp-2 leading-snug">
+                &ldquo;{selectionText.slice(0, 100)}&rdquo;
+              </div>
+            )}
+            {crScope === "concept" && activeThoughtUnit && (
+              <div className="mb-2 text-[10.5px] text-white/40 italic line-clamp-1">
+                {activeThoughtUnit.title}
+              </div>
+            )}
+            {/* Ask button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (crScope === "selection" && onOpenExplainStep) { onOpenExplainStep(); }
+                else if (crScope === "concept" && onOpenExplainConcept) { onOpenExplainConcept(); }
+                else if (onOpenExplainIt) { onOpenExplainIt(); }
+              }}
+              disabled={
+                (crScope === "selection" && !selectionText) ||
+                (crScope === "concept" && !activeThoughtUnit)
+              }
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-900/20 px-3 py-2 text-[11.5px] font-semibold text-emerald-300 hover:bg-emerald-900/35 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              🩺 Ask Chief Resident
             </button>
           </div>
         </div>
