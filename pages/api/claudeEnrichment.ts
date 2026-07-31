@@ -177,7 +177,7 @@ Add all enrichment fields. Output JSON only.`;
       max_tokens: 640,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userPrompt }],
-    } as Parameters<typeof client.messages.create>[0]);
+    } as Parameters<typeof client.messages.create>[0]) as Anthropic.Message;
 
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
 

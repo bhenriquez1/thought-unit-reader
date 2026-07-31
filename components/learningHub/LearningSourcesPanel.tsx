@@ -16,6 +16,7 @@ import {
   type ExtractedThoughtUnit,
   PROVENANCE_LABELS,
   PROVENANCE_COLORS,
+  AUTHORITY_FOR_TYPE,
   genSourceId,
   genUnitId,
   deleteSource,
@@ -253,14 +254,16 @@ export default function LearningSourcesPanel({
       }));
 
       const newSource: LearningSource = {
-        id:           genSourceId(),
+        id:               genSourceId(),
         bookId,
-        label:        form.label.trim(),
-        type:         form.type,
-        text:         form.text,
-        url:          form.url.trim() || undefined,
-        thoughtUnits: units,
-        createdAt:    Date.now(),
+        label:            form.label.trim(),
+        type:             form.type,
+        authorityLevel:   AUTHORITY_FOR_TYPE[form.type] ?? "ai-explanation",
+        canonicalUnitIds: [],
+        text:             form.text,
+        url:              form.url.trim() || undefined,
+        thoughtUnits:     units,
+        createdAt:        Date.now(),
       };
 
       await saveSource(newSource);

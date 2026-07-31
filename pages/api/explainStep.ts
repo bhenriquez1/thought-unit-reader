@@ -180,7 +180,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
       if (reply) {
         DEV && console.log("[EXPLAIN_STEP_DONE]", { page: body.pageNumber ?? null, provider: "openai", model, usedWebSearch: useWebSearch, replyPreview: reply.slice(0, 100) });
-        return res.status(200).json({ reply, provider: "openai", usedWebSearch });
+        return res.status(200).json({ reply, provider: "openai", usedWebSearch: useWebSearch });
       }
     } catch (err: unknown) {
       DEV && console.error("[EXPLAIN_STEP_OPENAI_ERROR]", err instanceof Error ? err.message : String(err));

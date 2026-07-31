@@ -170,11 +170,11 @@ function buildHubSpokeLayout(rn: RawNode[], re: RawEdge[]): SceneLayout {
     const a = start + i * step;
     const hcx = s.x + s.w / 2, hcy = s.y + s.h / 2;
     return {
-      id: `e${i}`, label: null,
+      id: `e${i}`, label: undefined as string | null | undefined,
       x1: hcx + (s.w / 2 + 4) * Math.cos(a), y1: hcy + (s.h / 2 + 4) * Math.sin(a),
       x2: t.x + t.w / 2 - (SW / 2 + 4) * Math.cos(a), y2: t.y + t.h / 2 - (SH / 2 + 4) * Math.sin(a),
     };
-  }).filter((e): e is LayoutEdge => Boolean(e));
+  }).filter(Boolean) as LayoutEdge[];
 
   return { nodes, edges, svgW: W, svgH: H, grammar: "hub-spoke" };
 }
@@ -489,20 +489,21 @@ export default function VisualSceneEngine({ noteCards, pageTitle, onAnchorClick,
     narTokenRef.current = token;
     try {
       const voice = storedVoice();
-      const blob = await synthesizeVoiceFromText(text, voice);
-      if (isSpeechStale(SPEECH_OWNER, token)) { setNarState("idle"); return; }
+      const blob = await synthesizeVoiceFromText(text, { voice });
+      if (isSpeechStale(token)) { setNarState("idle"); return; }
+      if (!blob) { setNarState("idle"); if (playingRef.current) advance(); return; }
       const url = URL.createObjectURL(blob);
       narBlobUrlRef.current = url;
       const audio = new Audio(url);
       narAudioRef.current = audio;
-      registerActiveAudio(audio);
+      registerActiveAudio(token, audio);
       setNarState("playing");
       audio.playbackRate = speed;
       audio.play();
-      audio.onended  = () => { notifySpeechEnd();                                setNarState("idle"); if (playingRef.current) advance(); };
-      audio.onerror  = () => { notifySpeechError(new Error("TTS error"));       setNarState("idle"); if (playingRef.current) advance(); };
+      audio.onended  = () => { notifySpeechEnd(token, SPEECH_OWNER);                    setNarState("idle"); if (playingRef.current) advance(); };
+      audio.onerror  = () => { notifySpeechError(token, SPEECH_OWNER, "TTS error");     setNarState("idle"); if (playingRef.current) advance(); };
     } catch {
-      notifySpeechError(new Error("TTS synthesis failed"));
+      notifySpeechError(token, SPEECH_OWNER, "TTS synthesis failed");
       setNarState("idle");
       if (playingRef.current) advance();
     }

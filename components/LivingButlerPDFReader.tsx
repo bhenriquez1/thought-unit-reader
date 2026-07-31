@@ -200,7 +200,7 @@ export default function LivingButlerPDFReader({
     }
 
     // Load the PDF document via pdfjs-dist directly (same worker already configured above)
-    const loadingTask = pdfjs.getDocument(pdfUrl);
+    const loadingTask = (pdfjs as any).getDocument(pdfUrl);
     const pdfDoc = await loadingTask.promise;
     if (abort.cancelled) { loadingTask.destroy(); return pageTexts; }
 
