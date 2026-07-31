@@ -82,6 +82,7 @@ import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/Ex
 import ExplainItChat from "@/components/reader/ExplainItChat";
 import type { ExplainItContext, ExplainItMessage } from "@/lib/explainIt/types";
 import ChiefResidentModal, { type ChiefResidentContext } from "@/components/reader/ChiefResidentModal";
+import PdfContextMenu from "@/components/pdf/PdfContextMenu";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -692,7 +693,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  const [notesSubTab, setNotesSubTab] = useState<"notes" | "studyguide" | "teaching" | "sources">("notes");
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching" | "sources">("sources");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
@@ -710,6 +711,7 @@ export default function ThoughtUnitReader() {
   const explainItTurnsRef = useRef<Map<string, ExplainItMessage[]>>(new Map());
   const [chiefResidentContext, setChiefResidentContext] = useState<ChiefResidentContext | null>(null);
   const chiefResidentTurnsRef = useRef<Map<string, import("@/components/reader/ChiefResidentModal").ChiefResidentMessage[]>>(new Map());
+  const [pdfContextMenu, setPdfContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
   const [explainItPodcastSeed, setExplainItPodcastSeed] = useState<string | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
@@ -2643,6 +2645,22 @@ export default function ThoughtUnitReader() {
       learningProfile,
     });
   }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+
+  // Chief Resident Modal — "Active Concept" scope (explain-text with concept title as selection)
+  const handleOpenChiefResidentExplainConcept = useCallback(() => {
+    if (!activeCanonicalThoughtUnit) return;
+    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    const sm = currentPageStudyModel;
+    setChiefResidentContext({
+      mode: "explain-text",
+      selectedText: activeCanonicalThoughtUnit.title,
+      pageText,
+      pageThesis: sm?.pageThesis ?? null,
+      documentTitle: uploadedFile?.name,
+      pageNumber: currentPage,
+      learningProfile,
+    });
+  }, [activeCanonicalThoughtUnit, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
@@ -5002,7 +5020,15 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700" {...sel.bind}>
+              <div
+                className="relative h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700"
+                {...sel.bind}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const hasSelection = (sel.selectionText?.trim().length ?? 0) > 0;
+                  setPdfContextMenu({ x: e.clientX, y: e.clientY, hasSelection });
+                }}
+              >
                 {DEV && console.log("[LEFT_PANEL_INPUT_SOURCES]", {
                   source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
@@ -5209,6 +5235,8 @@ export default function ThoughtUnitReader() {
                 onOpenWhiteboard={handleOpenWhiteboardPanel}
                 onOpenExplainStep={handleOpenChiefResidentExplainStep}
                 onOpenExplainIt={handleOpenChiefResidentExplainPage}
+                onOpenExplainConcept={handleOpenChiefResidentExplainConcept}
+                selectionText={sel.selectionText ?? ""}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
                 onAskExpert={handleAskExpert}
@@ -5228,7 +5256,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1 flex-wrap">
-              {(["sources", "notes", "studyguide", "teaching"] as const).map(v => (
+              {(["sources", "notes", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
@@ -5238,27 +5266,15 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "✍️ Workspace" : v === "studyguide" ? "📑 Study Guide" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
+                  {v === "notes" ? "✍️ Workspace" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Learning Source Graph sub-tab — connected to readingFocusStore.thoughtUnitId */}
+          {/* Sources — Study Guide (top) feeds into Learning Sources (below).
+               Everything that teaches this concept lives here. */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "sources" ? "flex" : "none", flexDirection: "column" }}>
-            <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
-              <LearningSourcesManager
-                bookId={bookId}
-                currentPage={currentPage}
-                studyModel={currentPageStudyModel}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
-                refreshKey={noteLabRefreshKey}
-              />
-            </ErrorBoundary>
-          </div>
-
-          {/* Adaptive Study Guide sub-tab — always mounted to preserve generation state */}
-          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "studyguide" ? "flex" : "none", flexDirection: "column" }}>
             <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
               <StudyGuideLab
                 bookId={bookId}
@@ -6748,6 +6764,35 @@ export default function ThoughtUnitReader() {
             setChiefResidentContext(null);
             setShowWhiteboardPanel(true);
           }}
+        />
+      )}
+
+      {/* PDF right-click context menu */}
+      {pdfContextMenu && (
+        <PdfContextMenu
+          x={pdfContextMenu.x}
+          y={pdfContextMenu.y}
+          onClose={() => setPdfContextMenu(null)}
+          items={[
+            ...(pdfContextMenu.hasSelection ? [
+              {
+                icon: "💬",
+                label: "Explain Selection",
+                onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainStep(); },
+              },
+            ] : []),
+            {
+              icon: "🎓",
+              label: "Explain This Page",
+              separator: pdfContextMenu.hasSelection,
+              onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainPage(); },
+            },
+            {
+              icon: "🎨",
+              label: "Open Whiteboard",
+              onClick: () => { setPdfContextMenu(null); handleOpenWhiteboardPanel(); },
+            },
+          ]}
         />
       )}
 
