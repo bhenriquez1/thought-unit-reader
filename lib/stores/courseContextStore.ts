@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useSyllabusStore, type SyllabusTopic, type Syllabus } from './syllabusStore';
 import type { PageIntelligence, StudyCard as PageIntelStudyCard, Insight, Segment } from '../page-intelligence/types';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 // ============================================================================
 // IndexedDB Storage for PageIntelligence
@@ -668,6 +669,18 @@ if (typeof window !== 'undefined') {
         syllabusTopics: state.currentSyllabus?.topics || [],
         currentSyllabus: state.currentSyllabus,
       });
+    }
+  });
+
+  // Phase 2 One Brain: auto-sync page + document from CurrentLearningContext.
+  // pages/index.tsx writes CLC; this store self-updates without SurgeonCockpit fan-out.
+  useCurrentLearningContext.subscribe((state, prev) => {
+    const store = useCourseContextStore.getState();
+    if (state.documentId !== prev.documentId || state.totalPages !== prev.totalPages) {
+      if (state.documentId) store.setDocument(state.documentId, state.totalPages);
+    }
+    if (state.currentPage !== prev.currentPage) {
+      store.setPage(state.currentPage);
     }
   });
 }

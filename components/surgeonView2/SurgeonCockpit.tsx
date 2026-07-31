@@ -354,16 +354,16 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }
   }, [rightPanelState, activeTab, audience, depth, view, mode, syncInsightsToPdf, setActiveTab, setAudience, setDepth, setView, setMode, setEssentialStudentMode]);
 
-  // Sync document context on mount
+  // Sync document context on mount.
+  // courseContext and pageContext self-sync via their CurrentLearningContext
+  // subscriptions (Phase 2 One Brain). Only stores that need extra args or
+  // domain-specific resets are still driven explicitly here.
   useEffect(() => {
     if (documentId) {
       setDocId(documentId);
       setReaderDocument(documentId);
       surgeonEngine.setBook(documentId, surgeonEngine.domain);
       expertView.setDocument(documentId, documentTitle, totalPages);
-      pageContext.setDocument(documentId, totalPages);
-      // Initialize CourseContext with document info
-      courseContext.setDocument(documentId, totalPages);
     }
   }, [documentId, documentTitle, totalPages]);
 
@@ -378,10 +378,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       rightPanelScrollRef.current.scrollTop = 0;
     }
 
-    pageContext.setPage(activePageNumber);
-    expertView.setPage(activePageNumber);
+    // pageContext, expertView, and courseContext self-sync via CLC subscriptions.
     surgeonEngine.setPageContext(activePageNumber);
-    courseContext.setPage(activePageNumber);
     onPageChange(activePageNumber);
 
     extractionRequestIdRef.current += 1;

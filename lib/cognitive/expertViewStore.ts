@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useCurrentLearningContext } from '../context/learningContext';
 import type {
   DocId,
   PageIndex,
@@ -521,5 +522,16 @@ export const useExpertViewStore = create<ExpertViewStore>()(
     }
   )
 );
+
+// Phase 2 One Brain: auto-sync current page from CurrentLearningContext.
+// setDocument is NOT subscribed here — it requires documentTitle which is not
+// in CurrentLearningContext yet (planned for Phase 3).
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (state.currentPage !== prev.currentPage) {
+      useExpertViewStore.getState().setPage(Math.max(1, state.currentPage));
+    }
+  });
+}
 
 export default useExpertViewStore;
