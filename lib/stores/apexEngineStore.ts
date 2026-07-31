@@ -5,6 +5,7 @@
 const DEV = process.env.NODE_ENV === "development";
 
 import { create } from "zustand";
+import { useCurrentLearningContext } from '../context/learningContext';
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   ApexSection,
@@ -471,3 +472,13 @@ export const useApexEngineStore = create<ApexEngineStore>()(
     },
   ),
 );
+
+// Phase 5 One Brain: auto-update the book-scoped localStorage partition
+// whenever the active document (bookId) changes in CLC.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    if (state.bookId !== prev.bookId && state.bookId) {
+      setActiveApexBook(state.bookId);
+    }
+  });
+}

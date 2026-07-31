@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { InsightDepth } from '@/lib/stores/insightsPanelStore';
 import { buildActivePageContext, type ActivePageContext } from '@/lib/surgeonEngine/activePageContext';
+import { useCurrentLearningContext } from '../context/learningContext';
 
 export type ReaderTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
 export type ReaderSectionMode = 'quick' | 'deep';
@@ -103,3 +104,17 @@ export const useReaderState = create<ReaderStateStore>((set, get) => ({
     get().invalidateInsightCache(nextPageIndex);
   },
 }));
+
+// Phase 5 One Brain: auto-sync reader state from CLC so SurgeonCockpit
+// no longer needs to call setDocument/onPageChange explicitly.
+if (typeof window !== 'undefined') {
+  useCurrentLearningContext.subscribe((state, prev) => {
+    const store = useReaderState.getState();
+    if (state.documentId !== prev.documentId && state.documentId) {
+      store.setDocument(state.documentId);
+    }
+    if (state.currentPage !== prev.currentPage) {
+      store.onPageChange(state.currentPage);
+    }
+  });
+}
