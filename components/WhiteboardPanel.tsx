@@ -13,6 +13,7 @@ import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteS
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
+import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
 import dynamic from "next/dynamic";
 const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
@@ -188,6 +189,7 @@ export default function WhiteboardPanel({
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
+  const [canvasMode, setCanvasMode] = useState<"tldraw" | "visual">("tldraw");
   const [zoom, setZoom] = useState(0.95); // not "too zoomed" by default
   const [justGenerated, setJustGenerated] = useState(false); // brief glow when new steps land
   const [justDetected, setJustDetected] = useState(false);   // shows "Diagram detected" pill
@@ -799,16 +801,52 @@ export default function WhiteboardPanel({
             </div>
           )}
 
-          {/* ── Interactive canvas — always mounted; auto-draws when noteCards arrive ── */}
-          <div style={{ height: 520 }}>
-            <TldrawCanvas
-              noteCards={teachNoteCards}
-              pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-              onAnchorClick={onAnchorStep ?? undefined}
-              whiteboardGrammar={whiteboardGrammar}
-              autoReveal
-            />
-          </div>
+          {/* ── Interactive canvas ─────────────────────────────────────────── */}
+          {teachNoteCards.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
+                <button
+                  onClick={() => setCanvasMode("tldraw")}
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
+                    background: canvasMode === "tldraw" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
+                    color: canvasMode === "tldraw" ? "#86efac" : "#94a3b8",
+                    border: canvasMode === "tldraw" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
+                  }}
+                >
+                  Canvas
+                </button>
+                <button
+                  onClick={() => setCanvasMode("visual")}
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
+                    background: canvasMode === "visual" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
+                    color: canvasMode === "visual" ? "#86efac" : "#94a3b8",
+                    border: canvasMode === "visual" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
+                  }}
+                >
+                  Animated
+                </button>
+              </div>
+              {canvasMode === "tldraw" ? (
+                <div style={{ height: 520 }}>
+                  <TldrawCanvas
+                    noteCards={teachNoteCards}
+                    pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                    onAnchorClick={onAnchorStep ?? undefined}
+                    whiteboardGrammar={whiteboardGrammar}
+                  />
+                </div>
+              ) : (
+                <VisualSceneEngine
+                  noteCards={teachNoteCards}
+                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  onAnchorClick={onAnchorStep ?? undefined}
+                  whiteboardGrammar={whiteboardGrammar}
+                />
+              )}
+            </div>
+          )}
 
           {/* ── Concept-only fallback: animated canvas (no studyModel) ─────── */}
           {!studyModel && (
