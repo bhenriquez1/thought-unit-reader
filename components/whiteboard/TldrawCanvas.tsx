@@ -101,11 +101,13 @@ interface Props {
   pageTitle?: string | null;
   whiteboardGrammar?: string;
   onAnchorClick?: (nodeId: string) => void;
-  /** Phase 1: typed scene graph — accepted but not yet consumed (Phase 2 wires it). */
+  /** Phase 1: typed scene graph — used in Phase 3 to resolve sourceIds for One Brain sync. */
   vsg?: VisualSceneGraph;
+  /** Phase 3: when set, selects and centers on the shape whose sourceId matches. */
+  activeAnchorId?: string | null;
 }
 
-export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar = "flow", onAnchorClick }: Props) {
+export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar = "flow", onAnchorClick, vsg, activeAnchorId }: Props) {
   const editorRef = useRef<Editor | null>(null);
   const builtRef  = useRef(false);
 
@@ -121,6 +123,20 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
   const orderedShapeIdsRef = useRef<ReturnType<typeof createShapeId>[]>([]);
   const narrationMapRef    = useRef<Map<string, string>>(new Map());
 
+  // ── Phase 3 One Brain sync refs ───────────────────────────────────────────
+  // sourceId → tldraw shapeId (for outside→canvas highlight)
+  const sourceIdToShapeIdRef = useRef<Map<string, string>>(new Map());
+  // tldraw shapeId → sourceId (for canvas→outside click-to-focus)
+  const shapeIdToSourceIdRef = useRef<Map<string, string>>(new Map());
+  // Stable ref so the store listener never captures a stale onAnchorClick
+  const onAnchorClickRef = useRef(onAnchorClick);
+  useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
+  // Store listener unsubscribe handle
+  const storeUnsubRef = useRef<(() => void) | null>(null);
+  // Latest VSG accessible inside buildShapes without adding it to useCallback deps
+  const vsgRef = useRef(vsg);
+  useEffect(() => { vsgRef.current = vsg; }, [vsg]);
+
   // Keep ref in sync with state
   const setRevealIndex = useCallback((n: number) => {
     revealIndexRef.current = n;
@@ -132,9 +148,31 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
     if (!noteCards.length) return;
     editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
 
-    // Reset reveal bookkeeping
-    orderedShapeIdsRef.current  = [];
-    narrationMapRef.current     = new Map();
+    // Reset reveal and One Brain bookkeeping
+    orderedShapeIdsRef.current   = [];
+    narrationMapRef.current      = new Map();
+    sourceIdToShapeIdRef.current = new Map();
+    shapeIdToSourceIdRef.current = new Map();
+
+    // Build label→sourceId lookup from VSG when available so clicks use real entry IDs.
+    // Falls back to computing the ID from the noteCardsToCanonicalEntries formula.
+    const vsgLabelMap = new Map<string, string>(); // normalised label → sourceId
+    if (vsgRef.current) {
+      for (const node of vsgRef.current.nodes) {
+        vsgLabelMap.set(node.label.trim().toLowerCase(), node.sourceId);
+      }
+    }
+
+    const anchorSourceId = (cardIdx: number, cardTitle: string): string => {
+      const key = cardTitle.trim().toLowerCase();
+      return vsgLabelMap.get(key)
+        ?? `nc_${cardIdx}_${cardTitle.slice(0, 20).replace(/\s+/g, "_")}`;
+    };
+
+    const registerAnchor = (sid: ReturnType<typeof createShapeId>, sourceId: string) => {
+      sourceIdToShapeIdRef.current.set(sourceId, String(sid));
+      shapeIdToSourceIdRef.current.set(String(sid), sourceId);
+    };
 
     let y = 60;
     noteCards.forEach((card, cardIdx) => {
@@ -150,6 +188,7 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
         });
         orderedShapeIdsRef.current.push(sid);
         narrationMapRef.current.set(sid, card.body);
+        registerAnchor(sid, anchorSourceId(cardIdx, card.title));
         y += 120;
         return;
       }
@@ -173,6 +212,8 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
           ? (card.title ? `${card.title}\n\n${card.body}` : card.body)
           : node.label,
         );
+        // First node is the One Brain anchor for this card
+        if (nIdx === 0) registerAnchor(sid, anchorSourceId(cardIdx, card.title));
       });
 
       arrows.forEach((arrow, aIdx) => {
@@ -210,7 +251,23 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
       builtRef.current = true;
       buildShapes(editor);
     }
+
+    // Phase 3: canvas → world. When the user selects exactly one grounded shape,
+    // fire onAnchorClick with its sourceId so PDF/left-panel/speech follow.
+    storeUnsubRef.current?.();
+    storeUnsubRef.current = editor.store.listen(
+      () => {
+        const selected = editor.getSelectedShapes();
+        if (selected.length !== 1) return;
+        const sourceId = shapeIdToSourceIdRef.current.get(String(selected[0].id));
+        if (sourceId) onAnchorClickRef.current?.(sourceId);
+      },
+      { scope: "session", source: "user" },
+    );
   }, [buildShapes]);
+
+  // Unsubscribe store listener on unmount
+  useEffect(() => () => { storeUnsubRef.current?.(); }, []);
 
   // Rebuild when noteCards change; reset controller state
   useEffect(() => {
@@ -283,6 +340,27 @@ export default function TldrawCanvas({ noteCards, pageTitle, whiteboardGrammar =
     const t = window.setTimeout(handleNext, SPEED_DELAY[speed]);
     return () => clearTimeout(t);
   }, [isPlaying, revealIndex, speed, handleNext]);
+
+  // Phase 3: world → canvas. When the reading focus changes externally
+  // (PDF click, left-panel selection, speech), select the matching shape
+  // and pan the viewport to center on it without forcing a zoom change.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (!activeAnchorId) {
+      editor.selectNone();
+      return;
+    }
+    const sid = sourceIdToShapeIdRef.current.get(activeAnchorId);
+    if (!sid) return;
+    const shape = editor.getShape(sid as ReturnType<typeof createShapeId>);
+    if (!shape) return;
+    editor.select(sid as ReturnType<typeof createShapeId>);
+    const bounds = editor.getShapePageBounds(sid as ReturnType<typeof createShapeId>);
+    if (bounds) {
+      editor.centerOnPoint({ x: bounds.midX, y: bounds.midY }, { duration: 300 });
+    }
+  }, [activeAnchorId]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 

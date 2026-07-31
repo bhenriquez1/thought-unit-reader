@@ -872,6 +872,7 @@ export default function WhiteboardPanel({
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
+                  activeAnchorId={activeAnchorId}
                   whiteboardGrammar={whiteboardGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                 />
