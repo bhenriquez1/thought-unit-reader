@@ -15,7 +15,7 @@ import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
 import dynamic from "next/dynamic";
-const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
+const AvrrioWhiteboard = dynamic(() => import("@/components/whiteboard/AvrrioWhiteboard"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
@@ -874,7 +874,7 @@ export default function WhiteboardPanel({
               {/* Both views stay mounted so tldraw editor state (student annotations) is
                   preserved across Canvas ↔ Animated switches. CSS display toggles visibility. */}
               <div style={{ height: 520, display: canvasMode === "tldraw" ? "block" : "none" }}>
-                <TldrawCanvas
+                <AvrrioWhiteboard
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
