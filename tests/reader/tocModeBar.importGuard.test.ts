@@ -1,16 +1,15 @@
 // tests/reader/tocModeBar.importGuard.test.ts
 //
-// Regression guard for the production ReferenceError: TocModeBar is not defined.
+// Originally: guard against a ReferenceError where TocModeBar was used without
+// being imported in ThoughtUnitNavigator.
 //
-// Root cause: ThoughtUnitNavigator.tsx used <TocModeBar /> without importing it;
-// the component existed at components/reader/TocModeBar.tsx but the import was
-// absent, producing a runtime crash on every page load.
+// Updated (stabilization sprint): TocModeBar and ReaderModeBar were intentionally
+// removed from ThoughtUnitNavigator as part of the left-panel simplification —
+// the panel now always renders one adaptive Student Guide instead of offering
+// Standard / Learning / Concept mode switches.
 //
-// This test catches the class of bug at the static-analysis layer:
-//   1. The component file exists and has a default export.
-//   2. ThoughtUnitNavigator explicitly imports it.
-// It runs in the Node test environment (no DOM/jsdom required) and completes
-// in milliseconds, making it safe to include in the standard test suite.
+// This test now guards the opposite: that neither mode-switch component creeps
+// back into ThoughtUnitNavigator without a deliberate decision.
 
 import fs from "fs";
 import path from "path";
@@ -18,25 +17,41 @@ import path from "path";
 const READER_DIR   = path.resolve(__dirname, "../../components/reader");
 const NAVIGATOR    = path.join(READER_DIR, "ThoughtUnitNavigator.tsx");
 const TOC_MODE_BAR = path.join(READER_DIR, "TocModeBar.tsx");
+const READER_MODE_BAR = path.join(READER_DIR, "ReaderModeBar.tsx");
 
-describe("TocModeBar import guard", () => {
-  it("TocModeBar.tsx exists", () => {
+describe("Left-panel mode-bar removal guard", () => {
+  it("TocModeBar.tsx still exists as a standalone component", () => {
+    // The file is kept — it may be useful outside ThoughtUnitNavigator in future.
     expect(fs.existsSync(TOC_MODE_BAR)).toBe(true);
   });
 
-  it("TocModeBar.tsx has a default export", () => {
-    const src = fs.readFileSync(TOC_MODE_BAR, "utf8");
-    expect(src).toMatch(/export default function TocModeBar/);
+  it("ReaderModeBar.tsx still exists as a standalone component", () => {
+    expect(fs.existsSync(READER_MODE_BAR)).toBe(true);
   });
 
-  it("ThoughtUnitNavigator.tsx imports TocModeBar", () => {
+  it("ThoughtUnitNavigator does NOT import TocModeBar (intentional removal)", () => {
     const src = fs.readFileSync(NAVIGATOR, "utf8");
-    // Must have a static import (not just a JSX reference) so bundlers resolve it.
-    expect(src).toMatch(/import TocModeBar from ["']\.\/TocModeBar["']/);
+    expect(src).not.toMatch(/import TocModeBar from/);
   });
 
-  it("ThoughtUnitNavigator.tsx references <TocModeBar", () => {
+  it("ThoughtUnitNavigator does NOT render <TocModeBar (intentional removal)", () => {
     const src = fs.readFileSync(NAVIGATOR, "utf8");
-    expect(src).toMatch(/<TocModeBar/);
+    expect(src).not.toMatch(/<TocModeBar/);
+  });
+
+  it("ThoughtUnitNavigator does NOT import ReaderModeBar (intentional removal)", () => {
+    const src = fs.readFileSync(NAVIGATOR, "utf8");
+    expect(src).not.toMatch(/import ReaderModeBar from/);
+  });
+
+  it("ThoughtUnitNavigator does NOT render <ReaderModeBar (intentional removal)", () => {
+    const src = fs.readFileSync(NAVIGATOR, "utf8");
+    expect(src).not.toMatch(/<ReaderModeBar/);
+  });
+
+  it("ThoughtUnitNavigator renders LEARNING_BUCKETS directly (adaptive Student Guide)", () => {
+    const src = fs.readFileSync(NAVIGATOR, "utf8");
+    expect(src).toMatch(/LEARNING_BUCKETS/);
+    expect(src).toMatch(/renderLearningGroups/);
   });
 });
