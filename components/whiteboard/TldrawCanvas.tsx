@@ -217,14 +217,20 @@ export default function TldrawCanvas({
       if (nodes.length === 0) {
         const sid = createShapeId(`card-${cardIdx}`);
         editor.createShape({
-          id: sid, type: "text", x: 100, y,
-          props: { text: card.title + "\n" + card.body.slice(0, 120), size: "s", font: "sans", color: "black" },
-        } as any); // opacity:0 not in narrow union; set below
-        editor.updateShape({ id: sid, type: "text", opacity: 0 });
+          id: sid, type: "geo", x: 80, y,
+          props: {
+            geo: "rectangle", w: 300, h: 68,
+            text: card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100),
+            fill: "solid", size: "s",
+            color: tier === "master" ? "yellow" : tier === "step" ? "green"
+                 : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
+          },
+        } as any);
+        editor.updateShape({ id: sid, type: "geo", opacity: 0 });
         orderedShapeIdsRef.current.push(sid);
         narrationMapRef.current.set(sid, card.body);
         registerAnchor(sid, anchorId);
-        y += 120;
+        y += 90;
         return;
       }
 
@@ -612,6 +618,31 @@ export default function TldrawCanvas({
           onMount={handleMount}
           hideUi={false}
         />
+        {/* Loading skeleton — shown while VSG/noteCards haven't arrived yet */}
+        {noteCards.length === 0 && (
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            background: "rgba(15,23,42,0.88)", zIndex: 10, gap: 16,
+          }}>
+            <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace", letterSpacing: "0.04em" }}>
+              Preparing visual lesson…
+            </span>
+            {/* Ghost skeleton shapes */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", opacity: 0.35 }}>
+              {[280, 220, 250].map((w, i) => (
+                <div key={i} style={{
+                  width: w, height: 52, borderRadius: 8,
+                  background: "linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%)",
+                  backgroundSize: "200% 100%",
+                  animation: "wb-shimmer 1.4s ease-in-out infinite",
+                  animationDelay: `${i * 0.2}s`,
+                }} />
+              ))}
+            </div>
+            <style>{`@keyframes wb-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          </div>
+        )}
       </div>
     </div>
   );

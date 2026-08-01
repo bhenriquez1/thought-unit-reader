@@ -249,6 +249,15 @@ export default function PdfEvidenceOverlay({
             const mid = (braceY1 + braceY2) / 2;
             return (
               <g key="mech-brace" opacity="0.55">
+                {/* PROCEDURE header above the first mechanism rect */}
+                <text
+                  x={braceX + 12} y={first.top - 4}
+                  fontSize="7" fontFamily="ui-monospace, SFMono-Regular, monospace"
+                  fontWeight="700" letterSpacing="0.08em"
+                  fill="#86efac" opacity="0.75" textAnchor="start"
+                >
+                  PROCEDURE
+                </text>
                 {/* vertical stem */}
                 <line x1={braceX + 4} y1={braceY1} x2={braceX + 4} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
                 {/* top tick */}
@@ -257,6 +266,24 @@ export default function PdfEvidenceOverlay({
                 <line x1={braceX + 4} y1={braceY2} x2={braceX + 8} y2={braceY2} stroke="#86efac" strokeWidth="1.5" />
                 {/* mid pointer */}
                 <polyline points={`${braceX + 4},${mid} ${braceX},${mid}`} stroke="#86efac" strokeWidth="1.5" fill="none" />
+                {/* Circled step numbers aligned with each mechanism rect */}
+                {mechanismChain.map((r) => {
+                  const stepNum = mechanismStepIndex.get(r.id);
+                  if (!stepNum) return null;
+                  const cy = r.top + r.height / 2;
+                  return (
+                    <g key={`step-${r.id}`}>
+                      <circle cx={braceX + 4} cy={cy} r={7} fill="#14532d" stroke="#86efac" strokeWidth="1" opacity="0.85" />
+                      <text
+                        x={braceX + 4} y={cy + 3}
+                        fontSize="7" fontFamily="ui-monospace, monospace" fontWeight="700"
+                        fill="#86efac" textAnchor="middle"
+                      >
+                        {stepNum}
+                      </text>
+                    </g>
+                  );
+                })}
               </g>
             );
           })()}
@@ -338,8 +365,14 @@ export default function PdfEvidenceOverlay({
         const hasLeftMargin = rect.left >= 50;
         const tierStyle = tierGlowStyle(rect.priorityTier, cfg.glowColor);
         // Domain-adaptive label: use packTierLabels override when the active pack provides one.
+        // Semantic overrides take priority: definition → "DEFINE", pearl tier → ◆ prefix.
         const tier = getTierForRect(rect);
-        const displayLabel = packTierLabels?.[tier] ?? cfg.label;
+        const baseLabel = packTierLabels?.[tier] ?? cfg.label;
+        const displayLabel = rect.semanticKind === "definition"
+          ? "DEFINE"
+          : tier === "pearl"
+            ? `◆ ${baseLabel}`
+            : baseLabel;
         return (
           <button
             key={rect.id}
@@ -404,7 +437,16 @@ export default function PdfEvidenceOverlay({
                 )}
               </span>
             )}
-            {/* Circled step numbers are now rendered in the SVG brace margin — no in-rect badge needed */}
+            {/* Trap notch — top-left corner triangle for danger rects (first line only) */}
+            {tier === "danger" && isFirstLine && (
+              <span style={{
+                position: "absolute", top: 0, left: 0, width: 0, height: 0,
+                borderTop: "9px solid rgba(252,165,165,0.85)",
+                borderRight: "9px solid transparent",
+                borderRadius: "3px 0 0 0",
+                pointerEvents: "none",
+              }} />
+            )}
           </button>
         );
       })}
