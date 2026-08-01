@@ -22,6 +22,7 @@ import {
 import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import Recall2Lab from "./Recall2Lab";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -150,6 +151,7 @@ export default function RecallLab({
   });
   const [view, setView] = useState<View>({ kind: "dashboard" });
   const [initialLoaded, setInitialLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"classic" | "v2">("classic");
 
   // On mount: load from IDB (authoritative)
   useEffect(() => {
@@ -265,6 +267,24 @@ export default function RecallLab({
     );
   }
 
+  // --- Recall 2.0 tab ---
+  if (activeTab === "v2") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+        <RecallTabBar active={activeTab} onChange={setActiveTab} />
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <Recall2Lab
+            bookId={bookId}
+            bookTitle={sets[0]?.bookTitle}
+            topic={currentPageTitle ?? undefined}
+            legacySets={sets}
+            onNavigateToPage={onNavigateToPage}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // --- Empty state ---
   if (sets.length === 0) {
     return (
@@ -311,6 +331,8 @@ export default function RecallLab({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Version tab bar */}
+      <RecallTabBar active={activeTab} onChange={setActiveTab} />
       {/* Header */}
       <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1098,4 +1120,44 @@ function sessionBtn(color: string): React.CSSProperties {
     fontWeight: 700,
     cursor: "pointer",
   };
+}
+
+// ── Version tab bar ───────────────────────────────────────────────────────
+
+function RecallTabBar({
+  active,
+  onChange,
+}: {
+  active: "classic" | "v2";
+  onChange: (tab: "classic" | "v2") => void;
+}) {
+  return (
+    <div style={{
+      display: "flex", gap: 0, flexShrink: 0,
+      borderBottom: "1px solid rgba(255,255,255,0.07)",
+      background: "rgba(0,0,0,0.2)",
+    }}>
+      {(["classic", "v2"] as const).map(tab => {
+        const isActive = active === tab;
+        return (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onChange(tab)}
+            style={{
+              flex: 1, padding: "7px 0",
+              fontSize: 10, fontWeight: isActive ? 700 : 500,
+              cursor: "pointer", border: "none",
+              color: isActive ? "rgba(255,255,255,0.9)" : "rgba(148,163,184,0.45)",
+              background: "transparent",
+              borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {tab === "classic" ? "Recall Lab" : "✨ Recall 2.0"}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
