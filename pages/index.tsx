@@ -2620,47 +2620,65 @@ export default function ThoughtUnitReader() {
     const text = sel.selectionText?.trim() ?? "";
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    // Guard: only use pageThesis when the study model was generated for the current page.
+    // A stale thesis from the previous page is a stronger signal than the actual pageText
+    // and causes the AI to respond about the wrong subject.
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
     setChiefResidentContext({
       mode: "explain-text",
       selectedText: text || undefined,
       pageText,
-      pageThesis: sm?.pageThesis ?? null,
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
       learningProfile,
+      canonicalEntries: canonicalLeftPanelUnits
+        .filter(u => u.exactText?.trim())
+        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
+      pack: activePack,
     });
     sel.clearSelection?.();
-  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
 
   // Chief Resident Modal — "Explain It" / "Explain This Page" route
   const handleOpenChiefResidentExplainPage = useCallback(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
     setChiefResidentContext({
       mode: "explain-page",
       pageText,
-      pageThesis: sm?.pageThesis ?? null,
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
       learningProfile,
+      canonicalEntries: canonicalLeftPanelUnits
+        .filter(u => u.exactText?.trim())
+        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
+      pack: activePack,
     });
-  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
 
   // Chief Resident Modal — "Active Concept" scope (explain-text with concept title as selection)
   const handleOpenChiefResidentExplainConcept = useCallback(() => {
     if (!activeCanonicalThoughtUnit) return;
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
     setChiefResidentContext({
       mode: "explain-text",
       selectedText: activeCanonicalThoughtUnit.title,
       pageText,
-      pageThesis: sm?.pageThesis ?? null,
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
       learningProfile,
+      canonicalEntries: canonicalLeftPanelUnits
+        .filter(u => u.exactText?.trim())
+        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
+      pack: activePack,
     });
-  }, [activeCanonicalThoughtUnit, pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, learningProfile]);
+  }, [activeCanonicalThoughtUnit, pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
