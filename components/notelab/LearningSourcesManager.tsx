@@ -24,6 +24,7 @@ import {
   type SourceAuthority,
 } from "@/lib/learningHub/learningSourceStore";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import EvidenceWorkspace from "./EvidenceWorkspace";
 
 // ── Source catalogue ─────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ const SOURCE_CATALOGUE: SourceTypeDef[] = [
 
 // ── View types ────────────────────────────────────────────────────────────────
 
-type PanelView = "sources" | "guide";
+type PanelView = "evidence" | "sources" | "guide";
 type AddStep = "pick-type" | "enter-content";
 
 interface AddDraft {
@@ -96,7 +97,7 @@ export default function LearningSourcesManager({
   // Active canonical thought unit from the shared focus store
   const activeUnitId = useReadingFocusStore(s => s.thoughtUnitId);
 
-  const [view, setView] = useState<PanelView>("sources");
+  const [view, setView] = useState<PanelView>("evidence");
   const [sources, setSources] = useState<LearningSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [addStep, setAddStep] = useState<AddStep | null>(null);
@@ -231,17 +232,21 @@ export default function LearningSourcesManager({
 
         {/* View toggle */}
         <div className="flex gap-1">
-          {(["sources", "guide"] as const).map(v => (
+          {([
+            { key: "evidence", label: "Evidence" },
+            { key: "sources",  label: "Sources"  },
+            { key: "guide",    label: "Guide"    },
+          ] as const).map(({ key, label }) => (
             <button
-              key={v}
-              onClick={() => setView(v)}
+              key={key}
+              onClick={() => setView(key)}
               className={`px-3 py-1 rounded text-[11px] font-medium transition-colors ${
-                view === v
+                view === key
                   ? "bg-slate-700 text-slate-100"
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              {v === "sources" ? "Sources" : "Guide"}
+              {label}
             </button>
           ))}
         </div>
@@ -363,6 +368,16 @@ export default function LearningSourcesManager({
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-6 text-center text-slate-500 text-xs">Loading sources…</div>
+        ) : view === "evidence" ? (
+          <EvidenceWorkspace
+            sources={unitSources}
+            activeUnitId={activeUnitId}
+            activeUnitLabel={activeUnitLabel}
+            studyModel={studyModel}
+            onUpdateSource={(s) => setSources(prev => prev.map(x => x.id === s.id ? s : x))}
+            onDeleteSource={handleDelete}
+            onRequestAdd={() => { setAddStep("pick-type"); setDraft(EMPTY_DRAFT); }}
+          />
         ) : view === "sources" ? (
           <SourcesView
             sources={sources}

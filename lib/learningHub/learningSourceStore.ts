@@ -125,6 +125,15 @@ export interface ExtractedThoughtUnit {
   grounding:    string;    // 1-sentence: how it connects to the textbook concept
 }
 
+/** How this source relates to the concept it is linked to. */
+export type EvidenceRelationship =
+  | "supports"      // confirms or reinforces the concept
+  | "expands"       // adds detail beyond what the textbook covers
+  | "illustrates"   // provides a concrete example or analogy
+  | "contradicts"   // disagrees with the textbook or another source
+  | "updates"       // more recent information that supersedes older sources
+  | "questions";    // raises uncertainty or an open question about the concept
+
 export interface LearningSource {
   id:               string;              // "ls-{timestamp}-{random5}"
   bookId:           string;
@@ -132,12 +141,16 @@ export interface LearningSource {
   label:            string;              // user-given display name
   type:             LearningSourceType;
   authorityLevel:   SourceAuthority;
-  text:             string;              // pasted/fetched source content
-  url?:             string;              // optional origin URL
+  text:             string;             // pasted/fetched source content
+  url?:             string;             // optional origin URL
   /** IDs of canonical thought units this source is linked to.
    *  Empty = book-level source (contributes to any unit); populated = unit-specific. */
   canonicalUnitIds: string[];
   thoughtUnits:     ExtractedThoughtUnit[];
+  /** Evidence Workspace: how this source relates to the linked concept. */
+  relationship?:    EvidenceRelationship;
+  /** Evidence Workspace: 0–100 user-set or auto-computed confidence in this source. */
+  sourceConfidence?: number;
   createdAt:        number;
   updatedAt?:       number;
 }
