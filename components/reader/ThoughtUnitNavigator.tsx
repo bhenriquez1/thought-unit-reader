@@ -21,8 +21,7 @@ import DomainModeSelector from "./DomainModeSelector";
 import { getPageProgress, markProgress, type ProgressStep } from "@/lib/reader/thoughtUnitProgress";
 import ImportanceBadge from "./ImportanceBadge";
 import EvidencePanel from "./EvidencePanel";
-import ReaderModeBar from "./ReaderModeBar";
-import TocModeBar from "./TocModeBar";
+
 import SemanticSearch from "./SemanticSearch";
 import { groupByCanonicalType, isGroupVisibleInMode } from "@/lib/reader/semanticGrouping";
 import { resolveSemanticPack } from "@/lib/reader/semanticPackResolver";
@@ -337,7 +336,6 @@ export default function ThoughtUnitNavigator({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [evidenceEntryId, setEvidenceEntryId] = useState<string | null>(null);
   const readerMode    = useReaderModeStore((s) => s.mode);
-  const tocViewMode   = useReaderModeStore((s) => s.tocViewMode);
 
   // Guided teach-loop / PDF-click focus: scroll the active card into view, same
   // pattern RightPanel.tsx already uses for its own Study Notes cards — without
@@ -481,16 +479,6 @@ export default function ThoughtUnitNavigator({
             {isSpeaking && (
               <span className="animate-pulse text-emerald-400 text-[7px] shrink-0">◎ live</span>
             )}
-            {focused && onExplain && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-                className="ml-auto text-[8px] text-white/35 hover:text-white/70 transition-colors shrink-0"
-                title="Explain this"
-              >
-                💬
-              </button>
-            )}
           </div>
 
           {/* Brief text — 1 line normally, 2 lines when active */}
@@ -565,16 +553,6 @@ export default function ThoughtUnitNavigator({
           {briefText}
         </span>
         {isSpeaking && <span className="animate-pulse text-emerald-400 text-[8px] shrink-0">◎</span>}
-        {focused && onExplain && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onExplain(entry.id); }}
-            className="ml-1 text-[9px] text-white/25 hover:text-white/60 shrink-0 transition-colors"
-            title="Explain"
-          >
-            💬
-          </button>
-        )}
       </div>
     );
   }
@@ -650,10 +628,9 @@ export default function ThoughtUnitNavigator({
         </div>
       )}
 
-      {/* Thin divider + mode controls (compact) */}
+      {/* Thin divider + search */}
       <div className="h-px bg-white/8 mx-2" />
       <div className="flex items-center gap-1.5 px-2 py-1">
-        <TocModeBar className="shrink-0" />
         {entries.length > 0 && (
           <SemanticSearch
             entries={entries}
@@ -669,7 +646,6 @@ export default function ThoughtUnitNavigator({
             onChange={onPresetChange}
           />
         )}
-        <ReaderModeBar className="shrink-0" />
       </div>
     </div>
   );
@@ -861,64 +837,29 @@ export default function ThoughtUnitNavigator({
       )}
       {/* Summary strip — learning buckets, canonical chips, or kind chips */}
       <div className="flex items-center gap-1.5 flex-wrap px-1" data-testid="thought-unit-summary-strip">
-        {tocViewMode === "learning"
-          ? LEARNING_BUCKETS.map((b, i) => {
-              const count = entries.filter((e) => {
-                const key = e.canonicalType ?? (e.kind as string);
-                return (LEARNING_BUCKET_IDX[key] ?? 4) === i;
-              }).length;
-              if (count === 0) return null;
-              return (
-                <span
-                  key={b.id}
-                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
-                  style={{ background: b.bg, color: b.color, border: `1px solid ${b.color}44` }}
-                >
-                  <span>{b.icon}</span>
-                  <span className="uppercase">{b.label}</span>
-                  {count > 1 && <span className="opacity-70">×{count}</span>}
-                </span>
-              );
-            })
-          : (tocViewMode === "concept" || useCanonicalGrouping)
-          ? canonicalGrouping.groups.filter((g) => isGroupVisibleInMode(g, readerMode)).map((g) => (
-              <span
-                key={`summary-ct-${g.id}`}
-                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight bg-white/6 text-white/50 border border-white/10"
-                title={g.label}
-              >
-                <span>{g.icon}</span>
-                <span className="uppercase">{g.shortLabel}</span>
-                {(canonicalGrouping.byGroup.get(g.id)?.length ?? 0) > 1 && (
-                  <span className="opacity-70">×{canonicalGrouping.byGroup.get(g.id)?.length}</span>
-                )}
-              </span>
-            ))
-          : grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
-              const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
-              const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
-              const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };
-              const tier = getImportanceTier(groupIndex);
-              return (
-                <span
-                  key={`summary-${id}`}
-                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
-                  style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
-                  title={`${tier.label} priority`}
-                >
-                  <span>{tierGlyph(tier.stars, representativeKind)}</span>
-                  <span className="uppercase">{meta.label}</span>
-                  {items.length > 1 && <span className="opacity-70">×{items.length}</span>}
-                </span>
-              );
-            })}
+        {LEARNING_BUCKETS.map((b, i) => {
+          const count = entries.filter((e) => {
+            const key = e.canonicalType ?? (e.kind as string);
+            return (LEARNING_BUCKET_IDX[key] ?? 4) === i;
+          }).length;
+          if (count === 0) return null;
+          return (
+            <span
+              key={b.id}
+              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold tracking-tight"
+              style={{ background: b.bg, color: b.color, border: `1px solid ${b.color}44` }}
+            >
+              <span>{b.icon}</span>
+              <span className="uppercase">{b.label}</span>
+              {count > 1 && <span className="opacity-70">×{count}</span>}
+            </span>
+          );
+        })}
       </div>
 
-      {/* Main content — Student Guide (learning order) is the default; concept + standard are power-user modes */}
-      {(tocViewMode === "learning" || tocViewMode === "standard") && renderLearningGroups()}
-      {tocViewMode === "concept" && renderCanonicalGroups()}
-      {/* Legacy standard kind-grouping only shown when concept mode is explicitly off and canonical grouping is inactive */}
-      {false && tocViewMode === "standard" && !useCanonicalGrouping && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
+      {/* Student Guide — always in learning order */}
+      {renderLearningGroups()}
+      {false && grouped.map(({ id, label, representativeKind, items }, groupIndex) => {
         const colors = KIND_COLORS[representativeKind] ?? FALLBACK_COLOR;
         const baseLabel = label ?? getKindLabel(presetId, representativeKind as ParagraphKind);
         const meta = { ...colors, label: groupDisplayLabel(representativeKind, items.length, baseLabel) };

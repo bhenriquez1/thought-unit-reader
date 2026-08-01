@@ -77,7 +77,7 @@ const SELECT_STYLE: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.2)",
 };
 
-const SNAP_PREFIX = "wb_canvas_";
+const SNAP_PREFIX = "wb_canvas_v2_"; // bumped to v2 to invalidate schema-incompatible v1 snapshots
 
 // ── Student toolbar ───────────────────────────────────────────────────────────
 
@@ -460,7 +460,8 @@ export default function TldrawCanvas({
           restored = true;
         }
       } catch {
-        // malformed snapshot — fall through to fresh build
+        // Malformed or schema-incompatible snapshot — clear it and fall through to fresh build
+        try { if (key) localStorage.removeItem(SNAP_PREFIX + key); } catch {}
       }
     }
 
@@ -514,29 +515,22 @@ export default function TldrawCanvas({
     narrationRef.current?.stop();
   }, []);
 
-  // Rebuild when noteCards change
-  useEffect(() => {
-    builtRef.current = false;
-    if (editorRef.current) {
-      builtRef.current = true;
-      buildShapes(editorRef.current);
-    }
-    setRevealIndex(-1);
-    setNarrationText(null);
-    setIsPlaying(false);
-  }, [noteCards, buildShapes, setRevealIndex]);
-
-  // Phase 2: Rebuild when VSG changes
+  // Single rebuild effect — VSG-first, noteCards fallback.
+  // One effect prevents the double-build race where both noteCards and vsg
+  // change simultaneously (e.g. on page navigation), which would previously
+  // cause two sequential deleteShapes + createShapes cycles.
   useEffect(() => {
     vsgRef.current = vsg;
-    if (editorRef.current && vsg && vsg.nodes.length > 0) {
+    builtRef.current = false;
+    const editor = editorRef.current;
+    if (editor) {
       builtRef.current = true;
-      buildShapesFromVSGDefs(editorRef.current, vsgToShapeDefs(vsg));
+      buildShapes(editor);
       setRevealIndex(-1);
       setNarrationText(null);
       setIsPlaying(false);
     }
-  }, [vsg, buildShapesFromVSGDefs, setRevealIndex]);
+  }, [noteCards, vsg, buildShapes, setRevealIndex]);
 
   // ── Reveal controller ─────────────────────────────────────────────────────
 
