@@ -33,6 +33,9 @@ export interface ClaudeEnrichmentInput {
   pageNumber?:             number;
   /** Verbatim text spans already grounded to the PDF — Claude can suggest better ones */
   groundedAnchorCandidates?: string[];
+  /** Diagnostic identifiers only — never used for prompting, logged on failure for observability. */
+  pageTruthKey?:           string;
+  canonicalUnitId?:        string;
 }
 
 export interface ClaudeEnrichmentOutput {
@@ -48,6 +51,46 @@ export interface ClaudeEnrichmentOutput {
   practiceCheckpoint:     string | null;
   /** Better anchor suggestions if OpenAI missed key evidence — verbatim spans ≤ 30 words */
   betterAnchors:          string[] | null;
+  /**
+   * Degraded-mode envelope — present only when Claude enrichment could not run
+   * (missing config or upstream failure after retries). All content fields above
+   * are still null-filled so existing consumers of ClaudeEnrichmentOutput keep working;
+   * ok/code/message let callers show a specific "temporarily unavailable" message
+   * instead of silently hiding the section.
+   */
+  ok?:                     boolean;
+  code?:                   "UPSTREAM_UNAVAILABLE";
+  message?:                string;
+  fallbackAllowed?:        boolean;
+}
+
+const ENRICHMENT_TIMEOUT_MS = 18_000;
+const RETRY_BACKOFF_MS      = 600;
+
+function degraded(message: string): ClaudeEnrichmentOutput {
+  return { ...emptyOutput(), ok: false, code: "UPSTREAM_UNAVAILABLE", message, fallbackAllowed: true };
+}
+
+async function callAnthropic(
+  client: Anthropic,
+  userPrompt: string,
+  timeoutMs: number,
+): Promise<Anthropic.Message> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await client.messages.create(
+      {
+        model:      "claude-sonnet-4-6",
+        max_tokens: 640,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userPrompt }],
+      } as Parameters<typeof client.messages.create>[0],
+      { signal: ctrl.signal },
+    ) as Anthropic.Message;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const SYSTEM_PROMPT = `You are an Expert Reviewer for a student study tool.
@@ -132,7 +175,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return res.status(503).json({ error: "Claude enrichment not configured — ANTHROPIC_API_KEY missing" });
+    // Always log (not DEV-gated) — a missing key in production is a config error, not routine noise.
+    console.error("[CLAUDE_ENRICHMENT_UNAVAILABLE]", {
+      reason:       "ANTHROPIC_API_KEY missing",
+      pageTruthKey: (req.body as ClaudeEnrichmentInput)?.pageTruthKey ?? null,
+    });
+    return res.status(200).json(degraded("Claude enrichment is not configured on the server."));
   }
 
   const body = req.body as ClaudeEnrichmentInput;
@@ -170,60 +218,77 @@ Add all enrichment fields. Output JSON only.`;
     anchorCandidateCount:    body.groundedAnchorCandidates?.length ?? 0,
   });
 
+  const client = new Anthropic({ apiKey });
+  const diagnosticIds = { pageTruthKey: body.pageTruthKey ?? null, canonicalUnitId: body.canonicalUnitId ?? null, page: body.pageNumber ?? null };
+  const startedAt = Date.now();
+
+  let message: Anthropic.Message;
   try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model:      "claude-sonnet-4-6",
-      max_tokens: 640,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userPrompt }],
-    } as Parameters<typeof client.messages.create>[0]) as Anthropic.Message;
-
-    const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
-
-    // Strip markdown code fences if present
-    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-
-    let parsed: ClaudeEnrichmentOutput;
     try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      DEV && console.error("[CLAUDE_EXPERT_ERROR]", { reason: "JSON parse failed", raw: raw.slice(0, 200) });
-      return res.status(200).json(emptyOutput());
+      message = await callAnthropic(client, userPrompt, ENRICHMENT_TIMEOUT_MS);
+    } catch (firstErr: any) {
+      console.warn("[CLAUDE_ENRICHMENT_RETRY]", {
+        ...diagnosticIds,
+        attempt:   1,
+        error:     firstErr?.message ?? String(firstErr),
+        elapsedMs: Date.now() - startedAt,
+      });
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+      message = await callAnthropic(client, userPrompt, ENRICHMENT_TIMEOUT_MS);
     }
-
-    const result: ClaudeEnrichmentOutput = {
-      deepInsight:            str(parsed.deepInsight),
-      alternativeExplanation: str(parsed.alternativeExplanation),
-      subjectConnection:      str(parsed.subjectConnection),
-      expertView:             str(parsed.expertView),
-      expertTrap:             str(parsed.expertTrap),
-      formulaRule:            str(parsed.formulaRule),
-      workedExampleLogic:     str(parsed.workedExampleLogic),
-      practiceCheckpoint:     str(parsed.practiceCheckpoint),
-      betterAnchors:          Array.isArray(parsed.betterAnchors) && parsed.betterAnchors.length > 0
-                                ? parsed.betterAnchors.filter((a): a is string => typeof a === "string").slice(0, 3)
-                                : null,
-    };
-
-    DEV && console.log("[CLAUDE_EXPERT_DONE]", {
-      page:                   body.pageNumber ?? null,
-      deepInsight:            result.deepInsight?.slice(0, 80) ?? null,
-      alternativeExplanation: result.alternativeExplanation?.slice(0, 80) ?? null,
-      subjectConnection:      result.subjectConnection?.slice(0, 80) ?? null,
-      expertView:             result.expertView?.slice(0, 80) ?? null,
-      expertTrap:             result.expertTrap?.slice(0, 80) ?? null,
-      formulaRule:            result.formulaRule?.slice(0, 80) ?? null,
-      betterAnchorCount:      result.betterAnchors?.length ?? 0,
-      inputTokens:            message.usage.input_tokens,
-      outputTokens:           message.usage.output_tokens,
-    });
-
-    return res.status(200).json(result);
   } catch (err: any) {
-    DEV && console.error("[CLAUDE_EXPERT_ERROR]", err?.message ?? String(err));
+    console.error("[CLAUDE_ENRICHMENT_FAILED]", {
+      ...diagnosticIds,
+      attempts:  2,
+      error:     err?.message ?? String(err),
+      status:    err?.status ?? null,
+      durationMs: Date.now() - startedAt,
+    });
+    return res.status(200).json(degraded("Claude enrichment is temporarily unavailable — showing the base study notes."));
+  }
+
+  const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
+
+  // Strip markdown code fences if present
+  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+  let parsed: ClaudeEnrichmentOutput;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    DEV && console.error("[CLAUDE_EXPERT_ERROR]", { reason: "JSON parse failed", raw: raw.slice(0, 200) });
     return res.status(200).json(emptyOutput());
   }
+
+  const result: ClaudeEnrichmentOutput = {
+    deepInsight:            str(parsed.deepInsight),
+    alternativeExplanation: str(parsed.alternativeExplanation),
+    subjectConnection:      str(parsed.subjectConnection),
+    expertView:             str(parsed.expertView),
+    expertTrap:             str(parsed.expertTrap),
+    formulaRule:            str(parsed.formulaRule),
+    workedExampleLogic:     str(parsed.workedExampleLogic),
+    practiceCheckpoint:     str(parsed.practiceCheckpoint),
+    betterAnchors:          Array.isArray(parsed.betterAnchors) && parsed.betterAnchors.length > 0
+                              ? parsed.betterAnchors.filter((a): a is string => typeof a === "string").slice(0, 3)
+                              : null,
+  };
+
+  DEV && console.log("[CLAUDE_EXPERT_DONE]", {
+    ...diagnosticIds,
+    durationMs:             Date.now() - startedAt,
+    deepInsight:            result.deepInsight?.slice(0, 80) ?? null,
+    alternativeExplanation: result.alternativeExplanation?.slice(0, 80) ?? null,
+    subjectConnection:      result.subjectConnection?.slice(0, 80) ?? null,
+    expertView:             result.expertView?.slice(0, 80) ?? null,
+    expertTrap:             result.expertTrap?.slice(0, 80) ?? null,
+    formulaRule:            result.formulaRule?.slice(0, 80) ?? null,
+    betterAnchorCount:      result.betterAnchors?.length ?? 0,
+    inputTokens:            message.usage.input_tokens,
+    outputTokens:           message.usage.output_tokens,
+  });
+
+  return res.status(200).json(result);
 }
 
 function str(v: unknown): string | null {

@@ -1062,6 +1062,7 @@ export function RightPanel({
     errorMessage: synthErrorMsg,
     retry: retrySynthesis,
     claudeEnrichment,
+    stage3ErrorMessage,
   } = useTeachingSynthesis({
     pageTruthKey,
     pageObjective: ultraPageView?.teachingStatement,
@@ -1897,6 +1898,7 @@ export function RightPanel({
                 density={dt}
                 claudeEnrichment={claudeEnrichment}
                 stage3Status={stage3Status}
+                stage3ErrorMessage={stage3ErrorMessage}
                 retrySynthesis={retrySynthesis}
                 studyModel={studyModel}
                 focusedEvidenceId={focusedEvidenceId}
@@ -2273,6 +2275,7 @@ function UltraViewBase({
   density,
   claudeEnrichment,
   stage3Status,
+  stage3ErrorMessage,
   retrySynthesis,
   studyModel,
   focusedEvidenceId,
@@ -2293,6 +2296,9 @@ function UltraViewBase({
   density?: { cardPadding: string; headingText: string; bodyText: string; lineHeight: string; space: string };
   claudeEnrichment?: import("@/lib/insights/claudeEnrichmentClient").ClaudeEnrichmentOutput | null;
   stage3Status?: import("./useTeachingSynthesis").SynthesisStatus;
+  /** Set when Claude enrichment is degraded (missing config / upstream failure) — shows a
+   *  specific "temporarily unavailable" note instead of silently hiding the Expert View section. */
+  stage3ErrorMessage?: string | null;
   retrySynthesis?: () => void;
   /** Study model from the parent — used to find visualAnchor IDs for card click-to-focus */
   studyModel?: CurrentPageStudyModel | null;
@@ -2415,7 +2421,11 @@ function UltraViewBase({
     fetch("/api/cohere-retrieval", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: thesis, domain: domain ?? null, mode: "both", pageText: "" }),
+      body: JSON.stringify({
+        topic: thesis, domain: domain ?? null, mode: "both", pageText: "",
+        // Diagnostic-only — logged server-side on failure, never used in prompting.
+        pageTruthKey: bookId && pageNumber != null ? `${bookId}:${pageNumber}` : undefined,
+      }),
       signal: controller.signal,
     })
       .then(r => r.json())
@@ -2696,7 +2706,17 @@ function UltraViewBase({
         </PanelSection>
       )}
 
-      {/* Expert View — Claude Stage 3 enrichment, shown after Stage 1/2 resolve */}
+      {/* Expert View — Claude Stage 3 enrichment, shown after Stage 1/2 resolve.
+          Degraded case (missing config / upstream failure) gets its own visible note
+          instead of the section silently disappearing. */}
+      {hasSynth && stage3Status === "error" && stage3ErrorMessage && (
+        <PanelSection title="Expert View">
+          <p className="text-[11px] text-amber-300/70 italic py-1">
+            ⚠ {stage3ErrorMessage}
+          </p>
+        </PanelSection>
+      )}
+
       {hasSynth && (claudeEnrichment || stage3Status === "loading") && (
         <PanelSection title="Expert View">
           {stage3Status === "loading" && !claudeEnrichment ? (

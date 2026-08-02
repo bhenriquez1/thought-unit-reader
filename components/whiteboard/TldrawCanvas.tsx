@@ -184,6 +184,12 @@ export default function TldrawCanvas({
   onAnchorClick, vsg, activeAnchorId, storageKey,
   studentMode = false,
 }: Props) {
+  // tldraw SDK license — required for production deployments, set via Render env var.
+  // Never hardcoded/committed; missing in production shows a visible configuration
+  // error instead of tldraw's own (easy-to-miss) watermark warning.
+  const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
+  const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
+
   const editorRef  = useRef<Editor | null>(null);
   const builtRef   = useRef(false);
 
@@ -675,15 +681,30 @@ export default function TldrawCanvas({
 
       {/* ── Canvas ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative" }}>
-        <Tldraw
-          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-          persistenceKey={storageKey || undefined}
-          onMount={handleMount}
-          hideUi={studentMode}
-        />
+        {licenseMissingInProduction ? (
+          <div
+            role="alert"
+            style={{
+              position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 8,
+              background: "#0f172a", color: "#94a3b8", fontFamily: "ui-monospace, monospace",
+              fontSize: 13, textAlign: "center", padding: 24,
+            }}
+          >
+            <span style={{ fontSize: 20 }}>⚠</span>
+            <span>Whiteboard configuration is unavailable.</span>
+          </div>
+        ) : (
+          <Tldraw
+            licenseKey={licenseKey}
+            persistenceKey={storageKey || undefined}
+            onMount={handleMount}
+            hideUi={studentMode}
+          />
+        )}
 
         {/* Phase 3: Student toolbar overlay */}
-        {studentMode && (
+        {!licenseMissingInProduction && studentMode && (
           <StudentToolbar
             editor={editorRef.current}
             activeTool={activeTool}
@@ -692,7 +713,7 @@ export default function TldrawCanvas({
         )}
 
         {/* Loading skeleton */}
-        {noteCards.length === 0 && (!vsg || vsg.nodes.length === 0) && (
+        {!licenseMissingInProduction && noteCards.length === 0 && (!vsg || vsg.nodes.length === 0) && (
           <div style={{
             position: "absolute", inset: 0, display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center",

@@ -99,8 +99,25 @@ describe("tldraw license key wiring — TldrawCanvas.tsx", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
 
-  it("passes licenseKey prop to <Tldraw>", () => {
-    expect(src).toMatch(/licenseKey=\{process\.env\.NEXT_PUBLIC_TLDRAW_LICENSE_KEY\}/);
+  it("reads licenseKey from NEXT_PUBLIC_TLDRAW_LICENSE_KEY", () => {
+    expect(src).toMatch(/licenseKey\s*=\s*process\.env\.NEXT_PUBLIC_TLDRAW_LICENSE_KEY/);
+  });
+
+  it("passes the licenseKey variable to <Tldraw>", () => {
+    expect(src).toMatch(/licenseKey=\{licenseKey\}/);
+  });
+
+  it("does NOT hardcode a literal tldraw license key", () => {
+    expect(src).not.toMatch(/licenseKey=\{["'`]tldraw-/);
+  });
+
+  it("shows a visible role=\"alert\" configuration error when the key is missing in production", () => {
+    expect(src).toMatch(/role="alert"/);
+    expect(src).toMatch(/Whiteboard configuration is unavailable/);
+  });
+
+  it("only blocks rendering when NODE_ENV is production (dev works without a key)", () => {
+    expect(src).toMatch(/process\.env\.NODE_ENV\s*===\s*["']production["']\s*&&\s*!licenseKey/);
   });
 });
 
