@@ -2,7 +2,7 @@
 // Converts a VisualSceneGraph into tldraw shape definitions.
 // Pure data transform — no React, no side effects.
 
-import { createShapeId } from "@tldraw/tldraw";
+import { createShapeId, toRichText } from "@tldraw/tldraw";
 import type { VisualSceneGraph } from "./visualSceneGraph";
 
 export interface ShapeDef {
@@ -47,12 +47,12 @@ export function vsgToShapeDefs(vsg: VisualSceneGraph): ShapeDef[] {
       type: "geo",
       x, y,
       props: {
-        geo:   node.role === "hub" ? "ellipse" : "rectangle",
+        geo:      node.role === "hub" ? "ellipse" : "rectangle",
         w, h,
-        text:  node.label,
-        fill:  "solid",
-        size:  "s",
-        color: TIER_COLOR[node.tier] ?? "blue",
+        richText: toRichText(node.label),
+        fill:     "solid",
+        size:     "s",
+        color:    TIER_COLOR[node.tier] ?? "blue",
       },
       sourceId:    node.sourceId,
       narration:   node.body || node.label,
@@ -85,11 +85,12 @@ export function vsgToShapeDefs(vsg: VisualSceneGraph): ShapeDef[] {
       type: "arrow",
       x: fx, y: fy,
       props: {
-        start: { type: "point", x: 0, y: 0 },
-        end:   { type: "point", x: tx - fx, y: ty - fy },
-        text:  edge.label ?? "",
-        size:  "s",
-        color: EDGE_COLOR[edge.kind] ?? "grey",
+        kind:     "arc",
+        start:    { x: 0, y: 0 },
+        end:      { x: tx - fx, y: ty - fy },
+        richText: toRichText(edge.label ?? ""),
+        size:     "s",
+        color:    EDGE_COLOR[edge.kind] ?? "grey",
       },
       narration:   edge.label ?? undefined,
       revealOrder: order++,

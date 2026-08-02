@@ -11,6 +11,7 @@
 import { resolveImportanceLevel, type ImportanceLevel } from "@/lib/reader/importanceBadge";
 import { inferSubject, type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import { stableRecallId, type RecallCard, type CardType, type RecallSet } from "./recallStore";
+import { buildSemanticCards } from "./semanticQuestionFamilies";
 
 // ---------------------------------------------------------------------------
 // Input type
@@ -25,33 +26,6 @@ export interface CanonicalRecallInput {
   priorityTier?: number;
   page?: number;
 }
-
-// ---------------------------------------------------------------------------
-// canonicalType → question stem
-// ---------------------------------------------------------------------------
-
-const QUESTION_STEM: Partial<Record<string, string>> = {
-  "definition":        "Define:",
-  "core-concept":      "What is the core concept of:",
-  "cause":             "What causes:",
-  "effect":            "What is the effect of:",
-  "process":           "Describe the process of:",
-  "mechanism":         "Explain the mechanism of:",
-  "indication":        "What is indicated for:",
-  "contraindication":  "What is contraindicated in:",
-  "warning":           "⚠️ What is the warning about:",
-  "high-yield":        "What is the high-yield point about:",
-  "clinical-pearl":    "State the clinical pearl for:",
-  "formula":           "State the formula for:",
-  "worked-example":    "Work through the example:",
-  "treatment":         "What is the treatment for:",
-  "complication":      "What complication is caused by:",
-  "evidence":          "What evidence supports:",
-  "memory-anchor":     "How do you remember:",
-  "decision-point":    "What decision applies to:",
-  "classification":    "How is the following classified:",
-  "relationship":      "Describe the relationship:",
-};
 
 // ---------------------------------------------------------------------------
 // canonicalType → CardType
@@ -114,27 +88,35 @@ export function canonicalToRecallCards(
     return IMPORTANCE_RANK[aL] - IMPORTANCE_RANK[bL];
   });
 
-  return sorted.slice(0, maxCards).map((entry, ordinal) =>
-    buildCardFromEntry(entry, ordinal),
-  );
+  const all: RecallCard[] = [];
+  const seenFronts = new Set<string>();
+
+  for (const entry of sorted) {
+    for (const card of buildCardsFromEntry(entry)) {
+      if (all.length >= maxCards) break;
+      const key = card.front.toLowerCase().slice(0, 80);
+      if (seenFronts.has(key)) continue;
+      seenFronts.add(key);
+      all.push(card);
+    }
+    if (all.length >= maxCards) break;
+  }
+
+  return all;
 }
 
-function buildCardFromEntry(entry: CanonicalRecallInput, ordinal: number): RecallCard {
-  const ct    = entry.canonicalType ?? "core-concept";
-  const stem  = QUESTION_STEM[ct] ?? "Explain:";
-  const label = entry.title ?? entry.text.slice(0, 50).trim();
-  const back  = entry.text.length > 300
-    ? entry.text.slice(0, 300).trim() + "…"
-    : entry.text;
+function buildCardsFromEntry(entry: CanonicalRecallInput): RecallCard[] {
+  const ct       = entry.canonicalType ?? "core-concept";
+  const cardType = CANONICAL_CARD_TYPE[ct] ?? "concept";
 
-  return {
-    id:          `cu-${ct}-${ordinal}-${entry.id}`,
-    type:        CANONICAL_CARD_TYPE[ct] ?? "concept",
-    front:       `${stem} ${label}`,
-    back,
+  return buildSemanticCards(entry, { maxCards: 4 }).map((card, i) => ({
+    id:          `cu-${ct}-${card.family}-${i}-${entry.id}`,
+    type:        cardType,
+    front:       card.front,
+    back:        card.back,
     reviewCount: 0,
     isMissed:    false,
-  };
+  }));
 }
 
 // ---------------------------------------------------------------------------

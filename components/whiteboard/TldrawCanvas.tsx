@@ -9,7 +9,7 @@
 //   Phase 4  Progressive reveal    play/pause/step with Web Speech narration
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, createShapeId, GeoShapeGeoStyle, type Editor } from "@tldraw/tldraw";
+import { Tldraw, createShapeId, toRichText, GeoShapeGeoStyle, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
@@ -76,8 +76,6 @@ const SELECT_STYLE: React.CSSProperties = {
   background: "rgba(15,23,42,0.95)", color: "#64748b",
   border: "1px solid rgba(148,163,184,0.2)",
 };
-
-const SNAP_PREFIX = "wb_canvas_v2_"; // bumped to v2 to invalidate schema-incompatible v1 snapshots
 
 // ── Student toolbar ───────────────────────────────────────────────────────────
 
@@ -222,13 +220,11 @@ export default function TldrawCanvas({
   const vsgRef        = useRef(vsg);
   useEffect(() => { vsgRef.current = vsg; }, [vsg]);
 
-  // Phase 4 persistence refs
-  const noteCardsRef    = useRef(noteCards);
-  const storageKeyRef   = useRef(storageKey);
+  // Stable refs for use in export filename and mount-time ref rebuilding
+  const noteCardsRef  = useRef(noteCards);
+  const storageKeyRef = useRef(storageKey);
   useEffect(() => { noteCardsRef.current = noteCards; }, [noteCards]);
   useEffect(() => { storageKeyRef.current = storageKey; }, [storageKey]);
-  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveUnsubRef    = useRef<(() => void) | null>(null);
 
   const setRevealIndex = useCallback((n: number) => {
     revealIndexRef.current = n;
@@ -326,9 +322,9 @@ export default function TldrawCanvas({
         editor.createShape({
           id: sid, type: "geo", x: 80, y,
           props: {
-            geo: "rectangle", w: 300, h: 68,
-            text: card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100),
-            fill: "solid", size: "s",
+            geo:      "rectangle", w: 300, h: 68,
+            richText: toRichText(card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100)),
+            fill:     "solid", size: "s",
             color: tier === "master" ? "yellow" : tier === "step" ? "green"
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
@@ -348,7 +344,7 @@ export default function TldrawCanvas({
         editor.createShape({
           id: sid, type: "geo", x: pos.x, y: pos.y + y,
           props: {
-            geo: "rectangle", w: 230, h: 56, text: node.label, fill: "solid", size: "s",
+            geo: "rectangle", w: 230, h: 56, richText: toRichText(node.label), fill: "solid", size: "s",
             color: tier === "master" ? "yellow" : tier === "step"  ? "green"
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
@@ -371,9 +367,11 @@ export default function TldrawCanvas({
           id: sid, type: "arrow",
           x: fromPos.x + 115 + 100, y: fromPos.y + y + 28,
           props: {
-            start: { type: "point", x: 0, y: 0 },
-            end:   { type: "point", x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
-            text: arrow.label ?? "", size: "s",
+            kind:     "arc",
+            start:    { x: 0, y: 0 },
+            end:      { x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
+            richText: toRichText(arrow.label ?? ""),
+            size:     "s",
             color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
           },
         } as any);
@@ -440,34 +438,19 @@ export default function TldrawCanvas({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
-    // Phase 4 persistence: restore saved snapshot
-    const key = storageKeyRef.current;
-    let restored = false;
-    if (key) {
-      try {
-        const saved = localStorage.getItem(SNAP_PREFIX + key);
-        if (saved) {
-          const snapshot = JSON.parse(saved);
-          editor.loadSnapshot(snapshot);
-          // Rebuild refs without touching canvas
-          const v = vsgRef.current;
-          if (v && v.nodes.length > 0) {
-            rebuildRefsFromVSGDefs(vsgToShapeDefs(v));
-          } else {
-            rebuildRefsFromNoteCards(noteCardsRef.current);
-          }
-          builtRef.current = true;
-          restored = true;
-        }
-      } catch {
-        // Malformed or schema-incompatible snapshot — clear it and fall through to fresh build
-        try { if (key) localStorage.removeItem(SNAP_PREFIX + key); } catch {}
-      }
-    }
-
-    if (!restored && !builtRef.current) {
+    if (!builtRef.current) {
       builtRef.current = true;
-      buildShapes(editor);
+      if (editor.getCurrentPageShapes().length > 0) {
+        // tldraw restored shapes from IndexedDB via persistenceKey — rebuild ref maps only
+        const v = vsgRef.current;
+        if (v && v.nodes.length > 0) {
+          rebuildRefsFromVSGDefs(vsgToShapeDefs(v));
+        } else {
+          rebuildRefsFromNoteCards(noteCardsRef.current);
+        }
+      } else {
+        buildShapes(editor);
+      }
     }
 
     // Phase 1 + Phase 3 One Brain sync: canvas → world
@@ -478,40 +461,17 @@ export default function TldrawCanvas({
         if (selected.length !== 1) return;
         const sourceId = shapeIdToSourceIdRef.current.get(String(selected[0].id));
         if (sourceId) {
-          // Fire both: the prop callback (for WhiteboardPanel chain) and
-          // the direct store write (so all panels react without prop threading)
           onAnchorClickRef.current?.(sourceId);
           useReadingFocusStore.getState().setThoughtUnit(sourceId);
         }
       },
       { scope: "session", source: "user" },
     );
-
-    // Phase 4 persistence: auto-save on user changes (debounced 1.5s)
-    saveUnsubRef.current?.();
-    if (key) {
-      saveUnsubRef.current = editor.store.listen(
-        () => {
-          if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-          saveDebounceRef.current = setTimeout(() => {
-            try {
-              const snap = editor.getSnapshot();
-              localStorage.setItem(SNAP_PREFIX + key, JSON.stringify(snap));
-            } catch {
-              // quota exceeded — silently ignore
-            }
-          }, 1500);
-        },
-        { scope: "document", source: "user" },
-      );
-    }
   }, [buildShapes, rebuildRefsFromVSGDefs, rebuildRefsFromNoteCards]);
 
   // Cleanup on unmount
   useEffect(() => () => {
     storeUnsubRef.current?.();
-    saveUnsubRef.current?.();
-    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     narrationRef.current?.stop();
   }, []);
 
@@ -716,6 +676,8 @@ export default function TldrawCanvas({
       {/* ── Canvas ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative" }}>
         <Tldraw
+          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+          persistenceKey={storageKey || undefined}
           onMount={handleMount}
           hideUi={studentMode}
         />

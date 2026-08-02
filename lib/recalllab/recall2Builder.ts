@@ -6,6 +6,7 @@
 import type { RecallCard, RecallSet } from "./recallStore";
 import type { RecallBlueprint, RecallCategory } from "./recall2Types";
 import { canonicalHash, newBlueprint } from "./recall2Store";
+import { buildSemanticCards } from "./semanticQuestionFamilies";
 
 // ── CardType → RecallCategory mapping ────────────────────────────────────
 
@@ -93,53 +94,40 @@ const CANONICAL_TYPE_CATEGORY: Record<string, RecallCategory> = {
   "evidence":         "transfer",
 };
 
-const QUESTION_STEM: Record<string, string> = {
-  "definition":       "Define:",
-  "core-concept":     "What is the core concept of:",
-  "cause":            "What causes:",
-  "effect":           "What is the effect of:",
-  "process":          "Describe the process of:",
-  "mechanism":        "Explain the mechanism of:",
-  "formula":          "State the formula for:",
-  "worked-example":   "Walk through the example:",
-  "indication":       "What is indicated for:",
-  "contraindication": "What is contraindicated in:",
-  "treatment":        "What is the treatment for:",
-  "complication":     "What complication is associated with:",
-  "clinical-pearl":   "State the clinical pearl for:",
-  "decision-point":   "What decision applies to:",
-  "warning":          "What is the warning about:",
-  "high-yield":       "What is the high-yield point about:",
-  "memory-anchor":    "How do you remember:",
-  "classification":   "How is this classified:",
-  "relationship":     "Describe the relationship between:",
-  "evidence":         "What evidence supports:",
-};
-
 /**
- * Build RecallBlueprints from canonical thought units.
- * Suitable for saving via saveBlueprintsDedup (auto-deduplicates by hash).
+ * Build RecallBlueprints from canonical thought units using semantic-type-aware
+ * question families. Each entry produces N blueprints (one per applicable family),
+ * capped at 3 per unit to avoid flooding the deck. Duplicates are removed by
+ * canonical hash before the caller writes to IDB.
  */
 export function canonicalEntriesToBlueprints(
   entries: CanonicalBlueprintEntry[],
   opts: { bookId: string; pageNumber?: number; sourceLabel?: string },
 ): RecallBlueprint[] {
-  return entries.map(entry => {
-    const ct       = entry.canonicalType ?? "core-concept";
-    const stem     = QUESTION_STEM[ct] ?? "Explain:";
-    const label    = entry.title ?? entry.text.slice(0, 60).trim();
-    const back     = entry.text.length > 350 ? entry.text.slice(0, 350).trim() + "…" : entry.text;
-    const category = CANONICAL_TYPE_CATEGORY[ct] ?? "understanding";
+  const results: RecallBlueprint[] = [];
+  const seenHashes = new Set<string>();
 
-    return {
-      ...newBlueprint(`${stem} ${label}`, back, category, {
-        bookId:         opts.bookId,
-        pageNumber:     opts.pageNumber,
-        canonicalUnitId: entry.id,
-        sourceLabel:    opts.sourceLabel ?? "right-panel",
-      }),
-      // Override the random id with a stable one so re-generation preserves SRS history
-      id: `bp-cu-${ct}-${entry.id}`,
-    };
-  });
+  for (const entry of entries) {
+    const ct       = entry.canonicalType ?? "core-concept";
+    const category = CANONICAL_TYPE_CATEGORY[ct] ?? "understanding";
+    const back     = entry.text.length > 350 ? entry.text.slice(0, 350).trim() + "…" : entry.text;
+
+    for (const card of buildSemanticCards(entry, { maxCards: 3 })) {
+      const hash = canonicalHash(card.front.toLowerCase().slice(0, 120));
+      if (seenHashes.has(hash)) continue;
+      seenHashes.add(hash);
+
+      results.push({
+        ...newBlueprint(card.front, back, category, {
+          bookId:          opts.bookId,
+          pageNumber:      opts.pageNumber,
+          canonicalUnitId: entry.id,
+          sourceLabel:     opts.sourceLabel ?? "right-panel",
+        }),
+        id: `bp-cu-${ct}-${card.family}-${entry.id}`,
+      });
+    }
+  }
+
+  return results;
 }

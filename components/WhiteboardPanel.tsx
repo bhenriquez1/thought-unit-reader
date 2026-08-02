@@ -13,7 +13,6 @@ import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteS
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
-import VisualSceneEngine from "@/components/whiteboard/VisualSceneEngine";
 import dynamic from "next/dynamic";
 const AvrrioWhiteboard = dynamic(() => import("@/components/whiteboard/AvrrioWhiteboard"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
@@ -104,7 +103,7 @@ type Props = {
   learningProfile?: string;
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
-  /** Preferred layout grammar from the active annotation pack — drives VisualSceneEngine layout selection.
+  /** Preferred layout grammar from the active annotation pack — drives whiteboard layout selection.
    *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow. */
   whiteboardGrammar?: string;
   /**
@@ -217,7 +216,6 @@ export default function WhiteboardPanel({
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
-  const [canvasMode, setCanvasMode] = useState<"tldraw" | "visual">("tldraw");
   const [zoom, setZoom] = useState(0.95); // not "too zoomed" by default
   const [justGenerated, setJustGenerated] = useState(false); // brief glow when new steps land
   const [justDetected, setJustDetected] = useState(false);   // shows "Diagram detected" pill
@@ -841,39 +839,7 @@ export default function WhiteboardPanel({
                   Diagram engine error — showing basic canvas. {vsgState.error}
                 </div>
               )}
-              <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
-                <button
-                  onClick={() => {
-                    stopAllSpeech("canvas-mode-switch");
-                    setCanvasMode("tldraw");
-                  }}
-                  style={{
-                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-                    background: canvasMode === "tldraw" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
-                    color: canvasMode === "tldraw" ? "#86efac" : "#94a3b8",
-                    border: canvasMode === "tldraw" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
-                  }}
-                >
-                  Canvas
-                </button>
-                <button
-                  onClick={() => {
-                    stopAllSpeech("canvas-mode-switch");
-                    setCanvasMode("visual");
-                  }}
-                  style={{
-                    fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer",
-                    background: canvasMode === "visual" ? "rgba(134,239,172,0.25)" : "rgba(51,65,85,0.6)",
-                    color: canvasMode === "visual" ? "#86efac" : "#94a3b8",
-                    border: canvasMode === "visual" ? "1px solid rgba(134,239,172,0.5)" : "1px solid rgba(148,163,184,0.2)",
-                  }}
-                >
-                  Animated
-                </button>
-              </div>
-              {/* Both views stay mounted so tldraw editor state (student annotations) is
-                  preserved across Canvas ↔ Animated switches. CSS display toggles visibility. */}
-              <div style={{ height: 520, display: canvasMode === "tldraw" ? "block" : "none" }}>
+              <div style={{ height: 520 }}>
                 <AvrrioWhiteboard
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
@@ -882,15 +848,6 @@ export default function WhiteboardPanel({
                   whiteboardGrammar={whiteboardGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                   storageKey={canvasStorageKey}
-                />
-              </div>
-              <div style={{ display: canvasMode === "visual" ? "block" : "none" }}>
-                <VisualSceneEngine
-                  noteCards={teachNoteCards}
-                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
-                  onAnchorClick={onAnchorStep ?? undefined}
-                  whiteboardGrammar={whiteboardGrammar}
-                  vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                 />
               </div>
             </div>
