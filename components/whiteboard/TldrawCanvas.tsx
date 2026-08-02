@@ -9,7 +9,7 @@
 //   Phase 4  Progressive reveal    play/pause/step with Web Speech narration
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, createShapeId, GeoShapeGeoStyle, type Editor } from "@tldraw/tldraw";
+import { Tldraw, createShapeId, toRichText, GeoShapeGeoStyle, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
@@ -326,9 +326,9 @@ export default function TldrawCanvas({
         editor.createShape({
           id: sid, type: "geo", x: 80, y,
           props: {
-            geo: "rectangle", w: 300, h: 68,
-            text: card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100),
-            fill: "solid", size: "s",
+            geo:      "rectangle", w: 300, h: 68,
+            richText: toRichText(card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100)),
+            fill:     "solid", size: "s",
             color: tier === "master" ? "yellow" : tier === "step" ? "green"
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
@@ -348,7 +348,7 @@ export default function TldrawCanvas({
         editor.createShape({
           id: sid, type: "geo", x: pos.x, y: pos.y + y,
           props: {
-            geo: "rectangle", w: 230, h: 56, text: node.label, fill: "solid", size: "s",
+            geo: "rectangle", w: 230, h: 56, richText: toRichText(node.label), fill: "solid", size: "s",
             color: tier === "master" ? "yellow" : tier === "step"  ? "green"
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
@@ -371,9 +371,11 @@ export default function TldrawCanvas({
           id: sid, type: "arrow",
           x: fromPos.x + 115 + 100, y: fromPos.y + y + 28,
           props: {
-            start: { type: "point", x: 0, y: 0 },
-            end:   { type: "point", x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
-            text: arrow.label ?? "", size: "s",
+            kind:     "arc",
+            start:    { x: 0, y: 0 },
+            end:      { x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
+            richText: toRichText(arrow.label ?? ""),
+            size:     "s",
             color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
           },
         } as any);
@@ -716,6 +718,7 @@ export default function TldrawCanvas({
       {/* ── Canvas ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative" }}>
         <Tldraw
+          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           onMount={handleMount}
           hideUi={studentMode}
         />
