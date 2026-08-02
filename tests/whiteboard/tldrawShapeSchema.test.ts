@@ -103,3 +103,24 @@ describe("tldraw license key wiring — TldrawCanvas.tsx", () => {
     expect(src).toMatch(/licenseKey=\{process\.env\.NEXT_PUBLIC_TLDRAW_LICENSE_KEY\}/);
   });
 });
+
+describe("tldraw persistenceKey — localStorage removed — TldrawCanvas.tsx", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
+
+  it("passes persistenceKey prop to <Tldraw>", () => {
+    expect(src).toMatch(/persistenceKey=/);
+  });
+
+  it("does NOT use SNAP_PREFIX manual localStorage persistence", () => {
+    expect(src).not.toMatch(/SNAP_PREFIX/);
+  });
+
+  it("does NOT call localStorage.setItem for canvas state", () => {
+    expect(src).not.toMatch(/localStorage\.setItem/);
+  });
+
+  it("does NOT call localStorage.getItem for canvas state", () => {
+    expect(src).not.toMatch(/localStorage\.getItem/);
+  });
+});
