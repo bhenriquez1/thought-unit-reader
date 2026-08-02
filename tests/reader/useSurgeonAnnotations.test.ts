@@ -115,14 +115,14 @@ describe("useSurgeonAnnotations.ts — hands off HighlightTarget[], never comput
     expect(src).toMatch(/groundSurgeonQuotes\(/);
   });
 
-  it("applies limitAnnotationDensity to the output of groundSurgeonQuotes before the target-building map", () => {
-    const idx = src.indexOf("function toHighlightTargets");
-    const body = src.slice(idx, src.indexOf(".map(", idx) + 5);
-    expect(body).toMatch(/limitAnnotationDensity\(groundSurgeonQuotes\(/);
-    const limitIdx = body.indexOf("limitAnnotationDensity(");
-    const mapIdx = body.lastIndexOf(".map(");
-    expect(limitIdx).toBeGreaterThan(-1);
-    expect(mapIdx).toBeGreaterThan(limitIdx);
+  it("applies limitAnnotationDensity to the output of groundSurgeonQuotes at both call sites, before groundedAnnotationsToHighlightTargets", () => {
+    const calls = src.match(/const grounded = limitAnnotationDensity\(groundSurgeonQuotes\(/g) ?? [];
+    expect(calls).toHaveLength(2);
+    const blocks = src.split("const grounded = limitAnnotationDensity(groundSurgeonQuotes(").slice(1);
+    for (const block of blocks) {
+      const nearby = block.slice(0, 300);
+      expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
+    }
   });
 
   it("carries treatment and canonicalType through onto each HighlightTarget", () => {
@@ -199,5 +199,42 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
   it("shows the degraded-status banner with a retry action wired to reanalyze()", () => {
     expect(src).toMatch(/surgeonAnnotations\.status === "error" && surgeonAnnotations\.annotationErrorMessage/);
     expect(src).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output for the Scene Builder", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("groundedAnnotations appears in the returned object", () => {
+    expect(src).toMatch(/return \{ plan, highlightTargets, groundedAnnotations, status, annotationErrorMessage, reanalyze \};/);
+  });
+
+  it("limitAnnotationDensity(groundSurgeonQuotes(...)) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
+    const calls = src.match(/const grounded = limitAnnotationDensity\(groundSurgeonQuotes\(/g) ?? [];
+    expect(calls).toHaveLength(2);
+    const blocks = src.split("const grounded = limitAnnotationDensity(groundSurgeonQuotes(").slice(1);
+    for (const block of blocks) {
+      const nearby = block.slice(0, 700);
+      expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
+      expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
+    }
+  });
+
+  it("imports buildSurgeonEvidenceId rather than reintroducing an inline id template literal", () => {
+    expect(src).toMatch(/import \{ groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation \}/);
+    expect(src).not.toMatch(/`surgeon-\$\{pageNumber\}-\$\{i\}`/);
+  });
+
+  it("Effect A's page-reset block clears groundedAnnotations alongside plan/highlightTargets", () => {
+    const idx = src.indexOf("// ── Effect A:");
+    const resetBlock = src.slice(idx, idx + 400);
+    expect(resetBlock).toMatch(/setPlan\(null\)/);
+    expect(resetBlock).toMatch(/setHighlightTargets\(\[\]\)/);
+    expect(resetBlock).toMatch(/setGroundedAnnotations\(\[\]\)/);
+  });
+
+  it("groundedAnnotations is documented as full-fidelity vs. the lossy highlightTargets", () => {
+    expect(src).toMatch(/Full-fidelity grounded annotations/);
   });
 });

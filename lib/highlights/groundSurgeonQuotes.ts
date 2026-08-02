@@ -40,6 +40,20 @@ export type GroundedSurgeonAnnotation = SurgeonAnnotationPlan["annotations"][num
   confidence: number;
 };
 
+/**
+ * Deterministic id for the i-th grounded annotation on a page — shared by
+ * useSurgeonAnnotations.ts (HighlightTarget.id/evidenceRefId) and the
+ * Scene Builder's surgeonAnnotationsToCanonicalEntries adapter
+ * (lib/whiteboard/visualSceneGraph.ts), so a PDF highlight and its
+ * corresponding whiteboard node cross-highlight with no extra sync code —
+ * both already write to the same global focusedEvidenceId/activeAnchorId state.
+ * Both callers MUST index into the same GroundedSurgeonAnnotation[] (same
+ * order) for the ids to line up.
+ */
+export function buildSurgeonEvidenceId(pageNumber: number, index: number): string {
+  return `surgeon-${pageNumber}-${index}`;
+}
+
 // ── Sentence-boundary expansion ─────────────────────────────────────────────────
 
 const SENTENCE_END_CHARS = new Set([".", "!", "?", ";", ":"]);

@@ -5,7 +5,7 @@
 // sentence) must be REJECTED here, not silently replaced — per the confirmed
 // "strict reject only" design decision for this pipeline.
 
-import { groundSurgeonQuotes } from "../../lib/highlights/groundSurgeonQuotes";
+import { groundSurgeonQuotes, buildSurgeonEvidenceId } from "../../lib/highlights/groundSurgeonQuotes";
 import type { SurgeonAnnotationPlan } from "../../lib/insights/pageAnnotationPlan";
 
 type Annotation = SurgeonAnnotationPlan["annotations"][number];
@@ -182,5 +182,19 @@ describe("groundSurgeonQuotes — batch behavior", () => {
 
   it("returns an empty array for an empty annotations list", () => {
     expect(groundSurgeonQuotes([], PAGE_TEXT)).toEqual([]);
+  });
+});
+
+describe("buildSurgeonEvidenceId", () => {
+  it("formats as surgeon-<pageNumber>-<index>", () => {
+    expect(buildSurgeonEvidenceId(7, 3)).toBe("surgeon-7-3");
+  });
+
+  it("handles page 1 index 0", () => {
+    expect(buildSurgeonEvidenceId(1, 0)).toBe("surgeon-1-0");
+  });
+
+  it("produces distinct ids for different indices on the same page", () => {
+    expect(buildSurgeonEvidenceId(5, 0)).not.toBe(buildSurgeonEvidenceId(5, 1));
   });
 });
