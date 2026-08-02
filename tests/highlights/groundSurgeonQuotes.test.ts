@@ -17,6 +17,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
     reason:        "Defines the core process for this page.",
     importance:    "critical",
     treatment:     "definitionBar",
+    spanScope:     "fullSentence",
     ...overrides,
   };
 }
@@ -88,6 +89,81 @@ describe("groundSurgeonQuotes — Stage 3: strict reject (no semantic substituti
     const annotation = makeAnnotation();
     const result = groundSurgeonQuotes([annotation], PAGE_TEXT);
     expect(result[0].groundedText).toBe(annotation.exactQuote);
+  });
+});
+
+describe("groundSurgeonQuotes — sentence-boundary expansion (default spanScope: fullSentence)", () => {
+  const CLINIC_PAGE =
+    "Patient Interview\n\n" +
+    "Before considering a diagnosis or treatment, the clinician should interview the patient " +
+    "to identify and explore all the concerns, related conditions, and expectations that " +
+    "prompted the patient to seek care. This establishes the psychological and social context " +
+    "for the visit.\n\n" +
+    "An element is a substance that cannot be broken down into simpler substances.";
+
+  it("expands a mid-sentence fragment quote to the full sentence (first word → ending period)", () => {
+    // The model returned only a fragment — the kind of partial highlight the
+    // sentence-boundary rule exists to fix.
+    const fragment = makeAnnotation({ exactQuote: "before considering a diagnosis or treatment" });
+    const result = groundSurgeonQuotes([fragment], CLINIC_PAGE);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundedText).toBe(
+      "Before considering a diagnosis or treatment, the clinician should interview the patient " +
+      "to identify and explore all the concerns, related conditions, and expectations that " +
+      "prompted the patient to seek care."
+    );
+  });
+
+  it("does not expand when the quote is already a complete sentence (no-op)", () => {
+    const full = makeAnnotation({
+      exactQuote: "This establishes the psychological and social context for the visit.",
+    });
+    const result = groundSurgeonQuotes([full], CLINIC_PAGE);
+    expect(result[0].groundedText).toBe(full.exactQuote);
+  });
+
+  it("never expands past a paragraph break", () => {
+    const fragment = makeAnnotation({ exactQuote: "substance that cannot be broken down" });
+    const result = groundSurgeonQuotes([fragment], CLINIC_PAGE);
+    expect(result[0].groundedText).toBe(
+      "An element is a substance that cannot be broken down into simpler substances."
+    );
+    // Confirm it did NOT pull in the unrelated preceding paragraph.
+    expect(result[0].groundedText).not.toMatch(/clinician/);
+  });
+
+  it("spanScope: entity opts out of expansion — keeps exactly the quoted term", () => {
+    const entity = makeAnnotation({
+      canonicalType: "definition",
+      exactQuote: "An element",
+      spanScope: "entity",
+    });
+    const result = groundSurgeonQuotes([entity], CLINIC_PAGE);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundedText).toBe("An element");
+  });
+
+  it("a fragment WITHOUT spanScope set (default) still expands — fullSentence is the default, not opt-in", () => {
+    const fragment = makeAnnotation({ exactQuote: "the clinician should interview the patient" });
+    delete (fragment as any).spanScope;
+    const result = groundSurgeonQuotes([fragment], CLINIC_PAGE);
+    expect(result[0].groundedText).toMatch(/^Before considering a diagnosis or treatment/);
+    expect(result[0].groundedText.endsWith("prompted the patient to seek care.")).toBe(true);
+  });
+
+  it("supports a genuinely multi-sentence exactQuote returned as one span (no fragmentation)", () => {
+    // Simulates the model already having grouped a multi-sentence concept into
+    // one exactQuote, per the "multi-sentence concepts" prompt rule.
+    const multiSentence = makeAnnotation({
+      exactQuote:
+        "Before considering a diagnosis or treatment, the clinician should interview the patient " +
+        "to identify and explore all the concerns, related conditions, and expectations that " +
+        "prompted the patient to seek care. This establishes the psychological and social context " +
+        "for the visit.",
+    });
+    const result = groundSurgeonQuotes([multiSentence], CLINIC_PAGE);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundedText).toBe(multiSentence.exactQuote);
   });
 });
 

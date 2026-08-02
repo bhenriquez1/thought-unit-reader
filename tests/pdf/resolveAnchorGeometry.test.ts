@@ -278,6 +278,33 @@ describe("resolveAnchorGeometry — quote fallback", () => {
   });
 });
 
+describe("resolveAnchorGeometry — long quote (Strategy 3) is not truncated", () => {
+  it("includes tokens beyond the first 60 characters of a long sentence-expanded quote", () => {
+    // Regression guard: Strategy 3 used to compute the highlighted range as
+    // pos + queryNorm.length, where queryNorm was capped at 60 chars — so a long
+    // sentence-expanded or multi-sentence SurgeonAnnotationPlan quote would only
+    // ever get its first ~60 characters highlighted. The search itself may still
+    // use a bounded prefix, but the resolved range must cover the FULL quote.
+    const words = Array.from({ length: 15 }, () => "aaaaa");
+    TextLayerRegistry.set(
+      makeIndex(0, words.map((str, i) => ({ str, x: i * 20, y: 50, w: 15, h: 12, itemIndex: i }))),
+    );
+    const fullQuote = words.join(" "); // 15*5 + 14 spaces = 89 chars — past the old 60-char cap
+    expect(fullQuote.length).toBeGreaterThan(60);
+    const anchor = makeAnchor({
+      pageIndex: 0,
+      startChar: 9999,
+      endChar: 9999,
+      quote: fullQuote,
+    });
+    const rects = resolveAnchorGeometry(anchor, 1.0);
+    expect(rects.length).toBeGreaterThan(0);
+    const lastTokenRightEdge = 14 * 20 + 15; // x + w of the final (15th) token
+    const mergedRightEdge = Math.max(...rects.map(r => r.x + r.w));
+    expect(mergedRightEdge).toBeGreaterThanOrEqual(lastTokenRightEdge - 1);
+  });
+});
+
 // ── Test 6: Repeated text ─────────────────────────────────────────────────────
 
 describe("resolveAnchorGeometry — repeated text", () => {

@@ -86,6 +86,25 @@ Rules:
 7. pageThesis is a single sentence stating the page's main subject, derived fresh from
    what you read — not copied from any prior-pass context.
 8. Produce at most 10 annotations per page. Prefer fewer, more precise ones.
+9. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
+   looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
+   - spanScope: "fullSentence" (the default — use this for almost everything) — exactQuote
+     MUST run from the sentence's first meaningful word to its ending punctuation (. ; or :).
+     Bad:  "...before considering a diagnosis or treatment..."
+     Good: "Before considering a diagnosis or treatment, the clinician should interview the
+            patient to identify and explore all the concerns, related conditions, and
+            expectations that prompted the patient to seek care."
+   - spanScope: "entity" — ONLY for a single term being defined, a drug name, an anatomical
+     structure, an equation, a chemical formula, or a short symbol/definition-term where
+     highlighting just that span (not the whole sentence) is the deliberately correct
+     teaching behavior. Do not use "entity" as a shortcut to avoid quoting a full sentence —
+     it is the narrow exception, "fullSentence" is the default for everything else.
+10. MULTI-SENTENCE CONCEPTS — if one concept's explanation naturally runs across two or more
+    consecutive sentences (e.g. "Phase 1 is X. Phase 2 is Y. Phase 3 is Z." describing one
+    procedure), do NOT create several separate annotations for it. Instead return ONE
+    annotation whose exactQuote is the full verbatim run of all those sentences together,
+    so the page renders one continuous highlight with one margin label — not several
+    disconnected fragments for what is really a single idea.
 
 Respond ONLY with a JSON object matching this schema — no prose, no markdown fences:
 {
@@ -94,10 +113,11 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
   "annotations": [
     {
       "canonicalType": "<definition|mechanism|procedure|decision|comparison|trap|clinicalPearl|supportingEvidence>",
-      "exactQuote": "<verbatim span from the page>",
+      "exactQuote": "<verbatim span from the page — full sentence(s) unless spanScope is entity>",
       "reason": "<one sentence>",
       "importance": "<critical|high|supporting>",
-      "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>"
+      "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>",
+      "spanScope": "<fullSentence|entity — defaults to fullSentence>"
     }
   ]
 }`;

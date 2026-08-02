@@ -6,6 +6,7 @@ import {
   SurgeonAnnotationSchema,
   CanonicalTypeSchema,
   TreatmentSchema,
+  SpanScopeSchema,
   parseSurgeonAnnotationPlan,
   DEFAULT_TREATMENT,
   type SurgeonAnnotationPlan,
@@ -20,6 +21,7 @@ const VALID_ANNOTATION: SurgeonAnnotation = {
   reason:        "Defines the core term the rest of the page builds on.",
   importance:    "critical",
   treatment:     "definitionBar",
+  spanScope:     "fullSentence",
 };
 
 const VALID_PLAN: SurgeonAnnotationPlan = {
@@ -49,8 +51,12 @@ describe("SurgeonAnnotationSchema", () => {
     expect(() => SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, exactQuote: "" })).toThrow();
   });
 
-  it("rejects exactQuote longer than 600 chars", () => {
-    expect(() => SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, exactQuote: "x".repeat(601) })).toThrow();
+  it("accepts a long multi-sentence exactQuote up to 1400 chars (allows single-span concepts)", () => {
+    expect(() => SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, exactQuote: "x".repeat(1400) })).not.toThrow();
+  });
+
+  it("rejects exactQuote longer than 1400 chars", () => {
+    expect(() => SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, exactQuote: "x".repeat(1401) })).toThrow();
   });
 
   it("rejects unknown canonicalType", () => {
@@ -195,5 +201,35 @@ describe("enum exhaustiveness", () => {
   it("TreatmentSchema accepts exactly the target's 8 values", () => {
     for (const t of ALL_TREATMENTS) expect(() => TreatmentSchema.parse(t)).not.toThrow();
     expect(() => TreatmentSchema.parse("gold-rule")).toThrow(); // old display name — no longer valid
+  });
+});
+
+// ── spanScope — sentence-boundary highlighting rule ────────────────────────────
+
+describe("spanScope", () => {
+  it("accepts fullSentence and entity", () => {
+    expect(() => SpanScopeSchema.parse("fullSentence")).not.toThrow();
+    expect(() => SpanScopeSchema.parse("entity")).not.toThrow();
+  });
+
+  it("rejects any other value", () => {
+    expect(() => SpanScopeSchema.parse("partial")).toThrow();
+  });
+
+  it("defaults to fullSentence when omitted from a parsed annotation", () => {
+    const { spanScope, ...withoutSpanScope } = VALID_ANNOTATION;
+    const parsed = SurgeonAnnotationSchema.parse(withoutSpanScope);
+    expect(parsed.spanScope).toBe("fullSentence");
+  });
+
+  it("defaults to fullSentence when omitted from a parsed plan's annotations", () => {
+    const { spanScope, ...withoutSpanScope } = VALID_ANNOTATION;
+    const parsed = parseSurgeonAnnotationPlan({ ...VALID_PLAN, annotations: [withoutSpanScope] });
+    expect(parsed.annotations[0].spanScope).toBe("fullSentence");
+  });
+
+  it("preserves an explicit entity spanScope (does not silently override to fullSentence)", () => {
+    const parsed = SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, spanScope: "entity" });
+    expect(parsed.spanScope).toBe("entity");
   });
 });

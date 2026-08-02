@@ -67,17 +67,35 @@ export const DEFAULT_TREATMENT: Record<CanonicalType, Treatment> = {
 export const ImportanceSchema = z.enum(["critical", "high", "supporting"]);
 export type Importance = z.infer<typeof ImportanceSchema>;
 
+// ── Span scope ─────────────────────────────────────────────────────────────────
+// Default behavior is to highlight the COMPLETE sentence (or, for a concept
+// spanning consecutive sentences, all of them as one continuous span) — never a
+// mid-sentence fragment. "entity" is the narrow exception: a single term, drug
+// name, anatomical structure, equation, chemical formula, or short definition
+// where highlighting just that span (not the whole sentence) is the deliberate,
+// correct teaching behavior. groundSurgeonQuotes.ts expands "fullSentence"
+// matches to sentence boundaries; "entity" matches are left exactly as quoted.
+export const SpanScopeSchema = z.enum(["fullSentence", "entity"]);
+export type SpanScope = z.infer<typeof SpanScopeSchema>;
+
 // ── Single annotation ───────────────────────────────────────────────────────────
 
 export const SurgeonAnnotationSchema = z.object({
   canonicalType: CanonicalTypeSchema,
-  /** Verbatim span from the current page — verified against the PDF text layer
-   *  before it is ever drawn. Never trusted as-is. */
-  exactQuote:    z.string().min(1).max(600),
+  /**
+   * Verbatim span from the current page — verified against the PDF text layer
+   * before it is ever drawn. Never trusted as-is. For a multi-sentence concept,
+   * this should be the FULL verbatim run of sentences as one span (a single
+   * continuous highlight), not one of several fragmented annotations for the
+   * same idea — max length is generous specifically to allow this.
+   */
+  exactQuote:    z.string().min(1).max(1400),
   /** One-sentence rationale for why this span deserves this annotation. */
   reason:        z.string().min(1).max(300),
   importance:    ImportanceSchema,
   treatment:     TreatmentSchema,
+  /** Defaults to "fullSentence" when omitted — see SpanScopeSchema above. */
+  spanScope:     SpanScopeSchema.optional().default("fullSentence"),
 });
 
 export type SurgeonAnnotation = z.infer<typeof SurgeonAnnotationSchema>;
