@@ -25,6 +25,8 @@ import {
   canvasHeight, CANVAS_W,
   type LayoutInput,
 } from "./layoutAdapters";
+import { buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
+import type { CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
 
 // ── Grammar schema ─────────────────────────────────────────────────────────────
 
@@ -416,5 +418,71 @@ export function noteCardsToCanonicalEntries(
     title:         card.title || undefined,
     canonicalType: NOTE_CARD_CANONICAL_TYPE[card.type] ?? "core-concept",
     priorityTier:  card.priorityTier ?? undefined,
+  }));
+}
+
+// ── SurgeonAnnotationPlan adapter ───────────────────────────────────────────────
+// The deterministic Scene Builder's real data source: OpenAI reads the current
+// page fresh and returns classified, verbatim-quote-grounded annotations (see
+// lib/insights/pageAnnotationPlan.ts) — no Claude call, no image generation
+// required for the diagram itself. This adapter converts that grounded output
+// into CanonicalEntryInput[] so WhiteboardPanel can build a VSG from real
+// page content instead of falling back to noteCardsToCanonicalEntries() above.
+
+// SurgeonAnnotationPlan.canonicalType (8 values) → the bare-string taxonomy
+// canonicalRelationshipGraph.ts's RULES/LAYOUT_PRIORITY and this file's
+// CANONICAL_TIER_OVERRIDE key on. Not a 1:1 rename — "procedure" maps to the
+// closest existing concept ("process"), and "trap"/"clinicalPearl" map onto
+// values that already carry a tier override (warning→danger, clinical-pearl→
+// pearl), giving the whiteboard the same red/cyan tiers the PDF overlay uses
+// for the same canonicalType via lib/insights/pageAnnotationPlan.ts's treatment
+// field — cross-surface visual consistency without threading `treatment` itself
+// into the VSG, which has its own independent tier/role vocabulary.
+const SURGEON_CANONICAL_TYPE_TO_VSG_TYPE: Record<CanonicalType, string> = {
+  definition:         "definition",
+  mechanism:          "mechanism",
+  procedure:          "process",
+  decision:           "decision-point",
+  comparison:         "comparison",
+  trap:               "warning",
+  clinicalPearl:      "clinical-pearl",
+  supportingEvidence: "evidence",
+};
+
+// SurgeonAnnotationPlan.importance (3 values) → priorityTier (1–5), consumed by
+// resolveImportanceLevel()/importanceLevelFromTier() in lib/reader/importanceBadge.ts:
+// tier>=5→critical, tier>=4→high, tier>=3→medium, tier<3→reference.
+const SURGEON_IMPORTANCE_TO_PRIORITY_TIER: Record<Importance, number> = {
+  critical:   5,
+  high:       4,
+  supporting: 2, // → "reference", the lowest VSG tier — matches "supporting" being the lowest SurgeonAnnotationPlan tier
+};
+
+/**
+ * Convert GroundedSurgeonAnnotation[] (the deterministic, page-verified output
+ * of the SurgeonAnnotationPlan pipeline, already density-limited by
+ * limitAnnotationDensity() before it ever reaches this adapter) into
+ * CanonicalEntryInput[] for the Scene Builder.
+ *
+ * Each entry's id is buildSurgeonEvidenceId(pageNumber, index) — the SAME id
+ * format components/reader/useSurgeonAnnotations.ts uses for
+ * HighlightTarget.evidenceRefId. That shared id is what makes a PDF highlight
+ * and its corresponding whiteboard node cross-highlight with zero extra sync
+ * code: both already write to the same global focusedEvidenceId/activeAnchorId
+ * state via TldrawCanvas's existing sourceId-keyed click sync. Callers MUST
+ * pass the array in the same order it was produced by groundSurgeonQuotes() —
+ * index `i` here must match the index used to build the corresponding
+ * HighlightTarget for a given annotation.
+ */
+export function surgeonAnnotationsToCanonicalEntries(
+  grounded:   GroundedSurgeonAnnotation[],
+  pageNumber: number,
+): CanonicalEntryInput[] {
+  return grounded.map((g, i) => ({
+    id:            buildSurgeonEvidenceId(pageNumber, i),
+    text:          g.groundedText,
+    canonicalType: SURGEON_CANONICAL_TYPE_TO_VSG_TYPE[g.canonicalType],
+    priorityTier:  SURGEON_IMPORTANCE_TO_PRIORITY_TIER[g.importance],
+    page:          pageNumber,
   }));
 }

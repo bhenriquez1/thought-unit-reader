@@ -75,6 +75,7 @@ import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/componen
 import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
+import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -2010,6 +2011,16 @@ export default function ThoughtUnitReader() {
     existingCanonicalUnits: surgeonExistingUnits,
     enabled:           !!bookId && !!fileUrl,
   });
+
+  // Deterministic Scene Builder input — SurgeonAnnotationPlan's grounded annotations,
+  // never Claude/image-generation, converted to CanonicalEntryInput[] for the
+  // already-built VisualSceneGraph pipeline. WhiteboardPanel falls back to
+  // noteCardsToCanonicalEntries(teachNoteCards) on its own whenever this is empty
+  // (not yet loaded/cached, or degraded) — see WhiteboardPanel.tsx's vsgState memo.
+  const whiteboardCanonicalEntries = useMemo(
+    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.groundedAnnotations, currentPage),
+    [surgeonAnnotations.groundedAnnotations, currentPage],
+  );
 
   // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
   // synthesis data without needing real API keys. Removed before any production build.
@@ -6714,6 +6725,7 @@ export default function ThoughtUnitReader() {
                 learningProfile={learningProfile}
                 onOpenChiefResident={handleOpenChiefResidentExplainPage}
                 whiteboardGrammar={activePack.whiteboardGrammar}
+                canonicalEntries={whiteboardCanonicalEntries}
               />
             </div>
           </div>
