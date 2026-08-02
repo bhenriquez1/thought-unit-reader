@@ -115,6 +115,16 @@ describe("useSurgeonAnnotations.ts — hands off HighlightTarget[], never comput
     expect(src).toMatch(/groundSurgeonQuotes\(/);
   });
 
+  it("applies limitAnnotationDensity to the output of groundSurgeonQuotes before the target-building map", () => {
+    const idx = src.indexOf("function toHighlightTargets");
+    const body = src.slice(idx, src.indexOf(".map(", idx) + 5);
+    expect(body).toMatch(/limitAnnotationDensity\(groundSurgeonQuotes\(/);
+    const limitIdx = body.indexOf("limitAnnotationDensity(");
+    const mapIdx = body.lastIndexOf(".map(");
+    expect(limitIdx).toBeGreaterThan(-1);
+    expect(mapIdx).toBeGreaterThan(limitIdx);
+  });
+
   it("carries treatment and canonicalType through onto each HighlightTarget", () => {
     expect(src).toMatch(/treatment:\s*g\.treatment/);
     expect(src).toMatch(/canonicalType:\s*g\.canonicalType/);

@@ -7,6 +7,7 @@ import {
   CanonicalTypeSchema,
   TreatmentSchema,
   SpanScopeSchema,
+  RelationshipSchema,
   parseSurgeonAnnotationPlan,
   DEFAULT_TREATMENT,
   type SurgeonAnnotationPlan,
@@ -27,6 +28,7 @@ const VALID_ANNOTATION: SurgeonAnnotation = {
 const VALID_PLAN: SurgeonAnnotationPlan = {
   pageTruthKey: "doc-abc::3::t",
   pageThesis:   "Elements and compounds differ in their atomic composition.",
+  pageRole:     "definition",
   annotations:  [VALID_ANNOTATION],
 };
 
@@ -231,5 +233,65 @@ describe("spanScope", () => {
   it("preserves an explicit entity spanScope (does not silently override to fullSentence)", () => {
     const parsed = SurgeonAnnotationSchema.parse({ ...VALID_ANNOTATION, spanScope: "entity" });
     expect(parsed.spanScope).toBe("entity");
+  });
+});
+
+// ── pageRole — page-level dominant-grammar classification ─────────────────────
+
+describe("pageRole", () => {
+  const ALL_PAGE_ROLES = ["definition", "procedure", "mechanism", "comparison", "example"] as const;
+
+  it("is required on a plan", () => {
+    const { pageRole, ...withoutPageRole } = VALID_PLAN;
+    expect(() => SurgeonAnnotationPlanSchema.parse(withoutPageRole)).toThrow();
+  });
+
+  it("accepts all 5 values", () => {
+    for (const pageRole of ALL_PAGE_ROLES) {
+      expect(() => SurgeonAnnotationPlanSchema.parse({ ...VALID_PLAN, pageRole })).not.toThrow();
+    }
+  });
+
+  it("rejects an unknown value", () => {
+    expect(() => SurgeonAnnotationPlanSchema.parse({ ...VALID_PLAN, pageRole: "narrative" })).toThrow();
+  });
+});
+
+// ── relationship — optional, schema-only annotation-to-annotation link ────────
+
+describe("relationship", () => {
+  it("is optional — a plan parses fine without any annotation setting it", () => {
+    expect(() => parseSurgeonAnnotationPlan(VALID_PLAN)).not.toThrow();
+    expect(parseSurgeonAnnotationPlan(VALID_PLAN).annotations[0].relationship).toBeUndefined();
+  });
+
+  it("accepts all 4 relationship types with a valid targetIndex", () => {
+    const TYPES = ["sequence", "cause-effect", "comparison", "supports"] as const;
+    for (const type of TYPES) {
+      const annotation = { ...VALID_ANNOTATION, relationship: { type, targetIndex: 1 } };
+      expect(() => SurgeonAnnotationSchema.parse(annotation)).not.toThrow();
+    }
+  });
+
+  it("rejects an unknown relationship type", () => {
+    const annotation = { ...VALID_ANNOTATION, relationship: { type: "related-to", targetIndex: 0 } };
+    expect(() => SurgeonAnnotationSchema.parse(annotation)).toThrow();
+  });
+
+  it("rejects a negative targetIndex", () => {
+    const annotation = { ...VALID_ANNOTATION, relationship: { type: "sequence", targetIndex: -1 } };
+    expect(() => SurgeonAnnotationSchema.parse(annotation)).toThrow();
+  });
+
+  it("rejects a non-integer targetIndex", () => {
+    const annotation = { ...VALID_ANNOTATION, relationship: { type: "sequence", targetIndex: 1.5 } };
+    expect(() => SurgeonAnnotationSchema.parse(annotation)).toThrow();
+  });
+
+  it("targetIndex references another annotation's position in the SAME plan's annotations[] array, not a canonicalUnitId", () => {
+    // Documents the deliberate design choice: no canonicalUnitId anywhere in this
+    // schema — grounding and cross-referencing both stay index/quote-based.
+    expect(RelationshipSchema.shape.targetIndex).toBeDefined();
+    expect((RelationshipSchema.shape as any).canonicalUnitId).toBeUndefined();
   });
 });

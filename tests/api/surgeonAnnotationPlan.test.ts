@@ -77,3 +77,36 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
     expect(src).toMatch(/process\.env\.OPENAI_API_KEY/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — pageRole (page-level dominant-grammar classification)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs the model to classify pageRole independently of pageThesis", () => {
+    expect(src).toMatch(/pageRole classifies the PAGE's dominant grammar/);
+    expect(src).toMatch(/independent of pageThesis's content summary/);
+  });
+
+  it("prompt's JSON output shape includes pageRole with all 5 values", () => {
+    expect(src).toMatch(/"pageRole":\s*"<definition\|procedure\|mechanism\|comparison\|example>"/);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — density guidance (soft, defense-in-depth alongside the hard client-side cap)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs at most one mechanism-or-procedure annotation total per page", () => {
+    expect(src).toMatch(/DENSITY/);
+    expect(src).toMatch(/ONE mechanism-or-procedure annotation total/);
+  });
+
+  it("prompt instructs capping trap, comparison, decision, clinicalPearl, and example annotations at one each", () => {
+    expect(src).toMatch(/at most one trap\/warning, one/);
+    expect(src).toMatch(/comparison, one decision point, one clinical pearl, and one supporting example/);
+  });
+
+  it("prompt tells the model the app enforces this with a hard cap after its response", () => {
+    expect(src).toMatch(/the app also enforces this with a hard cap after your/);
+  });
+});

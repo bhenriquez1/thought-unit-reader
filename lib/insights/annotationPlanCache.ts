@@ -28,8 +28,11 @@ export const PARAGRAPH_ALGORITHM_VERSION = 1;
 export const SEMANTIC_PACK_VERSION = 1;
 
 /** Bump when the SurgeonAnnotationPlan prompt or output schema changes — a
- *  cached plan generated under an older prompt/schema must never be reused. */
-export const MODEL_VERSION = 1;
+ *  cached plan generated under an older prompt/schema must never be reused.
+ *  v2: added required pageRole + optional relationship fields, density-limiting
+ *  guidance, and the comparisonBracket/trapNotch/evidenceUnderline visual
+ *  redesign — a v1-cached plan lacks pageRole and would fail schema validation. */
+export const MODEL_VERSION = 2;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 

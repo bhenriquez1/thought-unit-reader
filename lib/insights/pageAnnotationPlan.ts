@@ -29,10 +29,14 @@ export type CanonicalType = z.infer<typeof CanonicalTypeSchema>;
 //   mechanismBrace      — left brace spanning a multi-step mechanism chain
 //   procedureRail       — numbered steps along a procedure sequence
 //   decisionConnector    — diamond/fork marker at a decision point
-//   comparisonBracket    — connector between compared items
-//   trapNotch           — corner notch on a trap/warning
+//   comparisonBracket    — paired bracket glyphs between compared items
+//   trapNotch           — restrained left-bar + corner notch on a trap/warning
+//                          (never a full-strength filled box — kept narrow)
 //   pearlMarker          — compact marker on a clinical pearl
-//   evidenceUnderline    — restrained underline for supporting evidence
+//   evidenceUnderline    — light dotted/dashed outline for supporting evidence
+//                          and examples. Name is legacy (it was originally a
+//                          bottom-border underline); the visual is now a dashed
+//                          box outline, not literally an underline.
 
 export const TreatmentSchema = z.enum([
   "definitionBar",
@@ -78,6 +82,22 @@ export type Importance = z.infer<typeof ImportanceSchema>;
 export const SpanScopeSchema = z.enum(["fullSentence", "entity"]);
 export type SpanScope = z.infer<typeof SpanScopeSchema>;
 
+// ── Relationship (schema-only for now — not yet driving any new rendering) ─────
+// Explicit annotation-to-annotation link the model may declare. Not required and
+// not currently read by anything downstream: the three treatments that need
+// grouping (mechanismBrace/procedureRail/comparisonBracket) already draw correct
+// chains from implicit same-treatment + vertical-proximity detection in
+// PdfEvidenceOverlay.tsx. Captured now so it's available for a future rendering
+// pass without another schema migration. targetIndex is an index into this same
+// plan's annotations[] array — never a resurrected canonicalUnitId-style
+// identity; grounding stays 100% exactQuote-based (see the note at the bottom
+// of this file).
+export const RelationshipSchema = z.object({
+  type:        z.enum(["sequence", "cause-effect", "comparison", "supports"]),
+  targetIndex: z.number().int().nonnegative(),
+});
+export type Relationship = z.infer<typeof RelationshipSchema>;
+
 // ── Single annotation ───────────────────────────────────────────────────────────
 
 export const SurgeonAnnotationSchema = z.object({
@@ -96,6 +116,8 @@ export const SurgeonAnnotationSchema = z.object({
   treatment:     TreatmentSchema,
   /** Defaults to "fullSentence" when omitted — see SpanScopeSchema above. */
   spanScope:     SpanScopeSchema.optional().default("fullSentence"),
+  /** Optional explicit link to another annotation in this same plan. */
+  relationship:  RelationshipSchema.optional(),
 });
 
 export type SurgeonAnnotation = z.infer<typeof SurgeonAnnotationSchema>;
@@ -112,6 +134,14 @@ export const SurgeonAnnotationPlanSchema = z.object({
   /** One-sentence thesis for the current page, read fresh — never copied from a
    *  prior summary. */
   pageThesis:   z.string().min(1).max(200),
+  /**
+   * The page's dominant grammar/kind — a single classification distinct from
+   * pageThesis's content summary (e.g. a page can be primarily "procedure" even
+   * though its thesis describes a specific clinical scenario). Model-provided,
+   * read fresh alongside pageThesis — never derived from which annotations
+   * happen to survive verification/density-limiting downstream.
+   */
+  pageRole:     z.enum(["definition", "procedure", "mechanism", "comparison", "example"]),
   /** Ordered list of annotations derived from the current page. */
   annotations:  z.array(SurgeonAnnotationSchema),
 });
