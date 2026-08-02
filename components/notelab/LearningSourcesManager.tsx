@@ -50,7 +50,7 @@ const SOURCE_CATALOGUE: SourceTypeDef[] = [
 
 // ── View types ────────────────────────────────────────────────────────────────
 
-type PanelView = "evidence" | "sources" | "guide";
+type PanelView = "evidence" | "sources";
 type AddStep = "pick-type" | "enter-content";
 
 interface AddDraft {
@@ -61,19 +61,6 @@ interface AddDraft {
 }
 
 const EMPTY_DRAFT: AddDraft = { type: "article", label: "", text: "", url: "" };
-
-// ── Guide priority order for display ─────────────────────────────────────────
-
-const GUIDE_SECTIONS = [
-  { authority: "primary-textbook" as SourceAuthority,       label: "PRIMARY TEXTBOOK",    icon: "📖", color: "#fde047" },
-  { authority: "professional-guideline" as SourceAuthority, label: "PROFESSIONAL GUIDELINE", icon: "📜", color: "#93c5fd" },
-  { authority: "professor-material" as SourceAuthority,     label: "PROFESSOR MATERIAL",  icon: "🎓", color: "#93c5fd" },
-  { authority: "exam-blueprint" as SourceAuthority,         label: "EXAM BLUEPRINT",      icon: "📋", color: "#fdba74" },
-  { authority: "peer-reviewed" as SourceAuthority,          label: "SUPPLEMENTAL EVIDENCE", icon: "🔗", color: "#86efac" },
-  { authority: "educational-video" as SourceAuthority,      label: "VIDEO EXPLANATION",   icon: "▶",  color: "#d8b4fe" },
-  { authority: "ai-explanation" as SourceAuthority,         label: "CHIEF RESIDENT INSIGHT", icon: "🩺", color: "#67e8f9" },
-  { authority: "personal-note" as SourceAuthority,          label: "PERSONAL WORKSPACE",  icon: "✏️", color: "#94a3b8" },
-];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -140,14 +127,6 @@ export default function LearningSourcesManager({
     }
     return map;
   }, [sources]);
-
-  // Guide sections — only those with at least one source
-  const guideSections = useMemo(() => {
-    return GUIDE_SECTIONS.map(sec => ({
-      ...sec,
-      items: unitSources.filter(s => s.authorityLevel === sec.authority),
-    })).filter(sec => sec.items.length > 0);
-  }, [unitSources]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -235,7 +214,6 @@ export default function LearningSourcesManager({
           {([
             { key: "evidence", label: "Evidence" },
             { key: "sources",  label: "Sources"  },
-            { key: "guide",    label: "Guide"    },
           ] as const).map(({ key, label }) => (
             <button
               key={key}
@@ -378,7 +356,7 @@ export default function LearningSourcesManager({
             onDeleteSource={handleDelete}
             onRequestAdd={() => { setAddStep("pick-type"); setDraft(EMPTY_DRAFT); }}
           />
-        ) : view === "sources" ? (
+        ) : (
           <SourcesView
             sources={sources}
             unitSources={unitSources}
@@ -391,13 +369,6 @@ export default function LearningSourcesManager({
             onDelete={handleDelete}
             onLinkToUnit={handleLinkToUnit}
             onUnlinkFromUnit={handleUnlinkFromUnit}
-          />
-        ) : (
-          <GuideView
-            guideSections={guideSections}
-            studyModel={studyModel}
-            activeUnitId={activeUnitId}
-            activeUnitLabel={activeUnitLabel}
           />
         )}
       </div>
@@ -581,178 +552,3 @@ function SourcesView({
   );
 }
 
-// ── Guide view ────────────────────────────────────────────────────────────────
-
-function GuideView({
-  guideSections,
-  studyModel,
-  activeUnitId,
-  activeUnitLabel,
-}: {
-  guideSections: Array<{
-    authority: SourceAuthority;
-    label: string;
-    icon: string;
-    color: string;
-    items: LearningSource[];
-  }>;
-  studyModel: CurrentPageStudyModel | null | undefined;
-  activeUnitId: string | null;
-  activeUnitLabel: string | null;
-}) {
-  const hasTextbookContent = !!studyModel;
-  const totalSections = (hasTextbookContent ? 1 : 0) + guideSections.length;
-
-  if (totalSections === 0) {
-    return (
-      <div className="p-6 text-center">
-        <div className="text-2xl mb-2">📑</div>
-        <div className="text-xs text-slate-500">Add sources to generate a Study Guide</div>
-        <div className="text-[10px] text-slate-600 mt-1">The guide combines all connected sources in priority order, keeping each one's provenance visible</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-0">
-      {/* Active concept heading */}
-      {activeUnitId && (
-        <div className="px-3 py-2 border-b border-white/8">
-          <div className="text-[9px] uppercase tracking-widest text-slate-500 mb-0.5">Adaptive Guide for</div>
-          <div className="text-[12px] font-semibold text-slate-200 leading-snug">
-            {activeUnitLabel ?? activeUnitId}
-          </div>
-        </div>
-      )}
-
-      {/* PRIMARY TEXTBOOK — always first when a study model is available */}
-      {hasTextbookContent && studyModel && (
-        <GuideSection
-          authority="primary-textbook"
-          icon="📖"
-          label="PRIMARY TEXTBOOK"
-          color="#fde047"
-        >
-          {studyModel.pageThesis && (
-            <div className="text-[11px] italic text-slate-300 leading-snug mb-2 px-1">
-              "{studyModel.pageThesis}"
-            </div>
-          )}
-          {studyModel.studyNotes.keyMechanism && (
-            <GuideNote label="Key Mechanism" text={studyModel.studyNotes.keyMechanism} color="#86efac" />
-          )}
-          {studyModel.studyNotes.commonConfusion && (
-            <GuideNote label="Common Trap" text={studyModel.studyNotes.commonConfusion} color="#fca5a5" />
-          )}
-          {studyModel.studyNotes.clinicalPearl && (
-            <GuideNote label="Pearl" text={studyModel.studyNotes.clinicalPearl} color="#67e8f9" />
-          )}
-          {studyModel.studyNotes.examSignal && (
-            <GuideNote label="Exam Signal" text={studyModel.studyNotes.examSignal} color="#fde047" />
-          )}
-        </GuideSection>
-      )}
-
-      {/* Connected source sections in authority order */}
-      {guideSections.map(sec => (
-        <GuideSection
-          key={sec.authority}
-          authority={sec.authority}
-          icon={sec.icon}
-          label={sec.label}
-          color={sec.color}
-        >
-          {sec.items.map(source => (
-            <div key={source.id} className="mb-2">
-              <div className="text-[10px] font-semibold" style={{ color: sec.color }}>
-                {source.label}
-              </div>
-              {source.url && (
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[9px] underline text-slate-500 hover:text-slate-300"
-                >
-                  {source.url.length > 50 ? source.url.slice(0, 50) + "…" : source.url}
-                </a>
-              )}
-              {source.text && (
-                <div className="text-[11px] text-slate-400 leading-relaxed mt-1">
-                  {source.text.slice(0, 300)}{source.text.length > 300 ? "…" : ""}
-                </div>
-              )}
-              {source.thoughtUnits.length > 0 && (
-                <ul className="mt-1.5 flex flex-col gap-1">
-                  {source.thoughtUnits.map(u => (
-                    <li key={u.id} className="flex items-start gap-1.5 text-[10px]">
-                      <span className="text-slate-600 flex-shrink-0 mt-0.5">·</span>
-                      <span className="text-slate-300">{u.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </GuideSection>
-      ))}
-
-      {/* Provenance footer */}
-      <div className="px-3 py-3 border-t border-white/8">
-        <div className="text-[9px] text-slate-600 leading-relaxed">
-          Sources shown in authority order: Primary Textbook → Professor Material → Exam Blueprint → Peer-reviewed → Educational Video → Chief Resident → Personal Notes. Provenance is never hidden or merged.
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GuideSection({
-  authority,
-  icon,
-  label,
-  color,
-  children,
-}: {
-  authority: SourceAuthority;
-  icon: string;
-  label: string;
-  color: string;
-  children: React.ReactNode;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  return (
-    <div className="border-b border-white/8">
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/3 transition-colors"
-      >
-        <span className="text-xs">{icon}</span>
-        <span className="text-[9px] font-bold uppercase tracking-widest flex-1" style={{ color }}>
-          {label}
-        </span>
-        <span className="text-slate-600 text-[10px]">{collapsed ? "▶" : "▼"}</span>
-      </button>
-      {!collapsed && (
-        <div className="px-3 pb-3 pt-1">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GuideNote({ label, text, color }: { label: string; text: string; color: string }) {
-  return (
-    <div className="flex items-start gap-2 mb-1.5">
-      <div
-        className="text-[9px] font-bold uppercase tracking-widest flex-shrink-0 mt-0.5 px-1 py-px rounded"
-        style={{ color, background: `${color}15` }}
-      >
-        {label}
-      </div>
-      <div className="text-[11px] text-slate-300 leading-snug">{text}</div>
-    </div>
-  );
-}

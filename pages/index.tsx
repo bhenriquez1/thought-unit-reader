@@ -5290,23 +5290,9 @@ export default function ThoughtUnitReader() {
             </div>
           </div>
 
-          {/* Sources — Study Guide (top) feeds into Learning Sources (below).
-               Everything that teaches this concept lives here. */}
+          {/* Sources — Concept Evidence Workspace: active concept → source evidence
+               → Avrrio interpretation. The Study Guide has its own dedicated tab. */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "sources" ? "flex" : "none", flexDirection: "column" }}>
-            <ErrorBoundary onError={(error) => console.error('📖 StudyGuideLab Error:', error.message)}>
-              <StudyGuideLab
-                bookId={bookId}
-                bookTitle={uploadedFile?.name ?? undefined}
-                currentPage={currentPage}
-                studyModel={currentPageStudyModel}
-                pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
-                onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
-                onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
-                onPodcastScript={(script) => setStudyGuideScript(script)}
-              />
-            </ErrorBoundary>
-            <div className="h-px bg-white/10 mx-3 shrink-0" />
             <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
               <LearningSourcesManager
                 bookId={bookId}

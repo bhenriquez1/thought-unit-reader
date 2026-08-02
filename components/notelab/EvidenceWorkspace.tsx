@@ -314,7 +314,7 @@ export default function EvidenceWorkspace({
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(253,224,71,0.6)", marginBottom: 4 }}>
               ACTIVE CONCEPT
             </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(253,224,71,0.95)", lineHeight: 1.5, marginBottom: 10, maxHeight: 44, overflow: "hidden" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(253,224,71,0.95)", lineHeight: 1.6, marginBottom: 10, padding: "8px 10px", background: "rgba(253,224,71,0.05)", borderRadius: 6, borderLeft: "2px solid rgba(253,224,71,0.3)" }}>
               {activeUnitLabel ?? activeUnitId}
             </div>
           </>
@@ -411,7 +411,41 @@ export default function EvidenceWorkspace({
         )}
       </div>
 
-      {/* ── 4. Missing Sources ────────────────────────────────────── */}
+      {/* ── 4. Avrrio Interpretation ─────────────────────────────── */}
+      {studyModel && (
+        studyModel.studyNotes.whyThisMatters ||
+        studyModel.studyNotes.commonConfusion ||
+        studyModel.studyNotes.keyMechanism    ||
+        studyModel.studyNotes.clinicalPearl   ||
+        studyModel.studyNotes.examSignal
+      ) && (
+        <div style={{ padding: "10px 14px 8px", borderTop: "1px solid rgba(103,232,249,0.12)", flexShrink: 0 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(103,232,249,0.55)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>🧬</span>
+            <span>AVRRIO INTERPRETATION</span>
+            <span style={{ fontSize: 8, fontWeight: 400, color: "rgba(103,232,249,0.35)", marginLeft: "auto" }}>AI-inferred · not source text</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {studyModel.studyNotes.whyThisMatters && (
+              <InterpretationNote label="Why It Matters" text={studyModel.studyNotes.whyThisMatters} color="#67e8f9" />
+            )}
+            {studyModel.studyNotes.keyMechanism && (
+              <InterpretationNote label="Mechanism" text={studyModel.studyNotes.keyMechanism} color="#86efac" />
+            )}
+            {studyModel.studyNotes.commonConfusion && (
+              <InterpretationNote label="Common Confusion" text={studyModel.studyNotes.commonConfusion} color="#fca5a5" />
+            )}
+            {studyModel.studyNotes.clinicalPearl && (
+              <InterpretationNote label="Clinical Pearl" text={studyModel.studyNotes.clinicalPearl} color="#c084fc" />
+            )}
+            {studyModel.studyNotes.examSignal && (
+              <InterpretationNote label="Exam Signal" text={studyModel.studyNotes.examSignal} color="#fde047" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Missing Sources ────────────────────────────────────── */}
       {missingRecs.length > 0 && (
         <div style={{ padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(251,191,36,0.6)", marginBottom: 7 }}>
@@ -619,6 +653,23 @@ function SourceEvidenceCard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function InterpretationNote({ label, text, color }: { label: string; text: string; color: string }) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <div style={{
+        fontSize: 8, fontWeight: 700, letterSpacing: "0.08em", flexShrink: 0, marginTop: 2,
+        padding: "2px 6px", borderRadius: 4, color, background: `${color}15`,
+        border: `1px solid ${color}30`,
+      }}>
+        {label.toUpperCase()}
+      </div>
+      <div style={{ fontSize: 11, color: "rgba(203,213,225,0.85)", lineHeight: 1.6, flex: 1 }}>
+        {text}
+      </div>
     </div>
   );
 }
