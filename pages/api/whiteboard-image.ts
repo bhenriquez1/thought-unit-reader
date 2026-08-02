@@ -103,6 +103,31 @@ Your script must describe:
 
 Keep it concise (under 150 words), concrete, and visual — describe shapes, positions, labels, arrows, and colors, not abstract prose. Every label must be SHORT and large enough to read. This script will be sent directly to an image-generation model.`;
 
+const DIRECTOR_TIMEOUT_MS = 20_000;
+const IMAGE_TIMEOUT_MS    = 50_000; // dall-e-3 / SDXL generation genuinely takes 10-30s+
+const DIRECTOR_RETRY_BACKOFF_MS = 500;
+
+async function callDirector(userPrompt: string, timeoutMs: number) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await openai.chat.completions.create(
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.6,
+        max_tokens: 400,
+      },
+      { signal: ctrl.signal },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function buildTeachingScript(
   concept: string,
   context: string,
@@ -128,15 +153,14 @@ async function buildTeachingScript(
 
   DEV && console.log("[WHITEBOARD_IMAGE_DIRECTOR_REQUEST]", { model: "gpt-4o-mini", concept: concept.slice(0, 120), userPromptChars: userPrompt.length });
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: DIRECTOR_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.6,
-    max_tokens: 400,
-  });
+  let completion;
+  try {
+    completion = await callDirector(userPrompt, DIRECTOR_TIMEOUT_MS);
+  } catch (firstErr: any) {
+    console.warn("[WHITEBOARD_IMAGE_DIRECTOR_RETRY]", { error: firstErr?.message ?? String(firstErr) });
+    await new Promise((r) => setTimeout(r, DIRECTOR_RETRY_BACKOFF_MS));
+    completion = await callDirector(userPrompt, DIRECTOR_TIMEOUT_MS);
+  }
 
   const script = completion.choices?.[0]?.message?.content?.trim() ?? "";
 
@@ -182,7 +206,14 @@ async function generateWithOpenAI(prompt: string, debug: boolean): Promise<{ ima
 
   DEV && console.log("[WHITEBOARD_IMAGE_OPENAI_REQUEST]", { ...requestPayload, promptChars: requestPayload.prompt.length });
 
-  const result = await openai.images.generate(requestPayload);
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), IMAGE_TIMEOUT_MS);
+  let result;
+  try {
+    result = await openai.images.generate(requestPayload, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 
   DEV && console.log("[WHITEBOARD_IMAGE_OPENAI_RESPONSE]", {
     created: result.created,
@@ -215,14 +246,22 @@ async function generateWithIdeogram(prompt: string, debug: boolean): Promise<{ i
 
   DEV && console.log("[WHITEBOARD_IMAGE_IDEOGRAM_REQUEST]", { ...requestBody.image_request, promptChars: requestBody.image_request.prompt.length });
 
-  const resp = await fetch("https://api.ideogram.ai/generate", {
-    method: "POST",
-    headers: {
-      "Api-Key": process.env.IDEOGRAM_API_KEY!,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), IMAGE_TIMEOUT_MS);
+  let resp: Response;
+  try {
+    resp = await fetch("https://api.ideogram.ai/generate", {
+      method: "POST",
+      headers: {
+        "Api-Key": process.env.IDEOGRAM_API_KEY!,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const raw = await resp.text();
 
   DEV && console.log("[WHITEBOARD_IMAGE_IDEOGRAM_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
@@ -280,14 +319,22 @@ async function generateWithSDXL(
 
   DEV && console.log("[WHITEBOARD_IMAGE_SDXL_REQUEST]", { provider, endpoint, modelId, promptChars: requestBody.prompt.length });
 
-  const resp = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.SDXL_API_KEY ?? ""}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), IMAGE_TIMEOUT_MS);
+  let resp: Response;
+  try {
+    resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.SDXL_API_KEY ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const raw = await resp.text();
 
   DEV && console.log("[WHITEBOARD_IMAGE_SDXL_RESPONSE]", { status: resp.status, ok: resp.ok, rawChars: raw.length });
@@ -319,8 +366,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if (!HAS_OPENAI_KEY) {
     const failureReason = "OPENAI_API_KEY missing — cannot build the visual teaching script (Phase 1).";
-    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason });
-    return res.status(debug ? 200 : 500).json(
+    // Always log (not DEV-gated) — a missing key in production is a config error
+    // that must show up in Render logs, not go silent.
+    console.error("[WHITEBOARD_IMAGE_UNAVAILABLE]", { failureReason });
+    // Always 200 — this is an expected, handled degraded case, not a server error.
+    // The client already parses this body regardless of status; a 5xx here just
+    // shows up as an alarming "server error" in devtools/monitoring for something
+    // that's actually a normal missing-config fallback path.
+    return res.status(200).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason } }
         : { error: failureReason, aiDisabled: true }
@@ -329,8 +382,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if (provider === "ideogram" && !process.env.IDEOGRAM_API_KEY) {
     const failureReason = "IDEOGRAM_API_KEY not configured — Ideogram provider is not yet enabled.";
-    DEV && console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
-    return res.status(debug ? 200 : 501).json(
+    console.warn("[WHITEBOARD_IMAGE_UNAVAILABLE]", { failureReason, provider });
+    return res.status(200).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
         : { error: failureReason, aiDisabled: true }
@@ -339,8 +392,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   if ((provider === "sdxl" || provider === "sdxlFineTuned") && !resolveSdxlEndpoint(provider, sdxlOptions)) {
     const failureReason = `SDXL endpoint not configured — ${provider === "sdxlFineTuned" ? "fine-tuned SDXL" : "SDXL"} provider is not yet enabled.`;
-    DEV && console.warn("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
-    return res.status(debug ? 200 : 501).json(
+    console.warn("[WHITEBOARD_IMAGE_UNAVAILABLE]", { failureReason, provider });
+    return res.status(200).json(
       debug
         ? { error: failureReason, aiDisabled: true, debugInfo: { failureReason, model: modelLabelForProvider(provider) } }
         : { error: failureReason, aiDisabled: true }
@@ -356,8 +409,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     if (!script) throw new Error("Empty teaching script returned by gpt-4o-mini");
   } catch (err: any) {
     const failureReason = `Phase 1 (visual teaching script) failed: ${err?.message ?? String(err)}`;
-    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider });
-    return res.status(debug ? 200 : 500).json(
+    console.error("[WHITEBOARD_IMAGE_FAILED]", { failureReason, provider, durationContext: "phase1_director" });
+    return res.status(200).json(
       debug
         ? {
             error: failureReason,
@@ -386,8 +439,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(200).json({ imageUrl: drawn.imageUrl, teachingScript: script, provider });
   } catch (err: any) {
     const failureReason = `Phase 2 (${provider} image generation) failed: ${err?.message ?? String(err)}`;
-    DEV && console.error("[WHITEBOARD_IMAGE_FAILURE]", { failureReason, provider, httpStatus: err?.httpStatus });
-    return res.status(debug ? 200 : 502).json(
+    // Always log — this is the exact failure this endpoint has been silently
+    // swallowing in production (DEV-gated before this fix). Includes the
+    // upstream httpStatus (e.g. a dall-e-3 content-policy rejection, an
+    // unverified-org error, or a timeout via AbortError) so the real cause is
+    // finally visible in Render logs instead of only ever surfacing as an
+    // opaque 502 in the browser.
+    console.error("[WHITEBOARD_IMAGE_FAILED]", {
+      failureReason,
+      provider,
+      httpStatus: err?.httpStatus ?? null,
+      errorName: err?.name ?? null,
+      isTimeout: err?.name === "AbortError",
+    });
+    // Always 200 with a structured degraded envelope — the client (WhiteboardPanel.tsx)
+    // already parses `data.error`/`data.aiDisabled` regardless of HTTP status and falls
+    // back to the deterministic canvas; returning 502 here only ever produced a
+    // confusing "server error" badge in devtools for what is a normal, handled
+    // upstream-provider failure (frequently a content-policy rejection or timeout,
+    // not a real backend crash).
+    return res.status(200).json(
       debug
         ? {
             error: failureReason,

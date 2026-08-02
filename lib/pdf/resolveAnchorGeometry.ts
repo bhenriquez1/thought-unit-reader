@@ -102,14 +102,20 @@ export function resolveAnchorGeometryTracked(
   }
 
   // ── Strategy 3: quote substring search ───────────────────────────────────
+  // Search using a bounded prefix (robust against a stray mismatch far into a long
+  // quote), but the highlighted range covers the FULL quote length, not just the
+  // search prefix — otherwise a sentence-expanded or multi-sentence
+  // SurgeonAnnotationPlan quote (can run several hundred characters) would only
+  // ever get its first ~60 chars highlighted, clipping the rest of the sentence(s).
   if (tokens.length === 0) {
     const quote = (anchor.normalizedSourceText ?? anchor.quote ?? "").trim();
     if (quote.length >= 10) {
-      const queryNorm = quote.toLowerCase().slice(0, 60);
+      const SEARCH_PREFIX_LEN = 60;
+      const queryNorm = quote.toLowerCase().slice(0, SEARCH_PREFIX_LEN);
       const bodyNorm  = textIndex.fullText.toLowerCase();
       const pos = bodyNorm.indexOf(queryNorm);
       if (pos !== -1) {
-        const end = pos + queryNorm.length;
+        const end = pos + quote.length; // full quote length — not queryNorm.length
         tokens = textIndex.tokens.filter(
           t => t.endChar > pos && t.startChar < end,
         );
@@ -172,7 +178,10 @@ export function resolveTargetGeometry(
     pageIndex,
     startChar: 0,
     endChar:   0,
-    quote:     text.slice(0, 180).replace(/\s+/g, " ").trim(),
+    // 1400, not a short snippet cap — matches SurgeonAnnotationPlan's exactQuote max
+    // length so a sentence-expanded or multi-sentence quote isn't clipped here before
+    // it even reaches Strategy 3's search.
+    quote:     text.slice(0, 1400).replace(/\s+/g, " ").trim(),
     ...(pdfTextItemIndexes && pdfTextItemIndexes.length > 0 && { pdfTextItemIndexes }),
     ...(groundingState && { groundingState: groundingState as ReaderAnchor["groundingState"] }),
   };
