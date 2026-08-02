@@ -40,7 +40,9 @@ export type GroundedAnchor = RawAnchor & {
 };
 
 // Same normalization used by SmartPDFViewer's normForMatch — keeps comparison consistent.
-function normText(s: string): string {
+// Exported: reused by lib/highlights/groundSurgeonQuotes.ts, which needs the identical
+// ligature/quote/dash/whitespace normalization for its own (stricter) verification pass.
+export function normText(s: string): string {
   return s
     .toLowerCase()
     .replace(/[­​]/g, '')               // zero-width / soft-hyphen
@@ -191,7 +193,9 @@ function termOverlapRatio(a: string, b: string): number {
 
 // Split the page (already structured into "\n\n"-separated paragraphs by
 // buildStructuredPageText) into paragraph-level text blocks for thought-unit spans.
-function splitIntoParagraphs(text: string): string[] {
+// Exported: reused by lib/insights/buildSurgeonAnnotationInput.ts for paragraph
+// boundaries — avoids re-deriving the same "\n\n"-split logic a second time.
+export function splitIntoParagraphs(text: string): string[] {
   return text
     .split(/\n\s*\n+/)
     .map(p => p.replace(/\s+/g, ' ').trim())

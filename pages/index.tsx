@@ -73,6 +73,8 @@ import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx } from "@/lib/n
 import { getStoredProfessionMode } from "@/lib/notelab/professionModes";
 import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/components/reader/ThoughtUnitNavigator";
 import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
+import { detectPageDomain } from "@/lib/insights/detectPageDomain";
+import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -1981,6 +1983,33 @@ export default function ThoughtUnitReader() {
   // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
+
+  // ── SurgeonAnnotationPlan: OpenAI reads the current page fresh, Avrrio draws it ──
+  // Captured page image (hidden fixed-scale render, decoupled from zoom) — see
+  // SmartPDFViewer's onPageImageCaptured / SURGEON_CAPTURE_SCALE.
+  const [pageImageByPage, setPageImageByPage] = useState<Map<string, string>>(() => new Map());
+  const surgeonPageDomain = useMemo(
+    () => detectPageDomain(pageTextByPage.get(`${bookId}:${currentPage}`) || ""),
+    [pageTextByPage, bookId, currentPage],
+  );
+  const surgeonExistingUnits = useMemo(
+    () => canonicalLeftPanelUnits.map(u => ({ id: u.id, text: u.exactText, canonicalType: u.category })),
+    [canonicalLeftPanelUnits],
+  );
+  const surgeonAnnotations = useSurgeonAnnotations({
+    pageTruthKey,
+    bookId,
+    pageIndex:        currentPage - 1,
+    pageNumber:        currentPage,
+    pageText:          pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
+    pageImageDataUrl:  pageImageByPage.get(`${bookId}:${currentPage}`) ?? null,
+    previousPageText:  pageTextByPage.get(`${bookId}:${currentPage - 1}`) ?? null,
+    nextPageText:      pageTextByPage.get(`${bookId}:${currentPage + 1}`) ?? null,
+    domain:            surgeonPageDomain,
+    semanticPack:      activePack,
+    existingCanonicalUnits: surgeonExistingUnits,
+    enabled:           !!bookId && !!fileUrl,
+  });
 
   // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
   // synthesis data without needing real API keys. Removed before any production build.
@@ -5153,6 +5182,21 @@ export default function ThoughtUnitReader() {
                   </div>
                 )}
 
+                {/* SurgeonAnnotationPlan degraded status — existing/cached annotations stay
+                    visible underneath; this is only a small notice, never a blocking state. */}
+                {surgeonAnnotations.status === "error" && surgeonAnnotations.annotationErrorMessage && (
+                  <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-amber-700/50 bg-amber-900/70 px-4 py-1.5 text-[11px] text-amber-100 backdrop-blur-sm">
+                    <span>⚠</span>
+                    <span className="flex-1">{surgeonAnnotations.annotationErrorMessage}</span>
+                    <button
+                      onClick={surgeonAnnotations.reanalyze}
+                      className="ml-auto shrink-0 text-amber-300 hover:text-white underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -5196,6 +5240,15 @@ export default function ThoughtUnitReader() {
                     next.set(key, text);
                     return next;
                   })}
+                  onPageImageCaptured={(pageNumber, dataUrl) => setPageImageByPage((prev) => {
+                    const key = `${bookId}:${pageNumber}`;
+                    if (prev.get(key) === dataUrl) return prev;
+                    const next = new Map(prev);
+                    if (next.size >= 10) next.delete(next.keys().next().value as string);
+                    next.set(key, dataUrl);
+                    return next;
+                  })}
+                  surgeonHighlightTargets={surgeonAnnotations.highlightTargets}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}

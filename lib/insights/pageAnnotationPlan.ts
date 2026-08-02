@@ -1,130 +1,115 @@
 // lib/insights/pageAnnotationPlan.ts
-// Surgeon annotation plan — the structured output from the annotation-planner
-// API pass. Every annotation structure must reference canonical unit IDs that
-// are grounded on the *current* page. Synthetic interpretation lives in the
-// right panel; false highlights must never appear in the PDF.
+// SurgeonAnnotationPlan — the structured output of the per-page annotation-planning
+// pass. OpenAI reads the current page fresh (text + image) and proposes meaning:
+// what deserves annotation, why, and how important it is. It does NOT propose
+// coordinates and its quotes are not trusted as-is — every exactQuote is verified
+// against the live PDF text layer (lib/highlights/groundSurgeonQuotes.ts) before
+// anything is drawn. A quote that doesn't match the page is dropped, never guessed.
 
 import { z } from "zod";
 
-// ── Display styles ────────────────────────────────────────────────────────────
-// Each style corresponds to a distinct visual treatment in the PDF overlay:
-//   gold-rule       — horizontal rule above a definition block
-//   brace           — left brace spanning a multi-step mechanism chain
-//   numbered-rail   — numbered steps along a procedure sequence
-//   decision-marker — diamond / fork marker at a decision point
-//   danger-notch    — red notch / left-border on a trap or warning
-//   pearl-marker    — compact green dot on a clinical pearl
-//   connector       — line / arrow connecting compared items
-//   underline       — restrained underline for evidence citations
+// ── Canonical annotation type ─────────────────────────────────────────────────
 
-export const AnnotationDisplaySchema = z.enum([
-  "gold-rule",
-  "brace",
-  "numbered-rail",
-  "decision-marker",
-  "danger-notch",
-  "pearl-marker",
-  "connector",
-  "underline",
-]);
-
-export type AnnotationDisplay = z.infer<typeof AnnotationDisplaySchema>;
-
-// ── Structure types ───────────────────────────────────────────────────────────
-
-export const AnnotationStructureTypeSchema = z.enum([
+export const CanonicalTypeSchema = z.enum([
   "definition",
   "mechanism",
   "procedure",
   "decision",
-  "trap",
-  "pearl",
   "comparison",
-  "evidence",
+  "trap",
+  "clinicalPearl",
+  "supportingEvidence",
 ]);
 
-export type AnnotationStructureType = z.infer<typeof AnnotationStructureTypeSchema>;
+export type CanonicalType = z.infer<typeof CanonicalTypeSchema>;
 
-// ── Default display for each structure type ───────────────────────────────────
-// Used client-side when the planner omits the display field.
+// ── Visual treatment ───────────────────────────────────────────────────────────
+// Each treatment corresponds to a distinct visual drawn by PdfEvidenceOverlay:
+//   definitionBar      — left-edge accent bar on a definition span
+//   mechanismBrace      — left brace spanning a multi-step mechanism chain
+//   procedureRail       — numbered steps along a procedure sequence
+//   decisionConnector    — diamond/fork marker at a decision point
+//   comparisonBracket    — connector between compared items
+//   trapNotch           — corner notch on a trap/warning
+//   pearlMarker          — compact marker on a clinical pearl
+//   evidenceUnderline    — restrained underline for supporting evidence
 
-export const DEFAULT_DISPLAY: Record<AnnotationStructureType, AnnotationDisplay> = {
-  definition: "gold-rule",
-  mechanism:  "brace",
-  procedure:  "numbered-rail",
-  decision:   "decision-marker",
-  trap:       "danger-notch",
-  pearl:      "pearl-marker",
-  comparison: "connector",
-  evidence:   "underline",
+export const TreatmentSchema = z.enum([
+  "definitionBar",
+  "mechanismBrace",
+  "procedureRail",
+  "decisionConnector",
+  "comparisonBracket",
+  "trapNotch",
+  "pearlMarker",
+  "evidenceUnderline",
+]);
+
+export type Treatment = z.infer<typeof TreatmentSchema>;
+
+// ── Default treatment for each canonical type ─────────────────────────────────
+// Used to backfill `treatment` client- or server-side when the planner omits it —
+// the mapping is deterministic, so it never needs to be re-guessed by the model.
+
+export const DEFAULT_TREATMENT: Record<CanonicalType, Treatment> = {
+  definition:         "definitionBar",
+  mechanism:          "mechanismBrace",
+  procedure:          "procedureRail",
+  decision:           "decisionConnector",
+  comparison:         "comparisonBracket",
+  trap:               "trapNotch",
+  clinicalPearl:      "pearlMarker",
+  supportingEvidence: "evidenceUnderline",
 };
 
-// ── Annotation structure ──────────────────────────────────────────────────────
+// ── Importance ─────────────────────────────────────────────────────────────────
 
-export const AnnotationStructureSchema = z.object({
-  /** Stable ID for deduplication and layer keying. */
-  id: z.string().min(1),
-  /** Semantic type of this structure. */
-  type: AnnotationStructureTypeSchema,
-  /**
-   * IDs of the canonical units from the current page that ground this
-   * annotation. Must reference units from the *current* page only —
-   * the planner API enforces this; the Zod schema validates it client-side
-   * by checking that every id appears in the page's canonical unit list.
-   */
-  canonicalUnitIds: z.array(z.string().min(1)).min(1),
-  /** Short human-readable label shown in the margin / tooltip. */
-  label: z.string().min(1).max(120),
-  /** One-sentence rationale for why these units form this structure. */
-  rationale: z.string().min(1).max(400),
-  /** Visual treatment to apply in the PDF overlay. */
-  display: AnnotationDisplaySchema,
+export const ImportanceSchema = z.enum(["critical", "high", "supporting"]);
+export type Importance = z.infer<typeof ImportanceSchema>;
+
+// ── Single annotation ───────────────────────────────────────────────────────────
+
+export const SurgeonAnnotationSchema = z.object({
+  canonicalType: CanonicalTypeSchema,
+  /** Verbatim span from the current page — verified against the PDF text layer
+   *  before it is ever drawn. Never trusted as-is. */
+  exactQuote:    z.string().min(1).max(600),
+  /** One-sentence rationale for why this span deserves this annotation. */
+  reason:        z.string().min(1).max(300),
+  importance:    ImportanceSchema,
+  treatment:     TreatmentSchema,
 });
 
-export type AnnotationStructure = z.infer<typeof AnnotationStructureSchema>;
+export type SurgeonAnnotation = z.infer<typeof SurgeonAnnotationSchema>;
 
 // ── Full page annotation plan ─────────────────────────────────────────────────
 
-export const PageAnnotationPlanSchema = z.object({
+export const SurgeonAnnotationPlanSchema = z.object({
   /**
    * pageTruthKey at the time the plan was generated.
    * Format: "<documentId>::<pageNumber>::t"
    * Plans must be discarded when this key no longer matches the current page.
    */
   pageTruthKey: z.string().min(1),
-  /**
-   * One-sentence thesis for the current page — used as the whiteboard title
-   * and canonical Chief Resident context anchor.
-   */
-  pageThesis: z.string().min(1).max(200),
-  /** Ordered list of annotation structures derived from the current page. */
-  structures: z.array(AnnotationStructureSchema),
+  /** One-sentence thesis for the current page, read fresh — never copied from a
+   *  prior summary. */
+  pageThesis:   z.string().min(1).max(200),
+  /** Ordered list of annotations derived from the current page. */
+  annotations:  z.array(SurgeonAnnotationSchema),
 });
 
-export type PageAnnotationPlan = z.infer<typeof PageAnnotationPlanSchema>;
+export type SurgeonAnnotationPlan = z.infer<typeof SurgeonAnnotationPlanSchema>;
 
-// ── Validation helper ─────────────────────────────────────────────────────────
+// Back-compat alias — the plan is a "page annotation plan"; both names refer to
+// the same schema so existing imports of the older name keep working.
+export const PageAnnotationPlanSchema = SurgeonAnnotationPlanSchema;
+export type PageAnnotationPlan = SurgeonAnnotationPlan;
 
-/**
- * Validate a plan and assert that every canonicalUnitId references a known
- * unit from the current page. Returns the validated plan or throws.
- */
-export function validateAnnotationPlan(
-  raw: unknown,
-  knownUnitIds: Set<string>,
-): PageAnnotationPlan {
-  const plan = PageAnnotationPlanSchema.parse(raw);
+// ── Parse helper ───────────────────────────────────────────────────────────────
+// No canonicalUnitIds cross-check here — grounding now happens against the live
+// PDF text layer (lib/highlights/groundSurgeonQuotes.ts), not a pre-existing id
+// list, so there is nothing to validate at this layer beyond the schema shape.
 
-  for (const structure of plan.structures) {
-    for (const id of structure.canonicalUnitIds) {
-      if (!knownUnitIds.has(id)) {
-        throw new Error(
-          `Annotation structure "${structure.id}" references unknown unit id "${id}" — ` +
-          `annotations must only reference canonical units from the current page.`,
-        );
-      }
-    }
-  }
-
-  return plan;
+export function parseSurgeonAnnotationPlan(raw: unknown): SurgeonAnnotationPlan {
+  return SurgeonAnnotationPlanSchema.parse(raw);
 }

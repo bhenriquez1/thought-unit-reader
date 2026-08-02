@@ -1,12 +1,17 @@
 // pages/api/page-annotation-plan.ts
-// Surgeon annotation-planning pass.
+// Surgeon annotation-planning pass — OpenAI reads the CURRENT page fresh (image +
+// text + headings + domain + semantic pack) and proposes a SurgeonAnnotationPlan:
+// meaning, not coordinates. It must NOT be given the page's own prior thesis/
+// summary as primary context (that is the confirmed cause of stale/incorrect
+// annotations) — only buildSurgeonAnnotationInput()'s output, which never
+// contains those fields.
 //
-// Receives the structured content for the current page (canonical units +
-// page thesis + pageTruthKey) and returns a validated PageAnnotationPlan.
-//
-// The planner GROUPS related canonical units into annotation structures before
-// any rendering occurs — preventing five disconnected highlights when the
-// content is one procedure, one definition set, or one comparison.
+// The app — not this endpoint — is the authority on whether an exactQuote is
+// real: lib/highlights/groundSurgeonQuotes.ts verifies every quote against the
+// live PDF text layer and drops anything that doesn't match. This endpoint does
+// only a lightweight defense-in-depth check against the extracted text it was
+// given (see below) — that is NOT a substitute for the client-side check, since
+// the server never sees the actual rendered TextLayerRegistry.
 //
 // Security notes:
 //   - OPENAI_API_KEY is server-side only; never NEXT_PUBLIC_OPENAI_API_KEY.
@@ -16,76 +21,132 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { PageAnnotationPlanSchema } from "@/lib/insights/pageAnnotationPlan";
+import {
+  SurgeonAnnotationPlanSchema,
+  type SurgeonAnnotationPlan,
+} from "@/lib/insights/pageAnnotationPlan";
+import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
+
+const DEV = process.env.NODE_ENV === "development";
 
 export const config = {
   maxDuration: 30,
-  api: { bodyParser: { sizeLimit: "32kb" } },
+  // A base64 JPEG page image easily runs 150-400kb — well above the old 32kb cap.
+  api: { bodyParser: { sizeLimit: "4mb" } },
 };
 
-// ── Request / response types ───────────────────────────────────────────────────
-
-export interface AnnotationPlanUnit {
-  id: string;
-  text: string;
-  canonicalType?: string;
-  priorityTier?: number;
-  title?: string;
-}
-
-export interface AnnotationPlanRequest {
-  pageTruthKey: string;
-  pageText: string;
-  canonicalUnits: AnnotationPlanUnit[];
-  /** Optional domain hint (e.g. "dentistry", "biology") for type label tuning. */
-  domain?: string;
-}
+const PLAN_TIMEOUT_MS  = 25_000;
+const RETRY_BACKOFF_MS = 700;
 
 export type AnnotationPlanResponse =
-  | { ok: true; plan: unknown }
-  | { ok: false; error: string; code: string };
+  | { ok: true; plan: SurgeonAnnotationPlan }
+  | { ok: false; error: string; code: string; fallbackAllowed: true };
+
+function degraded(message: string, code = "UPSTREAM_UNAVAILABLE"): AnnotationPlanResponse {
+  return { ok: false, error: message, code, fallbackAllowed: true };
+}
 
 // ── Static system prompt ───────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a surgical annotation planner for a medical/scientific PDF reader.
+const SYSTEM_PROMPT = `You are a surgical annotation planner for a PDF study reader.
 
-Your task: given the current page's canonical thought units, group them into annotation structures that will be rendered as visual overlays on the PDF page. You must NOT invent content — every structure must be grounded in the provided canonical units.
+You are reading THIS page fresh, right now, from the image and text provided below.
+Do NOT treat any pre-existing summary as ground truth — verify everything against what
+you actually see in the page image and text. "existingCanonicalUnits" (if provided) are
+prior context from an earlier pass, offered only for continuity — re-derive the page's
+content yourself rather than assuming they are complete or still accurate.
+
+Your task: identify what on this page deserves a highlight/annotation, and propose the
+EXACT verbatim quote for it. You do NOT propose coordinates — the app finds your quote
+in the real PDF text and draws it. If you cannot quote something exactly as it appears
+on the page, do not propose it as an annotation.
 
 Rules:
-1. Group related units into one structure rather than creating many disconnected highlights.
-   - Multiple definition sentences → one "definition" structure.
-   - A chain of mechanism steps → one "mechanism" structure with one brace.
-   - Sequential procedure steps → one "procedure" structure with a numbered rail.
-2. Each structure MUST reference at least one canonical unit id from the provided list.
-3. Do NOT reference canonical unit ids from other pages or invent new ids.
-4. The pageThesis must be a single sentence summarising the page's main subject.
-5. Assign the appropriate display style:
-   - definition → "gold-rule"
-   - mechanism  → "brace"
-   - procedure  → "numbered-rail"
-   - decision   → "decision-marker"
-   - trap       → "danger-notch"
-   - pearl      → "pearl-marker"
-   - comparison → "connector"
-   - evidence   → "underline"
-6. Keep labels short (≤ 8 words). Keep rationales factual (≤ 60 words).
-7. Produce at most 8 structures per page. Prefer fewer, more precise groups.
+1. Every exactQuote must be copied verbatim from the page text/image — same words, same
+   order, same punctuation. Do not paraphrase, summarize, or fix typos in a quote.
+2. Prefer fewer, well-chosen annotations over many disconnected ones. Group a multi-step
+   mechanism or procedure into one annotation with the fullest verbatim span you can quote,
+   rather than five tiny fragments.
+3. Assign canonicalType:
+   - definition   — a term is being defined
+   - mechanism    — a causal chain / how-it-works explanation
+   - procedure    — a sequential set of steps to follow
+   - decision     — a choice, diagnosis, or comparison-driven decision point
+   - comparison   — two or more things being contrasted
+   - trap         — a common mistake, exception, or warning
+   - clinicalPearl — an expert insight or memorable shortcut
+   - supportingEvidence — supporting data, citation, or example
+4. Assign importance: "critical" (core to the page's thesis), "high" (important supporting
+   idea), or "supporting" (nice-to-have context).
+5. Assign treatment based on canonicalType:
+   definition→definitionBar, mechanism→mechanismBrace, procedure→procedureRail,
+   decision→decisionConnector, comparison→comparisonBracket, trap→trapNotch,
+   clinicalPearl→pearlMarker, supportingEvidence→evidenceUnderline.
+6. Keep "reason" to one factual sentence (≤ 40 words) explaining why this span matters.
+7. pageThesis is a single sentence stating the page's main subject, derived fresh from
+   what you read — not copied from any prior-pass context.
+8. Produce at most 10 annotations per page. Prefer fewer, more precise ones.
 
 Respond ONLY with a JSON object matching this schema — no prose, no markdown fences:
 {
   "pageTruthKey": "<string — copy from input>",
   "pageThesis": "<one-sentence string>",
-  "structures": [
+  "annotations": [
     {
-      "id": "<unique string>",
-      "type": "<definition|mechanism|procedure|decision|trap|pearl|comparison|evidence>",
-      "canonicalUnitIds": ["<id>", ...],
-      "label": "<short label>",
-      "rationale": "<one sentence>",
-      "display": "<gold-rule|brace|numbered-rail|decision-marker|danger-notch|pearl-marker|connector|underline>"
+      "canonicalType": "<definition|mechanism|procedure|decision|comparison|trap|clinicalPearl|supportingEvidence>",
+      "exactQuote": "<verbatim span from the page>",
+      "reason": "<one sentence>",
+      "importance": "<critical|high|supporting>",
+      "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>"
     }
   ]
 }`;
+
+// ── OpenAI call with timeout ───────────────────────────────────────────────────
+
+async function callOpenAI(
+  client: OpenAI,
+  userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[],
+  timeoutMs: number,
+) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await client.chat.completions.create(
+      {
+        model:            "gpt-4o",
+        temperature:      0,
+        max_tokens:       2500,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user",   content: userContent },
+        ],
+        response_format:  { type: "json_object" },
+      },
+      { signal: ctrl.signal },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Lightweight defense-in-depth check ─────────────────────────────────────────
+// NOT authoritative — this only checks against the extracted text the server was
+// given. The client's check against the live rendered PDF text layer (via
+// lib/highlights/groundSurgeonQuotes.ts) is the real gate before anything draws.
+
+function normalizeForServerCheck(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function quotesPlausible(plan: SurgeonAnnotationPlan, pageText: string): boolean {
+  const normPage = normalizeForServerCheck(pageText);
+  const plausible = plan.annotations.filter(a => normPage.includes(normalizeForServerCheck(a.exactQuote)));
+  // Require at least half the proposed quotes to plausibly appear — a lower bar
+  // than the client's strict per-quote gate, just enough to catch a badly
+  // hallucinated response before it's returned at all.
+  return plan.annotations.length === 0 || plausible.length >= plan.annotations.length / 2;
+}
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -95,107 +156,114 @@ export default async function handler(
 ): Promise<void> {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed" });
+    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed", fallbackAllowed: true });
     return;
   }
 
-  const body = req.body as Partial<AnnotationPlanRequest>;
+  const body = req.body as Partial<SurgeonAnnotationInput>;
+  const diagnosticIds = { pageTruthKey: body?.pageTruthKey ?? null, pageNumber: body?.pageNumber ?? null };
 
-  // Validate required fields
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
-    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk" });
+    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
     return;
   }
-  if (!Array.isArray(body.canonicalUnits) || body.canonicalUnits.length === 0) {
-    res.status(400).json({ ok: false, error: "canonicalUnits must be a non-empty array", code: "missing_units" });
+  if (!body.pageText || typeof body.pageText !== "string") {
+    res.status(400).json({ ok: false, error: "pageText is required", code: "missing_page_text", fallbackAllowed: true });
     return;
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    res.status(503).json({ ok: false, error: "Annotation service unavailable", code: "no_api_key" });
+    console.error("[SURGEON_PLAN_UNAVAILABLE]", { reason: "OPENAI_API_KEY missing", ...diagnosticIds });
+    res.status(200).json(degraded("Advanced page analysis is not configured on the server."));
     return;
   }
 
-  // Build the user message from page content — all user-controlled values go
-  // into the messages array, never into the system prompt.
-  const unitLines = body.canonicalUnits
-    .slice(0, 20) // cap to prevent oversized prompts
-    .map((u) => `[${u.id}] (${u.canonicalType ?? "unknown"}, tier=${u.priorityTier ?? "?"}) ${u.title ? `"${u.title}" — ` : ""}${u.text.slice(0, 300)}`)
-    .join("\n");
-
-  const pageTextSnippet = (body.pageText ?? "").slice(0, 1500);
-  const domainHint = body.domain ? `Domain: ${body.domain}\n` : "";
-
-  const userMessage =
+  const userTextBlock =
     `pageTruthKey: ${body.pageTruthKey}\n` +
-    `${domainHint}` +
-    `\nCurrent page text (excerpt):\n${pageTextSnippet}\n` +
-    `\nCanonical units for this page (${body.canonicalUnits.length} total):\n${unitLines}\n` +
-    `\nProduce the annotation plan JSON.`;
+    `pageNumber: ${body.pageNumber ?? "unknown"}\n` +
+    `domain: ${body.domain ?? "general"}\n` +
+    `semanticPack: ${JSON.stringify(body.semanticPack ?? {})}\n` +
+    `headings: ${JSON.stringify(body.headings ?? {})}\n` +
+    `existingCanonicalUnits (context only — re-verify against the page, do not trust blindly): ${JSON.stringify((body.existingCanonicalUnits ?? []).slice(0, 20))}\n` +
+    `\nCurrent page text:\n${body.pageText.slice(0, 6000)}\n` +
+    `\nProduce the SurgeonAnnotationPlan JSON.`;
 
-  try {
-    const client = new OpenAI({ apiKey });
-
-    const completion = await client.chat.completions.create({
-      model:       "gpt-4o-mini",
-      temperature: 0,
-      max_tokens:  1500,
-      messages: [
-        { role: "system",  content: SYSTEM_PROMPT },
-        { role: "user",    content: userMessage },
-      ],
-      response_format: { type: "json_object" },
-    });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) {
-      res.status(502).json({ ok: false, error: "Annotation planner returned no content", code: "empty_response" });
-      return;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      res.status(502).json({ ok: false, error: "Annotation planner returned invalid JSON", code: "parse_error" });
-      return;
-    }
-
-    // Zod validation — ensures the plan conforms to the schema before it ever
-    // reaches the client or the PDF overlay renderer.
-    const result = PageAnnotationPlanSchema.safeParse(parsed);
-    if (!result.success) {
-      res.status(502).json({
-        ok: false,
-        error: "Annotation plan failed schema validation",
-        code: "schema_error",
-      });
-      return;
-    }
-
-    // Enforce that every canonicalUnitId references an input unit from this page.
-    const knownIds = new Set(body.canonicalUnits.map((u) => u.id));
-    for (const structure of result.data.structures) {
-      for (const id of structure.canonicalUnitIds) {
-        if (!knownIds.has(id)) {
-          res.status(502).json({
-            ok: false,
-            error: "Annotation plan references unknown canonical unit id — cross-page bleed prevented",
-            code: "cross_page_unit",
-          });
-          return;
-        }
-      }
-    }
-
-    res.status(200).json({ ok: true, plan: result.data });
-  } catch (err) {
-    const isOpenAIError = err instanceof OpenAI.APIError;
-    if (isOpenAIError && err.status === 429) {
-      res.status(429).json({ ok: false, error: "Rate limited — try again shortly", code: "rate_limited" });
-      return;
-    }
-    res.status(502).json({ ok: false, error: "Annotation planner unavailable", code: "upstream_error" });
+  const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+    { type: "text", text: userTextBlock },
+  ];
+  if (body.pageImageDataUrl) {
+    userContent.push({ type: "image_url", image_url: { url: body.pageImageDataUrl, detail: "high" } });
   }
+
+  const client = new OpenAI({ apiKey });
+  const startedAt = Date.now();
+
+  let completion: Awaited<ReturnType<typeof callOpenAI>>;
+  try {
+    try {
+      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+    } catch (firstErr: any) {
+      console.warn("[SURGEON_PLAN_RETRY]", {
+        ...diagnosticIds,
+        attempt:   1,
+        error:     firstErr?.message ?? String(firstErr),
+        elapsedMs: Date.now() - startedAt,
+      });
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+    }
+  } catch (err: any) {
+    const isRateLimited = err instanceof OpenAI.APIError && err.status === 429;
+    console.error("[SURGEON_PLAN_FAILED]", {
+      ...diagnosticIds,
+      attempts:   2,
+      error:      err?.message ?? String(err),
+      status:     err?.status ?? null,
+      durationMs: Date.now() - startedAt,
+    });
+    res.status(200).json(degraded(
+      isRateLimited ? "Advanced page analysis is rate-limited — try again shortly." : "Advanced page analysis is temporarily unavailable.",
+      isRateLimited ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE",
+    ));
+    return;
+  }
+
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) {
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "empty_response", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned no content."));
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "parse_error", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned invalid output."));
+    return;
+  }
+
+  const result = SurgeonAnnotationPlanSchema.safeParse(parsed);
+  if (!result.success) {
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "schema_error", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned a malformed plan."));
+    return;
+  }
+
+  if (!quotesPlausible(result.data, body.pageText)) {
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "quotes_implausible", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page."));
+    return;
+  }
+
+  DEV && console.log("[SURGEON_PLAN_OK]", {
+    ...diagnosticIds,
+    annotationCount: result.data.annotations.length,
+    durationMs:      Date.now() - startedAt,
+  });
+
+  res.status(200).json({ ok: true, plan: result.data });
 }

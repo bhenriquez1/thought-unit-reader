@@ -121,6 +121,16 @@ interface PureReaderViewProps {
   onOpenFocusCycle?: () => void;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
+  /** Forwarded to SmartPDFViewer — fires with a captured page image for the
+   *  SurgeonAnnotationPlan vision input, decoupled from zoom. */
+  onPageImageCaptured?: (page: number, dataUrl: string) => void;
+  /**
+   * SurgeonAnnotationPlan-derived highlight targets. When present and non-empty,
+   * these fully REPLACE aiHighlightAnchors/allHighlightAnchors as the PDF's
+   * on-page highlight source (the older pipeline keeps driving the Thought Unit
+   * Navigator/Roadmap sidebar lists — only what draws on the PDF changes).
+   */
+  surgeonHighlightTargets?: import("@/lib/readerContracts").HighlightTarget[];
   /** Raw text of the current page — used to validate highlight anchors before rendering */
   pageText?: string;
   /** Uploaded filename or book title — fed to domain preset detection as the strongest signal
@@ -191,6 +201,8 @@ export default function PureReaderView({
   allHighlightAnchors,
   onOpenFocusCycle,
   onPageTextExtracted,
+  onPageImageCaptured,
+  surgeonHighlightTargets,
   pageText,
   synthStatus,
   pageTruthKey,
@@ -737,6 +749,11 @@ export default function PureReaderView({
               focusHighlightPersist={focusHighlightPersist}
               onTextClick={onTextClick}
               highlightTargets={(() => {
+                // SurgeonAnnotationPlan targets, when present, fully REPLACE the
+                // older highlightAnchors-derived set on the PDF (full-replacement —
+                // the older pipeline still drives the Thought Unit Navigator via
+                // allHighlightTargets below, unaffected by this swap).
+                if ((surgeonHighlightTargets?.length ?? 0) > 0) return surgeonHighlightTargets!;
                 // Rects are computed for the FULL grounded set (allHighlightTargets), not just
                 // the paint-budgeted one — otherwise a Thought Unit Navigator card for a
                 // budget-excluded anchor (e.g. trap/application on a dense page) would have no
@@ -748,13 +765,16 @@ export default function PureReaderView({
                 return allHighlightTargets;
               })()}
               highlightNeighborhoods={undefined}
-              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${allHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
-              authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
+              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${((surgeonHighlightTargets?.length ?? 0) > 0 ? surgeonHighlightTargets! : allHighlightTargets)?.map(t => t.text).join("|") ?? ""}`}
+              authorizedHighlightIds={(surgeonHighlightTargets?.length ?? 0) > 0
+                ? surgeonHighlightTargets!.map(t => t.evidenceRefId)
+                : (effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? [])}
               focusedEvidenceId={focusedEvidenceId}
               onEvidenceFocus={handleThoughtUnitJump}
               isPageChanging={isPageChanging}
               onPageRenderComplete={() => setIsPageChanging(false)}
               onPageTextExtracted={onPageTextExtracted}
+              onPageImageCaptured={onPageImageCaptured}
               onReadingPath={onReadingPath}
               roleLabelByConceptId={roleLabelByConceptId}
               onPdfWordClick={onPdfWordClick}
