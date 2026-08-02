@@ -7,6 +7,7 @@ import {
   STRUCTURE_VERSION,
   PARAGRAPH_ALGORITHM_VERSION,
   SEMANTIC_PACK_VERSION,
+  MODEL_VERSION,
 } from "../../lib/insights/annotationPlanCache";
 
 // ── buildAnnotationCacheKey ───────────────────────────────────────────────────
@@ -18,11 +19,22 @@ describe("buildAnnotationCacheKey", () => {
     expect(key).toContain("p5");
   });
 
-  it("includes all three version numbers", () => {
+  it("includes all four version numbers", () => {
     const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
     expect(key).toContain(`${STRUCTURE_VERSION}`);
     expect(key).toContain(`${PARAGRAPH_ALGORITHM_VERSION}`);
     expect(key).toContain(`${SEMANTIC_PACK_VERSION}`);
+    expect(key).toContain(`${MODEL_VERSION}`);
+  });
+
+  it("changes when MODEL_VERSION changes — this is the 'stale annotation version' trigger mechanism", () => {
+    // buildAnnotationCacheKey folds in the live MODEL_VERSION constant, so a key
+    // built under a bumped MODEL_VERSION never matches an old cached key/plan —
+    // simulate this by asserting the current key embeds the current MODEL_VERSION
+    // in a position that would differ from a hypothetical older value.
+    const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
+    const versionSegment = key.split(":")[1]; // "v<sv>-<pv>-<spv>-<mv>"
+    expect(versionSegment.endsWith(`-${MODEL_VERSION}`)).toBe(true);
   });
 
   it("includes semantic pack id when provided", () => {

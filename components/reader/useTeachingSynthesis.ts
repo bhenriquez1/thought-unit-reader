@@ -44,6 +44,10 @@ export interface UseTeachingSynthesisResult {
   retry: () => void;
   /** Claude enrichment fields — available after Stage 3 completes. */
   claudeEnrichment: ClaudeEnrichmentOutput | null;
+  /** Set when Stage 3 is degraded (missing config or upstream failure) — null when enrichment
+   *  is unattempted, loading, or succeeded. Lets the panel show a specific message instead of
+   *  silently hiding the enrichment section. */
+  stage3ErrorMessage: string | null;
 }
 
 interface UseTeachingSynthesisArgs {
@@ -87,6 +91,7 @@ export function useTeachingSynthesis({
   const [stage3Status,     setStage3Status]     = useState<SynthesisStatus>("idle");
   const [claudeEnrichment, setClaudeEnrichment] = useState<ClaudeEnrichmentOutput | null>(null);
   const [errorMessage,     setErrorMessage]     = useState<string | null>(null);
+  const [stage3ErrorMessage, setStage3ErrorMessage] = useState<string | null>(null);
   // Incremented by retry() — Effect B re-runs, startedKeyRef guard cleared first.
   const [retryCount,   setRetryCount]   = useState(0);
 
@@ -127,6 +132,7 @@ export function useTeachingSynthesis({
     setStage2Status("idle");
     setStage3Status("idle");
     setClaudeEnrichment(null);
+    setStage3ErrorMessage(null);
     setErrorMessage(null);
     startedKeyRef.current = null;
     synthStartMsRef.current = 0;
@@ -141,6 +147,7 @@ export function useTeachingSynthesis({
     setStage2Status("idle");
     setStage3Status("idle");
     setClaudeEnrichment(null);
+    setStage3ErrorMessage(null);
     setErrorMessage(null);
     startedKeyRef.current = null;
     synthStartMsRef.current = 0;
@@ -541,6 +548,8 @@ export function useTeachingSynthesis({
             pageNumber:              pageNumberRef.current,
             // Pass grounded anchor texts so Claude can suggest better ones if needed
             groundedAnchorCandidates: (prev.highlightAnchors ?? []).map((a: any) => a.text).filter(Boolean).slice(0, 6),
+            // Diagnostic-only — logged server-side on failure, never used in prompting.
+            pageTruthKey: pageTruthKey,
           };
         }
         return prev; // no state change — read-only snapshot
@@ -563,6 +572,16 @@ export function useTeachingSynthesis({
         if (DEV) console.log("[CLAUDE_EXPERT_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current, anchorCandidates: _anchorCount });
         const enrichment = await fetchClaudeEnrichment(enrichmentInput, s3Ctrl.signal);
         if (mainSignal.aborted) return;
+
+        // Degraded envelope — Claude enrichment didn't run (missing config / upstream failure
+        // after retries). Show a specific message rather than silently hiding the section.
+        if (enrichment.ok === false) {
+          if (DEV) console.log("[CLAUDE_EXPERT_DEGRADED]", { page: pageNumberRef.current, code: enrichment.code, message: enrichment.message });
+          setStage3ErrorMessage(enrichment.message ?? "Advanced enrichment is temporarily unavailable. Showing a grounded textbook diagram.");
+          setStage3Status("error");
+          return;
+        }
+
         const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView || enrichment.expertTrap || enrichment.formulaRule || enrichment.workedExampleLogic || enrichment.practiceCheckpoint);
         if (DEV) console.log("[CLAUDE_EXPERT_DONE]", {
           page:                   pageNumberRef.current,
@@ -575,11 +594,13 @@ export function useTeachingSynthesis({
           expertTrap:             enrichment.expertTrap?.slice(0, 80) ?? null,
           betterAnchorCount:      enrichment.betterAnchors?.length ?? 0,
         });
+        setStage3ErrorMessage(null);
         if (hasAnyField) setClaudeEnrichment(enrichment);
         setStage3Status("success");
       } catch (err: any) {
         if (mainSignal.aborted) return;
         console.error("[CLAUDE_EXPERT_ERROR]", { page: pageNumberRef.current, message: err?.message ?? String(err) });
+        setStage3ErrorMessage("Advanced enrichment is temporarily unavailable. Showing a grounded textbook diagram.");
         setStage3Status("error");
       }
     }
@@ -591,5 +612,5 @@ export function useTeachingSynthesis({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) > 500, retryCount]);
 
-  return { synthesis, status, stage1Status, stage2Status, stage3Status, errorMessage, retry, claudeEnrichment };
+  return { synthesis, status, stage1Status, stage2Status, stage3Status, errorMessage, retry, claudeEnrichment, stage3ErrorMessage };
 }

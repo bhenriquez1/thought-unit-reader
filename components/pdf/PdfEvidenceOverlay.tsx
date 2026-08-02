@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { tierGlowStyle } from "@/lib/insights/tierStyle";
+import type { Treatment, CanonicalType } from "@/lib/insights/pageAnnotationPlan";
 
 export interface OverlayRect {
   id: string;
@@ -11,6 +12,15 @@ export interface OverlayRect {
   semanticKind?:
     | "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact" | "clinical"
     | "keyDetail" | "memoryAnchor" | "keyAnatomy" | "formula" | "comparison" | "reference" | "filler" | "unknown";
+  /**
+   * SurgeonAnnotationPlan visual treatment — when present, takes priority over
+   * semanticKind for tier/visual selection. Optional and additive: rects from the
+   * older highlightAnchors/ExpertAnchor pipeline never set this, so they fall
+   * through unchanged to the existing semanticKind-driven logic below.
+   */
+  treatment?: Treatment;
+  /** SurgeonAnnotationPlan canonical type — carried through for diagnostics/labels. */
+  canonicalType?: CanonicalType;
   /** AI-assigned 1-5 importance (5 = "Master This") — scales glow/border strength on
    *  top of (not replacing) the semanticKind fill color below. Undefined = medium (3). */
   priorityTier?: number;
@@ -20,6 +30,7 @@ export interface OverlayRect {
 
 // All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
 function shouldRender(rect: OverlayRect): boolean {
+  if (rect.treatment) return true;
   const kind = rect.semanticKind as string | undefined;
   if (kind && kind in KIND_TIER) return true;
   return rect.level === "important" || rect.level === "support";
@@ -61,6 +72,20 @@ const KIND_TIER: Record<SemanticKind, HighlightTier> = {
   reference:    "pearl",
   filler:       "pearl",
   unknown:      "pearl",
+};
+
+// SurgeonAnnotationPlan treatment → tier. Checked before KIND_TIER (see
+// getConfig/getTierForRect) so annotations from the new pipeline get their own
+// deterministic tier without touching the semanticKind path at all.
+const TREATMENT_TIER: Record<Treatment, HighlightTier> = {
+  definitionBar:      "master",
+  mechanismBrace:     "step",
+  procedureRail:      "step",
+  decisionConnector:  "decision",
+  comparisonBracket:  "decision",
+  trapNotch:          "danger",
+  pearlMarker:        "pearl",
+  evidenceUnderline:  "pearl",
 };
 
 interface KindConfig {
@@ -142,6 +167,7 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
 
 // B4: per-anchor priority tier (1-5, 5 = "Master This") scales glow blur/alpha — see tierGlowStyle().
 function getConfig(rect: OverlayRect): KindConfig {
+  if (rect.treatment) return TIER_CONFIG[TREATMENT_TIER[rect.treatment]];
   const kind = rect.semanticKind as SemanticKind | undefined;
   if (kind && kind in KIND_TIER) return TIER_CONFIG[KIND_TIER[kind]];
   if (rect.level === "trap") return TIER_CONFIG.danger;
@@ -151,6 +177,7 @@ function getConfig(rect: OverlayRect): KindConfig {
 
 // ── Tier helper (also used for packTierLabels override) ───────────────────────
 function getTierForRect(rect: OverlayRect): HighlightTier {
+  if (rect.treatment) return TREATMENT_TIER[rect.treatment];
   const kind = rect.semanticKind as SemanticKind | undefined;
   if (kind && kind in KIND_TIER) return KIND_TIER[kind];
   if (rect.level === "trap")    return "danger";
@@ -206,9 +233,11 @@ export default function PdfEvidenceOverlay({
 
   // ── SVG connectors: dashed arrows + left brace for consecutive mechanism highlights ──
   // Collect first-line mechanism rects (no -L suffix or -N suffix), sorted top-to-bottom.
+  // OR'd with treatment==="mechanismBrace" so SurgeonAnnotationPlan rects get the same
+  // brace without needing semanticKind set at all.
   const mechanismChain = useMemo(() => {
     return rects
-      .filter(r => r.semanticKind === "mechanism" && !r.id.match(/-L\d+$/) && shouldRender(r))
+      .filter(r => (r.semanticKind === "mechanism" || r.treatment === "mechanismBrace") && !r.id.match(/-L\d+$/) && shouldRender(r))
       .sort((a, b) => a.top - b.top);
   }, [rects]);
 
@@ -219,10 +248,25 @@ export default function PdfEvidenceOverlay({
     return idx;
   }, [mechanismChain]);
 
+  // ── procedureRail: sequential numbered steps, visually distinct from mechanismBrace ──
+  // "procedure" has no legacy semanticKind — this chain is SurgeonAnnotationPlan-only.
+  const procedureChain = useMemo(() => {
+    return rects
+      .filter(r => r.treatment === "procedureRail" && !r.id.match(/-L\d+$/) && shouldRender(r))
+      .sort((a, b) => a.top - b.top);
+  }, [rects]);
+
+  const procedureStepIndex = useMemo(() => {
+    const idx = new Map<string, number>();
+    procedureChain.forEach((r, i) => idx.set(r.id, i + 1));
+    return idx;
+  }, [procedureChain]);
+
   // ── Comparison connector: bidirectional ↕ arrow between consecutive comparison rects ──
+  // OR'd with treatment==="comparisonBracket" for the same reason as mechanismChain above.
   const comparisonChain = useMemo(() => {
     return rects
-      .filter(r => r.semanticKind === "comparison" && !r.id.match(/-L\d+$/) && shouldRender(r))
+      .filter(r => (r.semanticKind === "comparison" || r.treatment === "comparisonBracket") && !r.id.match(/-L\d+$/) && shouldRender(r))
       .sort((a, b) => a.top - b.top);
   }, [rects]);
 
@@ -311,6 +355,79 @@ export default function PdfEvidenceOverlay({
         </svg>
       )}
 
+      {/* SVG connector layer — procedureRail: numbered steps, square chips distinguish
+          it at a glance from mechanismBrace's circled steps when both appear on a page */}
+      {procedureChain.length >= 2 && (
+        <svg
+          aria-hidden
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+        >
+          <defs>
+            <marker id="proc-arrow" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+              <polygon points="0 0, 7 3, 0 6" fill="#86efac" opacity="0.75" />
+            </marker>
+          </defs>
+          {(() => {
+            const first = procedureChain[0];
+            const last  = procedureChain[procedureChain.length - 1];
+            const railX = Math.max(4, Math.min(...procedureChain.map(r => r.left)) - 10);
+            const y1 = first.top + first.height / 2;
+            const y2 = last.top  + last.height  / 2;
+            return (
+              <g key="proc-rail" opacity="0.55">
+                <text
+                  x={railX + 12} y={first.top - 4}
+                  fontSize="7" fontFamily="ui-monospace, SFMono-Regular, monospace"
+                  fontWeight="700" letterSpacing="0.08em"
+                  fill="#86efac" opacity="0.75" textAnchor="start"
+                >
+                  STEPS
+                </text>
+                <line x1={railX + 4} y1={y1} x2={railX + 4} y2={y2} stroke="#86efac" strokeWidth="1.5" strokeDasharray="1 3" />
+                {procedureChain.map((r) => {
+                  const stepNum = procedureStepIndex.get(r.id);
+                  if (!stepNum) return null;
+                  const cy = r.top + r.height / 2;
+                  return (
+                    <g key={`proc-step-${r.id}`}>
+                      <rect x={railX - 3} y={cy - 6.5} width={14} height={13} rx={2} fill="#14532d" stroke="#86efac" strokeWidth="1" opacity="0.85" />
+                      <text
+                        x={railX + 4} y={cy + 3}
+                        fontSize="7" fontFamily="ui-monospace, monospace" fontWeight="700"
+                        fill="#86efac" textAnchor="middle"
+                      >
+                        {stepNum}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
+          {procedureChain.slice(0, -1).map((rect, i) => {
+            const next = procedureChain[i + 1];
+            const x1 = rect.left + rect.width / 2;
+            const y1 = rect.top + rect.height + 2;
+            const x2 = next.left + next.width / 2;
+            const y2 = next.top - 4;
+            const cy = (y1 + y2) / 2;
+            const d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
+            return (
+              <path
+                key={`proc-conn-${i}`}
+                d={d}
+                fill="none"
+                stroke="#86efac"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+                opacity="0.65"
+                markerEnd="url(#proc-arrow)"
+              />
+            );
+          })}
+        </svg>
+      )}
+
       {/* Comparison connector — bidirectional ↕ between consecutive comparison rects */}
       {comparisonChain.length >= 2 && (
         <svg
@@ -386,10 +503,17 @@ export default function PdfEvidenceOverlay({
               width: rect.width,
               height: rect.height,
               borderRadius: "6px",
-              backgroundColor: activeFocused ? cfg.bgFocused : cfg.bgNormal,
-              border: activeFocused ? undefined : tierStyle.border,
+              // evidenceUnderline reads as "supporting" (the lowest importance tier) —
+              // a restrained bottom-border instead of a filled box, never both.
+              backgroundColor: rect.treatment === "evidenceUnderline"
+                ? "transparent"
+                : (activeFocused ? cfg.bgFocused : cfg.bgNormal),
+              border: rect.treatment === "evidenceUnderline" ? undefined : (activeFocused ? undefined : tierStyle.border),
+              borderBottom: rect.treatment === "evidenceUnderline"
+                ? `2px solid rgba(103,232,249,${activeFocused ? 0.85 : 0.55})`
+                : undefined,
               // Definition anchors get a gold left-edge accent — "boxed definition" feel.
-              borderLeft: rect.semanticKind === "definition"
+              borderLeft: (rect.semanticKind === "definition" || rect.treatment === "definitionBar")
                 ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
                 : undefined,
               overflow: "visible",
@@ -444,6 +568,30 @@ export default function PdfEvidenceOverlay({
                 borderTop: "9px solid rgba(252,165,165,0.85)",
                 borderRight: "9px solid transparent",
                 borderRadius: "3px 0 0 0",
+                pointerEvents: "none",
+              }} />
+            )}
+            {/* decisionConnector — small diamond marker, top-left corner (first line only).
+                Same corner-marker technique as the trap notch above, but diamond-shaped and
+                blue, so it reads distinctly from both the trap notch and the comparisonBracket
+                arrow connector. */}
+            {rect.treatment === "decisionConnector" && isFirstLine && (
+              <span style={{
+                position: "absolute", top: 2, left: 2, width: 7, height: 7,
+                background: "rgba(147,197,253,0.85)",
+                transform: "rotate(45deg)",
+                borderRadius: "1px",
+                pointerEvents: "none",
+              }} />
+            )}
+            {/* pearlMarker — small filled dot, top-left corner (first line only). Round
+                (vs. the trap notch's triangle / decisionConnector's diamond) to read as a
+                distinct "expert insight" marker at a glance. */}
+            {rect.treatment === "pearlMarker" && isFirstLine && (
+              <span style={{
+                position: "absolute", top: 3, left: 3, width: 6, height: 6,
+                background: "rgba(103,232,249,0.9)",
+                borderRadius: "50%",
                 pointerEvents: "none",
               }} />
             )}

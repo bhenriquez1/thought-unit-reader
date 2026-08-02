@@ -18,6 +18,11 @@ import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
+// Fixed render scale for SurgeonAnnotationPlan's hidden page-image capture — independent
+// of effectiveZoom/the visible canvas. Tuned to keep the long edge under ~1536px for
+// OpenAI vision cost/quality at detail:"high".
+const SURGEON_CAPTURE_SCALE = 1.5;
+
 /** Use the same-origin worker we ship in /public to avoid CDN/CORS issues */
 try {
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -331,6 +336,13 @@ export interface SmartPDFViewerProps {
    * instead of relying on pre-parsed thought-unit approximations.
    */
   onPageTextExtracted?: (page: number, text: string) => void;
+  /**
+   * Called once per page render with a base64 JPEG data URL of the CURRENT page,
+   * captured from a hidden, fixed-scale render decoupled from the visible/zoomed
+   * canvas (effectiveZoom). Used as the SurgeonAnnotationPlan vision input — never
+   * fires from zoom/scroll, only from an actual page render.
+   */
+  onPageImageCaptured?: (page: number, dataUrl: string) => void;
   /** Fires whenever the guided reading path changes — null when no neighborhoods are active. */
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label ("Core", "Why", "How", "More") for badge role pills. */
@@ -587,6 +599,7 @@ export default function SmartPDFViewer({
   isPageChanging = false,
   onPageRenderComplete,
   onPageTextExtracted,
+  onPageImageCaptured,
   onReadingPath,
   roleLabelByConceptId,
   highlightKey,
@@ -705,6 +718,9 @@ export default function SmartPDFViewer({
   }, [overlayRects, overlayVersion]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
+  // Hidden fixed-scale render used only for SurgeonAnnotationPlan image capture —
+  // separate from the visible/zoomed canvas so effectiveZoom never affects it.
+  const captureContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const paragraphScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Scroll → active paragraph detection (no DOM overlays, no IntersectionObserver overhead)
@@ -1018,6 +1034,8 @@ export default function SmartPDFViewer({
         semanticKind: OverlayRect["semanticKind"],
         priorityTier?: OverlayRect["priorityTier"],
         reason?: OverlayRect["reason"],
+        treatment?: OverlayRect["treatment"],
+        canonicalType?: OverlayRect["canonicalType"],
       ): OverlayRect[] {
         if (!matched.length) return [];
         const byLine = new Map<number, DOMRect[]>();
@@ -1050,6 +1068,8 @@ export default function SmartPDFViewer({
             id: lineIndex === 0 ? targetId : `${targetId}-L${lineIndex}`,
             level,
             semanticKind,
+            treatment,
+            canonicalType,
             priorityTier,
             reason,
             top: top - 1,                    // shift up 1px for marker-swipe feel
@@ -1119,6 +1139,8 @@ export default function SmartPDFViewer({
               height: Math.min(Math.max(13, b.h + 3), 40),
               level:  target.level,
               semanticKind: target.kind as OverlayRect["semanticKind"],
+              treatment: target.treatment,
+              canonicalType: target.canonicalType,
               priorityTier: target.priorityTier,
               reason: target.reason,
             });
@@ -1171,14 +1193,14 @@ export default function SmartPDFViewer({
             return; // Skip — no partial misleading highlights
           }
           const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
-          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason);
+          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason, target.treatment, target.canonicalType);
           console.log("[AI_HIGHLIGHT:matched]", { id: target.evidenceRefId, via: "fallback", lines: fbRects.length });
           rects.push(...fbRects);
           return;
         }
 
         const matchedSpans = spansForRange(location.startIdx, location.endIdx);
-        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason);
+        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason, target.treatment, target.canonicalType);
         console.log("[AI_HIGHLIGHT:matched]", {
           id: target.evidenceRefId, kind: target.kind,
           text: target.text?.slice(0, 50),
@@ -1804,6 +1826,39 @@ export default function SmartPDFViewer({
                     loading={null}
                     error={null}
                     onRenderError={() => {/* silently ignore prefetch errors */}}
+                  />
+                </div>
+              )}
+
+              {/* Hidden capture: fixed-scale render of the CURRENT page for SurgeonAnnotationPlan's
+                  OpenAI vision input. Deliberately NOT effectiveZoom — a separate, independent
+                  render so zooming the visible canvas never re-triggers a capture or re-analysis. */}
+              {onPageImageCaptured && (
+                <div
+                  ref={captureContainerRef}
+                  aria-hidden="true"
+                  style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1, overflow: 'hidden' }}
+                >
+                  <Page
+                    key={`${pageKeyRoot}:${currentPage}:capture`}
+                    pdf={pdfDocument}
+                    pageNumber={currentPage}
+                    scale={SURGEON_CAPTURE_SCALE}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    loading={null}
+                    error={null}
+                    onRenderSuccess={() => {
+                      const canvas = captureContainerRef.current?.querySelector('canvas');
+                      if (!canvas) return;
+                      try {
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+                        onPageImageCaptured(currentPage, dataUrl);
+                      } catch (e) {
+                        console.warn('[SURGEON_PLAN_CAPTURE_FAILED]', e);
+                      }
+                    }}
+                    onRenderError={() => {/* silently ignore capture errors */}}
                   />
                 </div>
               )}

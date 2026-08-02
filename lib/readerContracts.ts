@@ -135,6 +135,12 @@ export interface HighlightTarget {
    *  "synthetic" means no PDF geometry was ever extracted — overlay is suppressed.
    *  All other states (exact/normalized/fuzzy/ocr) attempt geometry resolution. */
   groundingState?: "exact" | "normalized" | "fuzzy" | "ocr" | "synthetic";
+  /** SurgeonAnnotationPlan visual treatment — when present, SmartPDFViewer/PdfEvidenceOverlay
+   *  prefer this over `kind` for tier/visual selection. Optional and additive: targets from
+   *  the older highlightAnchors/ExpertAnchor pipeline never set this. */
+  treatment?: import("./insights/pageAnnotationPlan").Treatment;
+  /** SurgeonAnnotationPlan canonical type — carried through for diagnostics/labels. */
+  canonicalType?: import("./insights/pageAnnotationPlan").CanonicalType;
 }
 
 export interface ParagraphSignal {
