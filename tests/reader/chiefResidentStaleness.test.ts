@@ -50,12 +50,18 @@ let src: string;
 let stepBody: string;
 let pageBody: string;
 let conceptBody: string;
+let askExpertBody: string;
+let openExplainStepForUnitBody: string;
+let openExplainItBody: string;
 
 beforeAll(() => {
   src = fs.readFileSync(INDEX_TSX, "utf8");
   stepBody    = extractHandlerBody(src, "handleOpenChiefResidentExplainStep");
   pageBody    = extractHandlerBody(src, "handleOpenChiefResidentExplainPage");
   conceptBody = extractHandlerBody(src, "handleOpenChiefResidentExplainConcept");
+  askExpertBody               = extractHandlerBody(src, "handleAskExpert");
+  openExplainStepForUnitBody  = extractHandlerBody(src, "openExplainStepForThoughtUnit");
+  openExplainItBody           = extractHandlerBody(src, "handleOpenExplainIt");
 });
 
 // ── Freshness guard ────────────────────────────────────────────────────────
@@ -154,5 +160,89 @@ describe("Chief Resident staleness — all three handlers exist", () => {
 
   it("handleOpenChiefResidentExplainConcept is defined as a useCallback", () => {
     expect(src).toContain("const handleOpenChiefResidentExplainConcept = useCallback");
+  });
+});
+
+// ── Root cause: sel.selectionText survives page navigation ────────────────
+//
+// Confirmed root cause of a report where, on a calculus page ("Four Ways to
+// Represent a Function"), Chief Resident's "Selected Text" scope explained
+// insulin/glucagon/glucose regulation instead. Every OTHER piece of "current
+// page" state (currentPageStudyModel, finalHighlightAnchors, ...) is cleared
+// by an effect keyed on pageTruthKey — sel.selectionText (from
+// usePdfSelection(), owned in pages/index.tsx) previously had no such effect.
+// It only cleared AFTER being consumed by handleOpenChiefResidentExplainStep
+// (sel.clearSelection() at the end of that handler), which does nothing to
+// stop a selection made on an EARLIER page (e.g. a biology passage) from
+// still being present the FIRST time the user clicks "Ask Chief Resident →
+// Selected Text" on a LATER, unrelated page (e.g. the calculus page) —
+// producing a response that is faithful to the old biology text but rendered
+// under the new page's number/title, exactly matching the reported symptom.
+
+describe("Chief Resident staleness — PDF text selection is cleared on page navigation", () => {
+  it("a useEffect keyed on [pageTruthKey] calls sel.clearSelection()", () => {
+    // Scoped to this fix's own marker comment rather than matching
+    // sel.clearSelection() anywhere in the file, since that call also
+    // legitimately appears inside the Chief Resident handlers themselves
+    // (clearing AFTER use, which is necessary but not sufficient on its own).
+    const resetRegionStart = src.indexOf("CRITICAL: clear the PDF text selection on every page change");
+    expect(resetRegionStart).toBeGreaterThan(-1);
+    const resetRegion = src.slice(resetRegionStart, resetRegionStart + 800);
+    expect(resetRegion).toMatch(/useEffect\(\(\) => \{\s*\n\s*sel\.clearSelection\(\);/);
+    expect(resetRegion).toMatch(/\}, \[pageTruthKey\]\);/);
+  });
+
+  it("a selection made on one page cannot silently reach a later page's Chief Resident request — narrative check", () => {
+    // This test documents the exact bug scenario in a form a reviewer can verify
+    // against the fix above:
+    //   1. Student selects a passage on page 12 (a biology page, discussing
+    //      "insulin, glucagon, and glucose regulation").
+    //   2. Student navigates to page 53 (a calculus page — pageTruthKey changes).
+    //   3. WITHOUT this fix: sel.selectionText still holds the page-12 biology
+    //      text (nothing cleared it), so if the student clicks "Ask Chief
+    //      Resident → Selected Text" on page 53, that stale biology passage is
+    //      sent as the highlighted passage — Chief Resident correctly explains
+    //      it, but under page 53's number/title, looking exactly like context
+    //      drift onto the wrong page.
+    //   4. WITH this fix: the pageTruthKey-keyed effect calls sel.clearSelection()
+    //      the moment the page changes (step 2), so by the time of step 3 the
+    //      "Selected Text" scope has nothing stale to send — RightPanel's own
+    //      chip-enable check (selectionText.length > 0) also correctly disables
+    //      that scope option until a NEW selection is made on page 53.
+    const resetRegionStart = src.indexOf("CRITICAL: clear the PDF text selection on every page change");
+    const resetRegion = src.slice(resetRegionStart, resetRegionStart + 800);
+    expect(resetRegion).toContain("sel.clearSelection();");
+  });
+});
+
+// ── Adjacent risk: legacy Explain handlers missing the same freshness guard ──
+//
+// handleAskExpert, openExplainStepForThoughtUnit, and handleOpenExplainIt feed
+// the older ExpertBrainCard/ExplainStepChat/ExplainItChat modals via the same
+// currentPageStudyModel — architecturally identical to the bug PR #595 fixed
+// for the three Chief Resident handlers above, but that fix was never applied
+// here. Not the reported bug's proximate cause, but the same class of defect.
+
+describe("Chief Resident staleness — adjacent legacy handlers now carry the same freshness guard", () => {
+  it("handleAskExpert checks sm.pageTruthKey === pageTruthKey and gates pageThesis on it", () => {
+    expect(askExpertBody).toMatch(/sm\?\.pageTruthKey\s*===\s*pageTruthKey/);
+    expect(askExpertBody).toMatch(/isSmFresh\s*\?\s*\(?\s*sm\?\.pageThesis/);
+  });
+
+  it("openExplainStepForThoughtUnit checks both sm freshness AND that detail.pageNumber matches currentPage", () => {
+    expect(openExplainStepForUnitBody).toMatch(/sm\?\.pageTruthKey\s*===\s*pageTruthKey/);
+    expect(openExplainStepForUnitBody).toMatch(/detail\.pageNumber\s*===\s*currentPage/);
+    expect(openExplainStepForUnitBody).toMatch(/isSmFresh\s*\?\s*\(?\s*sm\?\.pageThesis/);
+  });
+
+  it("handleOpenExplainIt checks sm.pageTruthKey === pageTruthKey and gates pageThesis on it", () => {
+    expect(openExplainItBody).toMatch(/sm\?\.pageTruthKey\s*===\s*pageTruthKey/);
+    expect(openExplainItBody).toMatch(/isSmFresh\s*\?\s*\(?\s*sm\?\.pageThesis/);
+  });
+
+  it("all three legacy handlers include pageTruthKey in their useCallback deps", () => {
+    expect(askExpertBody).toMatch(/\[.*pageTruthKey.*\]/s);
+    expect(openExplainStepForUnitBody).toMatch(/\[.*pageTruthKey.*\]/s);
+    expect(openExplainItBody).toMatch(/\[.*pageTruthKey.*\]/s);
   });
 });

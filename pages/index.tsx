@@ -2065,6 +2065,19 @@ export default function ThoughtUnitReader() {
     DEV && console.log("[HIGHLIGHT_CLEARED]", { reason: "page-changed", pageTruthKey });
   }, [pageTruthKey]);
 
+  // CRITICAL: clear the PDF text selection on every page change. Unlike every other
+  // piece of "current page" state above, sel.selectionText previously had no lifecycle
+  // tie to pageTruthKey — it only cleared after being CONSUMED by a Chief Resident
+  // click, not on navigation. That let a selection made on one page (e.g. a biology
+  // passage) survive silently into a later page's "Ask Chief Resident → Selected Text"
+  // request, producing a response that's actually correct for the OLD passage but
+  // rendered under the NEW page's number/title — confirmed root cause of a report
+  // where a calculus page's Chief Resident request explained insulin/glucagon.
+  useEffect(() => {
+    sel.clearSelection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageTruthKey]);
+
   // Auto-select the first anchor when anchors first arrive on a page (speech not playing).
   // This ensures the Expert Brain and LeftPanel card highlight appear automatically without
   // the user needing to click anything.
@@ -2552,6 +2565,11 @@ export default function ThoughtUnitReader() {
   const handleAskExpert = useCallback((question: string) => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    // Guard: only use pageThesis/studyNotes/conceptBlocks when the study model was
+    // generated for the current page — same fix as PR #595's Chief Resident handlers.
+    // A stale thesis from the previous page is a stronger signal than the actual
+    // pageText and causes the AI to respond about the wrong subject.
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
     const relatedNotes = getNotesByBook(bookId)
       .filter((n) => n.pageNumber === currentPage)
       .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
@@ -2563,16 +2581,16 @@ export default function ThoughtUnitReader() {
       selectedText: activeUnit?.exactText ?? "",
       pageText,
       surroundingParagraph: activeUnit?.exactText ?? pageText.slice(0, 800),
-      pageThesis: sm?.pageThesis ?? null,
-      studyNotes: sm?.studyNotes ?? null,
-      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
+      studyNotes: isSmFresh ? (sm?.studyNotes ?? null) : null,
+      conceptTitles: isSmFresh ? (sm?.conceptBlocks?.map((b) => b.title) ?? []) : [],
       relatedNotes,
       relatedRecallCards,
       documentTitle: uploadedFile?.name,
       pageNumber: currentPage,
       seedQuestion: question,
     });
-  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, uploadedFile, activeCanonicalThoughtUnit]);
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, activeCanonicalThoughtUnit]);
 
   // Same "Explain This Step" tutor modal, seeded directly from a thought-unit's
   // verbatim sourceText instead of the live LeftPanel selection — used by the
@@ -2581,6 +2599,12 @@ export default function ThoughtUnitReader() {
     setFocusedEvidenceId(detail.evidenceRefId);
     const pageText = pageTextByPage.get(`${bookId}:${detail.pageNumber}`) || "";
     const sm = currentPageStudyModel;
+    // Guard: currentPageStudyModel is only trustworthy here when BOTH it was
+    // generated for the CURRENTLY displayed page AND that page is the same one
+    // this thought unit lives on — detail.pageNumber can reference a different
+    // page than currentPage (e.g. from Recall Lab), in which case sm is known to
+    // be for the wrong page regardless of its own freshness.
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey && detail.pageNumber === currentPage;
     const relatedNotes = getNotesByBook(bookId)
       .filter((n) => n.pageNumber === detail.pageNumber)
       .map((n) => ({ topic: n.topic, coreIdea: n.coreIdea }));
@@ -2591,15 +2615,15 @@ export default function ThoughtUnitReader() {
       selectedText: detail.sourceText,
       pageText,
       surroundingParagraph: detail.sourceText,
-      pageThesis: sm?.pageThesis ?? null,
-      studyNotes: sm?.studyNotes ?? null,
-      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
+      studyNotes: isSmFresh ? (sm?.studyNotes ?? null) : null,
+      conceptTitles: isSmFresh ? (sm?.conceptBlocks?.map((b) => b.title) ?? []) : [],
       relatedNotes,
       relatedRecallCards,
       documentTitle: uploadedFile?.name,
       pageNumber: detail.pageNumber,
     });
-  }, [pageTextByPage, bookId, currentPageStudyModel, uploadedFile]);
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile]);
 
   // "Explain It" — opens the office-hours-style page/topic conversation tutor,
   // sharing context with RightPanel, NoteLab, RecallLab, Study Guide Lab, and
@@ -2607,6 +2631,9 @@ export default function ThoughtUnitReader() {
   const handleOpenExplainIt = useCallback(async (seedSegmentText?: string) => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const sm = currentPageStudyModel;
+    // Guard: only use pageThesis/studyNotes/conceptBlocks when the study model was
+    // generated for the current page — same fix as PR #595's Chief Resident handlers.
+    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
     const activeThoughtUnitText = focusedEvidenceId
       ? (finalHighlightAnchors as { evidenceRefId?: string; text?: string }[]).find(
           (a) => a.evidenceRefId === focusedEvidenceId,
@@ -2630,9 +2657,9 @@ export default function ThoughtUnitReader() {
     setExplainItContext({
       activeThoughtUnitText,
       pageText,
-      pageThesis: sm?.pageThesis ?? null,
-      studyNotes: sm?.studyNotes ?? null,
-      conceptTitles: sm?.conceptBlocks?.map((b) => b.title) ?? [],
+      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
+      studyNotes: isSmFresh ? (sm?.studyNotes ?? null) : null,
+      conceptTitles: isSmFresh ? (sm?.conceptBlocks?.map((b) => b.title) ?? []) : [],
       relatedNotes,
       relatedRecallCards,
       studyGuideSections,
@@ -2642,7 +2669,7 @@ export default function ThoughtUnitReader() {
       pageNumber: currentPage,
       learningProfile,
     });
-  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript, learningProfile]);
+  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript, learningProfile]);
 
   // Chief Resident Modal — "Explain This Step" route (unified modal replacing ExplainStepChat)
   const handleOpenChiefResidentExplainStep = useCallback(() => {
