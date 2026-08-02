@@ -191,3 +191,42 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
     expect(src).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
   });
 });
+
+describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output for the Scene Builder", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("groundedAnnotations appears in the returned object", () => {
+    expect(src).toMatch(/return \{ plan, highlightTargets, groundedAnnotations, status, annotationErrorMessage, reanalyze \};/);
+  });
+
+  it("groundSurgeonQuotes is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
+    const calls = src.match(/const grounded = groundSurgeonQuotes\(/g) ?? [];
+    expect(calls).toHaveLength(2);
+    // Every "const grounded = groundSurgeonQuotes(" call site feeds both
+    // outputs from that same `grounded` variable, not two independent calls.
+    const blocks = src.split("const grounded = groundSurgeonQuotes(").slice(1);
+    for (const block of blocks) {
+      const nearby = block.slice(0, 700);
+      expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
+      expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
+    }
+  });
+
+  it("imports buildSurgeonEvidenceId rather than reintroducing an inline id template literal", () => {
+    expect(src).toMatch(/import \{ groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation \}/);
+    expect(src).not.toMatch(/`surgeon-\$\{pageNumber\}-\$\{i\}`/);
+  });
+
+  it("Effect A's page-reset block clears groundedAnnotations alongside plan/highlightTargets", () => {
+    const idx = src.indexOf("// ── Effect A:");
+    const resetBlock = src.slice(idx, idx + 400);
+    expect(resetBlock).toMatch(/setPlan\(null\)/);
+    expect(resetBlock).toMatch(/setHighlightTargets\(\[\]\)/);
+    expect(resetBlock).toMatch(/setGroundedAnnotations\(\[\]\)/);
+  });
+
+  it("groundedAnnotations is documented as full-fidelity vs. the lossy highlightTargets", () => {
+    expect(src).toMatch(/Full-fidelity grounded annotations/);
+  });
+});

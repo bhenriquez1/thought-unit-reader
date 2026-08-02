@@ -5,11 +5,14 @@ import {
   buildVSG,
   computeVSGState,
   noteCardsToCanonicalEntries,
+  surgeonAnnotationsToCanonicalEntries,
   VSGNodeSchema,
   type NoteCardLike,
   type VisualSceneGraph,
 } from "../../lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "../../lib/whiteboard/canonicalRelationshipGraph";
+import type { GroundedSurgeonAnnotation } from "../../lib/highlights/groundSurgeonQuotes";
+import type { CanonicalType, Importance } from "../../lib/insights/pageAnnotationPlan";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -524,5 +527,117 @@ describe("buildVSG — edge cases", () => {
     const after  = Date.now();
     expect(vsg.builtAt).toBeGreaterThanOrEqual(before);
     expect(vsg.builtAt).toBeLessThanOrEqual(after);
+  });
+});
+
+// ── surgeonAnnotationsToCanonicalEntries ────────────────────────────────────────
+// The deterministic Scene Builder's real data source: converts the grounded,
+// page-verified output of the SurgeonAnnotationPlan pipeline into
+// CanonicalEntryInput[], with no Claude/image-generation call involved.
+
+function makeGrounded(overrides: Partial<GroundedSurgeonAnnotation> = {}): GroundedSurgeonAnnotation {
+  return {
+    canonicalType: "definition",
+    exactQuote:    "An element is a substance that cannot be broken down into simpler substances.",
+    reason:        "Defines the core term.",
+    importance:    "critical",
+    treatment:     "definitionBar",
+    spanScope:     "fullSentence",
+    groundedText:  "An element is a substance that cannot be broken down into simpler substances.",
+    groundingState: "exact",
+    confidence:    1.0,
+    ...overrides,
+  };
+}
+
+describe("surgeonAnnotationsToCanonicalEntries", () => {
+  it("returns an empty array for empty input", () => {
+    expect(surgeonAnnotationsToCanonicalEntries([], 3)).toEqual([]);
+  });
+
+  it("uses groundedText, not exactQuote, as the entry text", () => {
+    const g = makeGrounded({ exactQuote: "fragment", groundedText: "The full expanded sentence." });
+    const [entry] = surgeonAnnotationsToCanonicalEntries([g], 3);
+    expect(entry.text).toBe("The full expanded sentence.");
+  });
+
+  it("sets page to the passed pageNumber on every entry", () => {
+    const entries = surgeonAnnotationsToCanonicalEntries([makeGrounded(), makeGrounded()], 9);
+    expect(entries.every((e) => e.page === 9)).toBe(true);
+  });
+
+  it("id matches buildSurgeonEvidenceId(pageNumber, index) in original order", () => {
+    const entries = surgeonAnnotationsToCanonicalEntries(
+      [makeGrounded(), makeGrounded(), makeGrounded()],
+      5,
+    );
+    expect(entries.map((e) => e.id)).toEqual(["surgeon-5-0", "surgeon-5-1", "surgeon-5-2"]);
+  });
+
+  describe("canonicalType mapping — every one of the 8 SurgeonAnnotationPlan values", () => {
+    const CASES: Array<[CanonicalType, string]> = [
+      ["definition",         "definition"],
+      ["mechanism",          "mechanism"],
+      ["procedure",          "process"],
+      ["decision",           "decision-point"],
+      ["comparison",         "comparison"],
+      ["trap",               "warning"],
+      ["clinicalPearl",      "clinical-pearl"],
+      ["supportingEvidence", "evidence"],
+    ];
+
+    it.each(CASES)("%s → %s", (canonicalType, expected) => {
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ canonicalType })], 1);
+      expect(entry.canonicalType).toBe(expected);
+    });
+  });
+
+  describe("importance → priorityTier mapping", () => {
+    const CASES: Array<[Importance, number]> = [
+      ["critical",   5],
+      ["high",       4],
+      ["supporting", 2],
+    ];
+
+    it.each(CASES)("%s → priorityTier %i", (importance, expectedTier) => {
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ importance })], 1);
+      expect(entry.priorityTier).toBe(expectedTier);
+    });
+  });
+
+  it("end-to-end: adapter output builds a ready VSG via computeVSGState", () => {
+    const entries = surgeonAnnotationsToCanonicalEntries(
+      [makeGrounded({ canonicalType: "definition", importance: "critical" })],
+      2,
+    );
+    const state = computeVSGState(entries, "flow", { pageNumber: 2 });
+    expect(state.status).toBe("ready");
+    if (state.status === "ready") {
+      expect(state.vsg.nodes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("end-to-end: a trap-typed entry resolves to VSGNode.tier 'danger' — matches the PDF's red trapNotch treatment", () => {
+    const entries = surgeonAnnotationsToCanonicalEntries(
+      [makeGrounded({ canonicalType: "trap", importance: "supporting" })],
+      2,
+    );
+    const state = computeVSGState(entries, "flow", { pageNumber: 2 });
+    expect(state.status).toBe("ready");
+    if (state.status === "ready") {
+      expect(state.vsg.nodes[0].tier).toBe("danger");
+    }
+  });
+
+  it("end-to-end: a clinicalPearl-typed entry resolves to VSGNode.tier 'pearl' — matches the PDF's cyan pearlMarker treatment", () => {
+    const entries = surgeonAnnotationsToCanonicalEntries(
+      [makeGrounded({ canonicalType: "clinicalPearl", importance: "high" })],
+      2,
+    );
+    const state = computeVSGState(entries, "flow", { pageNumber: 2 });
+    expect(state.status).toBe("ready");
+    if (state.status === "ready") {
+      expect(state.vsg.nodes[0].tier).toBe("pearl");
+    }
   });
 });

@@ -24,6 +24,7 @@ const WARNING: CanonicalEntryInput  = { id: "w1", text: "Do not confuse reminera
 const HIGH_YIELD: CanonicalEntryInput = { id: "h1", text: "Most tested board concept: acid-base balance in caries", canonicalType: "high-yield", importanceScore: 90 };
 const INDICATION: CanonicalEntryInput = { id: "i1", text: "Fluoride varnish indicated for high-caries-risk patients", canonicalType: "indication", priorityTier: 4 };
 const CONTRAINDICATION: CanonicalEntryInput = { id: "ci1", text: "Avoid fluoride in patients with fluorosis", canonicalType: "contraindication", priorityTier: 4 };
+const COMPARISON: CanonicalEntryInput = { id: "cp1", text: "Composite resin differs from amalgam in bond strength and esthetics", canonicalType: "comparison", priorityTier: 4 };
 
 // ── buildRelationshipGraph — basic output ──────────────────────────────────
 
@@ -165,6 +166,16 @@ describe("buildRelationshipGraph — layout selection", () => {
   it("selects 'comparison' for indication/contraindication", () => {
     const g = buildRelationshipGraph([INDICATION, CONTRAINDICATION]);
     expect(g.suggestedLayout).toBe("comparison");
+  });
+
+  it("selects 'comparison' for the standalone 'comparison' canonicalType (SurgeonAnnotationPlan)", () => {
+    const g = buildRelationshipGraph([COMPARISON]);
+    expect(g.suggestedLayout).toBe("comparison");
+  });
+
+  it("does not regress other suggestedLayout fixtures with the new comparison entry present", () => {
+    expect(buildRelationshipGraph([CAUSE, EFFECT]).suggestedLayout).toBe("flow");
+    expect(buildRelationshipGraph([PROCESS, MECHANISM]).suggestedLayout).toBe("flow");
   });
 
   it("selects 'anatomy' for definition/core-concept", () => {

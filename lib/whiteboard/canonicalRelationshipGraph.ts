@@ -102,6 +102,11 @@ const LAYOUT_PRIORITY: Array<[Set<string>, DiagramPlanDrawType]> = [
   [new Set(["cause", "effect"]),                   "flow"      ],
   [new Set(["process", "mechanism"]),              "flow"      ],
   [new Set(["indication", "contraindication"]),    "comparison"],
+  // SurgeonAnnotationPlan's "comparison" canonicalType maps directly here — no
+  // existing type above matches it, so this is a standalone additive entry.
+  // Placement doesn't affect selectLayout()'s first-match scan since "comparison"
+  // never co-occurs with any other row's keys.
+  [new Set(["comparison"]),                        "comparison"],
   [new Set(["formula", "worked-example"]),         "equation"  ],
   [new Set(["classification", "evidence"]),        "table"     ],
   [new Set(["memory-anchor"]),                     "cycle"     ],

@@ -28,7 +28,7 @@ import type { SemanticPack } from "@/lib/semantic/types";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
-import { groundSurgeonQuotes } from "@/lib/highlights/groundSurgeonQuotes";
+import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
 import {
   getSurgeonAnnotationPlan,
@@ -44,6 +44,15 @@ export interface UseSurgeonAnnotationsResult {
    *  replaces (not supplements) the older highlightAnchors-derived targets once
    *  a plan is available for this page. */
   highlightTargets: HighlightTarget[];
+  /**
+   * Full-fidelity grounded annotations — all 3 importance values (not
+   * collapsed the way HighlightTarget.level is), plus treatment,
+   * groundingState, and spanScope. Same array highlightTargets is derived
+   * from (both come from one groundSurgeonQuotes() call per fetch/cache-hit,
+   * so they can never drift). Feeds lib/whiteboard/visualSceneGraph.ts's
+   * surgeonAnnotationsToCanonicalEntries() for the deterministic Scene Builder.
+   */
+  groundedAnnotations: GroundedSurgeonAnnotation[];
   status: SurgeonAnnotationStatus;
   /** Set when analysis is degraded (missing config, upstream failure, or no
    *  quotes survived verification) — whatever was already showing (cache or
@@ -93,27 +102,32 @@ function normalizeForTarget(s: string): string {
   return s.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function toHighlightTargets(
-  plan: SurgeonAnnotationPlan,
-  pageText: string,
+// Maps an already-grounded array to HighlightTarget[] — kept separate from the
+// groundSurgeonQuotes() call itself so callers can feed the SAME grounded array
+// into both this (PDF-facing, lossy) and groundedAnnotations state (full-fidelity),
+// guaranteeing the two can never drift apart.
+function groundedAnnotationsToHighlightTargets(
+  grounded: GroundedSurgeonAnnotation[],
   pageNumber: number,
 ): HighlightTarget[] {
-  const grounded = groundSurgeonQuotes(plan.annotations, pageText);
-  return grounded.map((g, i) => ({
-    id:                    `surgeon-${pageNumber}-${i}`,
-    page:                  pageNumber,
-    text:                  g.groundedText,
-    normalizedText:        normalizeForTarget(g.groundedText),
-    level:                 IMPORTANCE_TO_LEVEL[g.importance],
-    score:                 g.confidence,
-    sourceParagraphIndex:  i,
-    kind:                  CANONICAL_TYPE_TO_KIND[g.canonicalType],
-    evidenceRefId:         `surgeon-${pageNumber}-${i}`,
-    reason:                g.reason,
-    treatment:             g.treatment,
-    canonicalType:         g.canonicalType,
-    groundingState:        g.groundingState,
-  }));
+  return grounded.map((g, i) => {
+    const id = buildSurgeonEvidenceId(pageNumber, i);
+    return {
+      id,
+      page:                  pageNumber,
+      text:                  g.groundedText,
+      normalizedText:        normalizeForTarget(g.groundedText),
+      level:                 IMPORTANCE_TO_LEVEL[g.importance],
+      score:                 g.confidence,
+      sourceParagraphIndex:  i,
+      kind:                  CANONICAL_TYPE_TO_KIND[g.canonicalType],
+      evidenceRefId:         id,
+      reason:                g.reason,
+      treatment:             g.treatment,
+      canonicalType:         g.canonicalType,
+      groundingState:        g.groundingState,
+    };
+  });
 }
 
 export function useSurgeonAnnotations({
@@ -132,6 +146,7 @@ export function useSurgeonAnnotations({
 }: UseSurgeonAnnotationsArgs): UseSurgeonAnnotationsResult {
   const [plan,             setPlan]             = useState<SurgeonAnnotationPlan | null>(null);
   const [highlightTargets, setHighlightTargets] = useState<HighlightTarget[]>([]);
+  const [groundedAnnotations, setGroundedAnnotations] = useState<GroundedSurgeonAnnotation[]>([]);
   const [status,           setStatus]           = useState<SurgeonAnnotationStatus>("idle");
   const [annotationErrorMessage, setAnnotationErrorMessage] = useState<string | null>(null);
   const [reanalyzeCount,   setReanalyzeCount]   = useState(0);
@@ -171,6 +186,7 @@ export function useSurgeonAnnotations({
   useEffect(() => {
     setPlan(null);
     setHighlightTargets([]);
+    setGroundedAnnotations([]);
     setStatus("idle");
     setAnnotationErrorMessage(null);
     startedKeyRef.current = null;
@@ -186,9 +202,11 @@ export function useSurgeonAnnotations({
         const stored = await getSurgeonAnnotationPlan(cacheKey);
         if (cancelled) return;
         if (stored && stored.plan.pageTruthKey === pageTruthKey) {
-          const targets = toHighlightTargets(stored.plan, pageTextRef.current, pageNumberRef.current);
+          const grounded = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current);
+          const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
+          setGroundedAnnotations(grounded);
           setStatus("success");
           // Mark this (page, domain, pack) combination as already satisfied so
           // Effect B doesn't immediately re-fetch what we just loaded from cache.
@@ -267,7 +285,8 @@ export function useSurgeonAnnotations({
           return;
         }
 
-        const targets = toHighlightTargets(data.plan, pageTextRef.current, pageNumberRef.current);
+        const grounded = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current);
+        const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed verification — degraded, not a hard error.
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
@@ -277,6 +296,7 @@ export function useSurgeonAnnotations({
 
         setPlan(data.plan);
         setHighlightTargets(targets);
+        setGroundedAnnotations(grounded);
         setAnnotationErrorMessage(null);
         setStatus("success");
 
@@ -298,5 +318,5 @@ export function useSurgeonAnnotations({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey, domain, semanticPack.id, enabled, pageText, reanalyzeCount]);
 
-  return { plan, highlightTargets, status, annotationErrorMessage, reanalyze };
+  return { plan, highlightTargets, groundedAnnotations, status, annotationErrorMessage, reanalyze };
 }
