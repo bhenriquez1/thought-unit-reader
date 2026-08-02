@@ -98,12 +98,38 @@ describe("PdfEvidenceOverlay.tsx — all 8 treatments have render code", () => {
     expect(src).toMatch(/pearlMarker.*isFirstLine[\s\S]{0,300}borderRadius:\s*"50%"/);
   });
 
-  it("evidenceUnderline renders borderBottom instead of a filled background", () => {
-    expect(src).toMatch(/treatment === "evidenceUnderline"\s*\n\s*\? "transparent"/);
-    expect(src).toMatch(/borderBottom:\s*rect\.treatment === "evidenceUnderline"/);
+  it("evidenceUnderline renders a light dashed box outline instead of a filled background or a solid border", () => {
+    expect(src).toMatch(/rect\.treatment === "evidenceUnderline" \|\| rect\.treatment === "trapNotch"\)\s*\n\s*\? "transparent"/);
+    expect(src).toMatch(/border:\s*rect\.treatment === "evidenceUnderline"\s*\n\s*\?\s*`1px dashed/);
   });
 
   it("definitionBar reuses the existing gold left-edge accent, OR'd with the old semanticKind check", () => {
     expect(src).toMatch(/rect\.semanticKind === "definition" \|\| rect\.treatment === "definitionBar"/);
+  });
+
+  it("trapNotch is transparent-filled with a red left-bar + faint baseline, never a full-strength box (the corner triangle stays the primary marker)", () => {
+    expect(src).toMatch(/rect\.treatment === "evidenceUnderline" \|\| rect\.treatment === "trapNotch"\)\s*\n\s*\? "transparent"/);
+    expect(src).toMatch(/borderBottom:\s*rect\.treatment === "trapNotch"\s*\n\s*\?\s*`1px solid/);
+    expect(src).toMatch(/borderLeft:\s*rect\.treatment === "trapNotch"\s*\n\s*\?\s*`3px solid rgba\(252,165,165/);
+  });
+
+  it("trapNotch's corner triangle marker (gated on danger tier) is unchanged", () => {
+    expect(src).toMatch(/tier === "danger" && isFirstLine/);
+    expect(src).toMatch(/borderTop:\s*"9px solid rgba\(252,165,165,0\.85\)"/);
+  });
+
+  it("comparisonBracket renders paired bracket glyphs (two ticks + a stem per rect), not a single bidirectional arrow", () => {
+    const idx = src.indexOf("Comparison connector");
+    const block = src.slice(idx, idx + 2000);
+    expect(block).toMatch(/cmp-bracket-/);
+    expect(block).not.toMatch(/↕/);
+    expect(block).not.toMatch(/markerEnd="url\(#cmp-arrow/);
+  });
+
+  it("comparisonBracket draws a subtle dashed link between consecutive brackets, no arrowheads", () => {
+    const idx = src.indexOf("Comparison connector");
+    const block = src.slice(idx, idx + 2000);
+    expect(block).toMatch(/cmp-link-/);
+    expect(block).toMatch(/strokeDasharray="3 3"/);
   });
 });

@@ -85,21 +85,33 @@ Rules:
 6. Keep "reason" to one factual sentence (≤ 40 words) explaining why this span matters.
 7. pageThesis is a single sentence stating the page's main subject, derived fresh from
    what you read — not copied from any prior-pass context.
-8. Produce at most 10 annotations per page. Prefer fewer, more precise ones.
-9. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
-   looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
-   - spanScope: "fullSentence" (the default — use this for almost everything) — exactQuote
-     MUST run from the sentence's first meaningful word to its ending punctuation (. ; or :).
-     Bad:  "...before considering a diagnosis or treatment..."
-     Good: "Before considering a diagnosis or treatment, the clinician should interview the
-            patient to identify and explore all the concerns, related conditions, and
-            expectations that prompted the patient to seek care."
-   - spanScope: "entity" — ONLY for a single term being defined, a drug name, an anatomical
-     structure, an equation, a chemical formula, or a short symbol/definition-term where
-     highlighting just that span (not the whole sentence) is the deliberately correct
-     teaching behavior. Do not use "entity" as a shortcut to avoid quoting a full sentence —
-     it is the narrow exception, "fullSentence" is the default for everything else.
-10. MULTI-SENTENCE CONCEPTS — if one concept's explanation naturally runs across two or more
+8. pageRole classifies the PAGE's dominant grammar — pick whichever of
+   definition/procedure/mechanism/comparison/example best describes what this page is
+   PRIMARILY teaching, independent of pageThesis's content summary (e.g. a page can be
+   primarily "procedure" even though its thesis describes a specific clinical scenario).
+9. DENSITY — a well-annotated page should read like expert marginalia, not a diagnostic
+   overlay. As a strong guideline (the app also enforces this with a hard cap after your
+   response, so exceeding it just means your lower-priority picks get dropped): at most one
+   definition annotation for the page's core thesis plus up to two for supporting rules, at
+   most ONE mechanism-or-procedure annotation total for the page (never both a mechanism
+   explanation and a procedure list as separate annotations), at most one trap/warning, one
+   comparison, one decision point, one clinical pearl, and one supporting example. Do not
+   annotate the same idea twice under different canonicalTypes.
+10. Produce at most 10 annotations per page. Prefer fewer, more precise ones.
+11. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
+    looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
+    - spanScope: "fullSentence" (the default — use this for almost everything) — exactQuote
+      MUST run from the sentence's first meaningful word to its ending punctuation (. ; or :).
+      Bad:  "...before considering a diagnosis or treatment..."
+      Good: "Before considering a diagnosis or treatment, the clinician should interview the
+             patient to identify and explore all the concerns, related conditions, and
+             expectations that prompted the patient to seek care."
+    - spanScope: "entity" — ONLY for a single term being defined, a drug name, an anatomical
+      structure, an equation, a chemical formula, or a short symbol/definition-term where
+      highlighting just that span (not the whole sentence) is the deliberately correct
+      teaching behavior. Do not use "entity" as a shortcut to avoid quoting a full sentence —
+      it is the narrow exception, "fullSentence" is the default for everything else.
+12. MULTI-SENTENCE CONCEPTS — if one concept's explanation naturally runs across two or more
     consecutive sentences (e.g. "Phase 1 is X. Phase 2 is Y. Phase 3 is Z." describing one
     procedure), do NOT create several separate annotations for it. Instead return ONE
     annotation whose exactQuote is the full verbatim run of all those sentences together,
@@ -110,6 +122,7 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
 {
   "pageTruthKey": "<string — copy from input>",
   "pageThesis": "<one-sentence string>",
+  "pageRole": "<definition|procedure|mechanism|comparison|example>",
   "annotations": [
     {
       "canonicalType": "<definition|mechanism|procedure|decision|comparison|trap|clinicalPearl|supportingEvidence>",

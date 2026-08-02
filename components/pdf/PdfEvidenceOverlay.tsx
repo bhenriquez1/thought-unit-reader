@@ -262,7 +262,7 @@ export default function PdfEvidenceOverlay({
     return idx;
   }, [procedureChain]);
 
-  // ── Comparison connector: bidirectional ↕ arrow between consecutive comparison rects ──
+  // ── Comparison chain: rects rendered with paired bracket glyphs, see the SVG block below ──
   // OR'd with treatment==="comparisonBracket" for the same reason as mechanismChain above.
   const comparisonChain = useMemo(() => {
     return rects
@@ -428,42 +428,40 @@ export default function PdfEvidenceOverlay({
         </svg>
       )}
 
-      {/* Comparison connector — bidirectional ↕ between consecutive comparison rects */}
+      {/* Comparison connector — paired "[" bracket glyphs hugging each compared rect's
+          left edge (each bracket sized to its own rect, like the mechanism brace's
+          tick technique), plus a subtle dashed link between consecutive brackets'
+          midpoints so the pair still reads as linked. No arrowheads — a bracket pair
+          reads as "these are being weighed against each other," not a flow/sequence. */}
       {comparisonChain.length >= 2 && (
         <svg
           aria-hidden
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
         >
-          <defs>
-            <marker id="cmp-arrow-up" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-              <polygon points="3 0, 6 6, 0 6" fill="#93c5fd" opacity="0.75" />
-            </marker>
-            <marker id="cmp-arrow-dn" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto-start-reverse">
-              <polygon points="3 0, 6 6, 0 6" fill="#93c5fd" opacity="0.75" />
-            </marker>
-          </defs>
+          {comparisonChain.map((rect) => {
+            const bracketX = Math.max(4, rect.left - 10);
+            const y1 = rect.top;
+            const y2 = rect.top + rect.height;
+            return (
+              <g key={`cmp-bracket-${rect.id}`} opacity="0.6">
+                <line x1={bracketX + 4} y1={y1} x2={bracketX + 4} y2={y2} stroke="#93c5fd" strokeWidth="1.5" />
+                <line x1={bracketX + 4} y1={y1} x2={bracketX + 8} y2={y1} stroke="#93c5fd" strokeWidth="1.5" />
+                <line x1={bracketX + 4} y1={y2} x2={bracketX + 8} y2={y2} stroke="#93c5fd" strokeWidth="1.5" />
+              </g>
+            );
+          })}
           {comparisonChain.slice(0, -1).map((rect, i) => {
             const next = comparisonChain[i + 1];
-            const x = Math.max(4, Math.min(rect.left, next.left) - 14);
-            const y1 = rect.top + rect.height - 2;
-            const y2 = next.top + 2;
-            if (y2 - y1 < 4) return null;
+            const x1 = Math.max(4, rect.left - 10) + 4;
+            const y1 = rect.top + rect.height / 2;
+            const x2 = Math.max(4, next.left - 10) + 4;
+            const y2 = next.top + next.height / 2;
             return (
-              <g key={`cmp-${i}`} opacity="0.60">
-                <line
-                  x1={x} y1={y1} x2={x} y2={y2}
-                  stroke="#93c5fd" strokeWidth="1.5"
-                  markerStart="url(#cmp-arrow-up)"
-                  markerEnd="url(#cmp-arrow-dn)"
-                />
-                <text
-                  x={x - 2} y={(y1 + y2) / 2 + 4}
-                  fontSize="8" fontFamily="ui-monospace, monospace" fontWeight="700"
-                  fill="#93c5fd" opacity="0.80" textAnchor="middle"
-                >
-                  ↕
-                </text>
-              </g>
+              <line
+                key={`cmp-link-${i}`}
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke="#93c5fd" strokeWidth="1" strokeDasharray="3 3" opacity="0.4"
+              />
             );
           })}
         </svg>
@@ -504,18 +502,26 @@ export default function PdfEvidenceOverlay({
               height: rect.height,
               borderRadius: "6px",
               // evidenceUnderline reads as "supporting" (the lowest importance tier) —
-              // a restrained bottom-border instead of a filled box, never both.
-              backgroundColor: rect.treatment === "evidenceUnderline"
+              // a light dashed outline instead of a filled box, never both. trapNotch
+              // is restrained the same way — a narrow red left-bar + faint baseline,
+              // never a full-strength fill (the corner triangle below is the primary
+              // trap marker; this is just enough box to locate the span).
+              backgroundColor: (rect.treatment === "evidenceUnderline" || rect.treatment === "trapNotch")
                 ? "transparent"
                 : (activeFocused ? cfg.bgFocused : cfg.bgNormal),
-              border: rect.treatment === "evidenceUnderline" ? undefined : (activeFocused ? undefined : tierStyle.border),
-              borderBottom: rect.treatment === "evidenceUnderline"
-                ? `2px solid rgba(103,232,249,${activeFocused ? 0.85 : 0.55})`
+              border: rect.treatment === "evidenceUnderline"
+                ? `1px dashed rgba(103,232,249,${activeFocused ? 0.85 : 0.55})`
+                : (rect.treatment === "trapNotch" ? undefined : (activeFocused ? undefined : tierStyle.border)),
+              borderBottom: rect.treatment === "trapNotch"
+                ? `1px solid rgba(252,165,165,${activeFocused ? 0.55 : 0.35})`
                 : undefined,
               // Definition anchors get a gold left-edge accent — "boxed definition" feel.
-              borderLeft: (rect.semanticKind === "definition" || rect.treatment === "definitionBar")
-                ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
-                : undefined,
+              // trapNotch gets the same left-bar treatment in red instead of gold.
+              borderLeft: rect.treatment === "trapNotch"
+                ? `3px solid rgba(252,165,165,${activeFocused ? 0.9 : 0.65})`
+                : ((rect.semanticKind === "definition" || rect.treatment === "definitionBar")
+                  ? `3px solid rgba(253,224,71,${activeFocused ? 0.85 : 0.55})`
+                  : undefined),
               overflow: "visible",
               opacity: dimmed ? 0.45 : 1,
               transition: "opacity 180ms ease, background-color 150ms ease",

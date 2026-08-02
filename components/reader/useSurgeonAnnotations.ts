@@ -29,6 +29,7 @@ import type { HighlightTarget } from "@/lib/readerContracts";
 import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { groundSurgeonQuotes } from "@/lib/highlights/groundSurgeonQuotes";
+import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
 import {
   getSurgeonAnnotationPlan,
@@ -98,7 +99,7 @@ function toHighlightTargets(
   pageText: string,
   pageNumber: number,
 ): HighlightTarget[] {
-  const grounded = groundSurgeonQuotes(plan.annotations, pageText);
+  const grounded = limitAnnotationDensity(groundSurgeonQuotes(plan.annotations, pageText));
   return grounded.map((g, i) => ({
     id:                    `surgeon-${pageNumber}-${i}`,
     page:                  pageNumber,
