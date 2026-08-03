@@ -246,3 +246,59 @@ describe("Chief Resident staleness — adjacent legacy handlers now carry the sa
     expect(openExplainItBody).toMatch(/\[.*pageTruthKey.*\]/s);
   });
 });
+
+// ── Root cause: chiefResidentContext/explainItContext survive page navigation ──
+//
+// Every OTHER piece of "current page" state (currentPageStudyModel,
+// finalHighlightAnchors, sel.selectionText — see above) is reset by an effect
+// keyed on pageTruthKey. chiefResidentContext and explainItContext previously
+// had no such lifecycle tie: once a modal opened, its captured context
+// (pageNumber, pageText, canonicalEntries — all snapshotted at open time)
+// stayed mounted across a page change, since <ChiefResidentModal> is rendered
+// as `{chiefResidentContext && <ChiefResidentModal .../>}` with no `key` prop
+// tying it to page identity. A student who opened the modal on page 12,
+// then navigated to page 53 without closing it, would keep chatting against
+// page 12's frozen context while the modal's own document-title badge showed
+// whatever the parent still had — no visible indication the page underneath
+// had moved on. Fix: close (setContext(null)) both modals the instant
+// pageTruthKey changes — this also unmounts them, which triggers their
+// existing cleanup effects to abort any in-flight streaming request.
+
+describe("Chief Resident staleness — chiefResidentContext/explainItContext close on page navigation", () => {
+  it("a useEffect keyed on [pageTruthKey] nulls both chiefResidentContext and explainItContext", () => {
+    const resetRegionStart = src.indexOf("CRITICAL: close any open Chief Resident / Explain It modal on page navigation");
+    expect(resetRegionStart).toBeGreaterThan(-1);
+    const resetRegion = src.slice(resetRegionStart, resetRegionStart + 1200);
+    expect(resetRegion).toMatch(/useEffect\(\(\) => \{\s*\n\s*setChiefResidentContext\(null\);\s*\n\s*setExplainItContext\(null\);/);
+    expect(resetRegion).toMatch(/\}, \[pageTruthKey\]\);/);
+  });
+
+  it("a page-12 insulin unit cannot enter a page-53 calculus request — narrative check", () => {
+    // 1. Student opens Chief Resident on page 12 (biology: insulin/glucagon).
+    //    chiefResidentContext snapshots page 12's pageText/canonicalEntries.
+    // 2. Student navigates to page 53 (calculus) without closing the modal —
+    //    pageTruthKey changes.
+    // 3. WITHOUT this fix: the modal (no key, no pageTruthKey lifecycle tie)
+    //    stays mounted with page 12's frozen context; any follow-up message
+    //    keeps discussing insulin/glucagon while the Reader shows page 53.
+    // 4. WITH this fix: the pageTruthKey-keyed effect nulls chiefResidentContext
+    //    the moment the page changes (step 2), unmounting the modal and
+    //    aborting its in-flight request — nothing from page 12 can reach a
+    //    page-53 request, because there is no more page-12 modal to send one.
+    const resetRegionStart = src.indexOf("CRITICAL: close any open Chief Resident / Explain It modal on page navigation");
+    const resetRegion = src.slice(resetRegionStart, resetRegionStart + 800);
+    expect(resetRegion).toContain("setChiefResidentContext(null);");
+  });
+
+  it("<ChiefResidentModal> is rendered without a key prop (this fix's closure, not React reconciliation, is the guard)", () => {
+    // Documents the actual mechanism this fix relies on: since the modal has
+    // no key={...} tying its identity to the current page, React would
+    // otherwise just re-render it in place across a page change rather than
+    // remounting it — the pageTruthKey-keyed close effect above is what
+    // actually severs it from stale context, not a key-based remount.
+    const idx = src.indexOf("<ChiefResidentModal");
+    expect(idx).toBeGreaterThan(-1);
+    const tagBlock = src.slice(idx, src.indexOf("onSaveNote", idx));
+    expect(tagBlock).not.toMatch(/key=/);
+  });
+});

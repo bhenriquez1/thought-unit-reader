@@ -2089,6 +2089,21 @@ export default function ThoughtUnitReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey]);
 
+  // CRITICAL: close any open Chief Resident / Explain It modal on page navigation.
+  // Both modals capture their page's context (pageNumber, pageText, canonicalEntries)
+  // once when opened and are not keyed to pageTruthKey, so without this effect they
+  // would stay mounted across a page change — continuing to answer, and letting the
+  // user send follow-ups, against a now-stale page's content while displaying the
+  // NEW page's title in the background. Closing on navigation is the same "never let
+  // stale context silently continue" guarantee as the sel.clearSelection() fix above;
+  // closing also unmounts the modal, which triggers its own cleanup effect to abort
+  // any in-flight streaming request for the old page.
+  useEffect(() => {
+    setChiefResidentContext(null);
+    setExplainItContext(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageTruthKey]);
+
   // Auto-select the first anchor when anchors first arrive on a page (speech not playing).
   // This ensures the Expert Brain and LeftPanel card highlight appear automatically without
   // the user needing to click anything.
