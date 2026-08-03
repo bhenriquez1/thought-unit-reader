@@ -1607,10 +1607,25 @@ export default function ThoughtUnitReader() {
 
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+    // Guard against a stale currentPageStudyModel racing this effect on page
+    // change: the effect that nulls currentPageStudyModel on navigation (see
+    // "Clear stale synthesis state" above) and this effect both fire in the
+    // same post-commit flush, so this effect can still see the PREVIOUS page's
+    // model here for one pass. Without this check, canonicalLeftPanelUnits gets
+    // built from that stale model's visualAnchors (a different subject's
+    // content) but stamped with the NEW currentPage — the same class of bug the
+    // "stale-page" guard below already handles for finalHighlightAnchors, just
+    // missing here at the point canonicalLeftPanelUnits is actually produced.
+    // Confirmed root cause of a report where a chemistry page's Chief Resident
+    // request (canonicalEntries sourced from this array) answered about cell
+    // signaling instead.
+    const freshStudyModel = (!currentPageStudyModel || currentPageStudyModel.page === currentPage)
+      ? currentPageStudyModel
+      : null;
     const built = buildCanonicalLeftPanelUnits({
       page: currentPage,
       pageText,
-      studyModel: currentPageStudyModel,
+      studyModel: freshStudyModel,
       presetId: sharedPresetId,
     });
     // Content-equality guard: avoid cascading re-renders when unit IDs and text are unchanged.

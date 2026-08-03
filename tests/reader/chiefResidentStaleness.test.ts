@@ -302,3 +302,42 @@ describe("Chief Resident staleness — chiefResidentContext/explainItContext clo
     expect(tagBlock).not.toMatch(/key=/);
   });
 });
+
+// ── Root cause: canonicalLeftPanelUnits built from a stale currentPageStudyModel ──
+//
+// The effect that PRODUCES canonicalLeftPanelUnits (deps: [bookId, currentPage,
+// currentPageStudyModel, pageTextByPage, sharedPresetId]) and the separate effect
+// that nulls currentPageStudyModel on page change both fire in the same
+// post-commit flush — so on a page change, this effect can still see the
+// PREVIOUS page's study model for one pass, before the null-reset effect takes
+// hold and a fresh model arrives. Without a freshness check, that stale model's
+// visualAnchors (a different subject's content) get built into
+// canonicalLeftPanelUnits but stamped with the NEW currentPage — and Chief
+// Resident's canonicalEntries are sourced directly from this array (see
+// handleOpenChiefResidentExplainStep/Page/Concept above), so a click during that
+// window sends the WRONG subject's content under the CURRENT page's number.
+// Confirmed root cause of a report where a chemistry page's Chief Resident
+// request answered about cell signaling.
+//
+// The fix mirrors the existing "stale-page" guard a few hundred lines below
+// (currentPageStudyModel.page !== currentPage → don't trust it) — this is the
+// same class of defect, just at the point canonicalLeftPanelUnits is actually
+// produced rather than where it's later consumed.
+
+describe("canonicalLeftPanelUnits — stale currentPageStudyModel guard", () => {
+  it("the producing effect only trusts currentPageStudyModel when its .page matches currentPage", () => {
+    const idx = src.indexOf("useEffect(() => {\n    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || \"\";\n    // Guard against a stale currentPageStudyModel");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 3000);
+    expect(block).toMatch(/currentPageStudyModel\.page === currentPage/);
+    expect(block).toMatch(/studyModel:\s*freshStudyModel/);
+    expect(block).toMatch(/\}, \[bookId, currentPage, currentPageStudyModel, pageTextByPage, sharedPresetId\]\);/);
+  });
+
+  it("a stale model falls back to null (buildCanonicalLeftPanelUnits' own page-text fallback), not the wrong subject's visualAnchors", () => {
+    const idx = src.indexOf("const freshStudyModel = (!currentPageStudyModel || currentPageStudyModel.page === currentPage)");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/\?\s*currentPageStudyModel\s*\n\s*:\s*null;/);
+  });
+});
