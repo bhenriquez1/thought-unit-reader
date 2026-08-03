@@ -30,6 +30,7 @@ import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/ins
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
+import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
 import {
   getSurgeonAnnotationPlan,
@@ -207,7 +208,14 @@ export function useSurgeonAnnotations({
         const stored = await getSurgeonAnnotationPlan(cacheKey);
         if (cancelled) return;
         if (stored && stored.plan.pageTruthKey === pageTruthKey) {
-          const grounded = limitAnnotationDensity(groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current));
+          // Ground against cleanActivePageText(pageText), NOT the raw pageText — the
+          // model was given the CLEANED text (buildSurgeonAnnotationInput.ts applies
+          // the same transform before it's sent), so a quote spanning a merged
+          // drop-cap or a stripped running header/caption is accurate against what
+          // the model actually saw but would fail exact/normalized matching against
+          // the raw, uncleaned text. Grounding against raw text was silently
+          // dropping otherwise-correct annotations.
+          const grounded = limitAnnotationDensity(groundSurgeonQuotes(stored.plan.annotations, cleanActivePageText(pageTextRef.current)));
           const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
@@ -290,7 +298,7 @@ export function useSurgeonAnnotations({
           return;
         }
 
-        const grounded = limitAnnotationDensity(groundSurgeonQuotes(data.plan.annotations, pageTextRef.current));
+        const grounded = limitAnnotationDensity(groundSurgeonQuotes(data.plan.annotations, cleanActivePageText(pageTextRef.current)));
         const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed verification — degraded, not a hard error.

@@ -238,3 +238,22 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
     expect(src).toMatch(/Full-fidelity grounded annotations/);
   });
 });
+
+describe("useSurgeonAnnotations.ts — grounds against cleaned text, matching what the model actually saw", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("imports cleanActivePageText", () => {
+    expect(src).toMatch(/import \{ cleanActivePageText \} from "@\/lib\/insights\/cleanActivePageText"/);
+  });
+
+  it("both groundSurgeonQuotes call sites ground against cleanActivePageText(pageTextRef.current), not the raw ref", () => {
+    const calls = src.match(/groundSurgeonQuotes\([^,]+,\s*cleanActivePageText\(pageTextRef\.current\)\)/g) ?? [];
+    expect(calls).toHaveLength(2);
+    // The raw, uncleaned ref must never be passed directly as the grounding text —
+    // buildSurgeonAnnotationInput.ts sends the model cleanActivePageText(pageText),
+    // so grounding against raw pageTextRef.current would false-reject any quote
+    // touching a merged drop-cap or a stripped running header/caption.
+    expect(src).not.toMatch(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current\)/);
+  });
+});
