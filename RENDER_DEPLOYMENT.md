@@ -40,6 +40,11 @@ Set all of these in the Render Dashboard **Environment** tab — never commit th
 | `PREVIEW_LOCK_ENABLED` | Set to `1` to enable the password gate |
 | `APP_PREVIEW_PASSWORD` | Choose a strong password; store only in Render |
 | `NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN` | Set to `1` to bypass Google Sign-In |
+| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | tldraw dashboard → Licenses. **Required** — without it, production shows "Whiteboard configuration is unavailable." instead of the Whiteboard canvas. |
+
+### `NEXT_PUBLIC_*` variables require a full rebuild, not a restart
+
+Every variable prefixed `NEXT_PUBLIC_` in the table above is inlined into the client JavaScript bundle **at build time** by Next.js — it is not read from the environment at request time. If you add or change one of these on an existing Render service, clicking **Manual Deploy → Restart Service** is not enough; the old build still has the old (or missing) value baked in. You must trigger an actual rebuild: **Manual Deploy → "Clear build cache & deploy"** (or push a new commit). Non-`NEXT_PUBLIC_` variables (e.g. `OPENAI_API_KEY`) are read server-side at runtime and don't have this restriction.
 
 ## What This Does
 - **Disables Google Sign-In**: Prevents the authentication error
