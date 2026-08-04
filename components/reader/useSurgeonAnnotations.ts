@@ -309,6 +309,15 @@ export function useSurgeonAnnotations({
           // Effect B doesn't immediately re-fetch what we just loaded from cache.
           startedKeyRef.current = `${pageTruthKey}|${domain}|${semanticPack.id}`;
           if (DEV) console.log("[SURGEON_PLAN_CACHE_HIT]", { pageTruthKey, cacheKey, annotationCount: targets.length });
+          // Production-safe (no DEV gate, no annotation text) — the first two
+          // stages of the pipeline trace SmartPDFViewer's [SURGEON_PIPELINE_DIAGNOSTIC]
+          // continues (geometryResolvedCount/renderedAnnotationCount).
+          console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+            pageTruthKey,
+            stage: "cache-hit",
+            annotationPlanCount: stored.plan.annotations.length,
+            groundedAnnotationCount: targets.length,
+          });
         }
       } catch {
         // IDB unavailable or lookup failed — not fatal, Effect B will fetch fresh.
@@ -405,6 +414,12 @@ export function useSurgeonAnnotations({
         saveSurgeonAnnotationPlan(bookIdRef.current, pageIndexRef.current, cacheKey, data.plan).catch(() => {});
 
         if (DEV) console.log("[SURGEON_PLAN_OK]", { pageTruthKey, annotationCount: targets.length });
+        console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+          pageTruthKey,
+          stage: "fetch",
+          annotationPlanCount: data.plan.annotations.length,
+          groundedAnnotationCount: targets.length,
+        });
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
         console.error("[SURGEON_PLAN_ERROR]", { pageTruthKey, message: err?.message ?? String(err) });

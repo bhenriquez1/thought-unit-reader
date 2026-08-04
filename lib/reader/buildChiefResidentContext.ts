@@ -1,10 +1,12 @@
 // lib/reader/buildChiefResidentContext.ts
-// The SINGLE shared context-builder for Chief Resident — both the Reader
-// (components/reader/ChiefResidentModal.tsx) and NoteLab
-// (components/notelab/ChiefResidentPanel.tsx) call this to build the request
-// body sent to /api/chief-resident-teaching, and both use
-// matchesFrozenSnapshot() to validate every SSE event against the exact
-// snapshot they built the request from before rendering it.
+// The SINGLE shared context-builder for Chief Resident. There is exactly one
+// component that owns Chief Resident's teaching UI and request-building:
+// components/notelab/ChiefResidentPanel.tsx. Reader opens it via
+// components/reader/ChiefResidentModalShell.tsx, a chrome-only wrapper with
+// no generation logic of its own — so this builder effectively has a single
+// caller today, kept as its own module because /api/chief-resident-teaching's
+// request shape and matchesFrozenSnapshot() validation are independently
+// unit-testable concerns.
 //
 // Root cause this exists to prevent: prior to this, each caller built its own
 // ad-hoc request body. The Reader's version discarded real page text whenever

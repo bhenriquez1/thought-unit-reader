@@ -14,7 +14,7 @@ import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallSto
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import dynamic from "next/dynamic";
-const AvrrioWhiteboard = dynamic(() => import("@/components/whiteboard/AvrrioWhiteboard"), { ssr: false });
+const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
@@ -840,7 +840,7 @@ export default function WhiteboardPanel({
                 </div>
               )}
               <div style={{ height: 520 }}>
-                <AvrrioWhiteboard
+                <TldrawCanvas
                   noteCards={teachNoteCards}
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}

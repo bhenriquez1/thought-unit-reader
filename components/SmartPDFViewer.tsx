@@ -297,6 +297,10 @@ export interface SmartPDFViewerProps {
   fileUrl: string;
   /** Stable document ID used to key the <Page> for reliable re-mounts. Falls back to fileUrl. */
   docId?: string;
+  /** Canonical page identity ("<documentId>::<pageNumber>::t") — surfaced only
+   *  in the [SURGEON_PIPELINE_DIAGNOSTIC] log below, never used for logic here
+   *  (highlightKey, built by the caller, is still what drives rebuilds/clears). */
+  pageTruthKey?: string;
   currentPage: number;
   onPageChange: (page: number) => void;
   scale?: number;
@@ -581,6 +585,7 @@ function WordRectOverlay({
 
 export default function SmartPDFViewer({
   fileUrl,
+  pageTruthKey,
   docId,
   currentPage,
   onPageChange,
@@ -1109,6 +1114,14 @@ export default function SmartPDFViewer({
       }
 
       const rects: OverlayRect[] = [];
+      // Per-target resolution outcome, for the [SURGEON_PIPELINE_DIAGNOSTIC]
+      // summary below — the ONLY place that previously existed to infer this
+      // was diffing canonicalTargetCount vs rectCountAfterDedup in
+      // [PDF_OVERLAY_REBUILD], which conflates "resolved via geometry",
+      // "resolved via legacy DOM fallback", and "dropped entirely" into one
+      // number. Never logs target.text — only the count and (for failures)
+      // the non-identifying evidenceRefId.
+      let geometryResolvedCount = 0;
       highlightTargets!.forEach((target) => {
         // ── Anchor-driven fast path (Phase 2.5) ──────────────────────────────
         // Attempt geometry resolution via TextLayerRegistry before falling back
@@ -1125,6 +1138,7 @@ export default function SmartPDFViewer({
           target.groundingState,
         );
         if (anchorGeo.rects.length > 0) {
+          geometryResolvedCount++;
           console.log("[GEOMETRY_RESOLUTION]", {
             id: target.evidenceRefId,
             source: anchorGeo.source,
@@ -1194,6 +1208,7 @@ export default function SmartPDFViewer({
           }
           const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
           const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason, target.treatment, target.canonicalType);
+          if (fbRects.length > 0) geometryResolvedCount++;
           console.log("[AI_HIGHLIGHT:matched]", { id: target.evidenceRefId, via: "fallback", lines: fbRects.length });
           rects.push(...fbRects);
           return;
@@ -1201,6 +1216,7 @@ export default function SmartPDFViewer({
 
         const matchedSpans = spansForRange(location.startIdx, location.endIdx);
         const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"], target.priorityTier, target.reason, target.treatment, target.canonicalType);
+        if (lineRects.length > 0) geometryResolvedCount++;
         console.log("[AI_HIGHLIGHT:matched]", {
           id: target.evidenceRefId, kind: target.kind,
           text: target.text?.slice(0, 50),
@@ -1237,6 +1253,24 @@ export default function SmartPDFViewer({
         rectCountBeforeDedup: rects.length,
         rectCountAfterDedup: afterDedup.length,
         staleBuildCancelled,
+      });
+      // Production-safe pipeline trace — counts only, never annotation text,
+      // so this is safe to leave enabled in production for diagnosing "the
+      // right panel shows a grounded concept but the PDF isn't highlighted"
+      // reports. groundedAnnotationCount === canonicalTargetCount by
+      // construction (groundedAnnotationsToHighlightTargets in
+      // useSurgeonAnnotations.ts is a 1:1 map — see that file's own log for
+      // annotationPlanCount, the stage before grounding).
+      //   planner annotation → grounded quote → resolved sentence →
+      //   PDF text-layer match → geometry rectangles → PdfEvidenceOverlay render
+      console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+        pageTruthKey:            pageTruthKey ?? null,
+        documentId:              docId ?? null,
+        pageNumber:              currentPage,
+        groundedAnnotationCount: highlightTargets?.length ?? 0,
+        geometryResolvedCount,
+        geometryFailedCount:     (highlightTargets?.length ?? 0) - geometryResolvedCount,
+        renderedAnnotationCount: afterDedup.length,
       });
       if (staleBuildCancelled) return;
       setOverlayRects(afterDedup);

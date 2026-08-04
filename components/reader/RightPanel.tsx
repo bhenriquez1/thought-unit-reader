@@ -28,6 +28,23 @@ import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchor
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 import { tokenizeWords } from "@/lib/speech/wordSync";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
+import type { CanonicalType } from "@/lib/insights/pageAnnotationPlan";
+
+// Same visual language as PdfEvidenceOverlay's treatments — gold=definition,
+// green=mechanism/procedure, blue=decision, purple=comparison, red=trap,
+// cyan=clinicalPearl, slate=supportingEvidence — so the dot next to a
+// grounded item here reads as the same "kind of thing" as its PDF highlight.
+const GROUNDED_TYPE_DOT: Record<CanonicalType, string> = {
+  definition:         "#eab308",
+  mechanism:          "#22c55e",
+  procedure:          "#22c55e",
+  decision:           "#60a5fa",
+  comparison:         "#a78bfa",
+  trap:               "#f87171",
+  clinicalPearl:      "#22d3ee",
+  supportingEvidence: "#94a3b8",
+};
 import LearningSources from "@/components/reader/LearningSources";
 
 // Marks the word at activeSpokenWord.wordIndex within this card's own text — same
@@ -599,11 +616,11 @@ interface RightPanelProps {
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Chief Resident are rendered by the caller. */
   onOpenWhiteboard?: () => void;
-  onOpenExplainStep?: () => void;
-  onOpenExplainIt?: () => void;
-  /** Opens Chief Resident focused on the currently active concept (explain-text with concept title). */
-  onOpenExplainConcept?: () => void;
-  /** Live text selection from the PDF viewer — used to enable/disable the "Selected Text" scope. */
+  /** Opens Chief Resident (ChiefResidentModalShell wrapping the shared NoteLab
+   *  ChiefResidentPanel) — one entry point, no scope pre-selection; the panel's
+   *  own mode picker (Teach This Page, etc.) replaces the old per-scope chips. */
+  onOpenChiefResident?: () => void;
+  /** Live text selection from the PDF viewer — kept for other selection-aware UI. */
   selectionText?: string;
   canonicalLeftPanelUnits?: ExpertAnchor[];
   activeThoughtUnit?: ExpertAnchor | null;
@@ -611,6 +628,19 @@ interface RightPanelProps {
   onAskExpert?: (question: string) => void;
   /** Jump to a thought unit by its evidenceRefId/id — used by Connection Map links. */
   onJumpToUnit?: (id: string) => void;
+  /**
+   * The SurgeonAnnotationPlan pipeline's grounded output — the SAME array
+   * useSurgeonAnnotations() hands to SmartPDFViewer as PDF highlights (see
+   * PureReaderView.tsx's surgeonHighlightTargets). Deliberately NOT the same
+   * data as canonicalLeftPanelUnits above (an older, independent
+   * currentPageStudyModel-derived pipeline that also feeds this panel) —
+   * rendering this list separately, from this exact array, is what makes
+   * "if this panel shows a grounded sentence, that sentence has PDF
+   * geometry" true by construction rather than by coincidence: whatever is
+   * listed here is definitionally the same content SmartPDFViewer is also
+   * drawing from.
+   */
+  groundedAnnotations?: GroundedSurgeonAnnotation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -853,18 +883,16 @@ export function RightPanel({
   activeParagraphText,
   onSpeechExplainSegment,
   onOpenWhiteboard,
-  onOpenExplainStep,
-  onOpenExplainIt,
-  onOpenExplainConcept,
+  onOpenChiefResident,
   selectionText = "",
   canonicalLeftPanelUnits = [],
   activeThoughtUnit = null,
   onAskExpert,
   onJumpToUnit,
+  groundedAnnotations = [],
 }: RightPanelProps) {
   // Reading position from the single source of truth — no prop-drilling.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
-  const [crScope, setCrScope] = React.useState<"page" | "selection" | "concept">("page");
 
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -1723,62 +1751,52 @@ export function RightPanel({
             </button>
           </div>
 
-          {/* ── Chief Resident scope selector ───────────────────────────── */}
-          <div className="rounded-xl border border-white/8 bg-white/2 p-3">
-            <div className="text-[10px] text-white/35 uppercase tracking-wider mb-2">Ask Chief Resident</div>
-            {/* Scope chips */}
-            <div className="flex gap-1 mb-2.5">
-              {([
-                { key: "page",      label: "Current Page",   enabled: true },
-                { key: "selection", label: "Selected Text",  enabled: selectionText.length > 0 },
-                { key: "concept",   label: "Active Concept", enabled: !!activeThoughtUnit },
-              ] as const).map(({ key, label, enabled }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => enabled && setCrScope(key)}
-                  disabled={!enabled}
-                  className={`flex-1 px-1.5 py-1 rounded-md text-[10px] border transition-colors ${
-                    crScope === key && enabled
-                      ? "bg-emerald-700/35 border-emerald-500/50 text-emerald-200 font-semibold"
-                      : enabled
-                      ? "bg-white/4 border-white/8 text-white/50 hover:bg-white/8"
-                      : "bg-white/2 border-white/5 text-white/20 cursor-not-allowed"
-                  }`}
+          {/* ── Chief Resident ──────────────────────────────────────────── */}
+          {/* One entry point — opens ChiefResidentModalShell, which renders the
+              same ChiefResidentPanel NoteLab uses. That panel has its own mode
+              picker (Teach This Page, Case-Based Teaching, etc.), so there is
+              no scope to pre-select here anymore. */}
+          <button
+            type="button"
+            onClick={onOpenChiefResident}
+            disabled={!onOpenChiefResident}
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-900/20 px-3 py-2 text-[11.5px] font-semibold text-emerald-300 hover:bg-emerald-900/35 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            🩺 Ask Chief Resident
+          </button>
+        </div>
+
+        {/* ── Grounded on This Page ────────────────────────────────────────
+            Renders directly from groundedAnnotations — the SAME array
+            SmartPDFViewer draws PDF highlights from (see the prop doc above).
+            This is deliberately a SEPARATE list from the "CORE IDEAS"/Active
+            Concept content above (canonicalLeftPanelUnits, an older,
+            independent pipeline) — everything shown here is guaranteed to
+            have a corresponding PDF highlight by construction, not by
+            coincidence between two unrelated analyses of the page. */}
+        {groundedAnnotations.length > 0 && (
+          <div className="rounded-2xl border border-white/8 bg-[#0a1322] p-3 space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-300/70 px-0.5">
+              🔬 Grounded on This Page
+            </div>
+            <div className="space-y-1.5">
+              {groundedAnnotations.map((a, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 rounded-lg border border-white/6 bg-white/2 px-2.5 py-2"
                 >
-                  {label}
-                </button>
+                  <span
+                    className="mt-1 h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{ background: GROUNDED_TYPE_DOT[a.canonicalType] ?? "#94a3b8" }}
+                  />
+                  <span className="text-[11px] text-slate-300 leading-snug line-clamp-3">
+                    {a.groundedText}
+                  </span>
+                </div>
               ))}
             </div>
-            {/* Context preview */}
-            {crScope === "selection" && selectionText && (
-              <div className="mb-2 text-[10.5px] text-white/40 italic line-clamp-2 leading-snug">
-                &ldquo;{selectionText.slice(0, 100)}&rdquo;
-              </div>
-            )}
-            {crScope === "concept" && activeThoughtUnit && (
-              <div className="mb-2 text-[10.5px] text-white/40 italic line-clamp-1">
-                {activeThoughtUnit.title}
-              </div>
-            )}
-            {/* Ask button */}
-            <button
-              type="button"
-              onClick={() => {
-                if (crScope === "selection" && onOpenExplainStep) { onOpenExplainStep(); }
-                else if (crScope === "concept" && onOpenExplainConcept) { onOpenExplainConcept(); }
-                else if (onOpenExplainIt) { onOpenExplainIt(); }
-              }}
-              disabled={
-                (crScope === "selection" && !selectionText) ||
-                (crScope === "concept" && !activeThoughtUnit)
-              }
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-900/20 px-3 py-2 text-[11.5px] font-semibold text-emerald-300 hover:bg-emerald-900/35 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              🩺 Ask Chief Resident
-            </button>
           </div>
-        </div>
+        )}
 
         {activeThoughtUnit && (() => {
           // local-state helpers are hoisted via an IIFE so the card has its own
@@ -1789,7 +1807,7 @@ export function RightPanel({
             allUnits={canonicalLeftPanelUnits}
             onAskExpert={onAskExpert}
             onJumpToUnit={onJumpToUnit}
-            onExplain={onOpenExplainStep}
+            onExplain={onOpenChiefResident}
           />;
         })()}
 

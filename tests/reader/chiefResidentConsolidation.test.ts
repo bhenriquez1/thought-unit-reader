@@ -1,63 +1,84 @@
 // tests/reader/chiefResidentConsolidation.test.ts
-// Regression guards: Reader and NoteLab Chief Resident both build requests via
-// the SAME shared lib/reader/buildChiefResidentContext.ts, and both validate
-// every streamed SSE event against a frozen snapshot before rendering it —
-// closing off the class of bug where a superseded/cross-page/cross-document
-// response could reach the UI. Static source analysis (this file's components
-// are deeply stateful/imperative — no React Testing Library harness exists in
-// this codebase; see the sibling *.test.ts files for the established pattern).
+// Regression guards for the Chief Resident consolidation.
+//
+// An earlier pass (PR #611) made Reader's ChiefResidentModal.tsx and
+// NoteLab's ChiefResidentPanel.tsx both build requests via the same shared
+// lib/reader/buildChiefResidentContext.ts and validate every streamed SSE
+// event against a frozen snapshot — but they were still two separate React
+// components with their own conversation stores, streaming-fetch functions,
+// and rendering. That was judged insufficient: "sharing a request builder"
+// is not "one Chief Resident component."
+//
+// This pass deletes components/reader/ChiefResidentModal.tsx entirely.
+// Reader's "Ask Chief Resident" button now opens
+// components/reader/ChiefResidentModalShell.tsx — chrome only (backdrop,
+// header, close button) — which renders the SAME
+// components/notelab/ChiefResidentPanel.tsx NoteLab uses. There is now
+// exactly one component that owns Chief Resident's teaching UI and
+// generation behavior, one prompt contract, and one context builder.
+//
+// Static source analysis (no React Testing Library harness exists in this
+// codebase; see the sibling *.test.ts files for the established pattern).
 
 import fs from "fs";
 import path from "path";
 
 const MODAL_FILE = path.resolve(__dirname, "../../components/reader/ChiefResidentModal.tsx");
+const SHELL_FILE  = path.resolve(__dirname, "../../components/reader/ChiefResidentModalShell.tsx");
 const PANEL_FILE  = path.resolve(__dirname, "../../components/notelab/ChiefResidentPanel.tsx");
 const INDEX_FILE  = path.resolve(__dirname, "../../pages/index.tsx");
 const API_FILE    = path.resolve(__dirname, "../../pages/api/chief-resident-teaching.ts");
 
-describe("ChiefResidentModal.tsx (Reader) — shared builder + response validation", () => {
-  let src: string;
-  beforeAll(() => { src = fs.readFileSync(MODAL_FILE, "utf8"); });
-
-  it("imports buildChiefResidentContext and matchesFrozenSnapshot from the shared module", () => {
-    expect(src).toMatch(/import \{\s*\n\s*buildChiefResidentContext,\s*\n\s*matchesFrozenSnapshot,\s*\n\s*type ChiefResidentFrozenSnapshot,\s*\n\s*\} from "@\/lib\/reader\/buildChiefResidentContext"/);
-  });
-
-  it("ChiefResidentContext requires documentId and pageTruthKey", () => {
-    const idx = src.indexOf("export interface ChiefResidentContext");
-    const block = src.slice(idx, idx + 900);
-    expect(block).toMatch(/documentId:\s*string;/);
-    expect(block).toMatch(/pageTruthKey:\s*string;/);
-  });
-
-  it("sendToApi builds a frozen snapshot from context before calling buildChiefResidentContext", () => {
-    const idx = src.indexOf("const sendToApi = useCallback");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 2000);
-    expect(block).toMatch(/const frozen: ChiefResidentFrozenSnapshot = \{/);
-    expect(block).toMatch(/documentId:\s*context\.documentId/);
-    expect(block).toMatch(/pageTruthKey:\s*context\.pageTruthKey/);
-    expect(block).toMatch(/buildChiefResidentContext\(\{/);
-    expect(block).toMatch(/streamChiefResident\(\s*\n\s*body,\s*\n\s*frozen,/);
-  });
-
-  it("streamChiefResident discards any SSE event that fails matchesFrozenSnapshot before it can be rendered", () => {
-    const idx = src.indexOf("async function streamChiefResident");
-    const block = src.slice(idx, idx + 2600);
-    expect(block).toMatch(/if \(!matchesFrozenSnapshot\(parsed, frozen\)\)/);
-    // The discard must happen BEFORE the token is appended/rendered.
-    const discardIdx = block.indexOf("matchesFrozenSnapshot(parsed, frozen)");
-    const renderIdx  = block.indexOf("onToken(parsed.text)");
-    expect(discardIdx).toBeGreaterThan(-1);
-    expect(renderIdx).toBeGreaterThan(discardIdx);
+describe("components/reader/ChiefResidentModal.tsx no longer exists", () => {
+  it("the file was deleted, not merely deprecated", () => {
+    expect(fs.existsSync(MODAL_FILE)).toBe(false);
   });
 });
 
-describe("ChiefResidentPanel.tsx (NoteLab) — shared builder + response validation", () => {
+describe("ChiefResidentModalShell.tsx (Reader) — chrome only, no teaching UI or generation logic", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(SHELL_FILE, "utf8"); });
+
+  it("renders the shared ChiefResidentPanel from components/notelab", () => {
+    expect(src).toMatch(/import ChiefResidentPanel from "@\/components\/notelab\/ChiefResidentPanel"/);
+    expect(src).toMatch(/<ChiefResidentPanel/);
+  });
+
+  it("does NOT define its own streaming fetch, conversation store, or prompt chips — those belong to the shared panel only", () => {
+    expect(src).not.toMatch(/async function streamChiefResident/);
+    expect(src).not.toMatch(/EXPLAIN_TEXT_CHIPS/);
+    expect(src).not.toMatch(/EXPLAIN_PAGE_CHIPS/);
+    // Mentioning the shared builder's filename in a doc comment is fine —
+    // the shell must not IMPORT or CALL it directly (that's the panel's job).
+    expect(src).not.toMatch(/import.*buildChiefResidentContext/);
+    expect(src).not.toMatch(/matchesFrozenSnapshot\(/);
+    expect(src).not.toMatch(/useState<ChatTurn/);
+  });
+
+  it("passes studyModel/pageText/bookId/currentPage/pageTruthKey through to the shared panel — the same shape NoteLab passes", () => {
+    const idx = src.indexOf("<ChiefResidentPanel");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/studyModel=\{studyModel\}/);
+    expect(block).toMatch(/pageText=\{pageText\}/);
+    expect(block).toMatch(/bookId=\{bookId\}/);
+    expect(block).toMatch(/currentPage=\{currentPage\}/);
+    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+  });
+
+  it("activeNote is always null — Reader has no note concept, this disables the panel's Teach-This-Note mode the same way NoteLab disables it before a note is open", () => {
+    const idx = src.indexOf("<ChiefResidentPanel");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/activeNote=\{activeNote\}/);
+    const propIdx = src.indexOf("activeNote: UltraNote | null;");
+    expect(propIdx).toBeGreaterThan(-1);
+  });
+});
+
+describe("ChiefResidentPanel.tsx (NoteLab) — shared builder + response validation (unchanged by this pass)", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
-  it("imports buildChiefResidentContext and matchesFrozenSnapshot from the SAME shared module as the Reader modal", () => {
+  it("imports buildChiefResidentContext and matchesFrozenSnapshot from the shared module", () => {
     expect(src).toMatch(/import \{\s*\n\s*buildChiefResidentContext,\s*\n\s*matchesFrozenSnapshot,\s*\n\s*type ChiefResidentFrozenSnapshot,\s*\n\s*\} from "@\/lib\/reader\/buildChiefResidentContext"/);
   });
 
@@ -85,43 +106,54 @@ describe("ChiefResidentPanel.tsx (NoteLab) — shared builder + response validat
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/\}, \[bookId, currentPage, pageTruthKey\]\);/);
   });
-
-  it("no longer sends the raw bookTitle field name directly to the API body — routed through the shared builder's title field instead", () => {
-    expect(src).not.toMatch(/\{\s*sourceText:\s*src,\s*bookTitle,/);
-  });
 });
 
-describe("pages/index.tsx — documentId/pageTruthKey actually reach both Chief Resident callers", () => {
+describe("pages/index.tsx — one Chief Resident open handler, wired to both entry points", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
 
-  it("all three setChiefResidentContext(...) call sites include documentId: bookId and pageTruthKey", () => {
-    const marker = "setChiefResidentContext({";
-    const positions: number[] = [];
-    let from = 0;
-    while (true) {
-      const idx = src.indexOf(marker, from);
-      if (idx === -1) break;
-      positions.push(idx);
-      from = idx + marker.length;
-    }
-    expect(positions).toHaveLength(3);
-    for (const pos of positions) {
-      const block = src.slice(pos, pos + 500);
-      expect(block).toMatch(/documentId:\s*bookId,/);
-      expect(block).toMatch(/pageTruthKey,/);
-    }
+  it("no more per-scope setChiefResidentContext(...) snapshot calls — that state and pattern are gone", () => {
+    expect(src).not.toMatch(/setChiefResidentContext\(/);
+    expect(src).not.toMatch(/ChiefResidentContext/);
   });
 
-  it("<ChiefResidentPanel> receives pageTruthKey={pageTruthKey}", () => {
+  it("exactly one handleOpenChiefResident handler exists, controlling a plain boolean", () => {
+    expect(src).toContain("const handleOpenChiefResident = useCallback");
+    expect(src).toMatch(/const \[showChiefResident, setShowChiefResident\] = useState\(false\);/);
+    expect(src).not.toMatch(/handleOpenChiefResidentExplainStep/);
+    expect(src).not.toMatch(/handleOpenChiefResidentExplainPage/);
+    expect(src).not.toMatch(/handleOpenChiefResidentExplainConcept/);
+  });
+
+  it("renders ChiefResidentModalShell (not the deleted ChiefResidentModal) gated on showChiefResident", () => {
+    expect(src).toMatch(/import ChiefResidentModalShell from "@\/components\/reader\/ChiefResidentModalShell"/);
+    expect(src).toMatch(/\{showChiefResident && \(/);
+    expect(src).toMatch(/<ChiefResidentModalShell/);
+  });
+
+  it("the ChiefResidentModalShell render passes LIVE props (currentPageStudyModel/pageText/pageTruthKey), not a captured context object", () => {
+    const idx = src.indexOf("<ChiefResidentModalShell");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf("/>", idx) > -1 ? src.indexOf("/>", idx) : idx + 700);
+    expect(block).toMatch(/studyModel=\{currentPageStudyModel\}/);
+    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+  });
+
+  it("the NoteLab <ChiefResidentPanel> render (the second, pre-existing one this file also renders) still receives pageTruthKey={pageTruthKey}", () => {
     const idx = src.indexOf("<ChiefResidentPanel");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, src.indexOf("/>", idx));
     expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
   });
+
+  it("RightPanel and WhiteboardPanel and PdfContextMenu all call the single handleOpenChiefResident — no scope-specific handler survives", () => {
+    const occurrences = src.match(/handleOpenChiefResident(?!ExplainS|ExplainP|ExplainC)/g) ?? [];
+    // definition (const handleOpenChiefResident = ...) + RightPanel prop + WhiteboardPanel prop + PdfContextMenu onClick
+    expect(occurrences.length).toBeGreaterThanOrEqual(4);
+  });
 });
 
-describe("pages/api/chief-resident-teaching.ts — SSE events echo request identity", () => {
+describe("pages/api/chief-resident-teaching.ts — SSE events echo request identity (unchanged by this pass)", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(API_FILE, "utf8"); });
 

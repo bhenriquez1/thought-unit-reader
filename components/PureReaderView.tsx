@@ -742,6 +742,7 @@ export default function PureReaderView({
             <SmartPDFViewer
               fileUrl={fileUrl}
               docId={docId}
+              pageTruthKey={pageTruthKey}
               currentPage={currentPage}
               scale={zoom}
               onPageChange={navigateToPage}
