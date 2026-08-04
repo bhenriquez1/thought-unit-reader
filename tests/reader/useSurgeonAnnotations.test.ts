@@ -57,6 +57,51 @@ describe("useSurgeonAnnotations.ts — explicit reanalyze, distinct from generic
     const body = src.slice(idx, idx + 300);
     expect(body).toMatch(/forceRefetchRef\.current = true/);
   });
+
+  it("REQUIRED: retry rebuilds the same pageTruthKey only — reanalyze() itself never references pageTruthKey, so a retry can only ever re-fire Effect B with whatever pageTruthKey is CURRENTLY the reactive prop, never a frozen/stale one", () => {
+    const idx = src.indexOf("const reanalyze = useCallback(() => {");
+    const end = src.indexOf("}, []);", idx);
+    const body = src.slice(idx, end);
+    expect(body).not.toMatch(/pageTruthKey/);
+  });
+
+  it("Effect B's fetch input is built from the reactive pageTruthKey prop, not a ref frozen at an earlier render", () => {
+    const idx = src.indexOf("// ── Effect B:");
+    const effectBody = src.slice(idx);
+    const inputIdx = effectBody.indexOf("buildSurgeonAnnotationInput({");
+    const inputBlock = effectBody.slice(inputIdx, inputIdx + 150);
+    expect(inputBlock).toMatch(/pageTruthKey,/);
+    expect(inputBlock).not.toMatch(/pageTruthKeyRef\.current/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — stale-response rejection on real page navigation", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: a fetch response whose plan.pageTruthKey does not match the current pageTruthKey is dropped, not applied", () => {
+    const idx = src.indexOf('if (data.plan.pageTruthKey !== pageTruthKey) {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 150);
+    expect(block).toMatch(/Stale response for a page we've since navigated away from — drop it\./);
+    expect(block).toMatch(/return;/);
+  });
+
+  it("Effect A aborts any in-flight Effect B fetch when pageTruthKey changes (real page navigation), before a stale response can overwrite the new page's state", () => {
+    const idx = src.indexOf("// ── Effect A:");
+    const effectBody = src.slice(idx, src.indexOf("// ── Effect B:"));
+    const cleanupIdx = effectBody.indexOf("return () => {");
+    const cleanup = effectBody.slice(cleanupIdx, cleanupIdx + 200);
+    expect(cleanup).toMatch(/abortRef\.current\.abort\(\)/);
+  });
+
+  it("Effect B checks ctrl.signal.aborted immediately after the fetch resolves, before applying any state", () => {
+    const idx = src.indexOf("// ── Effect B:");
+    const effectBody = src.slice(idx);
+    const fetchIdx = effectBody.indexOf("const res = await fetch(");
+    const afterFetch = effectBody.slice(fetchIdx, fetchIdx + 400);
+    expect(afterFetch).toMatch(/if \(ctrl\.signal\.aborted\) return;/);
+  });
 });
 
 describe("useSurgeonAnnotations.ts — cache-first, then fetch", () => {
@@ -219,13 +264,14 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("groundedAnnotations and planTier appear in the returned object", () => {
+  it("groundedAnnotations and planTier appear in the returned object, sourced from resolveAnnotationTier", () => {
     const idx = src.lastIndexOf("return {");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/highlightTargets:\s*usingEnriched \? highlightTargets\s*: deterministicBaseline\.targets,/);
-    expect(block).toMatch(/groundedAnnotations:\s*usingEnriched \? groundedAnnotations : deterministicBaseline\.grounded,/);
-    expect(block).toMatch(/planTier:\s*usingEnriched \? "enriched" : "grounded",/);
+    expect(block).toMatch(/highlightTargets:\s*tiered\.highlightTargets,/);
+    expect(block).toMatch(/groundedAnnotations:\s*tiered\.groundedAnnotations,/);
+    expect(block).toMatch(/planTier:\s*tiered\.planTier,/);
+    expect(src).toMatch(/const tiered = resolveAnnotationTier\(\{/);
   });
 
   it("limitAnnotationDensity(groundSurgeonQuotes(...)) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
@@ -280,9 +326,92 @@ describe("useSurgeonAnnotations.ts — deterministic baseline tier: overlay neve
     expect(block).toMatch(/limitAnnotationDensity\(groundSurgeonQuotes\(basePlan\.annotations, pageText\)\)/);
   });
 
-  it("AI-enriched output wins when non-empty; deterministic baseline fills every other state", () => {
-    const idx = src.indexOf("const usingEnriched = highlightTargets.length > 0;");
+  it("the hook body calls resolveAnnotationTier with both AI and baseline results plus status", () => {
+    const idx = src.indexOf("const tiered = resolveAnnotationTier({");
     expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/aiHighlightTargets:\s*highlightTargets,/);
+    expect(block).toMatch(/aiGroundedAnnotations:\s*groundedAnnotations,/);
+    expect(block).toMatch(/baselineTargets:\s*deterministicBaseline\.targets,/);
+    expect(block).toMatch(/baselineGrounded:\s*deterministicBaseline\.grounded,/);
+    expect(block).toMatch(/status,/);
+  });
+});
+
+describe("resolveAnnotationTier — 4-way planTier (enriched/grounded/degraded/failed), executed directly", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { resolveAnnotationTier } = require("../../components/reader/useSurgeonAnnotations");
+
+  function target(id: string) {
+    return { id, page: 1, text: id, normalizedText: id, level: "important", score: 1,
+      sourceParagraphIndex: 0, kind: "definition", evidenceRefId: id, reason: "r",
+      treatment: "definitionBar", canonicalType: "definition", groundingState: "exact" };
+  }
+  function grounded(id: string) {
+    return { canonicalType: "definition", exactQuote: id, reason: "r", importance: "high",
+      treatment: "definitionBar", spanScope: "fullSentence", groundedText: id,
+      groundingState: "exact", confidence: 1 };
+  }
+
+  it("REQUIRED: advanced API unavailable (status error) but grounded (deterministic) annotations still render — planTier 'degraded'", () => {
+    const result = resolveAnnotationTier({
+      aiHighlightTargets: [],
+      aiGroundedAnnotations: [],
+      baselineTargets: [target("b1")],
+      baselineGrounded: [grounded("b1")],
+      status: "error",
+    });
+    expect(result.planTier).toBe("degraded");
+    expect(result.highlightTargets).toEqual([target("b1")]);
+    expect(result.groundedAnnotations).toEqual([grounded("b1")]);
+  });
+
+  it("AI-enriched output wins whenever it has anything, regardless of baseline content", () => {
+    const result = resolveAnnotationTier({
+      aiHighlightTargets: [target("ai1")],
+      aiGroundedAnnotations: [grounded("ai1")],
+      baselineTargets: [target("b1")],
+      baselineGrounded: [grounded("b1")],
+      status: "success",
+    });
+    expect(result.planTier).toBe("enriched");
+    expect(result.highlightTargets).toEqual([target("ai1")]);
+  });
+
+  it("no AI targets, no error, baseline has content — planTier 'grounded' (idle/loading/legitimately-empty-AI states)", () => {
+    const result = resolveAnnotationTier({
+      aiHighlightTargets: [],
+      aiGroundedAnnotations: [],
+      baselineTargets: [target("b1")],
+      baselineGrounded: [grounded("b1")],
+      status: "loading",
+    });
+    expect(result.planTier).toBe("grounded");
+    expect(result.highlightTargets).toEqual([target("b1")]);
+  });
+
+  it("no AI targets and no baseline content — planTier 'failed', overlay genuinely empty", () => {
+    const result = resolveAnnotationTier({
+      aiHighlightTargets: [],
+      aiGroundedAnnotations: [],
+      baselineTargets: [],
+      baselineGrounded: [],
+      status: "error",
+    });
+    expect(result.planTier).toBe("failed");
+    expect(result.highlightTargets).toEqual([]);
+  });
+
+  it("never merges AI and baseline sets — output is always exactly one of the two arrays, never a concatenation", () => {
+    const result = resolveAnnotationTier({
+      aiHighlightTargets: [target("ai1")],
+      aiGroundedAnnotations: [grounded("ai1")],
+      baselineTargets: [target("b1"), target("b2")],
+      baselineGrounded: [grounded("b1"), grounded("b2")],
+      status: "success",
+    });
+    expect(result.highlightTargets).toHaveLength(1);
+    expect(result.highlightTargets).not.toContainEqual(target("b1"));
   });
 });
 

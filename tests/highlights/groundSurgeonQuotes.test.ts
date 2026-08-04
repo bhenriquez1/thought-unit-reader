@@ -151,6 +151,34 @@ describe("groundSurgeonQuotes — sentence-boundary expansion (default spanScope
     expect(result[0].groundedText.endsWith("prompted the patient to seek care.")).toBe(true);
   });
 
+  it("REQUIRED: full-sentence highlights begin at the first meaningful word and end at terminal punctuation", () => {
+    const fragment = makeAnnotation({ exactQuote: "clinician should interview the patient" });
+    const result = groundSurgeonQuotes([fragment], CLINIC_PAGE);
+    expect(result).toHaveLength(1);
+    const text = result[0].groundedText;
+    // Begins at the first meaningful word — no leading whitespace, quote, or
+    // paragraph-heading bleed from "Patient Interview\n\n" above it.
+    expect(text[0]).toBe("B");
+    expect(text.startsWith("Before considering")).toBe(true);
+    // Ends at terminal punctuation — one of . ! ? ; : — never mid-word/mid-clause.
+    expect(/[.!?;:]$/.test(text)).toBe(true);
+    expect(text.endsWith("prompted the patient to seek care.")).toBe(true);
+  });
+
+  it("skips a leading opening-quote character so expansion starts on the word itself, not the quote mark", () => {
+    const quotedPage =
+      "Case Notes\n\n" +
+      'The exam concluded without incident. "The patient reported severe abdominal pain," the nurse noted in the chart. ' +
+      "Follow-up was scheduled for the next available appointment.";
+    const fragment = makeAnnotation({ exactQuote: "the nurse noted in the chart" });
+    const result = groundSurgeonQuotes([fragment], quotedPage);
+    expect(result).toHaveLength(1);
+    // The opening quote mark right after the prior sentence's period is not a
+    // "meaningful word" — expansion lands on the word itself, past the quote.
+    expect(result[0].groundedText.startsWith("The patient reported")).toBe(true);
+    expect(result[0].groundedText.endsWith("noted in the chart.")).toBe(true);
+  });
+
   it("supports a genuinely multi-sentence exactQuote returned as one span (no fragmentation)", () => {
     // Simulates the model already having grouped a multi-sentence concept into
     // one exactQuote, per the "multi-sentence concepts" prompt rule.
