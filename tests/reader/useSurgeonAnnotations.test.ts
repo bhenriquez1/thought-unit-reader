@@ -85,8 +85,9 @@ describe("useSurgeonAnnotations.ts — degraded/failure UX matches the spec verb
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("uses the exact required status message", () => {
-    expect(src).toMatch(/Advanced page analysis is temporarily unavailable\. Grounded textbook annotations are still shown\./);
+  it("uses the exact required status message, and does NOT claim legacy annotations are still shown", () => {
+    expect(src).toMatch(/Advanced page analysis is temporarily unavailable\. No automatic highlights on this page right now\./);
+    expect(src).not.toMatch(/Grounded textbook annotations are still shown/);
   });
 
   it("a degraded API response does not clear a previously-set plan/highlightTargets", () => {
@@ -152,7 +153,7 @@ describe("SmartPDFViewer.tsx — page-image capture decoupled from zoom", () => 
   });
 });
 
-describe("PureReaderView.tsx — full-replacement wiring (per the confirmed rollout decision)", () => {
+describe("PureReaderView.tsx — SurgeonAnnotationPlan is the EXCLUSIVE PDF overlay owner, no legacy fallback", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PURE_READER_FILE, "utf8"); });
 
@@ -161,10 +162,21 @@ describe("PureReaderView.tsx — full-replacement wiring (per the confirmed roll
     expect(src).toMatch(/onPageImageCaptured\?:/);
   });
 
-  it("surgeonHighlightTargets, when non-empty, fully replaces allHighlightTargets on the PDF", () => {
+  it("highlightTargets is always surgeonHighlightTargets (or []) — never falls back to allHighlightTargets/aiHighlightAnchors", () => {
     const idx = src.indexOf("highlightTargets={(() => {");
-    const block = src.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(\(surgeonHighlightTargets\?\.length \?\? 0\) > 0\) return surgeonHighlightTargets!;/);
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf("})()}", idx));
+    expect(block).toMatch(/const targets = surgeonHighlightTargets \?\? \[\];/);
+    expect(block).not.toMatch(/return allHighlightTargets;/);
+    expect(block).not.toMatch(/return effectiveHighlightTargets;/);
+  });
+
+  it("authorizedHighlightIds is derived only from surgeonHighlightTargets, never from effectiveHighlightTargets as a fallback", () => {
+    const idx = src.indexOf("authorizedHighlightIds={");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/\(surgeonHighlightTargets \?\? \[\]\)\.map\(t => t\.evidenceRefId\)/);
+    expect(block).not.toMatch(/effectiveHighlightTargets/);
   });
 
   it("forwards onPageImageCaptured through to SmartPDFViewer", () => {
