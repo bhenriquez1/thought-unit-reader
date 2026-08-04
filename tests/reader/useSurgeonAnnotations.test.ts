@@ -86,8 +86,9 @@ describe("useSurgeonAnnotations.ts — degraded/failure UX matches the spec verb
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
   it("uses the exact required status message, and does NOT claim legacy annotations are still shown", () => {
-    expect(src).toMatch(/Advanced page analysis is temporarily unavailable\. No automatic highlights on this page right now\./);
+    expect(src).toMatch(/Advanced page analysis is temporarily unavailable\. Basic grounded highlights are shown when available\./);
     expect(src).not.toMatch(/Grounded textbook annotations are still shown/);
+    expect(src).not.toMatch(/No automatic highlights on this page right now/);
   });
 
   it("a degraded API response does not clear a previously-set plan/highlightTargets", () => {
@@ -218,8 +219,13 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("groundedAnnotations appears in the returned object", () => {
-    expect(src).toMatch(/return \{ plan, highlightTargets, groundedAnnotations, status, annotationErrorMessage, reanalyze \};/);
+  it("groundedAnnotations and planTier appear in the returned object", () => {
+    const idx = src.lastIndexOf("return {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/highlightTargets:\s*usingEnriched \? highlightTargets\s*: deterministicBaseline\.targets,/);
+    expect(block).toMatch(/groundedAnnotations:\s*usingEnriched \? groundedAnnotations : deterministicBaseline\.grounded,/);
+    expect(block).toMatch(/planTier:\s*usingEnriched \? "enriched" : "grounded",/);
   });
 
   it("limitAnnotationDensity(groundSurgeonQuotes(...)) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
@@ -248,6 +254,35 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
 
   it("groundedAnnotations is documented as full-fidelity vs. the lossy highlightTargets", () => {
     expect(src).toMatch(/Full-fidelity grounded annotations/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — deterministic baseline tier: overlay never goes empty when AI is unavailable", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("imports buildDeterministicAnnotationPlan from the AI-free extractor", () => {
+    expect(src).toMatch(/import \{ buildDeterministicAnnotationPlan \} from "@\/lib\/highlights\/deterministicAnnotationPlan"/);
+  });
+
+  it("deterministicBaseline is computed via useMemo, keyed on pageText/pageTruthKey/pageNumber — no network call", () => {
+    const idx = src.indexOf("const deterministicBaseline = useMemo(");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/buildDeterministicAnnotationPlan\(pageText, pageTruthKey\)/);
+    expect(block).not.toMatch(/fetch\(/);
+    expect(block).toMatch(/\}, \[pageText, pageTruthKey, pageNumber\]\);/);
+  });
+
+  it("still runs the deterministic plan through groundSurgeonQuotes + limitAnnotationDensity for pipeline-uniform sentence expansion/density limiting", () => {
+    const idx = src.indexOf("const deterministicBaseline = useMemo(");
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/limitAnnotationDensity\(groundSurgeonQuotes\(basePlan\.annotations, pageText\)\)/);
+  });
+
+  it("AI-enriched output wins when non-empty; deterministic baseline fills every other state", () => {
+    const idx = src.indexOf("const usingEnriched = highlightTargets.length > 0;");
+    expect(idx).toBeGreaterThan(-1);
   });
 });
 
