@@ -66,8 +66,12 @@ export interface ChiefResidentRequest {
   sourceText:   string;
   /**
    * Canonical thought units for this page (Phase 4).
-   * When present, these replace raw sourceText as the teaching context.
-   * Sorted by importance client-side before being sent.
+   * AUGMENTS sourceText — never a replacement. canonicalUnits carry no
+   * guarantee they're grounded to the actual page (unlike sourceText, which
+   * upstream callers derive directly from the current page's real text), so
+   * they're presented as secondary structure the model should defer to
+   * sourceText over if the two ever conflict. Sorted by importance
+   * client-side before being sent.
    */
   canonicalUnits?: CanonicalUnitInput[];
   /** Highlighted passage (explain-text mode only) */
@@ -76,7 +80,9 @@ export interface ChiefResidentRequest {
   title?:        string;
   /** Conversation history (empty on first turn) */
   messages:      TeachingMessage[];
-  /** Traceability — used server-side only, never exposed to the model */
+  /** pageNumber IS exposed to the model (rendered as "Page: N" in
+   *  buildUserContext's headerNote) — documentId/canonicalThoughtUnitIds are
+   *  traceability-only and never rendered into the prompt. */
   documentId?:              string;
   pageNumber?:              number;
   canonicalThoughtUnitIds?: string[];
@@ -254,7 +260,7 @@ function buildCanonicalBlock(units: CanonicalUnitInput[]): string {
 // Source-context builder — user content stays in input[], never in instructions
 // ---------------------------------------------------------------------------
 
-function buildUserContext(req: ChiefResidentRequest): string {
+export function buildUserContext(req: ChiefResidentRequest): string {
   const { sourceText, title, mode, selectedText, pageNumber, canonicalUnits } = req;
   const titleNote  = title      ? `Document: "${title}"\n` : "";
   const pageNote   = pageNumber ? `Page: ${pageNumber}\n`  : "";
@@ -271,13 +277,27 @@ function buildUserContext(req: ChiefResidentRequest): string {
     "explain-page":      "Current page content:",
   };
 
-  // Phase 4: prefer canonical units over raw text when available.
-  // The structured block tells the AI which concepts are high-yield, which are
-  // warnings, etc., so it can calibrate teaching depth and emphasis.
-  const contentBlock =
+  // canonicalUnits AUGMENTS sourceText, never replaces it. The prior version
+  // sent canonicalUnits INSTEAD OF sourceText whenever any were present — but
+  // canonicalUnits (visualAnchors-derived) carry no guarantee they're grounded
+  // to the actual page (unlike pageThesis/conceptBlocks, which pass through a
+  // validation+fallback layer). A caller that always sends canonicalUnits
+  // (the Reader's Chief Resident modal) could therefore have the model teach
+  // from nothing but a handful of ungrounded anchor strings plus the book's
+  // filename as "Document:" — with zero real page text as a check. Confirmed
+  // root cause of a report where a chemistry page's Chief Resident answered
+  // about glycolysis/Krebs cycle. Real page text, when present, is always the
+  // ground truth; canonicalUnits are presented as a secondary structuring aid
+  // the model should defer to the page content over if they ever conflict.
+  const rawBlock = sourceText?.trim()
+    ? `${modeLabel[mode]}\n\n${sourceText.trim()}`
+    : null;
+  const canonicalBlock =
     canonicalUnits && canonicalUnits.length > 0
-      ? buildCanonicalBlock(canonicalUnits)
-      : `${modeLabel[mode]}\n\n${sourceText.trim()}`;
+      ? `Key concepts identified on this page (structure/emphasis only — always defer to the page content above if they conflict):\n\n${buildCanonicalBlock(canonicalUnits)}`
+      : null;
+  const contentBlock = [rawBlock, canonicalBlock].filter(Boolean).join("\n\n---\n\n")
+    || `${modeLabel[mode]}\n\n(no page content available)`;
 
   if (mode === "explain-text" && selectedText) {
     return (
