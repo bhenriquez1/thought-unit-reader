@@ -40,6 +40,7 @@ import {
 import type { AnnotationPlanResponse } from "@/pages/api/page-annotation-plan";
 
 export type SurgeonAnnotationStatus = "idle" | "loading" | "success" | "error";
+export type SurgeonPlanTier = "enriched" | "grounded" | "degraded" | "failed";
 
 export interface UseSurgeonAnnotationsResult {
   plan: SurgeonAnnotationPlan | null;
@@ -60,16 +61,23 @@ export interface UseSurgeonAnnotationsResult {
    */
   groundedAnnotations: GroundedSurgeonAnnotation[];
   /**
-   * "enriched" when highlightTargets/groundedAnnotations come from a real,
-   * AI-enriched SurgeonAnnotationPlan; "grounded" when they come from the
-   * deterministic, AI-free baseline tier instead (AI unavailable, degraded,
-   * still loading, or returned nothing) — see
-   * lib/highlights/deterministicAnnotationPlan.ts. Never "empty": the
-   * deterministic tier is part of THIS pipeline, not the removed legacy
-   * fallback (PR #609) — the overlay only ever has zero automatic
-   * annotations when the deterministic pass itself found nothing to extract.
+   * What highlightTargets/groundedAnnotations are actually populated from,
+   * independent of `status` (which describes the AI fetch's own lifecycle):
+   *   "enriched" — a real, AI-enriched SurgeonAnnotationPlan produced targets.
+   *   "grounded" — AI hasn't produced targets (idle/loading/legitimately
+   *                empty), but the deterministic, AI-free baseline tier (see
+   *                lib/highlights/deterministicAnnotationPlan.ts) found
+   *                something and is showing it.
+   *   "degraded" — AI enrichment actively failed (status === "error") but the
+   *                deterministic baseline is still showing something, so the
+   *                overlay is not empty.
+   *   "failed"   — neither AI enrichment nor the deterministic baseline
+   *                produced anything for this page; the overlay is empty.
+   * Never silently "empty" without a reason: the deterministic tier is part
+   * of THIS pipeline, not the removed legacy fallback (PR #609) — "failed"
+   * only happens when the deterministic pass itself found nothing to extract.
    */
-  planTier: "enriched" | "grounded";
+  planTier: SurgeonPlanTier;
   status: SurgeonAnnotationStatus;
   /** Set when analysis is degraded (missing config, upstream failure, or no
    *  quotes survived verification) — whatever was already showing (cache or
@@ -152,6 +160,43 @@ function groundedAnnotationsToHighlightTargets(
       groundingState:        g.groundingState,
     };
   });
+}
+
+// Pure — exported so its 4-way tiering (enriched/grounded/degraded/failed)
+// can be exercised directly with constructed fixtures in tests, rather than
+// only inferred by regex-matching this file's source (this repo's jest
+// config runs testEnvironment: "node" with no jsdom/RTL, so a real
+// render-hook test isn't available here). AI-enriched output wins whenever
+// it has anything to show; the deterministic baseline fills every other
+// state. Never a merge of the two — one exclusive set is returned.
+export function resolveAnnotationTier(args: {
+  aiHighlightTargets: HighlightTarget[];
+  aiGroundedAnnotations: GroundedSurgeonAnnotation[];
+  baselineTargets: HighlightTarget[];
+  baselineGrounded: GroundedSurgeonAnnotation[];
+  status: SurgeonAnnotationStatus;
+}): {
+  highlightTargets: HighlightTarget[];
+  groundedAnnotations: GroundedSurgeonAnnotation[];
+  planTier: SurgeonPlanTier;
+} {
+  const usingEnriched = args.aiHighlightTargets.length > 0;
+  const hasBaseline = args.baselineTargets.length > 0;
+
+  let planTier: SurgeonPlanTier;
+  if (usingEnriched) {
+    planTier = "enriched";
+  } else if (args.status === "error") {
+    planTier = hasBaseline ? "degraded" : "failed";
+  } else {
+    planTier = hasBaseline ? "grounded" : "failed";
+  }
+
+  return {
+    highlightTargets:    usingEnriched ? args.aiHighlightTargets    : args.baselineTargets,
+    groundedAnnotations: usingEnriched ? args.aiGroundedAnnotations : args.baselineGrounded,
+    planTier,
+  };
 }
 
 export function useSurgeonAnnotations({
@@ -370,17 +415,19 @@ export function useSurgeonAnnotations({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey, domain, semanticPack.id, enabled, pageText, reanalyzeCount]);
 
-  // AI-enriched output wins whenever it has anything to show; the
-  // deterministic baseline fills every other state (idle, loading, degraded,
-  // or an AI plan that survived verification with zero targets). Never a
-  // merge of the two — one exclusive set flows to the PDF overlay.
-  const usingEnriched = highlightTargets.length > 0;
+  const tiered = resolveAnnotationTier({
+    aiHighlightTargets:    highlightTargets,
+    aiGroundedAnnotations: groundedAnnotations,
+    baselineTargets:       deterministicBaseline.targets,
+    baselineGrounded:      deterministicBaseline.grounded,
+    status,
+  });
 
   return {
     plan,
-    highlightTargets:    usingEnriched ? highlightTargets    : deterministicBaseline.targets,
-    groundedAnnotations: usingEnriched ? groundedAnnotations : deterministicBaseline.grounded,
-    planTier: usingEnriched ? "enriched" : "grounded",
+    highlightTargets:    tiered.highlightTargets,
+    groundedAnnotations: tiered.groundedAnnotations,
+    planTier:            tiered.planTier,
     status,
     annotationErrorMessage,
     reanalyze,
