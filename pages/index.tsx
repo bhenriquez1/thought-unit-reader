@@ -2727,7 +2727,9 @@ export default function ThoughtUnitReader() {
       pageText,
       pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
+      documentId: bookId,
       pageNumber: currentPage,
+      pageTruthKey,
       learningProfile,
       canonicalEntries: canonicalLeftPanelUnits
         .filter(u => u.exactText?.trim())
@@ -2747,7 +2749,9 @@ export default function ThoughtUnitReader() {
       pageText,
       pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
+      documentId: bookId,
       pageNumber: currentPage,
+      pageTruthKey,
       learningProfile,
       canonicalEntries: canonicalLeftPanelUnits
         .filter(u => u.exactText?.trim())
@@ -2768,7 +2772,9 @@ export default function ThoughtUnitReader() {
       pageText,
       pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
       documentTitle: uploadedFile?.name,
+      documentId: bookId,
       pageNumber: currentPage,
+      pageTruthKey,
       learningProfile,
       canonicalEntries: canonicalLeftPanelUnits
         .filter(u => u.exactText?.trim())
@@ -5432,6 +5438,7 @@ export default function ThoughtUnitReader() {
               pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
               bookId={bookId}
               currentPage={currentPage}
+              pageTruthKey={pageTruthKey}
               bookTitle={uploadedFile?.name}
               activeNote={activeNote}
               onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
