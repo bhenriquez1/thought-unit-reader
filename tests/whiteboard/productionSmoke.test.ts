@@ -46,6 +46,56 @@ describe("TldrawCanvas.tsx — license key gate", () => {
     expect(block).toMatch(/<Tldraw/);
     expect(block).toMatch(/licenseKey=\{licenseKey\}/);
   });
+
+  it("logs safe presence/shape diagnostics — never the license key value itself", () => {
+    const idx = src.indexOf("[WHITEBOARD_LICENSE_DIAGNOSTIC]");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/licenseConfigured:\s*Boolean\(licenseKey\)/);
+    expect(block).toMatch(/licensePrefixPresent:\s*licenseKey\?\.startsWith\("tldraw-"\)/);
+    // The diagnostic object must never interpolate/spread the raw key itself.
+    expect(block).not.toMatch(/licenseKey,\s*\n/);
+    expect(block).not.toMatch(/\bkey:\s*licenseKey\b/);
+  });
+
+  it("the license-missing message identifies the specific failed prerequisite", () => {
+    const idx = src.indexOf("licenseMissingInProduction ?");
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/Missing: tldraw license key\./);
+  });
+});
+
+describe("TldrawCanvas.tsx — canvas initialization failure guard", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("buildShapes wraps shape construction in try/catch, converting a throw into canvasInitFailure state instead of an uncaught exception", () => {
+    const idx = src.indexOf("const buildShapes = useCallback");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/try\s*\{/);
+    expect(block).toMatch(/catch\s*\(err\)/);
+    expect(block).toMatch(/setCanvasInitFailure\(message\)/);
+    expect(block).toMatch(/setCanvasInitFailure\(null\)/);
+  });
+
+  it("logs the failure with a dedicated diagnostic tag, not a bare console.error", () => {
+    expect(src).toMatch(/console\.error\("\[WHITEBOARD_CANVAS_INIT_FAILURE\]", message\)/);
+  });
+
+  it("renders a distinct, accessible message for canvas-init failure, separate from the license-missing message", () => {
+    const idx = src.indexOf("canvasInitFailure &&");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 800);
+    expect(block).toMatch(/role="alert"/);
+    expect(block).toMatch(/Canvas initialization failed\./);
+  });
+
+  it("the canvas-init-failure overlay does not block interaction with the underlying (mounted) canvas", () => {
+    const idx = src.indexOf("canvasInitFailure &&");
+    const block = src.slice(idx, idx + 800);
+    expect(block).toMatch(/pointerEvents:\s*"none"/);
+  });
 });
 
 describe("Scene Builder — end-to-end smoke: grounded page content produces a real prefilled scene", () => {

@@ -190,6 +190,28 @@ export default function TldrawCanvas({
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
   const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
 
+  // Safe diagnostics — presence/shape only, never the key itself, so this is
+  // safe to leave in production logs when debugging a "configuration
+  // unavailable" report.
+  useEffect(() => {
+    console.log("[WHITEBOARD_LICENSE_DIAGNOSTIC]", {
+      licenseConfigured:    Boolean(licenseKey),
+      licensePrefixPresent: licenseKey?.startsWith("tldraw-") ?? false,
+      nodeEnv:              process.env.NODE_ENV,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // canvasInitFailure: uncaught-exception guard for the imperative shape-build
+  // path (buildShapes → vsgToShapeDefs/editor.createShape). Nothing wraps this
+  // component in a React ErrorBoundary, so without this try/catch a bad VSG or
+  // a tldraw API error during shape creation would propagate uncaught. VSG
+  // Zod-validation failures are already caught upstream (computeVSGState in
+  // visualSceneGraph.ts only ever hands this component a validated vsg or
+  // undefined) — this catches failures in the CONVERSION/CREATION step, which
+  // is not covered by that upstream validation.
+  const [canvasInitFailure, setCanvasInitFailure] = useState<string | null>(null);
+
   const editorRef  = useRef<Editor | null>(null);
   const builtRef   = useRef(false);
 
@@ -432,11 +454,18 @@ export default function TldrawCanvas({
 
   // ── Unified buildShapes: VSG first, noteCards fallback ────────────────────
   const buildShapes = useCallback((editor: Editor) => {
-    const v = vsgRef.current;
-    if (v && v.nodes.length > 0) {
-      buildShapesFromVSGDefs(editor, vsgToShapeDefs(v));
-    } else {
-      buildShapesFromNoteCards(editor);
+    try {
+      const v = vsgRef.current;
+      if (v && v.nodes.length > 0) {
+        buildShapesFromVSGDefs(editor, vsgToShapeDefs(v));
+      } else {
+        buildShapesFromNoteCards(editor);
+      }
+      setCanvasInitFailure(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[WHITEBOARD_CANVAS_INIT_FAILURE]", message);
+      setCanvasInitFailure(message);
     }
   }, [buildShapesFromVSGDefs, buildShapesFromNoteCards]);
 
@@ -692,7 +721,7 @@ export default function TldrawCanvas({
             }}
           >
             <span style={{ fontSize: 20 }}>⚠</span>
-            <span>Whiteboard configuration is unavailable.</span>
+            <span>Whiteboard configuration is unavailable. Missing: tldraw license key.</span>
           </div>
         ) : (
           <Tldraw
@@ -701,6 +730,27 @@ export default function TldrawCanvas({
             onMount={handleMount}
             hideUi={studentMode}
           />
+        )}
+
+        {/* Canvas initialization failure — the shape-build step threw (bad VSG
+            shape conversion or a tldraw API error). Distinct from the license
+            gate above: the canvas itself mounted fine, but couldn't populate.
+            Overlaid on top of the (blank but functional) mounted canvas rather
+            than replacing it, so the user still has a usable — if empty —
+            whiteboard to draw on manually. */}
+        {!licenseMissingInProduction && canvasInitFailure && (
+          <div
+            role="alert"
+            style={{
+              position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 8, zIndex: 20,
+              background: "rgba(15,23,42,0.92)", color: "#94a3b8", fontFamily: "ui-monospace, monospace",
+              fontSize: 13, textAlign: "center", padding: 24, pointerEvents: "none",
+            }}
+          >
+            <span style={{ fontSize: 20 }}>⚠</span>
+            <span>Whiteboard configuration is unavailable. Canvas initialization failed.</span>
+          </div>
         )}
 
         {/* Phase 3: Student toolbar overlay */}
