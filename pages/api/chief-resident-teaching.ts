@@ -2,11 +2,15 @@
 // Chief Resident adaptive teaching stream — powers ChiefResidentModal and the
 // NoteLab 🩺 tab. Uses the OpenAI Responses API with server-sent events (SSE).
 //
-// SSE format (unchanged from prior Anthropic implementation so the frontend
-// parsers in ChiefResidentModal and ChiefResidentPanel need no changes):
-//   data: {"text":"…"}\n\n   — token delta
-//   data: [DONE]\n\n         — stream complete
-//   data: {"error":"…","code":"…"}\n\n  — classified error (never raw SDK text)
+// SSE format — every content-bearing event echoes the request's identity
+// fields (documentId/pageNumber/pageTruthKey, verbatim, whatever the client
+// sent) so the client can validate a response against its OWN frozen
+// snapshot before rendering, discarding anything from a superseded request
+// (page changed, document changed, modal closed, new request started) even
+// if a stray token was already in flight when the client aborted:
+//   data: {"text":"…","documentId":"…","pageNumber":N,"pageTruthKey":"…"}\n\n
+//   data: [DONE]\n\n         — stream complete (no identity — carries no content to validate)
+//   data: {"error":"…","code":"…","documentId":"…","pageNumber":N,"pageTruthKey":"…"}\n\n
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
@@ -81,10 +85,13 @@ export interface ChiefResidentRequest {
   /** Conversation history (empty on first turn) */
   messages:      TeachingMessage[];
   /** pageNumber IS exposed to the model (rendered as "Page: N" in
-   *  buildUserContext's headerNote) — documentId/canonicalThoughtUnitIds are
-   *  traceability-only and never rendered into the prompt. */
+   *  buildUserContext's headerNote) — documentId/pageTruthKey/
+   *  canonicalThoughtUnitIds are never rendered into the prompt; they're
+   *  echoed back verbatim on every SSE event so the client can validate a
+   *  response belongs to the request it thinks it does. */
   documentId?:              string;
   pageNumber?:              number;
+  pageTruthKey?:            string;
   canonicalThoughtUnitIds?: string[];
 }
 
@@ -375,11 +382,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = req.body as ChiefResidentRequest;
-  const { sourceText, mode, audience, messages = [] } = body;
+  const { sourceText, mode, audience, messages = [], documentId, pageNumber, pageTruthKey } = body;
 
   if (!sourceText || !mode) {
     return res.status(400).json({ error: "sourceText and mode are required" });
   }
+
+  // Echoed verbatim on every content-bearing SSE event below — never derived
+  // or defaulted, so a caller that omits them gets undefined back, not a
+  // false match against another request's identity.
+  const identity = { documentId, pageNumber, pageTruthKey };
 
   // Build conversation input for the Responses API.
   // On first turn (empty messages), synthesize the initial user context message.
@@ -418,7 +430,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (event.type === "response.output_text.delta") {
         const delta = (event as { type: string; delta: string }).delta ?? "";
         if (delta) {
-          res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
+          res.write(`data: ${JSON.stringify({ text: delta, ...identity })}\n\n`);
         }
       }
     }
@@ -431,7 +443,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
     const { code, friendly } = classifyError(err);
-    res.write(`data: ${JSON.stringify({ error: friendly, code })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: friendly, code, ...identity })}\n\n`);
   } finally {
     res.end();
   }

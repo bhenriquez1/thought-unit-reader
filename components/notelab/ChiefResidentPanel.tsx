@@ -10,6 +10,11 @@ import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { TeachingMode, TeachingAudience } from "@/pages/api/chief-resident-teaching";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
+import {
+  buildChiefResidentContext,
+  matchesFrozenSnapshot,
+  type ChiefResidentFrozenSnapshot,
+} from "@/lib/reader/buildChiefResidentContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,6 +30,10 @@ interface ChiefResidentPanelProps {
   pageText: string;
   bookId: string;
   currentPage: number;
+  /** Canonical page identity — part of the frozen snapshot every streamed
+   *  response is validated against before rendering. Same value used
+   *  throughout the app (pageTruthKey = bookId::page::t). */
+  pageTruthKey: string;
   bookTitle?: string;
   activeNote: UltraNote | null;
   onRecallSaved?: (setId: string) => void;
@@ -97,7 +106,8 @@ function buildStudySheetSourceText(studyModel: CurrentPageStudyModel | null, pag
 // ---------------------------------------------------------------------------
 
 async function streamTeachingSession(
-  body: object,
+  body:   object,
+  frozen: ChiefResidentFrozenSnapshot,
   onToken: (text: string) => void,
   signal?: AbortSignal
 ): Promise<string> {
@@ -129,6 +139,13 @@ async function streamTeachingSession(
       if (data === "[DONE]") return accumulated;
       try {
         const parsed = JSON.parse(data);
+        // Discard any event that doesn't match the frozen snapshot this
+        // request was built from — see ChiefResidentModal.tsx's identical
+        // check for the full rationale (same shared validation function).
+        if (!matchesFrozenSnapshot(parsed, frozen)) {
+          console.warn("[CHIEF_RESIDENT_STALE_EVENT_DISCARDED]", { got: parsed, expected: frozen });
+          continue;
+        }
         if (parsed.error) throw new Error(parsed.error);
         if (parsed.text) {
           accumulated += parsed.text;
@@ -152,6 +169,7 @@ export default function ChiefResidentPanel({
   pageText,
   bookId,
   currentPage,
+  pageTruthKey,
   bookTitle,
   activeNote,
   onRecallSaved,
@@ -184,7 +202,7 @@ export default function ChiefResidentPanel({
     setHasStarted(false);
     setSessionDone(false);
     setError(null);
-  }, [bookId, currentPage]);
+  }, [bookId, currentPage, pageTruthKey]);
 
   const getSourceText = useCallback((mode: TeachingMode): string => {
     if (mode === "teach-note") return activeNote ? buildNoteSourceText(activeNote) : "";
@@ -210,10 +228,15 @@ export default function ChiefResidentPanel({
     setHasStarted(true);
     setIsStreaming(true);
 
+    const frozen: ChiefResidentFrozenSnapshot = {
+      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+    };
     try {
       let accumulated = "";
+      const body = buildChiefResidentContext({ ...frozen, title: bookTitle, mode, audience: teachingAudience, messages: [] });
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode, audience: teachingAudience, messages: [] },
+        body,
+        frozen,
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -225,7 +248,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [getSourceText, bookTitle, teachingAudience]);
+  }, [getSourceText, bookTitle, teachingAudience, bookId, currentPage, pageTruthKey]);
 
   const sendUserReply = useCallback(async () => {
     const msg = userInput.trim();
@@ -241,10 +264,15 @@ export default function ChiefResidentPanel({
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
+    const frozen: ChiefResidentFrozenSnapshot = {
+      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+    };
     try {
       let accumulated = "";
+      const body = buildChiefResidentContext({ ...frozen, title: bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages });
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages },
+        body,
+        frozen,
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -257,7 +285,7 @@ export default function ChiefResidentPanel({
       setIsStreaming(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle]);
+  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey]);
 
   const requestSummary = useCallback(async () => {
     if (isStreaming || !selectedMode) return;
@@ -271,10 +299,15 @@ export default function ChiefResidentPanel({
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
+    const frozen: ChiefResidentFrozenSnapshot = {
+      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+    };
     try {
       let accumulated = "";
+      const body = buildChiefResidentContext({ ...frozen, title: bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages });
       const full = await streamTeachingSession(
-        { sourceText: src, bookTitle, mode: selectedMode, audience: teachingAudience, messages: updatedMessages },
+        body,
+        frozen,
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
@@ -286,7 +319,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle]);
+  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey]);
 
   const sendToRecall = useCallback(async () => {
     if (!activeNote) return;

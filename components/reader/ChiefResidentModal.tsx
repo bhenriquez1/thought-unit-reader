@@ -9,7 +9,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { TeachingMode, TeachingAudience, CanonicalUnitInput } from "@/pages/api/chief-resident-teaching";
 import type { SemanticPack } from "@/lib/semantic/types";
-import { buildCanonicalContext, toCanonicalUnitInputs } from "@/lib/reader/chiefResidentContextBuilder";
+import { toCanonicalUnitInputs } from "@/lib/reader/chiefResidentContextBuilder";
+import {
+  buildChiefResidentContext,
+  matchesFrozenSnapshot,
+  type ChiefResidentFrozenSnapshot,
+} from "@/lib/reader/buildChiefResidentContext";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
 import {
   claimSpeech,
@@ -40,8 +45,14 @@ export interface ChiefResidentContext {
   pageThesis?: string | null;
   /** Book/document title. */
   documentTitle?: string;
+  /** Canonical document identity (bookId) — part of the frozen snapshot every
+   *  streamed response is validated against before rendering. */
+  documentId: string;
   /** 1-based page number. */
   pageNumber: number;
+  /** Canonical page identity — part of the frozen snapshot every streamed
+   *  response is validated against before rendering. */
+  pageTruthKey: string;
   /** Learning profile passed from user settings. */
   learningProfile?: string;
   /**
@@ -107,7 +118,8 @@ function makeApiError(message: string, code?: string): ApiError {
 }
 
 async function streamChiefResident(
-  body: object,
+  body:   object,
+  frozen: ChiefResidentFrozenSnapshot,
   onToken: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
@@ -137,7 +149,19 @@ async function streamChiefResident(
       const data = line.slice(6).trim();
       if (data === "[DONE]") return accumulated;
       try {
-        const parsed = JSON.parse(data) as { text?: string; error?: string; code?: string };
+        const parsed = JSON.parse(data) as {
+          text?: string; error?: string; code?: string;
+          documentId?: string; pageNumber?: number; pageTruthKey?: string;
+        };
+        // Discard any event that doesn't match the frozen snapshot this
+        // request was built from — a superseded request's straggling token
+        // (page changed, document changed, modal closed, a newer request
+        // started) must never reach the UI, even if it was already in
+        // flight over the network when the client tried to abort.
+        if (!matchesFrozenSnapshot(parsed, frozen)) {
+          console.warn("[CHIEF_RESIDENT_STALE_EVENT_DISCARDED]", { got: parsed, expected: frozen });
+          continue;
+        }
         if (parsed.error) throw makeApiError(parsed.error, parsed.code);
         if (parsed.text) { accumulated += parsed.text; onToken(parsed.text); }
       } catch (e) {
@@ -165,20 +189,13 @@ function buildRawSourceText(ctx: ChiefResidentContext): string {
 
 /**
  * Returns the canonical units ready to pass to the API, or null if unavailable.
- * Filters to entries with meaningful text; preserves importance ordering from
- * buildCanonicalContext so the API receives units already sorted critical-first.
+ * Filters to entries with meaningful text. Importance-sorting happens inside
+ * buildChiefResidentContext() (the shared builder), not here.
  */
 function resolveCanonicalUnits(ctx: ChiefResidentContext): CanonicalUnitInput[] | null {
   if (!ctx.canonicalEntries || ctx.canonicalEntries.length === 0) return null;
   const inputs = toCanonicalUnitInputs(ctx.canonicalEntries);
-  if (inputs.length === 0) return null;
-  // Pre-sort by importance level so the API block reads critical-first
-  if (ctx.pack) {
-    const { contextText } = buildCanonicalContext(inputs, ctx.pack);
-    // contextText is for the sourceText fallback; we return sorted inputs for the units field
-    void contextText;
-  }
-  return inputs;
+  return inputs.length === 0 ? null : inputs;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,20 +275,32 @@ export default function ChiefResidentModal({
     const canonicalUnits = resolveCanonicalUnits(context);
     const sourceText     = buildRawSourceText(context);
 
+    // Frozen snapshot — captured once, here, at request-send time. Every
+    // streamed event is validated against THIS object, never re-read from
+    // `context` (a prop that could theoretically change under the modal;
+    // see the pageTruthKey-keyed close effect in pages/index.tsx for the
+    // primary defense against that — this is the second layer).
+    const frozen: ChiefResidentFrozenSnapshot = {
+      documentId:     context.documentId,
+      pageNumber:     context.pageNumber,
+      pageTruthKey:   context.pageTruthKey,
+      pageText:       sourceText,
+      canonicalUnits: canonicalUnits ?? undefined,
+    };
+
     try {
       let accumulated = "";
-      const body = {
-        sourceText,
-        canonicalUnits: canonicalUnits ?? undefined,
-        title: context.documentTitle,
-        mode: apiMode,
-        audience: audience,
-        selectedText: context.selectedText,
-        pageNumber: context.pageNumber,
-        messages: claudeMessages.length === 0 ? [] : claudeMessages,
-      };
+      const body = buildChiefResidentContext({
+        ...frozen,
+        mode:          apiMode,
+        audience,
+        selectedText:  context.selectedText,
+        title:         context.documentTitle,
+        messages:      claudeMessages,
+      });
       const full = await streamChiefResident(
         body,
+        frozen,
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal,
       );
