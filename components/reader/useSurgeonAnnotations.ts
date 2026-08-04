@@ -82,7 +82,11 @@ interface UseSurgeonAnnotationsArgs {
   enabled: boolean;
 }
 
-const DEGRADED_MESSAGE = "Advanced page analysis is temporarily unavailable. Grounded textbook annotations are still shown.";
+// Does NOT claim "annotations are still shown" — the legacy fallback pipeline
+// was removed (PureReaderView.tsx no longer falls back to allHighlightTargets
+// in any state), so this message must stay honest whether or not a previously
+// cached (real, surgeon-quality) plan happens to still be visible.
+const DEGRADED_MESSAGE = "Advanced page analysis is temporarily unavailable. No automatic highlights on this page right now.";
 
 const IMPORTANCE_TO_LEVEL: Record<Importance, HighlightTarget["level"]> = {
   critical:   "important",

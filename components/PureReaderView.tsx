@@ -125,10 +125,14 @@ interface PureReaderViewProps {
    *  SurgeonAnnotationPlan vision input, decoupled from zoom. */
   onPageImageCaptured?: (page: number, dataUrl: string) => void;
   /**
-   * SurgeonAnnotationPlan-derived highlight targets. When present and non-empty,
-   * these fully REPLACE aiHighlightAnchors/allHighlightAnchors as the PDF's
-   * on-page highlight source (the older pipeline keeps driving the Thought Unit
-   * Navigator/Roadmap sidebar lists — only what draws on the PDF changes).
+   * SurgeonAnnotationPlan-derived highlight targets — the EXCLUSIVE automatic
+   * source for what draws on the PDF. Never falls back to the legacy
+   * aiHighlightAnchors/allHighlightAnchors pipeline, in ANY state (loading,
+   * upstream unavailable, intentionally empty, retrying, no valid annotations)
+   * — an empty/undefined array means no automatic PDF overlay for that state,
+   * not a swap to lower-quality legacy markup. (The Thought Unit Navigator/
+   * Roadmap sidebar lists are a separate surface and still read from
+   * allHighlightTargets below — this only governs what draws ON the PDF.)
    */
   surgeonHighlightTargets?: import("@/lib/readerContracts").HighlightTarget[];
   /** Raw text of the current page — used to validate highlight anchors before rendering */
@@ -749,26 +753,20 @@ export default function PureReaderView({
               focusHighlightPersist={focusHighlightPersist}
               onTextClick={onTextClick}
               highlightTargets={(() => {
-                // SurgeonAnnotationPlan targets, when present, fully REPLACE the
-                // older highlightAnchors-derived set on the PDF (full-replacement —
-                // the older pipeline still drives the Thought Unit Navigator via
-                // allHighlightTargets below, unaffected by this swap).
-                if ((surgeonHighlightTargets?.length ?? 0) > 0) return surgeonHighlightTargets!;
-                // Rects are computed for the FULL grounded set (allHighlightTargets), not just
-                // the paint-budgeted one — otherwise a Thought Unit Navigator card for a
-                // budget-excluded anchor (e.g. trap/application on a dense page) would have no
-                // rect to scroll to when clicked. authorizedHighlightIds below still limits
-                // which of these rects are visible by default.
-                if (allHighlightTargets.length === 0) {
-                  console.log("[LEFT_PANEL_CLEAR] allHighlightTargets empty — zero overlays", { page: currentPage });
+                // SurgeonAnnotationPlan is the EXCLUSIVE automatic PDF overlay owner —
+                // no fallback to the legacy allHighlightTargets/aiHighlightAnchors
+                // pipeline in any state. An empty surgeonHighlightTargets means no
+                // automatic overlay on the PDF for this page right now, never a swap
+                // to lower-quality legacy markup.
+                const targets = surgeonHighlightTargets ?? [];
+                if (targets.length === 0) {
+                  console.log("[SURGEON_OVERLAY_EMPTY] no automatic PDF overlay — legacy fallback disabled by design", { page: currentPage });
                 }
-                return allHighlightTargets;
+                return targets;
               })()}
               highlightNeighborhoods={undefined}
-              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${((surgeonHighlightTargets?.length ?? 0) > 0 ? surgeonHighlightTargets! : allHighlightTargets)?.map(t => t.text).join("|") ?? ""}`}
-              authorizedHighlightIds={(surgeonHighlightTargets?.length ?? 0) > 0
-                ? surgeonHighlightTargets!.map(t => t.evidenceRefId)
-                : (effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? [])}
+              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${(surgeonHighlightTargets ?? []).map(t => t.text).join("|")}`}
+              authorizedHighlightIds={(surgeonHighlightTargets ?? []).map(t => t.evidenceRefId)}
               focusedEvidenceId={focusedEvidenceId}
               onEvidenceFocus={handleThoughtUnitJump}
               isPageChanging={isPageChanging}
