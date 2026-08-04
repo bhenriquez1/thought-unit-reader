@@ -122,6 +122,19 @@ function selectLayout(typeCounts: Map<string, number>): DiagramPlanDrawType {
   return "flow";
 }
 
+// Truncate a node label at a WORD boundary, never mid-word/mid-sentence — a
+// hard character-count cut (the previous behavior) produced labels like "The
+// law of conservation of mass, based" or "We can illustrate this law by
+// considerin", which read as broken/unfinished teaching statements.
+function toLabel(text: string, maxLen = 90): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLen) return clean;
+  const cut = clean.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(" ");
+  const safeCut = lastSpace > maxLen * 0.5 ? cut.slice(0, lastSpace) : cut;
+  return safeCut.trim() + "…";
+}
+
 // ---------------------------------------------------------------------------
 // Entry type (minimal — accepts ThoughtUnitNavigatorEntry-shaped objects)
 // ---------------------------------------------------------------------------
@@ -176,7 +189,7 @@ export function buildRelationshipGraph(
   // Build nodes.
   const nodes: RelationshipNode[] = capped.map((e) => ({
     id:             e.id,
-    label:          e.title ?? e.text.slice(0, 40).replace(/\s+/g, " ").trim(),
+    label:          e.title ?? toLabel(e.text),
     canonicalType:  e.canonicalType ?? "core-concept",
     importanceLevel: resolveImportanceLevel(e.importanceScore, e.priorityTier),
     importanceScore: e.importanceScore,
@@ -212,6 +225,36 @@ export function buildRelationshipGraph(
     seenEdge.add(key);
 
     edges.push({ from: fromNode.id, to: toNode.id, type: edgeType, label: edgeLabel });
+  }
+
+  // ── Sequential fallback connectivity ────────────────────────────────────
+  // RULES only connects specific canonicalType PAIRS (e.g. process→mechanism).
+  // A page whose annotations are all the same type (several "definition"
+  // entries, common on a real page) or an uncovered type combination
+  // produces zero RULES matches — every node then renders with no connector
+  // at all, i.e. floating disconnected cards instead of a diagram. Guarantee
+  // every node has at least one connection by chaining adjacent nodes (in
+  // the same importance-sorted order flowLayout/timelineLayout already
+  // position top-to-bottom/left-to-right) wherever no RULES edge already
+  // links them in either direction. This only fills gaps — it never removes
+  // or overrides a more specific RULES edge.
+  const hasAnyEdge = (a: string, b: string) =>
+    edges.some((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
+
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i];
+    const b = nodes[i + 1];
+    if (hasAnyEdge(a.id, b.id)) continue;
+    const key = `${a.id}->${b.id}`;
+    if (seenEdge.has(key)) continue;
+    seenEdge.add(key);
+    const isWarning = b.canonicalType === "warning" || b.canonicalType === "common-error";
+    edges.push({
+      from:  a.id,
+      to:    b.id,
+      type:  isWarning ? "has_warning" : "explains",
+      label: isWarning ? "watch for" : "next",
+    });
   }
 
   // Count type frequencies for layout selection.

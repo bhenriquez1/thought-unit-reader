@@ -60,7 +60,7 @@ describe("buildRelationshipGraph — basic output", () => {
     expect(g.nodes[0].label).toBe("Caries");
   });
 
-  it("truncates long text to 40 chars for node label when no title", () => {
+  it("truncates long text to at most 91 chars (90 + ellipsis) for node label when no title", () => {
     const longEntry: CanonicalEntryInput = {
       id: "l1",
       text: "x".repeat(200),
@@ -68,7 +68,23 @@ describe("buildRelationshipGraph — basic output", () => {
       importanceScore: 50,
     };
     const g = buildRelationshipGraph([longEntry]);
-    expect(g.nodes[0].label.length).toBeLessThanOrEqual(40);
+    expect(g.nodes[0].label.length).toBeLessThanOrEqual(91);
+  });
+
+  it("REGRESSION GUARD: never truncates mid-word — cuts at the last word boundary, not a hard character count", () => {
+    const longEntry: CanonicalEntryInput = {
+      id: "l1",
+      text: "The law of conservation of mass, based on careful experimentation, states that matter is neither created nor destroyed in an ordinary chemical reaction.",
+      canonicalType: "definition",
+      importanceScore: 50,
+    };
+    const g = buildRelationshipGraph([longEntry]);
+    const label = g.nodes[0].label;
+    expect(label.endsWith("…")).toBe(true);
+    const withoutEllipsis = label.slice(0, -1).trim();
+    // The truncated label must be a real word-boundary prefix of the source text.
+    expect(longEntry.text.startsWith(withoutEllipsis)).toBe(true);
+    expect(longEntry.text[withoutEllipsis.length]).toBe(" ");
   });
 });
 
@@ -145,13 +161,47 @@ describe("buildRelationshipGraph — edge inference", () => {
     expect(causeEffectEdges.length).toBeLessThanOrEqual(1);
   });
 
-  it("emits no edges when no matching type pairs exist", () => {
-    // two definitions — no rule connects definition to definition
+  it("REGRESSION GUARD: two same-typed nodes with no matching RULES pair still get a connecting edge (sequential fallback) — this is the fix for 'disconnected floating cards'", () => {
+    // two definitions — no RULES entry connects definition to definition, but
+    // the sequential-fallback pass must still chain them so the diagram never
+    // renders two unconnected boxes.
     const g = buildRelationshipGraph([
       { id: "d1", text: "def 1", canonicalType: "definition", importanceScore: 50 },
       { id: "d2", text: "def 2", canonicalType: "definition", importanceScore: 40 },
     ]);
-    expect(g.edges).toHaveLength(0);
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0].from).toBe("d1");
+    expect(g.edges[0].to).toBe("d2");
+  });
+
+  it("sequential fallback does not duplicate an edge RULES already created for an adjacent pair", () => {
+    const g = buildRelationshipGraph([CAUSE, EFFECT]);
+    const causeEffectEdges = g.edges.filter((e) => e.from === "c1" && e.to === "e1");
+    expect(causeEffectEdges).toHaveLength(1);
+    expect(causeEffectEdges[0].type).toBe("leads_to"); // the specific RULES edge, not the generic fallback
+  });
+
+  it("a warning/trap node adjacent to an uncovered node gets a distinct has_warning fallback edge, not a generic one", () => {
+    const g = buildRelationshipGraph([
+      { id: "d1", text: "Osmosis moves water across a membrane.", canonicalType: "definition", importanceScore: 60 },
+      { id: "w1", text: "Do not confuse osmosis with diffusion.", canonicalType: "warning", importanceScore: 55 },
+    ]);
+    const edge = g.edges.find((e) => e.from === "d1" && e.to === "w1");
+    expect(edge).toBeDefined();
+    expect(edge?.type).toBe("has_warning");
+  });
+
+  it("every node in a larger, otherwise-uncovered set ends up connected (no isolated node)", () => {
+    const entries: CanonicalEntryInput[] = [
+      { id: "d1", text: "Atomic structure describes how protons, neutrons, and electrons are arranged.", canonicalType: "definition", importanceScore: 90 },
+      { id: "d2", text: "The arrangement of electrons determines an element's chemical properties.", canonicalType: "definition", importanceScore: 70 },
+      { id: "d3", text: "Physical properties like conductivity and solubility depend on structure.", canonicalType: "definition", importanceScore: 50 },
+      { id: "w1", text: "Do not confuse atomic structure with atomic mass.", canonicalType: "warning", importanceScore: 40 },
+    ];
+    const g = buildRelationshipGraph(entries);
+    const connected = new Set<string>();
+    for (const e of g.edges) { connected.add(e.from); connected.add(e.to); }
+    for (const n of g.nodes) expect(connected.has(n.id)).toBe(true);
   });
 });
 

@@ -1,0 +1,118 @@
+// tests/pdf/surgeonPipelineDiagnostics.test.ts
+//
+// Regression guards for the SurgeonAnnotationPlan pipeline trace:
+//   planner annotation → grounded quote → resolved sentence →
+//   PDF text-layer match → geometry rectangles → PdfEvidenceOverlay render
+//
+// Requirement: production-safe diagnostics (no annotation TEXT logged, only
+// counts + identity) at each stage, and the invariant "if the right panel
+// shows a grounded textbook sentence, that exact sentence has visible PDF
+// geometry" — implemented by having the right panel render directly from the
+// SAME groundedAnnotations array SmartPDFViewer draws highlights from,
+// rather than from the older, independent canonicalLeftPanelUnits pipeline.
+
+import fs from "fs";
+import path from "path";
+
+const VIEWER_FILE       = path.resolve(__dirname, "../../components/SmartPDFViewer.tsx");
+const HOOK_FILE         = path.resolve(__dirname, "../../components/reader/useSurgeonAnnotations.ts");
+const RIGHT_PANEL_FILE  = path.resolve(__dirname, "../../components/reader/RightPanel.tsx");
+const PURE_READER_FILE  = path.resolve(__dirname, "../../components/PureReaderView.tsx");
+const INDEX_FILE        = path.resolve(__dirname, "../../pages/index.tsx");
+
+describe("SmartPDFViewer.tsx — [SURGEON_PIPELINE_DIAGNOSTIC] geometry-stage counts", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(VIEWER_FILE, "utf8"); });
+
+  it("tracks geometryResolvedCount, incremented on every successful resolution path (fast-path, fallback-span, and direct-match)", () => {
+    const incrementCount = (src.match(/geometryResolvedCount\+\+/g) ?? []).length;
+    expect(incrementCount).toBe(3);
+  });
+
+  it("logs [SURGEON_PIPELINE_DIAGNOSTIC] with pageTruthKey, documentId, pageNumber, groundedAnnotationCount, geometryResolvedCount, geometryFailedCount, renderedAnnotationCount — never annotation text", () => {
+    const idx = src.indexOf('console.log("[SURGEON_PIPELINE_DIAGNOSTIC]"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/pageTruthKey:\s*pageTruthKey/);
+    expect(block).toMatch(/documentId:\s*docId/);
+    expect(block).toMatch(/pageNumber:\s*currentPage/);
+    expect(block).toMatch(/groundedAnnotationCount:/);
+    expect(block).toMatch(/geometryResolvedCount,/);
+    expect(block).toMatch(/geometryFailedCount:/);
+    expect(block).toMatch(/renderedAnnotationCount:\s*afterDedup\.length/);
+    expect(block).not.toMatch(/text:/);
+    expect(block).not.toMatch(/groundedText/);
+  });
+
+  it("accepts pageTruthKey as a prop, threaded from the caller (not derived/parsed from highlightKey)", () => {
+    expect(src).toMatch(/pageTruthKey\?:\s*string;/);
+    expect(src).toMatch(/export default function SmartPDFViewer\(\{\s*\n\s*fileUrl,\s*\n\s*pageTruthKey,/);
+  });
+});
+
+describe("PureReaderView.tsx — pageTruthKey threaded into SmartPDFViewer for the diagnostic", () => {
+  it("passes pageTruthKey={pageTruthKey} to <SmartPDFViewer>", () => {
+    const src = fs.readFileSync(PURE_READER_FILE, "utf8");
+    const idx = src.indexOf("<SmartPDFViewer");
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — [SURGEON_PIPELINE_DIAGNOSTIC] planner/grounded-stage counts", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("logs annotationPlanCount and groundedAnnotationCount at the cache-hit site, production-safe (no DEV gate)", () => {
+    const idx = src.indexOf('stage: "cache-hit"');
+    expect(idx).toBeGreaterThan(-1);
+    const before = src.slice(Math.max(0, idx - 120), idx);
+    expect(before).not.toMatch(/if \(DEV\)\s*console\.log\(\s*$/);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/annotationPlanCount:\s*stored\.plan\.annotations\.length/);
+    expect(block).toMatch(/groundedAnnotationCount:\s*targets\.length/);
+  });
+
+  it("logs annotationPlanCount and groundedAnnotationCount at the fresh-fetch site, production-safe (no DEV gate)", () => {
+    const idx = src.indexOf('stage: "fetch"');
+    expect(idx).toBeGreaterThan(-1);
+    const before = src.slice(Math.max(0, idx - 120), idx);
+    expect(before).not.toMatch(/if \(DEV\)\s*console\.log\(\s*$/);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/annotationPlanCount:\s*data\.plan\.annotations\.length/);
+    expect(block).toMatch(/groundedAnnotationCount:\s*targets\.length/);
+  });
+});
+
+describe("RightPanel.tsx — 'Grounded on This Page' renders from the SAME array as the PDF overlay", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(RIGHT_PANEL_FILE, "utf8"); });
+
+  it("accepts a groundedAnnotations prop typed as GroundedSurgeonAnnotation[]", () => {
+    expect(src).toMatch(/import type \{ GroundedSurgeonAnnotation \} from "@\/lib\/highlights\/groundSurgeonQuotes"/);
+    expect(src).toMatch(/groundedAnnotations\?:\s*GroundedSurgeonAnnotation\[\];/);
+  });
+
+  it("renders a-la-carte from groundedAnnotations.map, not from canonicalLeftPanelUnits", () => {
+    const idx = src.indexOf("Grounded on This Page");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 1500);
+    expect(block).toMatch(/groundedAnnotations\.map/);
+    expect(block).toMatch(/a\.groundedText/);
+  });
+});
+
+describe("pages/index.tsx — REQUIRED invariant: RightPanel and SmartPDFViewer read the SAME groundedAnnotations/highlightTargets source", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
+
+  it("RightPanel's groundedAnnotations prop and PureReaderView's surgeonHighlightTargets prop are both sourced from the one surgeonAnnotations object", () => {
+    expect(src).toMatch(/groundedAnnotations=\{surgeonAnnotations\.groundedAnnotations\}/);
+    expect(src).toMatch(/surgeonHighlightTargets=\{surgeonAnnotations\.highlightTargets\}/);
+  });
+
+  it("groundedAnnotations and highlightTargets come from ONE useSurgeonAnnotations() call — not two independent hook instances that could drift", () => {
+    const occurrences = (src.match(/const surgeonAnnotations = useSurgeonAnnotations\(/g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+});

@@ -84,7 +84,7 @@ import { getHighlightsForPage, type SavedHighlight } from "@/lib/highlights/save
 import ExplainStepChat, { type ExplainStepContext } from "@/components/reader/ExplainStepChat";
 import ExplainItChat from "@/components/reader/ExplainItChat";
 import type { ExplainItContext, ExplainItMessage } from "@/lib/explainIt/types";
-import ChiefResidentModal, { type ChiefResidentContext } from "@/components/reader/ChiefResidentModal";
+import ChiefResidentModalShell from "@/components/reader/ChiefResidentModalShell";
 import PdfContextMenu from "@/components/pdf/PdfContextMenu";
 
 // Cognitive Engine Components (Surgeon View 2.0)
@@ -712,8 +712,7 @@ export default function ThoughtUnitReader() {
   const explainStepTurnsRef = useRef<Map<string, import("@/lib/explainStep/types").ExplainStepMessage[]>>(new Map());
   const [explainItContext, setExplainItContext] = useState<ExplainItContext | null>(null);
   const explainItTurnsRef = useRef<Map<string, ExplainItMessage[]>>(new Map());
-  const [chiefResidentContext, setChiefResidentContext] = useState<ChiefResidentContext | null>(null);
-  const chiefResidentTurnsRef = useRef<Map<string, import("@/components/reader/ChiefResidentModal").ChiefResidentMessage[]>>(new Map());
+  const [showChiefResident, setShowChiefResident] = useState(false);
   const [pdfContextMenu, setPdfContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
   const [explainItPodcastSeed, setExplainItPodcastSeed] = useState<string | null>(null);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
@@ -2104,17 +2103,24 @@ export default function ThoughtUnitReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey]);
 
-  // CRITICAL: close any open Chief Resident / Explain It modal on page navigation.
-  // Both modals capture their page's context (pageNumber, pageText, canonicalEntries)
-  // once when opened and are not keyed to pageTruthKey, so without this effect they
-  // would stay mounted across a page change — continuing to answer, and letting the
-  // user send follow-ups, against a now-stale page's content while displaying the
-  // NEW page's title in the background. Closing on navigation is the same "never let
-  // stale context silently continue" guarantee as the sel.clearSelection() fix above;
-  // closing also unmounts the modal, which triggers its own cleanup effect to abort
-  // any in-flight streaming request for the old page.
+  // CRITICAL: close any open Explain It modal on page navigation. It captures
+  // its page's context (pageNumber, pageText, canonicalEntries) once when
+  // opened and is not keyed to pageTruthKey, so without this effect it would
+  // stay mounted across a page change — continuing to answer, and letting the
+  // user send follow-ups, against a now-stale page's content while displaying
+  // the NEW page's title in the background. Closing on navigation is the same
+  // "never let stale context silently continue" guarantee as the
+  // sel.clearSelection() fix above; closing also unmounts the modal, which
+  // triggers its own cleanup effect to abort any in-flight streaming request
+  // for the old page.
+  //
+  // Chief Resident does NOT need an equivalent effect: ChiefResidentModalShell
+  // passes currentPageStudyModel/pageText/pageTruthKey etc. as LIVE props
+  // (never snapshotted into a captured context object), and ChiefResidentPanel
+  // itself already resets its session the instant bookId/currentPage/
+  // pageTruthKey change (see its own effect) — the same behavior NoteLab's
+  // Chief Resident already relies on. There is no stale snapshot to close.
   useEffect(() => {
-    setChiefResidentContext(null);
     setExplainItContext(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey]);
@@ -2712,76 +2718,16 @@ export default function ThoughtUnitReader() {
     });
   }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, focusedEvidenceId, finalHighlightAnchors, uploadedFile, studyGuideScript, learningProfile]);
 
-  // Chief Resident Modal — "Explain This Step" route (unified modal replacing ExplainStepChat)
-  const handleOpenChiefResidentExplainStep = useCallback(() => {
-    const text = sel.selectionText?.trim() ?? "";
-    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
-    const sm = currentPageStudyModel;
-    // Guard: only use pageThesis when the study model was generated for the current page.
-    // A stale thesis from the previous page is a stronger signal than the actual pageText
-    // and causes the AI to respond about the wrong subject.
-    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
-    setChiefResidentContext({
-      mode: "explain-text",
-      selectedText: text || undefined,
-      pageText,
-      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
-      documentTitle: uploadedFile?.name,
-      documentId: bookId,
-      pageNumber: currentPage,
-      pageTruthKey,
-      learningProfile,
-      canonicalEntries: canonicalLeftPanelUnits
-        .filter(u => u.exactText?.trim())
-        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
-      pack: activePack,
-    });
-    sel.clearSelection?.();
-  }, [sel, pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
-
-  // Chief Resident Modal — "Explain It" / "Explain This Page" route
-  const handleOpenChiefResidentExplainPage = useCallback(() => {
-    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
-    const sm = currentPageStudyModel;
-    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
-    setChiefResidentContext({
-      mode: "explain-page",
-      pageText,
-      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
-      documentTitle: uploadedFile?.name,
-      documentId: bookId,
-      pageNumber: currentPage,
-      pageTruthKey,
-      learningProfile,
-      canonicalEntries: canonicalLeftPanelUnits
-        .filter(u => u.exactText?.trim())
-        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
-      pack: activePack,
-    });
-  }, [pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
-
-  // Chief Resident Modal — "Active Concept" scope (explain-text with concept title as selection)
-  const handleOpenChiefResidentExplainConcept = useCallback(() => {
-    if (!activeCanonicalThoughtUnit) return;
-    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
-    const sm = currentPageStudyModel;
-    const isSmFresh = sm?.pageTruthKey === pageTruthKey;
-    setChiefResidentContext({
-      mode: "explain-text",
-      selectedText: activeCanonicalThoughtUnit.title,
-      pageText,
-      pageThesis: isSmFresh ? (sm?.pageThesis ?? null) : null,
-      documentTitle: uploadedFile?.name,
-      documentId: bookId,
-      pageNumber: currentPage,
-      pageTruthKey,
-      learningProfile,
-      canonicalEntries: canonicalLeftPanelUnits
-        .filter(u => u.exactText?.trim())
-        .map(u => ({ text: u.exactText.trim(), canonicalType: String(u.category), priorityTier: u.priorityTier, title: u.title, page: u.page })),
-      pack: activePack,
-    });
-  }, [activeCanonicalThoughtUnit, pageTextByPage, bookId, currentPage, currentPageStudyModel, pageTruthKey, uploadedFile, learningProfile, canonicalLeftPanelUnits, activePack]);
+  // Open Chief Resident from the Reader — renders ChiefResidentModalShell,
+  // which wraps the SAME NoteLab teaching panel component this file also
+  // renders directly further down for the NoteLab tab. No context object is
+  // snapshotted here: the shell is handed the live currentPageStudyModel/
+  // pageText/pageTruthKey props directly, so there is nothing that can go
+  // stale between "click" and "render" the way the old three-handler
+  // snapshot-object approach could.
+  const handleOpenChiefResident = useCallback(() => {
+    setShowChiefResident(true);
+  }, []);
 
   // "Turn into Podcast" — hand the Explain It conversation off to Podcast Lab
   // as a seed for the next generated episode, the way Study Guide Lab already
@@ -5378,9 +5324,8 @@ export default function ThoughtUnitReader() {
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={handleOpenWhiteboardPanel}
-                onOpenExplainStep={handleOpenChiefResidentExplainStep}
-                onOpenExplainIt={handleOpenChiefResidentExplainPage}
-                onOpenExplainConcept={handleOpenChiefResidentExplainConcept}
+                onOpenChiefResident={handleOpenChiefResident}
+                groundedAnnotations={surgeonAnnotations.groundedAnnotations}
                 selectionText={sel.selectionText ?? ""}
                 canonicalLeftPanelUnits={enrichedCanonicalUnits}
                 activeThoughtUnit={activeCanonicalThoughtUnit}
@@ -6760,7 +6705,7 @@ export default function ThoughtUnitReader() {
                 pageTitle={currentPageStudyModel?.pageThesis ?? null}
                 knowledgeNodeId={pageKgNodeIdRef.current}
                 learningProfile={learningProfile}
-                onOpenChiefResident={handleOpenChiefResidentExplainPage}
+                onOpenChiefResident={handleOpenChiefResident}
                 whiteboardGrammar={activePack.whiteboardGrammar}
                 canonicalEntries={whiteboardCanonicalEntries}
               />
@@ -6869,34 +6814,22 @@ export default function ThoughtUnitReader() {
         />
       )}
 
-      {/* Chief Resident Modal — unified explain-text / explain-page tutor (replaces Explain It + Explain This Step buttons) */}
-      {chiefResidentContext && (
-        <ChiefResidentModal
-          context={chiefResidentContext}
-          onClose={() => setChiefResidentContext(null)}
-          initialTurns={chiefResidentTurnsRef.current.get(
-            `${bookId}:${chiefResidentContext.pageNumber}:${chiefResidentContext.mode}:${chiefResidentContext.selectedText ?? ""}`
-          )}
-          onTurnsChange={(turns) =>
-            chiefResidentTurnsRef.current.set(
-              `${bookId}:${chiefResidentContext.pageNumber}:${chiefResidentContext.mode}:${chiefResidentContext.selectedText ?? ""}`,
-              turns,
-            )
-          }
-          onSaveNote={async (question, explanation) => {
-            const note = buildNoteFromStudyModel(currentPageStudyModel as any, {
-              bookId,
-              pageNumber: chiefResidentContext.pageNumber,
-              topic: question.slice(0, 80),
-            });
-            await saveUltraNote({ ...note, coreIdea: explanation });
-          }}
-          onVisualize={({ selectedText, explanation, pageContext }) => {
-            setWbConcept(truncate(selectedText || explanation, 600));
-            setWbContext(truncate([explanation, pageContext].filter(Boolean).join("\n\n"), 1200));
-            setChiefResidentContext(null);
-            setShowWhiteboardPanel(true);
-          }}
+      {/* Chief Resident — Reader entry point. ChiefResidentModalShell is a thin
+          modal chrome (backdrop, header, close button) with no teaching UI or
+          generation logic of its own — it renders the SAME
+          components/notelab/ChiefResidentPanel.tsx NoteLab uses, one shared
+          component/prompt-contract/context-builder for both entry points. */}
+      {showChiefResident && (
+        <ChiefResidentModalShell
+          onClose={() => setShowChiefResident(false)}
+          studyModel={currentPageStudyModel}
+          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+          bookId={bookId}
+          currentPage={currentPage}
+          pageTruthKey={pageTruthKey}
+          bookTitle={uploadedFile?.name}
+          activeNote={null}
+          onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
         />
       )}
 
@@ -6907,18 +6840,10 @@ export default function ThoughtUnitReader() {
           y={pdfContextMenu.y}
           onClose={() => setPdfContextMenu(null)}
           items={[
-            ...(pdfContextMenu.hasSelection ? [
-              {
-                icon: "💬",
-                label: "Explain Selection",
-                onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainStep(); },
-              },
-            ] : []),
             {
-              icon: "🎓",
-              label: "Explain This Page",
-              separator: pdfContextMenu.hasSelection,
-              onClick: () => { setPdfContextMenu(null); handleOpenChiefResidentExplainPage(); },
+              icon: "🩺",
+              label: "Ask Chief Resident",
+              onClick: () => { setPdfContextMenu(null); handleOpenChiefResident(); },
             },
             {
               icon: "🎨",

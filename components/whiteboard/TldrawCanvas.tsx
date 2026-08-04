@@ -2,19 +2,27 @@
 // components/whiteboard/TldrawCanvas.tsx
 // Interactive tldraw whiteboard canvas — the Avrrio Visual Reasoning Engine.
 //
-// Architecture: four integrated phases
+// One always-fully-populated, editable canvas. No slideshow/reveal mode, no
+// Student/Instructor toggle — those were removed because they added UI
+// surface without adding teaching value: a diagram the student has to click
+// "Next" through isn't more understandable than the same diagram shown whole.
+// The canvas opens already constructed — nodes, connectors, and labels all
+// visible immediately — because the VisualSceneGraph it renders already
+// encodes structure (see lib/whiteboard/visualSceneGraph.ts and
+// lib/whiteboard/canonicalRelationshipGraph.ts): every node is a complete,
+// non-truncated teaching statement, and every edge is a real inferred
+// relationship (never a floating, disconnected box).
+//
+// Architecture: two integrated phases
 //   Phase 1  Shape → Reader sync   clicking a shape sets readingFocusStore
 //   Phase 2  VSG-first rendering   uses VisualSceneGraph node positions + edge kinds
-//   Phase 3  Student toolbar       minimal 10-tool overlay when studentMode=true
-//   Phase 4  Progressive reveal    play/pause/step with Web Speech narration
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, createShapeId, toRichText, GeoShapeGeoStyle, type Editor } from "@tldraw/tldraw";
+import { Tldraw, createShapeId, toRichText, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
 import { vsgToShapeDefs, type ShapeDef } from "@/lib/whiteboard/sceneGraphAdapter";
-import { NarrationController } from "./NarrationController";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 
 // ── Tier colors ───────────────────────────────────────────────────────────────
@@ -49,122 +57,13 @@ function getPositions(count: number, grammar: string): Array<{ x: number; y: num
   return flowPositions(count);
 }
 
-// ── Speed config ──────────────────────────────────────────────────────────────
-const SPEED_DELAY = { slow: 2000, normal: 900, fast: 350 } as const;
-type RevealSpeed = keyof typeof SPEED_DELAY;
-
 // ── Shared styles ─────────────────────────────────────────────────────────────
-const BTN_BASE: React.CSSProperties = {
+const BTN_MUTED: React.CSSProperties = {
   fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
   lineHeight: "16px", userSelect: "none",
-};
-const BTN_PRIMARY: React.CSSProperties = {
-  ...BTN_BASE, background: "rgba(134,239,172,0.18)", color: "#86efac",
-  border: "1px solid rgba(134,239,172,0.35)",
-};
-const BTN_MUTED: React.CSSProperties = {
-  ...BTN_BASE, background: "rgba(148,163,184,0.08)", color: "#94a3b8",
+  background: "rgba(148,163,184,0.08)", color: "#94a3b8",
   border: "1px solid rgba(148,163,184,0.2)",
 };
-const BTN_DISABLED: React.CSSProperties = { ...BTN_MUTED, opacity: 0.35, cursor: "default" };
-const BTN_ACTIVE: React.CSSProperties = {
-  ...BTN_BASE, background: "rgba(96,165,250,0.22)", color: "#93c5fd",
-  border: "1px solid rgba(96,165,250,0.45)",
-};
-const SELECT_STYLE: React.CSSProperties = {
-  fontSize: 10, padding: "2px 4px", borderRadius: 4, cursor: "pointer",
-  background: "rgba(15,23,42,0.95)", color: "#64748b",
-  border: "1px solid rgba(148,163,184,0.2)",
-};
-
-// ── Student toolbar ───────────────────────────────────────────────────────────
-
-interface StudentToolDef {
-  id:    string;
-  icon:  string;
-  title: string;
-  action: (editor: Editor) => void;
-  geoType?: "rectangle" | "ellipse";
-}
-
-const STUDENT_TOOLS: StudentToolDef[] = [
-  { id: "select",    icon: "↖",  title: "Select (V)",     action: e => e.setCurrentTool("select") },
-  { id: "hand",      icon: "✋",  title: "Pan (H)",        action: e => e.setCurrentTool("hand") },
-  { id: "draw",      icon: "✏️",  title: "Pen (D)",        action: e => e.setCurrentTool("draw") },
-  { id: "highlight", icon: "🖊",  title: "Highlight",      action: e => e.setCurrentTool("highlight") },
-  { id: "arrow",     icon: "↗",  title: "Arrow (A)",      action: e => e.setCurrentTool("arrow") },
-  { id: "rectangle", icon: "▭",  title: "Rectangle (R)",  geoType: "rectangle",
-    action: e => e.run(() => { e.setStyleForNextShapes(GeoShapeGeoStyle, "rectangle"); e.setCurrentTool("geo"); }) },
-  { id: "ellipse",   icon: "◯",  title: "Circle (O)",     geoType: "ellipse",
-    action: e => e.run(() => { e.setStyleForNextShapes(GeoShapeGeoStyle, "ellipse"); e.setCurrentTool("geo"); }) },
-  { id: "text",      icon: "T",  title: "Text (T)",       action: e => e.setCurrentTool("text") },
-  { id: "eraser",    icon: "⌫",  title: "Eraser (E)",     action: e => e.setCurrentTool("eraser") },
-];
-
-function StudentToolbar({
-  editor,
-  activeTool,
-  onToolSelect,
-}: {
-  editor: Editor | null;
-  activeTool: string;
-  onToolSelect: (id: string) => void;
-}) {
-  return (
-    <div style={{
-      position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)",
-      display: "flex", flexDirection: "column", gap: 4, zIndex: 300,
-      background: "rgba(15,23,42,0.92)", border: "1px solid rgba(255,255,255,0.1)",
-      borderRadius: 10, padding: "6px 5px", boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
-    }}>
-      {STUDENT_TOOLS.map(tool => {
-        const isActive = activeTool === tool.id;
-        return (
-          <button
-            key={tool.id}
-            title={tool.title}
-            onClick={() => {
-              if (!editor) return;
-              tool.action(editor);
-              onToolSelect(tool.id);
-            }}
-            style={{
-              width: 32, height: 32, borderRadius: 7, cursor: "pointer",
-              border: `1px solid ${isActive ? "rgba(96,165,250,0.6)" : "rgba(255,255,255,0.07)"}`,
-              background: isActive ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.04)",
-              color: isActive ? "#93c5fd" : "#94a3b8",
-              fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.15s",
-            }}
-          >
-            {tool.icon}
-          </button>
-        );
-      })}
-
-      {/* Divider */}
-      <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "2px 0" }} />
-
-      {/* Undo */}
-      <button
-        title="Undo (Ctrl+Z)"
-        onClick={() => editor?.undo()}
-        style={{ width: 32, height: 32, borderRadius: 7, cursor: "pointer",
-          border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.04)",
-          color: "#94a3b8", fontSize: 12 }}
-      >&#x21A9;</button>
-
-      {/* Redo */}
-      <button
-        title="Redo (Ctrl+Y)"
-        onClick={() => editor?.redo()}
-        style={{ width: 32, height: 32, borderRadius: 7, cursor: "pointer",
-          border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.04)",
-          color: "#94a3b8", fontSize: 12 }}
-      >&#x21AA;</button>
-    </div>
-  );
-}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
@@ -175,14 +74,12 @@ interface Props {
   vsg?:             VisualSceneGraph;
   activeAnchorId?:  string | null;
   storageKey?:      string;
-  studentMode?:     boolean;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function TldrawCanvas({
   noteCards, pageTitle, whiteboardGrammar = "flow",
   onAnchorClick, vsg, activeAnchorId, storageKey,
-  studentMode = false,
 }: Props) {
   // tldraw SDK license — required for production deployments, set via Render env var.
   // Never hardcoded/committed; missing in production shows a visible configuration
@@ -215,31 +112,7 @@ export default function TldrawCanvas({
   const editorRef  = useRef<Editor | null>(null);
   const builtRef   = useRef(false);
 
-  // ── Phase 2 reveal controller ─────────────────────────────────────────────
-  const [revealIndex,    setRevealIndexState] = useState(-1);
-  const [isPlaying,      setIsPlaying]        = useState(false);
-  const [speed,          setSpeed]            = useState<RevealSpeed>("normal");
-  const [narrationText,  setNarrationText]    = useState<string | null>(null);
-  const [totalShapes,    setTotalShapes]      = useState(0);
-
-  // ── Phase 3 student toolbar ───────────────────────────────────────────────
-  const [activeTool, setActiveTool] = useState("select");
-
-  // ── Phase 4 narration ─────────────────────────────────────────────────────
-  const [narrationEnabled, setNarrationEnabled] = useState(false);
-  const [isSpeaking,       setIsSpeaking]       = useState(false);
-  const narrationRef = useRef<NarrationController | null>(null);
-  const getNarration = () => {
-    if (!narrationRef.current) narrationRef.current = new NarrationController();
-    return narrationRef.current;
-  };
-
-  // Refs for stable callbacks
-  const revealIndexRef      = useRef(-1);
-  const orderedShapeIdsRef  = useRef<ReturnType<typeof createShapeId>[]>([]);
-  const narrationMapRef     = useRef<Map<string, string>>(new Map());
-
-  // Phase 1 + Phase 3 One Brain sync refs
+  // Phase 1 + Phase 1 One Brain sync refs
   const sourceIdToShapeIdRef = useRef<Map<string, string>>(new Map());
   const shapeIdToSourceIdRef = useRef<Map<string, string>>(new Map());
   const onAnchorClickRef     = useRef(onAnchorClick);
@@ -254,12 +127,9 @@ export default function TldrawCanvas({
   useEffect(() => { noteCardsRef.current = noteCards; }, [noteCards]);
   useEffect(() => { storageKeyRef.current = storageKey; }, [storageKey]);
 
-  const setRevealIndex = useCallback((n: number) => {
-    revealIndexRef.current = n;
-    setRevealIndexState(n);
-  }, []);
-
   // ── Phase 2: VSG-first shape building ─────────────────────────────────────
+  // Shapes are created at full (default) opacity — the canvas opens already
+  // populated with the complete diagram, never a hidden-then-revealed sequence.
 
   const registerAnchors = useCallback((defs: ShapeDef[]) => {
     for (const def of defs) {
@@ -272,34 +142,20 @@ export default function TldrawCanvas({
 
   const buildShapesFromVSGDefs = useCallback((editor: Editor, defs: ShapeDef[]) => {
     editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
-    orderedShapeIdsRef.current    = [];
-    narrationMapRef.current       = new Map();
     sourceIdToShapeIdRef.current  = new Map();
     shapeIdToSourceIdRef.current  = new Map();
 
     for (const def of defs) {
       editor.createShape({ id: def.id, type: def.type, x: def.x, y: def.y, props: def.props } as any);
-      editor.updateShape({ id: def.id, type: def.type, opacity: 0 });
-      orderedShapeIdsRef.current.push(def.id);
-      if (def.narration) narrationMapRef.current.set(String(def.id), def.narration);
     }
     registerAnchors(defs);
-    setTotalShapes(defs.length);
     editor.zoomToFit();
   }, [registerAnchors]);
 
   const rebuildRefsFromVSGDefs = useCallback((defs: ShapeDef[]) => {
-    orderedShapeIdsRef.current    = [];
-    narrationMapRef.current       = new Map();
     sourceIdToShapeIdRef.current  = new Map();
     shapeIdToSourceIdRef.current  = new Map();
-
-    for (const def of defs) {
-      orderedShapeIdsRef.current.push(def.id);
-      if (def.narration) narrationMapRef.current.set(String(def.id), def.narration);
-    }
     registerAnchors(defs);
-    setTotalShapes(defs.length);
   }, [registerAnchors]);
 
   // ── Shared anchor helpers for noteCards fallback ──────────────────────────
@@ -327,8 +183,6 @@ export default function TldrawCanvas({
   const buildShapesFromNoteCards = useCallback((editor: Editor) => {
     if (!noteCards.length) return;
     editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
-    orderedShapeIdsRef.current   = [];
-    narrationMapRef.current      = new Map();
     sourceIdToShapeIdRef.current = new Map();
     shapeIdToSourceIdRef.current = new Map();
 
@@ -357,9 +211,6 @@ export default function TldrawCanvas({
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
         } as any);
-        editor.updateShape({ id: sid, type: "geo", opacity: 0 });
-        orderedShapeIdsRef.current.push(sid);
-        narrationMapRef.current.set(String(sid), card.body);
         registerAnchor(sid, anchorId);
         y += 90;
         return;
@@ -377,10 +228,6 @@ export default function TldrawCanvas({
                  : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
           },
         } as any);
-        editor.updateShape({ id: sid, type: "geo", opacity: 0 });
-        orderedShapeIdsRef.current.push(sid);
-        narrationMapRef.current.set(String(sid), nIdx === 0
-          ? (card.title ? `${card.title}\n\n${card.body}` : card.body) : node.label);
         if (nIdx === 0) registerAnchor(sid, anchorId);
       });
 
@@ -403,21 +250,15 @@ export default function TldrawCanvas({
             color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
           },
         } as any);
-        editor.updateShape({ id: sid, type: "arrow", opacity: 0 });
-        orderedShapeIdsRef.current.push(sid);
-        if (arrow.label) narrationMapRef.current.set(String(sid), arrow.label);
       });
 
       y += Math.max(nodes.length, 1) * 110 + 60;
     });
 
-    setTotalShapes(orderedShapeIdsRef.current.length);
     editor.zoomToFit();
   }, [noteCards, whiteboardGrammar, makeVsgLabelMap, makeAnchorSourceId]);
 
   const rebuildRefsFromNoteCards = useCallback((cards: NoteCard[]) => {
-    orderedShapeIdsRef.current   = [];
-    narrationMapRef.current      = new Map();
     sourceIdToShapeIdRef.current = new Map();
     shapeIdToSourceIdRef.current = new Map();
     const vsgLabelMap = makeVsgLabelMap();
@@ -427,29 +268,17 @@ export default function TldrawCanvas({
     };
     cards.forEach((card, cardIdx) => {
       const nodes  = card.visual?.nodes ?? [];
-      const arrows = card.visual?.arrows ?? [];
       const anchorId = makeAnchorSourceId(vsgLabelMap, cardIdx, card.title);
       if (nodes.length === 0) {
         const sid = createShapeId(`card-${cardIdx}`);
-        orderedShapeIdsRef.current.push(sid);
-        narrationMapRef.current.set(String(sid), card.body);
         registerAnchor(sid, anchorId);
         return;
       }
       nodes.forEach((node, nIdx) => {
         const sid = createShapeId(`n-${cardIdx}-${nIdx}`);
-        orderedShapeIdsRef.current.push(sid);
-        narrationMapRef.current.set(String(sid), nIdx === 0
-          ? (card.title ? `${card.title}\n\n${card.body}` : card.body) : node.label);
         if (nIdx === 0) registerAnchor(sid, anchorId);
       });
-      arrows.forEach((arrow, aIdx) => {
-        const sid = createShapeId(`a-${cardIdx}-${aIdx}`);
-        orderedShapeIdsRef.current.push(sid);
-        if (arrow.label) narrationMapRef.current.set(String(sid), arrow.label);
-      });
     });
-    setTotalShapes(orderedShapeIdsRef.current.length);
   }, [makeVsgLabelMap, makeAnchorSourceId]);
 
   // ── Unified buildShapes: VSG first, noteCards fallback ────────────────────
@@ -488,7 +317,7 @@ export default function TldrawCanvas({
       }
     }
 
-    // Phase 1 + Phase 3 One Brain sync: canvas → world
+    // Phase 1 One Brain sync: canvas → world
     storeUnsubRef.current?.();
     storeUnsubRef.current = editor.store.listen(
       () => {
@@ -507,7 +336,6 @@ export default function TldrawCanvas({
   // Cleanup on unmount
   useEffect(() => () => {
     storeUnsubRef.current?.();
-    narrationRef.current?.stop();
   }, []);
 
   // Single rebuild effect — VSG-first, noteCards fallback.
@@ -521,86 +349,10 @@ export default function TldrawCanvas({
     if (editor) {
       builtRef.current = true;
       buildShapes(editor);
-      setRevealIndex(-1);
-      setNarrationText(null);
-      setIsPlaying(false);
     }
-  }, [noteCards, vsg, buildShapes, setRevealIndex]);
+  }, [noteCards, vsg, buildShapes]);
 
-  // ── Reveal controller ─────────────────────────────────────────────────────
-
-  const handleNext = useCallback(() => {
-    const editor  = editorRef.current;
-    if (!editor) return;
-    const ordered   = orderedShapeIdsRef.current;
-    const nextIndex = revealIndexRef.current + 1;
-    if (nextIndex >= ordered.length) { setIsPlaying(false); return; }
-    const sid   = ordered[nextIndex];
-    const shape = editor.getShape(sid);
-    if (shape) editor.updateShape({ id: sid, type: shape.type, opacity: 1 });
-    setRevealIndex(nextIndex);
-    const text = narrationMapRef.current.get(String(sid)) ?? null;
-    setNarrationText(text);
-
-    // Phase 4 TTS
-    if (text && narrationEnabled) {
-      setIsSpeaking(true);
-      getNarration().speak(text, () => setIsSpeaking(false));
-    }
-  }, [setRevealIndex, narrationEnabled]);
-
-  const handlePrev = useCallback(() => {
-    const editor  = editorRef.current;
-    if (!editor) return;
-    const ordered = orderedShapeIdsRef.current;
-    const currIdx = revealIndexRef.current;
-    if (currIdx < 0) return;
-    const sid   = ordered[currIdx];
-    const shape = editor.getShape(sid);
-    if (shape) editor.updateShape({ id: sid, type: shape.type, opacity: 0 });
-    const prevIdx = currIdx - 1;
-    setRevealIndex(prevIdx);
-    const prevText = prevIdx >= 0 ? (narrationMapRef.current.get(String(ordered[prevIdx])) ?? null) : null;
-    setNarrationText(prevText);
-    setIsPlaying(false);
-    getNarration().stop();
-    setIsSpeaking(false);
-  }, [setRevealIndex]);
-
-  const handleRestart = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.getCurrentPageShapes().forEach(s => {
-      if (s.opacity > 0) editor.updateShape({ id: s.id, type: s.type, opacity: 0 });
-    });
-    setRevealIndex(-1);
-    setNarrationText(null);
-    setIsPlaying(true);
-    getNarration().stop();
-    setIsSpeaking(false);
-  }, [setRevealIndex]);
-
-  const handleRevealAll = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.getCurrentPageShapes().forEach(s => {
-      if (s.opacity === 0) editor.updateShape({ id: s.id, type: s.type, opacity: 1 });
-    });
-    setRevealIndex(orderedShapeIdsRef.current.length - 1);
-    setNarrationText(null);
-    setIsPlaying(false);
-    getNarration().stop();
-    setIsSpeaking(false);
-  }, [setRevealIndex]);
-
-  // Auto-play timer
-  useEffect(() => {
-    if (!isPlaying) return;
-    const t = window.setTimeout(handleNext, SPEED_DELAY[speed]);
-    return () => clearTimeout(t);
-  }, [isPlaying, revealIndex, speed, handleNext]);
-
-  // Phase 3 world→canvas: external anchor focus → select + center shape
+  // Phase 1 world→canvas: external anchor focus → select + center shape
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -614,7 +366,7 @@ export default function TldrawCanvas({
     if (bounds) editor.centerOnPoint({ x: bounds.midX, y: bounds.midY });
   }, [activeAnchorId]);
 
-  // Phase 4 SVG export
+  // SVG export
   const handleExport = useCallback(async () => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -638,75 +390,18 @@ export default function TldrawCanvas({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const atStart = revealIndex < 0;
-  const atEnd   = totalShapes > 0 && revealIndex >= totalShapes - 1;
-
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 480, background: "#0f172a" }}>
 
-      {/* ── Controls bar ──────────────────────────────────────────────────── */}
+      {/* ── Header bar ────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace", flexShrink: 0 }}>
           {pageTitle ?? "Whiteboard"}
         </span>
-
-        <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
-          {totalShapes > 0 && (
-            <span style={{ fontSize: 10, color: "#475569", fontVariantNumeric: "tabular-nums", marginRight: 2 }}>
-              {Math.max(revealIndex + 1, 0)} / {totalShapes}
-            </span>
-          )}
-
-          <button onClick={handleRestart} title="Restart" style={BTN_MUTED}>&#x23EE;</button>
-          <button onClick={handlePrev}    disabled={atStart} title="Previous"
-            style={atStart ? BTN_DISABLED : BTN_MUTED}>&#x25C4;</button>
-          <button onClick={() => setIsPlaying(p => !p)} style={BTN_PRIMARY}>
-            {isPlaying ? "&#x23F8; Pause" : "&#x25B6; Play"}
-          </button>
-          <button onClick={handleNext}      disabled={atEnd} title="Next"
-            style={atEnd ? BTN_DISABLED : BTN_MUTED}>&#x25BA;</button>
-          <button onClick={handleRevealAll} title="Reveal all" style={BTN_MUTED}>All</button>
-
-          <select value={speed} onChange={e => setSpeed(e.target.value as RevealSpeed)}
-            style={SELECT_STYLE} title="Speed">
-            <option value="slow">Slow</option>
-            <option value="normal">Normal</option>
-            <option value="fast">Fast</option>
-          </select>
-
-          {/* Phase 4 narration toggle */}
-          <button
-            onClick={() => {
-              const next = !narrationEnabled;
-              setNarrationEnabled(next);
-              if (!next) { getNarration().stop(); setIsSpeaking(false); }
-            }}
-            title={narrationEnabled ? "Mute narration" : "Enable voice narration"}
-            style={narrationEnabled ? BTN_ACTIVE : BTN_MUTED}
-          >
-            {isSpeaking ? "🔊" : narrationEnabled ? "🔉" : "🔇"}
-          </button>
-
+        <span style={{ marginLeft: "auto" }}>
           <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
         </span>
       </div>
-
-      {/* ── Narration panel ───────────────────────────────────────────────── */}
-      {narrationText && (
-        <div style={{
-          padding: "8px 14px",
-          background: "rgba(15,23,42,0.97)",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          fontSize: 12, color: "#cbd5e1", lineHeight: 1.6,
-          maxHeight: 76, overflowY: "auto",
-          display: "flex", alignItems: "flex-start", gap: 8,
-        }}>
-          {isSpeaking && (
-            <span style={{ fontSize: 10, color: "#60a5fa", flexShrink: 0, marginTop: 2 }}>🔊</span>
-          )}
-          <span>{narrationText}</span>
-        </div>
-      )}
 
       {/* ── Canvas ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative" }}>
@@ -728,7 +423,6 @@ export default function TldrawCanvas({
             licenseKey={licenseKey}
             persistenceKey={storageKey || undefined}
             onMount={handleMount}
-            hideUi={studentMode}
           />
         )}
 
@@ -751,15 +445,6 @@ export default function TldrawCanvas({
             <span style={{ fontSize: 20 }}>⚠</span>
             <span>Whiteboard configuration is unavailable. Canvas initialization failed.</span>
           </div>
-        )}
-
-        {/* Phase 3: Student toolbar overlay */}
-        {!licenseMissingInProduction && studentMode && (
-          <StudentToolbar
-            editor={editorRef.current}
-            activeTool={activeTool}
-            onToolSelect={setActiveTool}
-          />
         )}
 
         {/* Loading skeleton */}
