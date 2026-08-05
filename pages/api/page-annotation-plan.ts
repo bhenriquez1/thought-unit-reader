@@ -27,8 +27,7 @@ import {
 } from "@/lib/insights/pageAnnotationPlan";
 import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
-
-const DEV = process.env.NODE_ENV === "development";
+import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 
 export const config = {
   maxDuration: 30,
@@ -244,7 +243,16 @@ export default async function handler(
   }
 
   const body = req.body as Partial<SurgeonAnnotationInput>;
-  const diagnosticIds = { pageTruthKey: body?.pageTruthKey ?? null, pageNumber: body?.pageNumber ?? null };
+  const requestId = newRequestId();
+  // Diagnostic identifiers only — never the page/annotation TEXT itself.
+  // documentId is hashed (one-way) so a book's identity never appears in logs.
+  const diagnosticIds = {
+    requestId,
+    documentIdHash: body?.documentId ? hashDocumentId(body.documentId) : null,
+    pageTruthKey:   body?.pageTruthKey ?? null,
+    pageNumber:     body?.pageNumber ?? null,
+    pageTextLength: body?.pageText?.length ?? null,
+  };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
     res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
@@ -352,7 +360,8 @@ export default async function handler(
     return;
   }
 
-  DEV && console.log("[SURGEON_PLAN_OK]", {
+  // Production-safe — counts and timings only, never the annotation/quote text.
+  console.log("[SURGEON_PLAN_OK]", {
     ...diagnosticIds,
     annotationCount: result.data.annotations.length,
     durationMs:      Date.now() - startedAt,

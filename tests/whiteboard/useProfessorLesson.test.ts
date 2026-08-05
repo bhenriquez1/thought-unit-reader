@@ -93,7 +93,7 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
 
   it("an API ok:false response sets status 'error' with a specific message, and leaves lessonPlan alone (stays null on first load)", () => {
     const idx = src.indexOf("if (!data.ok) {");
-    const body = src.slice(idx, idx + 150);
+    const body = src.slice(idx, idx + 300);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
     expect(body).not.toMatch(/setLessonPlan\(/);
@@ -102,14 +102,14 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
   it("zero groundable targets sets status 'error', not an empty-but-successful plan", () => {
     const idx = src.indexOf("if (grounded.nodeScripts.length === 0)");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 260);
+    const body = src.slice(idx, idx + 420);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
   });
 
   it("a thrown/network error sets status 'error' too", () => {
     const idx = src.indexOf("} catch (err: any) {");
-    const body = src.slice(idx, idx + 300);
+    const body = src.slice(idx, idx + 450);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
   });

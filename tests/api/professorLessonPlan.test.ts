@@ -142,3 +142,28 @@ describe("pages/api/professor-lesson-plan.ts — learningObjective and the 'defi
     expect(src).toMatch(/"definition" is also a valid visualGrammar choice/);
   });
 });
+
+describe("pages/api/professor-lesson-plan.ts — required production diagnostics", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("generates a per-request requestId and a one-way hash of documentId — never the raw documentId", () => {
+    expect(src).toMatch(/import \{ hashDocumentId, newRequestId \} from "@\/lib\/insights\/requestDiagnostics"/);
+    expect(src).toMatch(/const requestId = newRequestId\(\);/);
+    expect(src).toMatch(/documentIdHash:\s*body\?\.documentId \? hashDocumentId\(body\.documentId\) : null,/);
+    expect(src).not.toMatch(/documentId:\s*body\?\.documentId \?\? null/);
+  });
+
+  it("diagnosticIds carries nodeCount/edgeCount — never the node/edge text itself", () => {
+    const idx = src.indexOf("let diagnosticIds: Record<string, unknown> = {");
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/nodeCount:\s*Array\.isArray\(body\?\.nodes\) \? body\.nodes\.length : null,/);
+    expect(block).toMatch(/edgeCount:\s*Array\.isArray\(body\?\.edges\) \? body\.edges\.length : null,/);
+  });
+
+  it("the success log runs unconditionally (production-safe), not DEV-gated", () => {
+    const idx = src.indexOf('console.log("[PROFESSOR_LESSON_OK]"');
+    expect(idx).toBeGreaterThan(-1);
+    expect(src.slice(idx - 20, idx)).not.toMatch(/DEV\s*&&\s*$/);
+  });
+});

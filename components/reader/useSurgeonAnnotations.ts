@@ -33,6 +33,7 @@ import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity"
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
+import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
 import {
   getSurgeonAnnotationPlan,
   saveSurgeonAnnotationPlan,
@@ -281,6 +282,7 @@ export function useSurgeonAnnotations({
           // stages of the pipeline trace SmartPDFViewer's [SURGEON_PIPELINE_DIAGNOSTIC]
           // continues (geometryResolvedCount/renderedAnnotationCount).
           console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+            documentIdHash: hashDocumentId(bookIdRef.current),
             pageTruthKey,
             stage: "cache-hit",
             annotationPlanCount: stored.plan.annotations.length,
@@ -399,6 +401,7 @@ export function useSurgeonAnnotations({
 
         if (DEV) console.log("[SURGEON_PLAN_OK]", { pageTruthKey, annotationCount: targets.length });
         console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+          documentIdHash: hashDocumentId(bookIdRef.current),
           pageTruthKey,
           stage: "fetch",
           annotationPlanCount: data.plan.annotations.length,
