@@ -39,7 +39,7 @@ const PLAN_TIMEOUT_MS  = 25_000;
 const RETRY_BACKOFF_MS = 700;
 
 export type AnnotationPlanResponse =
-  | { ok: true; plan: SurgeonAnnotationPlan }
+  | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string }
   | { ok: false; error: string; code: string; fallbackAllowed: true };
 
 function degraded(message: string, code = "UPSTREAM_UNAVAILABLE"): AnnotationPlanResponse {
@@ -55,6 +55,15 @@ Do NOT treat any pre-existing summary as ground truth — verify everything agai
 you actually see in the page image and text. "existingCanonicalUnits" (if provided) are
 prior context from an earlier pass, offered only for continuity — re-derive the page's
 content yourself rather than assuming they are complete or still accurate.
+
+The current page's text is provided below as a list of typed BLOCKS (heading, paragraph,
+list, table, caption, equation, figure-label), each carrying its reading order. Read every
+block — a heading names what the page is about, a table's rows are as quotable as a
+paragraph's sentences, and neither is decoration to skip past. "headings.previous" and
+"headings.next" (if present) name the neighboring pages ONLY so you understand this page's
+place in the book — they are NOT this page's content. Never propose an exactQuote drawn
+from headings.previous or headings.next; every exactQuote must come from THIS page's own
+blocks.
 
 Your task: identify what on this page deserves a highlight/annotation, and propose the
 EXACT verbatim quote for it. You do NOT propose coordinates — the app finds your quote
@@ -204,6 +213,10 @@ export default async function handler(
     res.status(400).json({ ok: false, error: "pageText is required", code: "missing_page_text", fallbackAllowed: true });
     return;
   }
+  if (!body.pageContentHash || typeof body.pageContentHash !== "string") {
+    res.status(400).json({ ok: false, error: "pageContentHash is required", code: "missing_page_content_hash", fallbackAllowed: true });
+    return;
+  }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -212,6 +225,11 @@ export default async function handler(
     return;
   }
 
+  const blocks = Array.isArray(body.blocks) ? body.blocks.slice(0, 200) : [];
+  const blocksBlock = blocks.length > 0
+    ? blocks.map(b => `[${b.readingOrder}][${String(b.type).toUpperCase()}] ${b.text}`).join("\n")
+    : body.pageText.slice(0, 6000); // fallback: no structured blocks provided
+
   const userTextBlock =
     `pageTruthKey: ${body.pageTruthKey}\n` +
     `pageNumber: ${body.pageNumber ?? "unknown"}\n` +
@@ -219,7 +237,7 @@ export default async function handler(
     `semanticPack: ${JSON.stringify(body.semanticPack ?? {})}\n` +
     `headings: ${JSON.stringify(body.headings ?? {})}\n` +
     `existingCanonicalUnits (context only — re-verify against the page, do not trust blindly): ${JSON.stringify((body.existingCanonicalUnits ?? []).slice(0, 20))}\n` +
-    `\nCurrent page text:\n${body.pageText.slice(0, 6000)}\n` +
+    `\nCurrent page — structured blocks in reading order (read ALL of them; headings and tables carry real content, not decoration):\n${blocksBlock}\n` +
     `\nProduce the SurgeonAnnotationPlan JSON.`;
 
   const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
@@ -298,5 +316,9 @@ export default async function handler(
     durationMs:      Date.now() - startedAt,
   });
 
-  res.status(200).json({ ok: true, plan: result.data });
+  // pageContentHash is echoed back unchanged, never re-derived server-side —
+  // the client's own fresh recomputation at response-apply time (against
+  // whatever page is ACTUALLY on screen then) is the real check; this is
+  // just carrying the request's identity through to that comparison.
+  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash });
 }

@@ -5202,6 +5202,17 @@ export default function ThoughtUnitReader() {
                   </div>
                 )}
 
+                {/* Surgeon Annotation Plan is reading the CURRENT page fresh — a small,
+                    non-blocking notice, never a substitute for what's already showing
+                    (the deterministic baseline / a same-pageTruthKey cached plan stay
+                    visible underneath while this is up). */}
+                {surgeonAnnotations.status === "loading" && (
+                  <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-sky-700/40 bg-sky-950/60 px-4 py-1 text-[11px] text-sky-200 backdrop-blur-sm">
+                    <span className="animate-pulse">●</span>
+                    <span>Reading current page…</span>
+                  </div>
+                )}
+
                 {/* SurgeonAnnotationPlan degraded status — existing/cached annotations stay
                     visible underneath; this is only a small notice, never a blocking state. */}
                 {surgeonAnnotations.status === "error" && surgeonAnnotations.annotationErrorMessage && (
