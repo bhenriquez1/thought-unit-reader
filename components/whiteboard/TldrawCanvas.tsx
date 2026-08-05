@@ -84,6 +84,10 @@ interface Props {
   documentId?:             string;
   pageTruthKey?:           string;
   activeCanonicalUnitId?:  string | null;
+  /** The current page's classifier value (SurgeonAnnotationPlan.pageRole) —
+   *  passed straight through to the Professor Lesson Planner so it teaches
+   *  in a style that matches what kind of page this actually is. */
+  pageTeachingType?:       string | null;
 }
 
 function mergeBounds(list: Bounds[]): Bounds | null {
@@ -112,7 +116,7 @@ function emphasisShapeId(primaryShapeId: string): string {
 export default function TldrawCanvas({
   noteCards, pageTitle, whiteboardGrammar = "flow",
   onAnchorClick, vsg, activeAnchorId, storageKey,
-  documentId, pageTruthKey, activeCanonicalUnitId,
+  documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType,
 }: Props) {
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
   const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
@@ -142,11 +146,12 @@ export default function TldrawCanvas({
   const effectiveDocumentId = documentId ?? storageKey ?? "unknown-document";
   const effectivePageTruthKey = pageTruthKey ?? derivedVsg?.id ?? "unknown-page";
 
-  const { lessonPlan, status: lessonStatus, usingFallback, reanalyze } = useProfessorLesson({
+  const { lessonPlan, status: lessonStatus, errorMessage: lessonErrorMessage, reanalyze } = useProfessorLesson({
     vsg: derivedVsg,
     documentId: effectiveDocumentId,
     pageTruthKey: effectivePageTruthKey,
     activeCanonicalUnitId: activeCanonicalUnitId ?? null,
+    pageTeachingType: pageTeachingType ?? null,
     enabled: !!derivedVsg,
   });
 
@@ -519,12 +524,6 @@ export default function TldrawCanvas({
         <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace", flexShrink: 0 }}>
           {lessonPlan?.title || pageTitle || "Whiteboard"}
         </span>
-        {usingFallback && lessonStatus === "error" && (
-          <button onClick={reanalyze} title="Retry the professor lesson" style={{ ...BTN_MUTED, fontSize: 10 }}>
-            ⚠ basic lesson — retry
-          </button>
-        )}
-
         <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
           {totalSteps > 0 && (
             <span style={{ fontSize: 10, color: "#475569", fontVariantNumeric: "tabular-nums", marginRight: 2 }}>
@@ -575,10 +574,23 @@ export default function TldrawCanvas({
             </div>
           )}
 
-          {!licenseMissingInProduction && !lessonPlan && (
+          {/* No fallback: a failed/ungroundable Professor Lesson Planner
+              response shows a visible retry state, never a silently-
+              substituted generic diagram — see useProfessorLesson.ts. */}
+          {!licenseMissingInProduction && !lessonPlan && lessonStatus === "error" && (
+            <div role="alert" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.94)", zIndex: 10, gap: 14, padding: 24, textAlign: "center" }}>
+              <span style={{ fontSize: 20 }}>⚠</span>
+              <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+                {lessonErrorMessage ?? "Unable to generate Whiteboard for this page."}
+              </span>
+              <button onClick={reanalyze} style={BTN_PRIMARY}>Retry</button>
+            </div>
+          )}
+
+          {!licenseMissingInProduction && !lessonPlan && lessonStatus !== "error" && (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.88)", zIndex: 10, gap: 16 }}>
               <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
-                {lessonStatus === "loading" ? "Preparing the lesson…" : "Preparing visual lesson…"}
+                {lessonStatus === "loading" ? "Reading the current page…" : "Preparing visual lesson…"}
               </span>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", opacity: 0.35 }}>
                 {[280, 220, 250].map((w, i) => (

@@ -239,14 +239,19 @@ describe("spanScope", () => {
 // ── pageRole — page-level dominant-grammar classification ─────────────────────
 
 describe("pageRole", () => {
-  const ALL_PAGE_ROLES = ["definition", "procedure", "mechanism", "comparison", "example"] as const;
+  const ALL_PAGE_ROLES = [
+    "definition", "procedure", "mechanism", "comparison", "example",
+    "anatomy", "physiology", "pharmacology", "diagnosis", "histology",
+    "classification", "decision-tree", "workflow",
+    "mathematical-derivation", "organic-chemistry-reaction",
+  ] as const;
 
   it("is required on a plan", () => {
     const { pageRole, ...withoutPageRole } = VALID_PLAN;
     expect(() => SurgeonAnnotationPlanSchema.parse(withoutPageRole)).toThrow();
   });
 
-  it("accepts all 5 values", () => {
+  it(`accepts all ${ALL_PAGE_ROLES.length} values — the shared page-classifier taxonomy`, () => {
     for (const pageRole of ALL_PAGE_ROLES) {
       expect(() => SurgeonAnnotationPlanSchema.parse({ ...VALID_PLAN, pageRole })).not.toThrow();
     }

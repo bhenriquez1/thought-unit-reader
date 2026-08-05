@@ -78,17 +78,29 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
   });
 });
 
-describe("pages/api/page-annotation-plan.ts — pageRole (page-level dominant-grammar classification)", () => {
+describe("pages/api/page-annotation-plan.ts — pageRole (shared page classifier, decided before highlighting)", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
-  it("prompt instructs the model to classify pageRole independently of pageThesis", () => {
-    expect(src).toMatch(/pageRole classifies the PAGE's dominant grammar/);
-    expect(src).toMatch(/independent of pageThesis's content summary/);
+  it("prompt frames pageRole as the page classifier — decided first, before any annotation, independent of pageThesis", () => {
+    expect(src).toMatch(/pageRole is the PAGE CLASSIFIER/);
+    expect(src).toMatch(/what kind of page is this/);
+    expect(src).toMatch(/Choose independently of pageThesis's content summary/);
   });
 
-  it("prompt's JSON output shape includes pageRole with all 5 values", () => {
-    expect(src).toMatch(/"pageRole":\s*"<definition\|procedure\|mechanism\|comparison\|example>"/);
+  it("lists the domain-flavored teaching types (anatomy/physiology/pharmacology/diagnosis/etc), not just the 5 generic values", () => {
+    for (const role of ["anatomy", "physiology", "pharmacology", "diagnosis", "histology", "classification", "decision-tree", "workflow", "mathematical-derivation", "organic-chemistry-reaction"]) {
+      expect(src).toContain(role);
+    }
+  });
+
+  it("instructs adaptive highlighting — which canonicalTypes to favor per pageRole, not one fixed checklist for every page", () => {
+    expect(src).toMatch(/ADAPTIVE HIGHLIGHTING/);
+    expect(src).toMatch(/instead of forcing every page through the same fixed checklist/);
+  });
+
+  it("prompt's JSON output shape includes pageRole with the full taxonomy", () => {
+    expect(src).toMatch(/"pageRole":\s*"<anatomy\|physiology\|pharmacology/);
   });
 });
 

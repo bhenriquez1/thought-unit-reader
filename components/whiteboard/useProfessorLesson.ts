@@ -1,8 +1,7 @@
 // components/whiteboard/useProfessorLesson.ts
 // Trigger hook for the Professor Lesson Planner — mirrors components/reader/
 // useSurgeonAnnotations.ts's Effect A/B pattern (cache-first, abort stale
-// requests on real identity change, never leave the canvas with nothing to
-// perform).
+// requests on real identity change).
 //
 //   Effect A (deps: [identityKey]) — reset, try the IDB cache first.
 //   Effect B (deps: [identityKey, enabled]) — fetch once per identity,
@@ -13,15 +12,17 @@
 // response for a page/unit the student has since left is dropped exactly
 // like useSurgeonAnnotations drops a late SurgeonAnnotationPlan response.
 //
-// Never returns lessonPlan: null while a vsg is available: on fetch failure
-// or missing config, buildDeterministicLessonScript() (AI-free, cannot fail)
-// takes over so the canvas always has a real lesson to perform.
+// NO FALLBACK: on any failure (missing config, upstream error, ungroundable
+// response, network error), lessonPlan stays null and status becomes
+// "error" — the caller shows a retry state, never a silently-substituted
+// generic lesson. This is deliberate: masking a broken Professor Planner
+// behind an always-present fallback made it impossible to tell whether the
+// new pipeline was actually working.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
 import { buildProfessorLessonInput } from "@/lib/whiteboard/buildProfessorLessonInput";
 import { groundProfessorLesson } from "@/lib/whiteboard/groundProfessorLesson";
-import { buildDeterministicLessonScript } from "@/lib/whiteboard/deterministicLessonScript";
 import { buildProfessorTeachingActions } from "@/lib/whiteboard/buildProfessorTeachingActions";
 import {
   buildProfessorLessonCacheKey, PLANNER_VERSION,
@@ -35,10 +36,9 @@ export type ProfessorLessonStatus = "idle" | "loading" | "success" | "error";
 export interface UseProfessorLessonResult {
   lessonPlan: ProfessorLessonPlan | null;
   status: ProfessorLessonStatus;
-  /** true when lessonPlan came from the AI-free deterministic generator
-   *  rather than the Professor Lesson Planner — canvas is never empty, but
-   *  the caller may want to show a small "basic lesson" notice. */
-  usingFallback: boolean;
+  /** Set only when status is "error" — a short, specific reason the caller
+   *  can show alongside the retry button. */
+  errorMessage: string | null;
   reanalyze: () => void;
 }
 
@@ -47,6 +47,7 @@ interface Args {
   documentId: string;
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
+  pageTeachingType?: string | null;
   enabled: boolean;
 }
 
@@ -54,12 +55,14 @@ function identityKey(args: Pick<Args, "documentId" | "pageTruthKey" | "activeCan
   return `${args.documentId}::${args.pageTruthKey}::${args.activeCanonicalUnitId ?? "none"}`;
 }
 
+const GENERIC_ERROR_MESSAGE = "Unable to generate Whiteboard for this page.";
+
 export function useProfessorLesson({
-  vsg, documentId, pageTruthKey, activeCanonicalUnitId, enabled,
+  vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType, enabled,
 }: Args): UseProfessorLessonResult {
   const [lessonPlan, setLessonPlan]   = useState<ProfessorLessonPlan | null>(null);
   const [status, setStatus]           = useState<ProfessorLessonStatus>("idle");
-  const [usingFallback, setUsingFallback] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reanalyzeCount, setReanalyzeCount] = useState(0);
 
   const abortRef       = useRef<AbortController | null>(null);
@@ -68,6 +71,8 @@ export function useProfessorLesson({
 
   const vsgRef = useRef(vsg);
   vsgRef.current = vsg;
+  const pageTeachingTypeRef = useRef(pageTeachingType);
+  pageTeachingTypeRef.current = pageTeachingType;
 
   const reanalyze = useCallback(() => {
     forceRefetchRef.current = true;
@@ -75,23 +80,13 @@ export function useProfessorLesson({
     setReanalyzeCount(c => c + 1);
   }, []);
 
-  const applyDeterministicFallback = useCallback((v: VisualSceneGraph, snapshotVsgId: string) => {
-    const grounded = buildDeterministicLessonScript(v);
-    const plan = buildProfessorTeachingActions(v, grounded, {
-      documentId, pageNumber: v.sourcePageNumber ?? 0, pageTruthKey,
-      activeCanonicalUnitId, vsgId: snapshotVsgId, plannerVersion: PLANNER_VERSION,
-    });
-    setLessonPlan(plan);
-    setUsingFallback(true);
-  }, [documentId, pageTruthKey, activeCanonicalUnitId]);
-
   const key = identityKey({ documentId, pageTruthKey, activeCanonicalUnitId });
 
   // ── Effect A: identity changed → reset + try cache ─────────────────────
   useEffect(() => {
     setLessonPlan(null);
     setStatus("idle");
-    setUsingFallback(false);
+    setErrorMessage(null);
     startedKeyRef.current = null;
 
     let cancelled = false;
@@ -102,7 +97,6 @@ export function useProfessorLesson({
         if (cancelled) return;
         if (stored && stored.plan.sourceSnapshot.pageTruthKey === pageTruthKey) {
           setLessonPlan(stored.plan);
-          setUsingFallback(false);
           setStatus("success");
           startedKeyRef.current = key;
         }
@@ -129,13 +123,17 @@ export function useProfessorLesson({
     forceRefetchRef.current = false;
 
     setStatus("loading");
+    setErrorMessage(null);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
     (async () => {
       try {
-        const input = buildProfessorLessonInput({ vsg: v, documentId, pageTruthKey, activeCanonicalUnitId });
+        const input = buildProfessorLessonInput({
+          vsg: v, documentId, pageTruthKey, activeCanonicalUnitId,
+          pageTeachingType: pageTeachingTypeRef.current,
+        });
         const res = await fetch("/api/professor-lesson-plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -146,7 +144,7 @@ export function useProfessorLesson({
         if (ctrl.signal.aborted) return;
 
         if (!data.ok) {
-          applyDeterministicFallback(v, v.id);
+          setErrorMessage(GENERIC_ERROR_MESSAGE);
           setStatus("error");
           return;
         }
@@ -159,8 +157,8 @@ export function useProfessorLesson({
 
         const grounded = groundProfessorLesson(script, v);
         if (grounded.nodeScripts.length === 0) {
-          // Everything the model referenced was ungroundable — degrade, not empty.
-          applyDeterministicFallback(v, v.id);
+          // Everything the model referenced was ungroundable.
+          setErrorMessage(GENERIC_ERROR_MESSAGE);
           setStatus("error");
           return;
         }
@@ -170,7 +168,7 @@ export function useProfessorLesson({
           activeCanonicalUnitId, vsgId: v.id, plannerVersion: PLANNER_VERSION,
         });
         setLessonPlan(plan);
-        setUsingFallback(false);
+        setErrorMessage(null);
         setStatus("success");
 
         const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId });
@@ -178,12 +176,12 @@ export function useProfessorLesson({
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
         console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { pageTruthKey, message: err?.message ?? String(err) });
-        applyDeterministicFallback(v, v.id);
+        setErrorMessage(GENERIC_ERROR_MESSAGE);
         setStatus("error");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, enabled, reanalyzeCount, applyDeterministicFallback]);
+  }, [key, enabled, reanalyzeCount]);
 
-  return { lessonPlan, status, usingFallback, reanalyze };
+  return { lessonPlan, status, errorMessage, reanalyze };
 }

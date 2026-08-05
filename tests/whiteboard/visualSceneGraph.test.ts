@@ -6,6 +6,7 @@ import {
   computeVSGState,
   noteCardsToCanonicalEntries,
   surgeonAnnotationsToCanonicalEntries,
+  pageRoleToWhiteboardGrammar,
   VSGNodeSchema,
   type NoteCardLike,
   type VisualSceneGraph,
@@ -639,6 +640,47 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
     expect(state.status).toBe("ready");
     if (state.status === "ready") {
       expect(state.vsg.nodes[0].tier).toBe("pearl");
+    }
+  });
+});
+
+describe("pageRoleToWhiteboardGrammar — the shared page classifier picks the Whiteboard's teaching grammar", () => {
+  it("maps anatomy to the anatomy (hub-spoke) grammar", () => {
+    expect(pageRoleToWhiteboardGrammar("anatomy")).toBe("anatomy");
+  });
+
+  it("maps mathematical-derivation and organic-chemistry-reaction to worked-solution", () => {
+    expect(pageRoleToWhiteboardGrammar("mathematical-derivation")).toBe("worked-solution");
+    expect(pageRoleToWhiteboardGrammar("organic-chemistry-reaction")).toBe("worked-solution");
+  });
+
+  it("maps workflow and procedure to pathway", () => {
+    expect(pageRoleToWhiteboardGrammar("workflow")).toBe("pathway");
+    expect(pageRoleToWhiteboardGrammar("procedure")).toBe("pathway");
+  });
+
+  it("maps diagnosis, classification, and decision-tree to case-map (hub-spoke)", () => {
+    expect(pageRoleToWhiteboardGrammar("diagnosis")).toBe("case-map");
+    expect(pageRoleToWhiteboardGrammar("classification")).toBe("case-map");
+    expect(pageRoleToWhiteboardGrammar("decision-tree")).toBe("case-map");
+  });
+
+  it("never throws and falls back to flow for null/unknown pageRole", () => {
+    expect(pageRoleToWhiteboardGrammar(null)).toBe("flow");
+    expect(pageRoleToWhiteboardGrammar(undefined)).toBe("flow");
+    expect(pageRoleToWhiteboardGrammar("some-future-value-not-yet-mapped")).toBe("flow");
+  });
+
+  it("every mapped value is a real WhiteboardGrammarSchema value", () => {
+    const VALID = new Set(["flow", "anatomy", "pathway", "worked-solution", "timeline", "system-diagram", "case-map"]);
+    const ALL_PAGE_ROLES = [
+      "definition", "procedure", "mechanism", "comparison", "example",
+      "anatomy", "physiology", "pharmacology", "diagnosis", "histology",
+      "classification", "decision-tree", "workflow",
+      "mathematical-derivation", "organic-chemistry-reaction",
+    ];
+    for (const role of ALL_PAGE_ROLES) {
+      expect(VALID.has(pageRoleToWhiteboardGrammar(role))).toBe(true);
     }
   });
 });

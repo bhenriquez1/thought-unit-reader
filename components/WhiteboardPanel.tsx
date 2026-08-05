@@ -19,7 +19,7 @@ import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import {
-  computeVSGState, noteCardsToCanonicalEntries,
+  computeVSGState, noteCardsToCanonicalEntries, pageRoleToWhiteboardGrammar,
   type VSGState, type VisualSceneGraph,
 } from "@/lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
@@ -65,6 +65,11 @@ type Props = {
   /** NEW: auto refresh when page changes (debounced + cached) */
   reExplainOnPageChange?: boolean;
   currentPage?: number;
+  /** The app's real page-identity key (lib/useActivePageIntelligence.ts) —
+   *  every Professor Lesson Planner request/response is tied to this, exactly
+   *  like the Surgeon Annotation pipeline. Falls back to a bookId::page
+   *  synthetic key when not provided (e.g. older call sites). */
+  pageTruthKey?: string;
 
   /** Optional override for the diagram detector used by auto-refresh */
   containsDiagramOrFormula?: (text: string) => boolean;
@@ -104,8 +109,19 @@ type Props = {
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
   /** Preferred layout grammar from the active annotation pack — drives whiteboard layout selection.
-   *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow. */
+   *  "anatomy" → hub-spoke; "case-map" → hub-spoke; "timeline" / "pathway" / "worked-solution" → flow.
+   *  Overridden by pageTeachingType when that's available — see below. */
   whiteboardGrammar?: string;
+  /**
+   * The current page's classifier value — SurgeonAnnotationPlan.pageRole
+   * (lib/insights/pageAnnotationPlan.ts), decided fresh from THIS page by
+   * the same pipeline that drives highlight selection. When present, this
+   * (via pageRoleToWhiteboardGrammar) picks the Whiteboard's teaching
+   * grammar INSTEAD of the static per-book whiteboardGrammar prop above —
+   * "what kind of page is this?" answered from the page's own content, not
+   * a book-wide setting.
+   */
+  pageTeachingType?: string | null;
   /**
    * Phase 1 — canonical thought units for this page.
    * When provided, the VSG is built directly from these; otherwise the panel
@@ -142,6 +158,7 @@ export default function WhiteboardPanel({
 
   reExplainOnPageChange = false,
   currentPage,
+  pageTruthKey,
   containsDiagramOrFormula = defaultDiagramHeuristic,
   cacheSize = 20,
   prebuiltSteps,
@@ -158,6 +175,7 @@ export default function WhiteboardPanel({
   learningProfile,
   onOpenChiefResident,
   whiteboardGrammar,
+  pageTeachingType,
   canonicalEntries,
 }: Props) {
   const isDebugMode = debugMode ?? (process.env.NEXT_PUBLIC_WHITEBOARD_DEBUG === "1");
@@ -199,15 +217,24 @@ export default function WhiteboardPanel({
     try { return deriveNoteCardsFromStudyModel(sm as CurrentPageStudyModel); } catch { return []; }
   }, [studyModel]);
 
+  // "What kind of page is this?" — decided fresh from the current page by
+  // the same classifier that shapes highlight selection (pageRole), not a
+  // static per-book setting. Falls back to the book-level whiteboardGrammar
+  // prop only when no page classification is available yet.
+  const effectiveGrammar = useMemo(
+    () => (pageTeachingType ? pageRoleToWhiteboardGrammar(pageTeachingType) : (whiteboardGrammar ?? "flow")),
+    [pageTeachingType, whiteboardGrammar],
+  );
+
   const vsgState = useMemo((): VSGState => {
     const entries =
       canonicalEntries && canonicalEntries.length > 0
         ? canonicalEntries
         : noteCardsToCanonicalEntries(teachNoteCards);
-    return computeVSGState(entries, whiteboardGrammar ?? "flow", {
+    return computeVSGState(entries, effectiveGrammar, {
       pageNumber: currentPage,
     });
-  }, [canonicalEntries, teachNoteCards, whiteboardGrammar, currentPage]);
+  }, [canonicalEntries, teachNoteCards, effectiveGrammar, currentPage]);
 
   // Stable key for localStorage canvas persistence — scoped to book + page.
   const canvasStorageKey = bookId && currentPage != null
@@ -845,12 +872,13 @@ export default function WhiteboardPanel({
                   pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
                   activeAnchorId={activeAnchorId}
-                  whiteboardGrammar={whiteboardGrammar}
+                  whiteboardGrammar={effectiveGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                   storageKey={canvasStorageKey}
                   documentId={bookId}
-                  pageTruthKey={bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined}
+                  pageTruthKey={pageTruthKey ?? (bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined)}
                   activeCanonicalUnitId={knowledgeNodeId ?? null}
+                  pageTeachingType={pageTeachingType ?? null}
                 />
               </div>
             </div>

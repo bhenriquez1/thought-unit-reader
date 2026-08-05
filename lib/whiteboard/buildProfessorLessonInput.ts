@@ -29,6 +29,12 @@ export interface ProfessorLessonInput {
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
   visualGrammarHint: string;
+  /** The page classifier's own answer to "what kind of page is this?" —
+   *  SurgeonAnnotationPlan.pageRole, decided fresh from this same page by
+   *  the highlighting pipeline. When present, this is a STRONGER signal
+   *  than visualGrammarHint (which only reflects the VSG's rule-based
+   *  layout heuristic) for choosing teaching style. */
+  pageTeachingType: string | null;
   vsgId: string;
   nodes: ProfessorLessonNodeInput[];
   edges: ProfessorLessonEdgeInput[];
@@ -39,14 +45,16 @@ export function buildProfessorLessonInput(args: {
   documentId: string;
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
+  pageTeachingType?: string | null;
 }): ProfessorLessonInput {
-  const { vsg, documentId, pageTruthKey, activeCanonicalUnitId } = args;
+  const { vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType } = args;
   return {
     documentId,
     pageNumber:  vsg.sourcePageNumber ?? 0,
     pageTruthKey,
     activeCanonicalUnitId,
     visualGrammarHint: vsg.grammar,
+    pageTeachingType: pageTeachingType ?? null,
     vsgId: vsg.id,
     nodes: vsg.nodes.map(n => ({
       id: n.id,
