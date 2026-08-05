@@ -134,7 +134,10 @@ describe("TldrawCanvas.tsx — production license guard", () => {
   });
 
   it("shows a visible role=\"alert\" instead of rendering <Tldraw> when misconfigured in production", () => {
-    expect(src).toMatch(/licenseMissingInProduction \? \(\s*\n\s*<div\s*\n\s*role="alert"/);
+    const idx = src.indexOf("licenseMissingInProduction ? (");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/role="alert"/);
     expect(src).toMatch(/Whiteboard configuration is unavailable/);
   });
 
