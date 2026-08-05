@@ -114,6 +114,10 @@ export const VSGNodeSchema = z.object({
   size:            z.object({ w: z.number(), h: z.number() }),
   page:            z.number().optional(),
   sourceId:        z.string(),            // original CanonicalEntryInput.id for One Brain sync
+  /** Why this point matters — passed straight through into
+   *  ProfessorLessonNodeInput.reason so the teaching AI knows WHY, not just
+   *  what the quoted text says. */
+  reason:          z.string().optional(),
 });
 export type VSGNode = z.infer<typeof VSGNodeSchema>;
 
@@ -341,6 +345,7 @@ export function buildVSG(
       size:            { w: pos.w, h: pos.h },
       page:            n.page,
       sourceId:        n.id,
+      reason:          n.reason,
     });
   });
 
@@ -519,5 +524,6 @@ export function surgeonAnnotationsToCanonicalEntries(
     canonicalType: SURGEON_CANONICAL_TYPE_TO_VSG_TYPE[g.canonicalType],
     priorityTier:  SURGEON_IMPORTANCE_TO_PRIORITY_TIER[g.importance],
     page:          pageNumber,
+    reason:        g.reason,
   }));
 }

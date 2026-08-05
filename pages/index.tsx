@@ -2028,12 +2028,18 @@ export default function ThoughtUnitReader() {
 
   // Deterministic Scene Builder input — SurgeonAnnotationPlan's grounded annotations,
   // never Claude/image-generation, converted to CanonicalEntryInput[] for the
-  // already-built VisualSceneGraph pipeline. WhiteboardPanel falls back to
-  // noteCardsToCanonicalEntries(teachNoteCards) on its own whenever this is empty
-  // (not yet loaded/cached, or degraded) — see WhiteboardPanel.tsx's vsgState memo.
+  // already-built VisualSceneGraph pipeline. Built from wholePageAnnotations, NOT
+  // groundedAnnotations — the latter is density-limited for PDF-margin-note
+  // readability (max 8, mechanism/procedure sharing one slot), which has nothing
+  // to do with how much the Whiteboard needs to teach the page well; reusing it
+  // here was silently starving the Whiteboard of content that the SAME page read
+  // already produced. Same one page read either way — just a fuller view of it.
+  // WhiteboardPanel falls back to noteCardsToCanonicalEntries(teachNoteCards) on
+  // its own whenever this is empty (not yet loaded/cached, or degraded) — see
+  // WhiteboardPanel.tsx's vsgState memo.
   const whiteboardCanonicalEntries = useMemo(
-    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.groundedAnnotations, currentPage),
-    [surgeonAnnotations.groundedAnnotations, currentPage],
+    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, currentPage),
+    [surgeonAnnotations.wholePageAnnotations, currentPage],
   );
 
   // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
@@ -6715,7 +6721,13 @@ export default function ThoughtUnitReader() {
                 activeAnchorId={focusedEvidenceId}
                 bookId={bookId}
                 bookTitle={uploadedFile?.name}
-                pageTitle={currentPageStudyModel?.pageThesis ?? null}
+                // SurgeonAnnotationPlan.pageThesis is authoritative — it's the same
+                // shared page-understanding pass that also drives highlighting and
+                // pageTeachingType. currentPageStudyModel comes from a separate
+                // synthesis pipeline that reads the page independently; falling
+                // back to it here (rather than preferring it) avoids the
+                // Whiteboard and highlights ever disagreeing about the page.
+                pageTitle={surgeonAnnotations.plan?.pageThesis ?? currentPageStudyModel?.pageThesis ?? null}
                 knowledgeNodeId={pageKgNodeIdRef.current}
                 onOpenChiefResident={handleOpenChiefResident}
                 whiteboardGrammar={activePack.whiteboardGrammar}

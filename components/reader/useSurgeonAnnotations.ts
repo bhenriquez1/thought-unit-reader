@@ -55,12 +55,25 @@ export interface UseSurgeonAnnotationsResult {
    * groundingState, and spanScope. Same (density-limited) array
    * highlightTargets is derived from (both come from one groundSurgeonQuotes()
    * + limitAnnotationDensity() pass per fetch/cache-hit, so they can never
-   * drift). Feeds lib/whiteboard/visualSceneGraph.ts's
-   * surgeonAnnotationsToCanonicalEntries() for the deterministic Scene Builder
-   * — the Whiteboard and the PDF overlay see the same "what deserves
-   * attention" judgment, by design.
+   * drift). This is the PDF-margin-note view — density-limited for readability
+   * as marginalia, NOT the full page understanding. Use wholePageAnnotations
+   * below for anything that wants the complete picture (e.g. the Whiteboard).
    */
   groundedAnnotations: GroundedSurgeonAnnotation[];
+  /**
+   * The SAME grounded annotations as groundedAnnotations, but WITHOUT
+   * limitAnnotationDensity()'s PDF-margin-note cap (max 8, with mechanism and
+   * procedure sharing a single slot). That cap exists so the PDF overlay reads
+   * like expert marginalia, not a diagnostic overlay — it has nothing to do
+   * with how much material the Whiteboard needs to teach the page well, and
+   * reusing it there was silently starving the Whiteboard of content (a
+   * 5-step procedure and a definition and a trap all fighting for one shared
+   * slot). Still the same one page read, same groundSurgeonQuotes() pass —
+   * no second AI call, just a second, less lossy VIEW of its output. Bounded
+   * only by the model's own per-page ceiling (pages/api/page-annotation-plan.ts
+   * rule 10, "at most 10 annotations").
+   */
+  wholePageAnnotations: GroundedSurgeonAnnotation[];
   /**
    * What highlightTargets/groundedAnnotations are actually populated from,
    * independent of `status` (which describes the AI fetch's own lifecycle).
@@ -206,6 +219,7 @@ export function useSurgeonAnnotations({
   const [plan,             setPlan]             = useState<SurgeonAnnotationPlan | null>(null);
   const [highlightTargets, setHighlightTargets] = useState<HighlightTarget[]>([]);
   const [groundedAnnotations, setGroundedAnnotations] = useState<GroundedSurgeonAnnotation[]>([]);
+  const [wholePageAnnotations, setWholePageAnnotations] = useState<GroundedSurgeonAnnotation[]>([]);
   const [status,           setStatus]           = useState<SurgeonAnnotationStatus>("idle");
   const [annotationErrorMessage, setAnnotationErrorMessage] = useState<string | null>(null);
   const [reanalyzeCount,   setReanalyzeCount]   = useState(0);
@@ -246,6 +260,7 @@ export function useSurgeonAnnotations({
     setPlan(null);
     setHighlightTargets([]);
     setGroundedAnnotations([]);
+    setWholePageAnnotations([]);
     setStatus("idle");
     setAnnotationErrorMessage(null);
     startedKeyRef.current = null;
@@ -268,11 +283,13 @@ export function useSurgeonAnnotations({
           // the model actually saw but would fail exact/normalized matching against
           // the raw, uncleaned text. Grounding against raw text was silently
           // dropping otherwise-correct annotations.
-          const grounded = limitAnnotationDensity(groundSurgeonQuotes(stored.plan.annotations, cleanActivePageText(pageTextRef.current)));
+          const wholePage = groundSurgeonQuotes(stored.plan.annotations, cleanActivePageText(pageTextRef.current));
+          const grounded = limitAnnotationDensity(wholePage);
           const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
           setGroundedAnnotations(grounded);
+          setWholePageAnnotations(wholePage);
           setStatus("success");
           // Mark this (page, domain, pack) combination as already satisfied so
           // Effect B doesn't immediately re-fetch what we just loaded from cache.
@@ -377,7 +394,8 @@ export function useSurgeonAnnotations({
           return;
         }
 
-        const grounded = limitAnnotationDensity(groundSurgeonQuotes(data.plan.annotations, cleanActivePageText(pageTextRef.current)));
+        const wholePage = groundSurgeonQuotes(data.plan.annotations, cleanActivePageText(pageTextRef.current));
+        const grounded = limitAnnotationDensity(wholePage);
         const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed verification — degraded, not a hard error.
@@ -389,6 +407,7 @@ export function useSurgeonAnnotations({
         setPlan(data.plan);
         setHighlightTargets(targets);
         setGroundedAnnotations(grounded);
+        setWholePageAnnotations(wholePage);
         setAnnotationErrorMessage(null);
         setStatus("success");
 
@@ -425,9 +444,13 @@ export function useSurgeonAnnotations({
 
   return {
     plan,
-    highlightTargets:    tiered.highlightTargets,
-    groundedAnnotations: tiered.groundedAnnotations,
-    planTier:            tiered.planTier,
+    highlightTargets:     tiered.highlightTargets,
+    groundedAnnotations:  tiered.groundedAnnotations,
+    // Not run through resolveAnnotationTier — it has no fallback tier of its
+    // own to resolve; it's simply empty whenever groundedAnnotations is
+    // (reset alongside it in Effect A, populated alongside it on success).
+    wholePageAnnotations,
+    planTier:             tiered.planTier,
     status,
     annotationErrorMessage,
     reanalyze,

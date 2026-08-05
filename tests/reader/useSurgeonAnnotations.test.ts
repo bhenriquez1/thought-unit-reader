@@ -164,13 +164,20 @@ describe("useSurgeonAnnotations.ts — hands off HighlightTarget[], never comput
   });
 
   it("applies limitAnnotationDensity to the output of groundSurgeonQuotes at both call sites, before groundedAnnotationsToHighlightTargets", () => {
-    const calls = src.match(/const grounded = limitAnnotationDensity\(groundSurgeonQuotes\(/g) ?? [];
+    const calls = src.match(/const wholePage = groundSurgeonQuotes\(/g) ?? [];
     expect(calls).toHaveLength(2);
-    const blocks = src.split("const grounded = limitAnnotationDensity(groundSurgeonQuotes(").slice(1);
+    const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
-      const nearby = block.slice(0, 300);
+      const nearby = block.slice(0, 400);
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
     }
+  });
+
+  it("wholePageAnnotations is the SAME groundSurgeonQuotes() output as groundedAnnotations, WITHOUT limitAnnotationDensity's PDF-margin-note cap — the Whiteboard's fuller view of the same one page read", () => {
+    const calls = src.match(/setWholePageAnnotations\(wholePage\)/g) ?? [];
+    expect(calls).toHaveLength(2);
+    expect(src).toMatch(/wholePageAnnotations,\n/);
   });
 
   it("carries treatment and canonicalType through onto each HighlightTarget", () => {
@@ -273,7 +280,7 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
   it("groundedAnnotations and planTier appear in the returned object, sourced from resolveAnnotationTier", () => {
     const idx = src.lastIndexOf("return {");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 300);
+    const block = src.slice(idx, idx + 600);
     expect(block).toMatch(/highlightTargets:\s*tiered\.highlightTargets,/);
     expect(block).toMatch(/groundedAnnotations:\s*tiered\.groundedAnnotations,/);
     expect(block).toMatch(/planTier:\s*tiered\.planTier,/);
@@ -281,13 +288,15 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
   });
 
   it("limitAnnotationDensity(groundSurgeonQuotes(...)) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
-    const calls = src.match(/const grounded = limitAnnotationDensity\(groundSurgeonQuotes\(/g) ?? [];
+    const calls = src.match(/const wholePage = groundSurgeonQuotes\(/g) ?? [];
     expect(calls).toHaveLength(2);
-    const blocks = src.split("const grounded = limitAnnotationDensity(groundSurgeonQuotes(").slice(1);
+    const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
       const nearby = block.slice(0, 700);
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
       expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
+      expect(nearby).toMatch(/setWholePageAnnotations\(wholePage\)/);
     }
   });
 
@@ -410,7 +419,7 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
   it("the content-hash check runs AFTER the pageTruthKey check, both before grounding", () => {
     const ptkIdx = src.indexOf("if (data.plan.pageTruthKey !== pageTruthKey)");
     const hashIdx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
-    const groundIdx = src.indexOf("const grounded = limitAnnotationDensity(groundSurgeonQuotes(data.plan.annotations");
+    const groundIdx = src.indexOf("const wholePage = groundSurgeonQuotes(data.plan.annotations");
     expect(ptkIdx).toBeGreaterThan(-1);
     expect(hashIdx).toBeGreaterThan(ptkIdx);
     expect(groundIdx).toBeGreaterThan(hashIdx);
