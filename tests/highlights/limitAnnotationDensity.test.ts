@@ -26,6 +26,7 @@ function makeGrounded(
     groundedText:  `${canonicalType} quote`,
     groundingState: "exact",
     confidence:    1.0,
+    originalIndex: 0,
     ...overrides,
   };
 }

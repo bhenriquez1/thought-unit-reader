@@ -201,9 +201,16 @@ describe("pages/api/page-annotation-plan.ts — max_completion_tokens, not the d
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
   it("REQUIRED: uses max_completion_tokens — resolveTeachingModel can dynamically select a reasoning-family model (o-series/gpt-5.x) that REJECTS max_tokens with HTTP 400", () => {
-    expect(src).toMatch(/max_completion_tokens:\s*2500,/);
+    expect(src).toMatch(/maxCompletionTokens:\s*2500/);
     expect(src).not.toMatch(/max_tokens:\s*2500,/);
     expect(src).not.toMatch(/\bmax_tokens:/);
+  });
+
+  it("REQUIRED: temperature/max_completion_tokens are built through the shared buildChatCompletionTuning helper, never hardcoded directly on the request — the same model can also reject a custom temperature (HTTP 400)", () => {
+    expect(src).toMatch(/import \{ buildChatCompletionTuning \} from "@\/lib\/insights\/openaiChatParams"/);
+    const idx = src.indexOf("...buildChatCompletionTuning(model, { temperature: 0, maxCompletionTokens: 2500 }),");
+    expect(idx).toBeGreaterThan(-1);
+    expect(src).not.toMatch(/temperature:\s*0,\n/);
   });
 
   it("REQUIRED: does not retry a 400 invalid_request_error — retrying an identical malformed request only reproduces the identical failure", () => {
@@ -224,5 +231,25 @@ describe("pages/api/page-annotation-plan.ts — max_completion_tokens, not the d
     expect(src).toMatch(/attempts = 2;/);
     expect(src).toMatch(/attempts,\n/);
     expect(src).not.toMatch(/attempts:\s*2,/);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — relationship (optional annotation-to-annotation link)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs the model when to set relationship, pointing the LATER annotation's targetIndex back at the earlier one", () => {
+    expect(src).toMatch(/set relationship on the LATER\s*\n?\s*annotation, pointing back at the earlier one/);
+    expect(src).toMatch(/"type": "sequence"\|"cause-effect"\|\s*\n?\s*"comparison"\|"supports"/);
+  });
+
+  it("prompt tells the model this becomes a real connecting line on the Whiteboard, not two disconnected boxes", () => {
+    expect(src).toMatch(/This becomes a real connecting line on the Whiteboard/);
+  });
+
+  it("prompt's JSON output shape includes the optional relationship field", () => {
+    const idx = src.indexOf('"annotations": [');
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/"relationship":/);
   });
 });

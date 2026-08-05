@@ -205,6 +205,77 @@ describe("buildRelationshipGraph — edge inference", () => {
   });
 });
 
+// ── buildRelationshipGraph — explicit relatesTo edges (SurgeonAnnotation.relationship) ──
+
+describe("buildRelationshipGraph — explicit relatesTo edges take priority over inferred ones", () => {
+  it("REQUIRED: an explicit relatesTo produces a real edge with the declared type and label", () => {
+    const g = buildRelationshipGraph([
+      { id: "a1", text: "Step one of the process.", canonicalType: "core-concept", importanceScore: 90,
+        relatesTo: { targetId: "a2", type: "leads_to", label: "leads to" } },
+      { id: "a2", text: "Step two of the process.", canonicalType: "core-concept", importanceScore: 80 },
+    ]);
+    const edge = g.edges.find((e) => e.from === "a1" && e.to === "a2");
+    expect(edge).toBeDefined();
+    expect(edge?.type).toBe("leads_to");
+    expect(edge?.label).toBe("leads to");
+  });
+
+  it("falls back to a RULES-table label when the hint doesn't supply its own", () => {
+    const g = buildRelationshipGraph([
+      { id: "a1", text: "Text one.", canonicalType: "core-concept", importanceScore: 90,
+        relatesTo: { targetId: "a2", type: "contrasts" } },
+      { id: "a2", text: "Text two.", canonicalType: "core-concept", importanceScore: 80 },
+    ]);
+    const edge = g.edges.find((e) => e.from === "a1" && e.to === "a2");
+    expect(edge?.label).toBe("vs"); // RULES' own label for a "contrasts" edgeType
+  });
+
+  it("REQUIRED: an explicit relatesTo takes priority over RULES-based inference for the same pair — no duplicate/conflicting edge", () => {
+    // cause -> effect would normally infer a "leads_to" RULES edge; give it an
+    // explicit "contrasts" relatesTo instead and confirm the explicit one wins.
+    const g = buildRelationshipGraph([
+      { ...CAUSE, relatesTo: { targetId: "e1", type: "contrasts", label: "explicit override" } },
+      EFFECT,
+    ]);
+    const edges = g.edges.filter((e) => e.from === "c1" && e.to === "e1");
+    expect(edges).toHaveLength(1);
+    expect(edges[0].type).toBe("contrasts");
+    expect(edges[0].label).toBe("explicit override");
+  });
+
+  it("ignores a relatesTo whose targetId doesn't exist among the entries (e.g. dropped by maxNodes, or the model referenced a nonexistent id) — falls back to inference instead of a dangling edge", () => {
+    const g = buildRelationshipGraph([
+      { id: "a1", text: "Text one.", canonicalType: "definition", importanceScore: 90,
+        relatesTo: { targetId: "does-not-exist", type: "leads_to" } },
+      { id: "a2", text: "Text two.", canonicalType: "definition", importanceScore: 80 },
+    ]);
+    expect(g.edges.some((e) => e.to === "does-not-exist")).toBe(false);
+    // The sequential fallback still connects the two real nodes.
+    expect(g.edges.some((e) => e.from === "a1" && e.to === "a2")).toBe(true);
+  });
+
+  it("ignores a self-referencing relatesTo", () => {
+    const g = buildRelationshipGraph([
+      { id: "a1", text: "Text one.", canonicalType: "definition", importanceScore: 90,
+        relatesTo: { targetId: "a1", type: "leads_to" } },
+    ]);
+    expect(g.edges).toHaveLength(0);
+  });
+
+  it("does not duplicate an edge when TWO entries declare relatesTo pointing at each other", () => {
+    const g = buildRelationshipGraph([
+      { id: "a1", text: "Text one.", canonicalType: "definition", importanceScore: 90,
+        relatesTo: { targetId: "a2", type: "leads_to" } },
+      { id: "a2", text: "Text two.", canonicalType: "definition", importanceScore: 80,
+        relatesTo: { targetId: "a1", type: "leads_to" } },
+    ]);
+    // Both directions are legitimate distinct edges (a1->a2 and a2->a1), not a
+    // silently-collapsed single edge — seenEdge keys on direction, not the pair.
+    expect(g.edges.filter((e) => e.from === "a1" && e.to === "a2")).toHaveLength(1);
+    expect(g.edges.filter((e) => e.from === "a2" && e.to === "a1")).toHaveLength(1);
+  });
+});
+
 // ── buildRelationshipGraph — layout selection ──────────────────────────────
 
 describe("buildRelationshipGraph — layout selection", () => {

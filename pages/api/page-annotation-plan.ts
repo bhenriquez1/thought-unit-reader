@@ -29,6 +29,7 @@ import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotati
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
+import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
 
 export const config = {
   maxDuration: 30,
@@ -166,6 +167,15 @@ Rules:
     annotation whose exactQuote is the full verbatim run of all those sentences together,
     so the page renders one continuous highlight with one margin label — not several
     disconnected fragments for what is really a single idea.
+13. RELATIONSHIP (optional) — when two SEPARATE annotations on this page are genuinely
+    connected (one is the cause of the other, one is the step before the other, they're being
+    directly contrasted, or one is evidence for the other), set relationship on the LATER
+    annotation, pointing back at the earlier one: {"type": "sequence"|"cause-effect"|
+    "comparison"|"supports", "targetIndex": <the OTHER annotation's 0-based position in this
+    same annotations array>}. This becomes a real connecting line on the Whiteboard, not just
+    two disconnected boxes. Only set it when the connection is genuinely part of the page's
+    content — do not force a relationship between two annotations that merely happen to be
+    on the same page. Omit the field entirely when there isn't one.
 
 Respond ONLY with a JSON object matching this schema — no prose, no markdown fences:
 {
@@ -179,7 +189,8 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
       "reason": "<one sentence>",
       "importance": "<critical|high|supporting>",
       "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>",
-      "spanScope": "<fullSentence|entity — defaults to fullSentence>"
+      "spanScope": "<fullSentence|entity — defaults to fullSentence>",
+      "relationship": "<optional: {\"type\": \"sequence\"|\"cause-effect\"|\"comparison\"|\"supports\", \"targetIndex\": <number>} — see rule 13>"
     }
   ]
 }`;
@@ -198,12 +209,12 @@ async function callOpenAI(
     return await client.chat.completions.create(
       {
         model,
-        temperature:      0,
-        // max_tokens is deprecated and REJECTED (HTTP 400) by newer reasoning-
-        // family models (o-series, gpt-5.x) that resolveTeachingModel can
-        // dynamically select — max_completion_tokens is the modern parameter,
-        // universally accepted across model generations.
-        max_completion_tokens: 2500,
+        // temperature/max_tokens are only sent when the resolved model
+        // actually supports overriding them — a newer reasoning-family
+        // model (o-series, gpt-5.x) that resolveTeachingModel can
+        // dynamically select REJECTS both with HTTP 400. See
+        // lib/insights/openaiChatParams.ts for the shared rule.
+        ...buildChatCompletionTuning(model, { temperature: 0, maxCompletionTokens: 2500 }),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },

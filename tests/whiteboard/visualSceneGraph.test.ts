@@ -548,6 +548,7 @@ function makeGrounded(overrides: Partial<GroundedSurgeonAnnotation> = {}): Groun
     groundedText:  "An element is a substance that cannot be broken down into simpler substances.",
     groundingState: "exact",
     confidence:    1.0,
+    originalIndex: 0,
     ...overrides,
   };
 }
@@ -641,6 +642,71 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
     if (state.status === "ready") {
       expect(state.vsg.nodes[0].tier).toBe("pearl");
     }
+  });
+
+  describe("relationship → relatesTo resolution (SurgeonAnnotation.relationship wired into VSG edges)", () => {
+    it("REQUIRED: resolves relationship.targetIndex (an index into the ORIGINAL annotations array) to the surviving target's real entry id", () => {
+      const first  = makeGrounded({ canonicalType: "mechanism", originalIndex: 0 });
+      const second = makeGrounded({
+        canonicalType: "procedure",
+        originalIndex: 1,
+        relationship: { type: "cause-effect", targetIndex: 0 },
+      });
+      const [e0, e1] = surgeonAnnotationsToCanonicalEntries([first, second], 4);
+      expect(e1.relatesTo).toBeDefined();
+      expect(e1.relatesTo!.targetId).toBe(e0.id);
+      expect(e1.relatesTo!.type).toBe("leads_to"); // RelationshipEdgeType for "cause-effect"
+    });
+
+    it("maps every relationship.type to its RelationshipEdgeType", () => {
+      const target = makeGrounded({ originalIndex: 0 });
+      const CASES: Array<["sequence" | "cause-effect" | "comparison" | "supports", string]> = [
+        ["sequence",      "summarizes"],
+        ["cause-effect",  "leads_to"],
+        ["comparison",    "contrasts"],
+        ["supports",      "supports"],
+      ];
+      for (const [relType, expectedEdgeType] of CASES) {
+        const source = makeGrounded({ originalIndex: 1, relationship: { type: relType, targetIndex: 0 } });
+        const entries = surgeonAnnotationsToCanonicalEntries([target, source], 4);
+        expect(entries[1].relatesTo?.type).toBe(expectedEdgeType);
+      }
+    });
+
+    it("omits relatesTo when targetIndex refers to an annotation that did not survive grounding — no dangling edge", () => {
+      // Only one annotation survived (originalIndex 1); it declares a
+      // relationship to originalIndex 0, which was dropped upstream (e.g.
+      // failed quote verification) and never reaches this adapter at all.
+      const survivor = makeGrounded({ originalIndex: 1, relationship: { type: "sequence", targetIndex: 0 } });
+      const [entry] = surgeonAnnotationsToCanonicalEntries([survivor], 4);
+      expect(entry.relatesTo).toBeUndefined();
+    });
+
+    it("omits relatesTo when an annotation without a relationship field is converted", () => {
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ originalIndex: 0 })], 4);
+      expect(entry.relatesTo).toBeUndefined();
+    });
+
+    it("omits relatesTo for a self-referencing relationship (targetIndex points at its own originalIndex)", () => {
+      const g = makeGrounded({ originalIndex: 2, relationship: { type: "sequence", targetIndex: 2 } });
+      const [entry] = surgeonAnnotationsToCanonicalEntries([g], 4);
+      expect(entry.relatesTo).toBeUndefined();
+    });
+
+    it("end-to-end: an explicit relationship produces a real VSG edge via buildVSG, not just RULES-based inference", () => {
+      const first  = makeGrounded({ canonicalType: "trap", importance: "high", originalIndex: 0 });
+      const second = makeGrounded({
+        canonicalType: "clinicalPearl", // maps to VSG type "clinical-pearl" — no RULES row connects it to "warning" (trap)
+        importance:    "high",
+        originalIndex: 1,
+        relationship:  { type: "cause-effect", targetIndex: 0 },
+      });
+      const entries = surgeonAnnotationsToCanonicalEntries([first, second], 6);
+      const vsg = buildVSG(entries, "flow", { pageNumber: 6 });
+      const edge = vsg.edges.find((e) => e.fromId === entries[1].id && e.toId === entries[0].id);
+      expect(edge).toBeDefined();
+      expect(edge!.kind).toBe("causation"); // EDGE_KIND["leads_to"]
+    });
   });
 });
 
