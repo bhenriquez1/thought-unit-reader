@@ -14,9 +14,18 @@ describe("pages/api/professor-lesson-plan.ts — Professor Lesson Planner endpoi
   let src: string;
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
-  it("uses gpt-4o with JSON-mode structured output", () => {
-    expect(src).toMatch(/model:\s*"gpt-4o"/);
-    expect(src).toMatch(/response_format:\s*\{ type: "json_object" \}/);
+  it("uses a dynamically-resolved model — never a hardcoded literal", () => {
+    expect(src).not.toMatch(/model:\s*"gpt-4o"/);
+    expect(src).not.toMatch(/model:\s*"gpt-5\.5"/);
+    expect(src).toMatch(/import \{ resolveTeachingModel \} from "@\/lib\/insights\/resolveOpenAIModel"/);
+    expect(src).toMatch(/const model = await resolveTeachingModel\(client\)/);
+    expect(src).toMatch(/callOpenAI\(client, model, userContent, PLAN_TIMEOUT_MS\)/);
+  });
+
+  it("uses real OpenAI Structured Outputs (strict JSON schema), not loose json_object mode — OpenAI is never asked to emit tldraw records, only ProfessorLessonScript", () => {
+    expect(src).toMatch(/import \{ zodResponseFormat \} from "openai\/helpers\/zod"/);
+    expect(src).toMatch(/response_format:\s*zodResponseFormat\(ProfessorLessonScriptSchema, "ProfessorLessonScript"\)/);
+    expect(src).not.toMatch(/response_format:\s*\{ type: "json_object" \}/);
   });
 
   it("wraps the OpenAI call with a request timeout via AbortController", () => {
@@ -117,5 +126,19 @@ describe("pages/api/professor-lesson-plan.ts — pageTeachingType (shared page c
   it("sends pageTeachingType in the user content sent to the model", () => {
     expect(src).toMatch(/pageTeachingType \(this page's classification from the highlighting pass/);
     expect(src).toMatch(/\$\{body\.pageTeachingType \?\? "none"\}/);
+  });
+});
+
+describe("pages/api/professor-lesson-plan.ts — learningObjective and the 'definition' visualGrammar option", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs a one-sentence learningObjective distinct from the title", () => {
+    expect(src).toMatch(/learningObjective is ONE sentence stating what the student should be able to DO/);
+    expect(src).toMatch(/not a restatement of the title/);
+  });
+
+  it("prompt documents 'definition' as a valid visualGrammar choice", () => {
+    expect(src).toMatch(/"definition" is also a valid visualGrammar choice/);
   });
 });

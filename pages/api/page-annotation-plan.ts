@@ -26,6 +26,7 @@ import {
   type SurgeonAnnotationPlan,
 } from "@/lib/insights/pageAnnotationPlan";
 import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
+import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -130,14 +131,22 @@ Rules:
     This shapes emphasis, not a hard requirement — still ground every annotation in what the
     page actually contains (rule 1), never invent a category the page doesn't support.
 9. DENSITY — a well-annotated page should read like expert marginalia, not a diagnostic
-   overlay. As a strong guideline (the app also enforces this with a hard cap after your
-   response, so exceeding it just means your lower-priority picks get dropped): at most one
-   definition annotation for the page's core thesis plus up to two for supporting rules, at
-   most ONE mechanism-or-procedure annotation total for the page (never both a mechanism
-   explanation and a procedure list as separate annotations), at most one trap/warning, one
-   comparison, one decision point, one clinical pearl, and one supporting example. Do not
-   annotate the same idea twice under different canonicalTypes.
-10. Produce at most 10 annotations per page. Prefer fewer, more precise ones.
+   overlay, AND not a page with only one or two highlights either. As a strong guideline
+   (the app also enforces this with a hard cap after your response, so exceeding it just
+   means your lower-priority picks get dropped): at most one definition annotation for the
+   page's core thesis plus up to two for supporting rules, at most ONE mechanism-or-procedure
+   annotation total for the page (never both a mechanism explanation and a procedure list as
+   separate annotations), at most one trap/warning, one comparison, one decision point, one
+   clinical pearl, and one supporting example. Do not annotate the same idea twice under
+   different canonicalTypes.
+   TARGET RANGE for a genuinely dense textbook page: 5 to 8 annotations total — roughly
+   2-3 primary/indispensable concepts, 2-4 structural annotations (a mechanism, procedure,
+   or comparison), and 1-2 traps or clinical-significance points. A page with a definition,
+   a five-step process, a contrast being drawn, AND a stated warning has FOUR distinct
+   learning targets, not one — do not stop after the first one or two things you notice.
+   Under-annotating a dense page is as much a failure as over-annotating a sparse one.
+10. Produce at most 10 annotations per page — this is a ceiling, not a target; see rule 9's
+    5-8 range for what a well-annotated dense page actually looks like.
 11. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
     looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
     - spanScope: "fullSentence" (the default — use this for almost everything) — exactQuote
@@ -179,6 +188,7 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
 
 async function callOpenAI(
   client: OpenAI,
+  model: string,
   userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[],
   timeoutMs: number,
 ) {
@@ -187,7 +197,7 @@ async function callOpenAI(
   try {
     return await client.chat.completions.create(
       {
-        model:            "gpt-4o",
+        model,
         temperature:      0,
         max_tokens:       2500,
         messages: [
@@ -280,11 +290,12 @@ export default async function handler(
 
   const client = new OpenAI({ apiKey });
   const startedAt = Date.now();
+  const model = await resolveTeachingModel(client);
 
   let completion: Awaited<ReturnType<typeof callOpenAI>>;
   try {
     try {
-      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     } catch (firstErr: any) {
       console.warn("[SURGEON_PLAN_RETRY]", {
         ...diagnosticIds,
@@ -293,7 +304,7 @@ export default async function handler(
         elapsedMs: Date.now() - startedAt,
       });
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     }
   } catch (err: any) {
     const isRateLimited = err instanceof OpenAI.APIError && err.status === 429;

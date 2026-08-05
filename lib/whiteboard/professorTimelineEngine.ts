@@ -18,7 +18,7 @@
 
 import type { Bounds, Point, ProfessorTeachingAction } from "./professorLessonPlan";
 
-export type ShapeVisualKind = "box" | "circle" | "brace" | "arrow" | "text";
+export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text";
 
 export interface ShapeVisualState {
   shapeId: string;
@@ -35,6 +35,11 @@ export interface ShapeVisualState {
   /** Sticky once set — an emphasized point stays circled, it doesn't flash
    *  and revert, matching "circles the high-yield point" as a persistent mark. */
   emphasized: boolean;
+  /** EVERY emphasize treatment applied to this shape, in the order their
+   *  actions fired — a shape can legitimately be both "the decisive stage"
+   *  (circled) AND "step 3 of 5" (numbered) at once, so this accumulates
+   *  rather than the later action overwriting the earlier one. */
+  emphasisTreatments: Array<{ treatment: "circle" | "underline" | "pulse" | "highlight" | "number"; sequenceNumber?: number }>;
 }
 
 /**
@@ -61,6 +66,7 @@ export function computeCanvasStateAtStep(
         bounds: action.bounds,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
+        emphasisTreatments: prior?.emphasisTreatments ?? [],
       });
     } else if (action.type === "draw-arrow") {
       const prior = state.get(action.shapeId);
@@ -71,6 +77,7 @@ export function computeCanvasStateAtStep(
         to: action.to,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
+        emphasisTreatments: prior?.emphasisTreatments ?? [],
       });
     } else if (action.type === "write") {
       const prior = state.get(action.shapeId);
@@ -84,12 +91,27 @@ export function computeCanvasStateAtStep(
         y: prior?.y ?? action.y,
         text: action.text,
         emphasized: prior?.emphasized ?? false,
+        emphasisTreatments: prior?.emphasisTreatments ?? [],
       });
     } else if (action.type === "emphasize") {
       const prior = state.get(action.targetId);
       if (prior) {
-        state.set(action.targetId, { ...prior, emphasized: true });
+        // Accumulate — don't overwrite. A shape can carry more than one
+        // simultaneous treatment (e.g. circled AND numbered). De-duplicate
+        // by treatment type so replaying past the same emphasize action
+        // twice (impossible in practice, but keeps this idempotent) never
+        // double-adds the same badge.
+        const withoutSameTreatment = prior.emphasisTreatments.filter(t => t.treatment !== action.treatment);
+        state.set(action.targetId, {
+          ...prior, emphasized: true,
+          emphasisTreatments: [...withoutSameTreatment, { treatment: action.treatment, sequenceNumber: action.sequenceNumber }],
+        });
       }
+    } else if (action.type === "erase") {
+      // Recomputed from scratch every call, same as every other action —
+      // simply omitting the entry IS the erase; nothing special to "undo"
+      // when a later Previous/Restart jump lands before this action.
+      state.delete(action.targetShapeId);
     }
     // speak / pause / move-camera never alter shape state.
   }

@@ -24,6 +24,7 @@ export const MAX_GROUNDED_TARGETS = 10;
 export interface GroundedProfessorLessonScript {
   title: string;
   visualGrammar: ProfessorLessonScript["visualGrammar"];
+  learningObjective: string;
   synthesisQuestion: string;
   nodeScripts: ProfessorNodeScript[];
 }
@@ -43,8 +44,9 @@ function sanitizeLabel(raw: string): string {
  * Ground a ProfessorLessonScript against the VisualSceneGraph it was
  * generated for. Never throws — always returns a script the converter can
  * safely turn into an action timeline, even if every targetId was bogus
- * (nodeScripts then comes back empty and the caller falls back to the
- * deterministic script generator).
+ * (nodeScripts then comes back empty; the caller — useProfessorLesson.ts —
+ * treats that as a failure and surfaces a retry state, there is no
+ * fallback generator to hand off to).
  */
 export function groundProfessorLesson(
   script: ProfessorLessonScript,
@@ -76,9 +78,10 @@ export function groundProfessorLesson(
   }
 
   return {
-    title:             sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
-    visualGrammar:     script.visualGrammar,
-    synthesisQuestion: script.synthesisQuestion.trim(),
-    nodeScripts:        grounded,
+    title:              sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
+    visualGrammar:      script.visualGrammar,
+    learningObjective:  script.learningObjective.trim(),
+    synthesisQuestion:  script.synthesisQuestion.trim(),
+    nodeScripts:         grounded,
   };
 }

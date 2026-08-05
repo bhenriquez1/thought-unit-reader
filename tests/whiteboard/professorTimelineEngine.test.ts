@@ -111,3 +111,72 @@ describe("actionDurationMs", () => {
     }
   });
 });
+
+describe("computeCanvasStateAtStep — emphasisTreatments accumulate rather than overwrite", () => {
+  const MULTI_EMPHASIS_ACTIONS: ProfessorTeachingAction[] = [
+    { type: "draw-shape", actionId: "b0", shapeId: "shape:n1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550 },
+    { type: "emphasize", actionId: "b1", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
+    { type: "emphasize", actionId: "b2", targetId: "shape:n1", treatment: "number", sequenceNumber: 3, durationMs: 550 },
+  ];
+
+  it("a shape can carry more than one simultaneous treatment — circled AND numbered", () => {
+    const state = computeCanvasStateAtStep(MULTI_EMPHASIS_ACTIONS, 2);
+    const s = state.get("shape:n1")!;
+    expect(s.emphasisTreatments).toHaveLength(2);
+    expect(s.emphasisTreatments.map(t => t.treatment).sort()).toEqual(["circle", "number"]);
+  });
+
+  it("carries the sequenceNumber through for the 'number' treatment", () => {
+    const state = computeCanvasStateAtStep(MULTI_EMPHASIS_ACTIONS, 2);
+    const s = state.get("shape:n1")!;
+    const numberTreatment = s.emphasisTreatments.find(t => t.treatment === "number");
+    expect(numberTreatment?.sequenceNumber).toBe(3);
+  });
+
+  it("re-applying the SAME treatment doesn't duplicate it (idempotent)", () => {
+    const repeated: ProfessorTeachingAction[] = [
+      ...MULTI_EMPHASIS_ACTIONS,
+      { type: "emphasize", actionId: "b3", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
+    ];
+    const state = computeCanvasStateAtStep(repeated, 3);
+    const s = state.get("shape:n1")!;
+    expect(s.emphasisTreatments.filter(t => t.treatment === "circle")).toHaveLength(1);
+  });
+
+  it("an emphasize action targeting a shape that doesn't exist yet is a no-op, not a crash", () => {
+    const actions: ProfessorTeachingAction[] = [
+      { type: "emphasize", actionId: "c0", targetId: "shape:ghost", treatment: "circle", durationMs: 550 },
+    ];
+    expect(() => computeCanvasStateAtStep(actions, 0)).not.toThrow();
+    expect(computeCanvasStateAtStep(actions, 0).has("shape:ghost")).toBe(false);
+  });
+});
+
+describe("computeCanvasStateAtStep — erase removes a shape from the reconstructed state", () => {
+  const ERASE_ACTIONS: ProfessorTeachingAction[] = [
+    { type: "draw-shape", actionId: "d0", shapeId: "shape:sketch", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550 },
+    { type: "erase", actionId: "d1", targetShapeId: "shape:sketch", durationMs: 300 },
+    { type: "draw-shape", actionId: "d2", shapeId: "shape:clean", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550 },
+  ];
+
+  it("the shape exists right after it's drawn", () => {
+    expect(computeCanvasStateAtStep(ERASE_ACTIONS, 0).has("shape:sketch")).toBe(true);
+  });
+
+  it("the shape no longer exists once the erase action has fired", () => {
+    expect(computeCanvasStateAtStep(ERASE_ACTIONS, 1).has("shape:sketch")).toBe(false);
+  });
+
+  it("REQUIRED: Previous past the erase restores the shape — recomputed from scratch, not an incremental undo", () => {
+    const beforeErase = computeCanvasStateAtStep(ERASE_ACTIONS, 0);
+    const afterEraseThenBack = computeCanvasStateAtStep(ERASE_ACTIONS, 0); // Previous just re-calls with a smaller index
+    expect(afterEraseThenBack.has("shape:sketch")).toBe(true);
+    expect(afterEraseThenBack.get("shape:sketch")).toEqual(beforeErase.get("shape:sketch"));
+  });
+
+  it("erasing one shape never affects another", () => {
+    const state = computeCanvasStateAtStep(ERASE_ACTIONS, 2);
+    expect(state.has("shape:sketch")).toBe(false);
+    expect(state.has("shape:clean")).toBe(true);
+  });
+});

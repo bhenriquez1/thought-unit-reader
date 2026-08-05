@@ -28,8 +28,13 @@ const CATEGORY_CAPS: Partial<Record<CanonicalType, number>> = {
 
 // Hard backstop applied after per-category selection — per-category caps alone
 // can't stop a page that hits several categories at once from still landing at
-// 8-9 total annotations.
-const GLOBAL_CAP = 7;
+// too many total annotations. Target range for a genuinely dense page is
+// 5-8 annotations (2-3 primary concepts, 2-4 structural/relationship spans,
+// 1-2 traps or clinical-significance points) — 8, not 7, so a page that
+// legitimately earns definition + mechanism-or-procedure + comparison +
+// decision + trap + clinicalPearl + supportingEvidence (7 distinct
+// categories) isn't clipped to 7 before it even reaches its own ceiling.
+const GLOBAL_CAP = 8;
 
 interface IndexedEntry {
   item: GroundedSurgeonAnnotation;

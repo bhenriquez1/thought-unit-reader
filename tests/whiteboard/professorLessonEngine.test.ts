@@ -236,7 +236,7 @@ describe("No fallback — a Professor Lesson Planner failure shows a distinct re
   it('shows a distinct role="alert" retry state when status is "error", separate from the loading skeleton', () => {
     const idx = src.indexOf('lessonStatus === "error"');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
+    const block = src.slice(idx, idx + 950);
     expect(block).toMatch(/role="alert"/);
     expect(block).toMatch(/onClick=\{reanalyze\}/);
     expect(block).toMatch(/Retry/);
@@ -261,5 +261,54 @@ describe("pageTeachingType (shared page classifier) threads from props into the 
     const idx = src.indexOf("useProfessorLesson({");
     const body = src.slice(idx, idx + 300);
     expect(body).toMatch(/pageTeachingType:\s*pageTeachingType \?\? null,/);
+  });
+});
+
+describe("Expanded action vocabulary: erase, line shapes, and multiple simultaneous emphasis treatments", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
+
+  it("emphasisShapeId is keyed by treatment — a shape can be circled AND numbered without one overlay overwriting the other", () => {
+    const idx = src.indexOf("function emphasisShapeId(");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 300);
+    expect(body).toMatch(/treatment: string/);
+    expect(body).toMatch(/emphasis-\$\{treatment\}-/);
+  });
+
+  it("iterates s.emphasisTreatments (an array) rather than a single hardcoded treatment", () => {
+    const idx = src.indexOf("if (s.emphasized && s.bounds) {");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 500);
+    expect(body).toMatch(/for \(const \{ treatment, sequenceNumber \} of s\.emphasisTreatments\)/);
+  });
+
+  it("emphasisOverlaySpec renders a distinct visual per treatment: underline, highlight, number, and circle/pulse", () => {
+    const idx = src.indexOf("function emphasisOverlaySpec(");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 1800);
+    expect(body).toMatch(/case "underline":/);
+    expect(body).toMatch(/case "highlight":/);
+    expect(body).toMatch(/case "number":/);
+    expect(body).toMatch(/case "pulse":/);
+  });
+
+  it("the 'highlight' treatment renders as a translucent wash (opacity < 1), not an opaque block obscuring the shape", () => {
+    const idx = src.indexOf('case "highlight":');
+    const body = src.slice(idx, idx + 550);
+    expect(body).toMatch(/opacity:\s*0\.\d+/);
+  });
+
+  it("the 'number' treatment renders the sequence number as visible text on a badge shape", () => {
+    const idx = src.indexOf('case "number": {');
+    const body = src.slice(idx, idx + 400);
+    expect(body).toMatch(/richText:\s*toRichText\(label\)/);
+  });
+
+  it("draw-shape's 'line' variant renders distinctly from box/circle — a thin filled bar, not an outlined card", () => {
+    const idx = src.indexOf('if (s.kind === "line")');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 450);
+    expect(body).toMatch(/fill:\s*"solid"/);
   });
 });
