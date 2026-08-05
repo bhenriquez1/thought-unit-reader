@@ -31,8 +31,13 @@ export const SEMANTIC_PACK_VERSION = 1;
  *  cached plan generated under an older prompt/schema must never be reused.
  *  v2: added required pageRole + optional relationship fields, density-limiting
  *  guidance, and the comparisonBracket/trapNotch/evidenceUnderline visual
- *  redesign — a v1-cached plan lacks pageRole and would fail schema validation. */
-export const MODEL_VERSION = 2;
+ *  redesign — a v1-cached plan lacks pageRole and would fail schema validation.
+ *  v3: request now sends structured typed blocks[] instead of a flat text
+ *  slice, and the prompt explicitly forbids quoting from neighboring-page
+ *  headings — a v2-cached plan is schema-compatible but was generated without
+ *  these stricter current-page-only grounding instructions, so it's treated
+ *  as stale rather than silently reused. */
+export const MODEL_VERSION = 3;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 

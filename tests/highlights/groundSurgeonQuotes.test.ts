@@ -213,6 +213,53 @@ describe("groundSurgeonQuotes — batch behavior", () => {
   });
 });
 
+describe("groundSurgeonQuotes — duplicate collapse", () => {
+  it("collapses two annotations that expand to the identical groundedText, keeping only the first", () => {
+    // A fragment and its containing full sentence both survive verification and
+    // expand to the SAME sentence — this used to double-render one idea.
+    const fragment = makeAnnotation({
+      canonicalType: "definition",
+      exactQuote: "Glycolysis converts glucose",
+    });
+    const wholeSentence = makeAnnotation({
+      canonicalType: "mechanism",
+      exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol.",
+    });
+    const result = groundSurgeonQuotes([fragment, wholeSentence], PAGE_TEXT);
+    expect(result).toHaveLength(1);
+    expect(result[0].canonicalType).toBe("definition"); // first occurrence wins
+  });
+
+  it("collapses exact duplicate exactQuotes regardless of canonicalType", () => {
+    const first = makeAnnotation({ canonicalType: "definition" });
+    const second = makeAnnotation({ canonicalType: "clinicalPearl" });
+    const result = groundSurgeonQuotes([first, second], PAGE_TEXT);
+    expect(result).toHaveLength(1);
+  });
+
+  it("does NOT collapse two genuinely distinct spans", () => {
+    const a = makeAnnotation({ exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol." });
+    const b = makeAnnotation({ exactQuote: "The Krebs cycle then oxidizes pyruvate-derived acetyl-CoA in the mitochondrial matrix." });
+    const result = groundSurgeonQuotes([a, b], PAGE_TEXT);
+    expect(result).toHaveLength(2);
+  });
+});
+
+describe("groundSurgeonQuotes — neighboring-page text is rejected", () => {
+  it("rejects a quote that exists only on a neighboring page's text, never the current page's", () => {
+    const NEIGHBOR_ONLY_SENTENCE = "Photosynthesis occurs in the chloroplast stroma and thylakoid membranes.";
+    // Confirm the sentence really is absent from the current page's text (the
+    // fixture used throughout this file).
+    expect(PAGE_TEXT.includes(NEIGHBOR_ONLY_SENTENCE)).toBe(false);
+    const annotation = makeAnnotation({ exactQuote: NEIGHBOR_ONLY_SENTENCE });
+    // groundSurgeonQuotes is always called with ONLY the current page's cleaned
+    // text (see useSurgeonAnnotations.ts) — a quote real on a neighbor page but
+    // absent here must be dropped exactly like any other unverifiable quote.
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT);
+    expect(result).toHaveLength(0);
+  });
+});
+
 describe("buildSurgeonEvidenceId", () => {
   it("formats as surgeon-<pageNumber>-<index>", () => {
     expect(buildSurgeonEvidenceId(7, 3)).toBe("surgeon-7-3");

@@ -24,6 +24,12 @@
 //   formula/equation/short definition-term) opts out and keeps the match exactly
 //   as quoted. This is a pure boundary WIDENING of the already-verified match —
 //   never a substitution — so it can't introduce a wrong-sentence highlight.
+//
+// Duplicate collapse (final step): two annotations that expand/normalize to the
+// same groundedText (e.g. the model proposed the same sentence twice under
+// different canonicalTypes, or a fragment and its containing sentence both
+// survived) collapse to the FIRST occurrence only — the model's own priority
+// order is preserved, never re-ranked by importance.
 
 import { normText } from "./groundHighlightAnchors";
 import type { SurgeonAnnotationPlan } from "../insights/pageAnnotationPlan";
@@ -170,11 +176,28 @@ export function groundSurgeonQuotes(
     });
   }
 
+  const deduped = dedupeByGroundedText(grounded);
+
   DEV && console.log("[SURGEON_QUOTES_GROUNDED]", {
-    input:    annotations.length,
-    grounded: grounded.length,
-    rejected: annotations.length - grounded.length,
+    input:     annotations.length,
+    grounded:  grounded.length,
+    duplicate: grounded.length - deduped.length,
+    rejected:  annotations.length - grounded.length,
   });
 
-  return grounded;
+  return deduped;
+}
+
+/** Collapse annotations whose groundedText is the same span (case/whitespace-
+ *  insensitive) — keeps the first occurrence, drops later duplicates. */
+function dedupeByGroundedText(list: GroundedSurgeonAnnotation[]): GroundedSurgeonAnnotation[] {
+  const seen = new Set<string>();
+  const out: GroundedSurgeonAnnotation[] = [];
+  for (const item of list) {
+    const key = normText(item.groundedText);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }

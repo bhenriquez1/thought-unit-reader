@@ -258,6 +258,11 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
     expect(src).toMatch(/surgeonAnnotations\.status === "error" && surgeonAnnotations\.annotationErrorMessage/);
     expect(src).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
   });
+
+  it('shows a "Reading current page…" notice while status is loading — never silently rendering nothing while the fetch is in flight', () => {
+    expect(src).toMatch(/surgeonAnnotations\.status === "loading"/);
+    expect(src).toMatch(/Reading current page…/);
+  });
 });
 
 describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output for the Scene Builder", () => {
@@ -412,6 +417,45 @@ describe("resolveAnnotationTier — 4-way planTier (enriched/grounded/degraded/f
     });
     expect(result.highlightTargets).toHaveLength(1);
     expect(result.highlightTargets).not.toContainEqual(target("b1"));
+  });
+});
+
+describe("useSurgeonAnnotations.ts — content-derived integrity check, additive to pageTruthKey", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("imports computePageContentHash", () => {
+    expect(src).toMatch(/import \{ computePageContentHash \} from "@\/lib\/insights\/pageContentHash"/);
+  });
+
+  it("passes documentId (bookIdRef.current) into buildSurgeonAnnotationInput", () => {
+    const idx = src.indexOf("buildSurgeonAnnotationInput({");
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/documentId:\s*bookIdRef\.current,/);
+  });
+
+  it("REQUIRED: a fetch response whose pageContentHash does not match a freshly re-derived current value is dropped", () => {
+    const idx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/return;/);
+  });
+
+  it("the expected hash is re-derived from the LIVE pageTextRef at response time, not a value captured when the request was built", () => {
+    const idx = src.indexOf("const currentContentHash = computePageContentHash(");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/pageNumberRef\.current/);
+    expect(block).toMatch(/cleanActivePageText\(pageTextRef\.current\)/);
+  });
+
+  it("the content-hash check runs AFTER the pageTruthKey check, both before grounding", () => {
+    const ptkIdx = src.indexOf("if (data.plan.pageTruthKey !== pageTruthKey)");
+    const hashIdx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
+    const groundIdx = src.indexOf("const grounded = limitAnnotationDensity(groundSurgeonQuotes(data.plan.annotations");
+    expect(ptkIdx).toBeGreaterThan(-1);
+    expect(hashIdx).toBeGreaterThan(ptkIdx);
+    expect(groundIdx).toBeGreaterThan(hashIdx);
   });
 });
 

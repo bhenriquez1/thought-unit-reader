@@ -33,6 +33,7 @@ const STUB_PACK: SemanticPack = {
 
 const BASE_ARGS = {
   pageTruthKey: "doc-1::5::t",
+  documentId: "doc-1",
   pageNumber: 5,
   pageImageDataUrl: "data:image/jpeg;base64,AAAA",
   pageText: "Cellular Respiration\n\nGlycolysis converts glucose into pyruvate in the cytosol.",
@@ -99,5 +100,45 @@ describe("buildSurgeonAnnotationInput — staleness-bug regression guard", () =>
   it("defaults pageImageDataUrl to null when not provided", () => {
     const input = buildSurgeonAnnotationInput({ ...BASE_ARGS, pageImageDataUrl: null });
     expect(input.pageImageDataUrl).toBeNull();
+  });
+});
+
+describe("buildSurgeonAnnotationInput — structured blocks + content-derived integrity key", () => {
+  it("includes a structured blocks[] decomposition of the current page text", () => {
+    const input = buildSurgeonAnnotationInput(BASE_ARGS);
+    expect(Array.isArray(input.blocks)).toBe(true);
+    expect(input.blocks.length).toBeGreaterThan(0);
+    expect(input.blocks[0]).toHaveProperty("type");
+    expect(input.blocks[0]).toHaveProperty("readingOrder");
+  });
+
+  it("derives blocks from the CURRENT page's text only, never previous/next page text", () => {
+    const input = buildSurgeonAnnotationInput(BASE_ARGS);
+    const serializedBlocks = JSON.stringify(input.blocks);
+    expect(serializedBlocks).not.toMatch(/Krebs Cycle/i);
+    expect(serializedBlocks).not.toMatch(/Chapter 3 Overview/i);
+  });
+
+  it("computes a content-derived pageContentHash from documentId + pageNumber + current page text", () => {
+    const input = buildSurgeonAnnotationInput(BASE_ARGS);
+    expect(typeof input.pageContentHash).toBe("string");
+    expect(input.pageContentHash.length).toBeGreaterThan(0);
+  });
+
+  it("pageContentHash changes when the current page text changes, holding documentId/pageNumber fixed", () => {
+    const a = buildSurgeonAnnotationInput(BASE_ARGS);
+    const b = buildSurgeonAnnotationInput({ ...BASE_ARGS, pageText: "An entirely different page about a different topic." });
+    expect(a.pageContentHash).not.toBe(b.pageContentHash);
+  });
+
+  it("pageContentHash is stable across repeated calls with identical inputs", () => {
+    const a = buildSurgeonAnnotationInput(BASE_ARGS);
+    const b = buildSurgeonAnnotationInput(BASE_ARGS);
+    expect(a.pageContentHash).toBe(b.pageContentHash);
+  });
+
+  it("passes documentId through unchanged", () => {
+    const input = buildSurgeonAnnotationInput(BASE_ARGS);
+    expect(input.documentId).toBe("doc-1");
   });
 });

@@ -32,6 +32,7 @@ import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnota
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
 import { buildDeterministicAnnotationPlan } from "@/lib/highlights/deterministicAnnotationPlan";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
+import { computePageContentHash } from "@/lib/insights/pageContentHash";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
 import {
   getSurgeonAnnotationPlan,
@@ -359,6 +360,7 @@ export function useSurgeonAnnotations({
       try {
         const input = buildSurgeonAnnotationInput({
           pageTruthKey,
+          documentId:       bookIdRef.current,
           pageNumber:       pageNumberRef.current,
           pageImageDataUrl: pageImageDataUrlRef.current,
           pageText:         pageTextRef.current,
@@ -388,6 +390,21 @@ export function useSurgeonAnnotations({
 
         if (data.plan.pageTruthKey !== pageTruthKey) {
           // Stale response for a page we've since navigated away from — drop it.
+          return;
+        }
+
+        // Content-integrity check, additive to the pageTruthKey check above: even
+        // when the page SLOT (documentId/pageNumber) is unchanged, re-derive the
+        // expected hash from whatever text is ACTUALLY on screen right now and
+        // reject a response computed against different underlying text (e.g. a
+        // re-extraction produced a different result for the same page slot).
+        const currentContentHash = computePageContentHash(
+          bookIdRef.current,
+          pageNumberRef.current,
+          cleanActivePageText(pageTextRef.current),
+        );
+        if (data.pageContentHash !== currentContentHash) {
+          console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash });
           return;
         }
 
