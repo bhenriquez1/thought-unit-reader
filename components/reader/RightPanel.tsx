@@ -2421,7 +2421,15 @@ function UltraViewBase({
       : view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
     console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50) ?? null, concepts: conceptTitles.length, scopedToSelectedBlock: !!currentTopic });
 
-    // OpenAI: specific article URLs + channel-targeted videos
+    // OpenAI is the sole resource-resolution provider for this feature — it
+    // proposes specific article URLs and channel-targeted videos. Cohere is a
+    // gap-filler, not a second independent analysis of the same topic: it
+    // only ever renders when OpenAI's response comes back empty for articles
+    // or videos (see LearningSources.tsx's hasCohereFallback), so firing it
+    // unconditionally in parallel on every page view burned Cohere quota on
+    // results that were thrown away the vast majority of the time (OpenAI
+    // usually succeeds). Now it only fires once OpenAI's response is known,
+    // and only for whichever of articles/videos actually came back empty.
     fetch("/api/resolveResources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2430,30 +2438,33 @@ function UltraViewBase({
     })
       .then(r => r.json())
       .then(data => {
-        console.log("[RESOURCES_RESULT]", { articles: (data.articles ?? []).length, videos: (data.videos ?? []).length });
-        setResolvedResources({ articles: data.articles ?? [], videos: data.videos ?? [], resolved: true });
+        const articles: ResolvedArticle[] = data.articles ?? [];
+        const videos: ResolvedVideo[] = data.videos ?? [];
+        console.log("[RESOURCES_RESULT]", { articles: articles.length, videos: videos.length });
+        setResolvedResources({ articles, videos, resolved: true });
+
+        if (articles.length > 0 && videos.length > 0) return; // nothing for Cohere to fill in
+
+        fetch("/api/cohere-retrieval", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: thesis, domain: domain ?? null, mode: "both", pageText: "",
+            // Diagnostic-only — logged server-side on failure, never used in prompting.
+            pageTruthKey: bookId && pageNumber != null ? `${bookId}:${pageNumber}` : undefined,
+          }),
+          signal: controller.signal,
+        })
+          .then(r => r.json())
+          .then(cohereData => {
+            if (cohereData.provider === "cohere" || cohereData.provider === "fallback") {
+              console.log("[COHERE_QUERIES_READY]", { readings: (cohereData.relatedReadings ?? []).length, videos: (cohereData.relatedVideos ?? []).length, provider: cohereData.provider });
+              setCohereQueries({ readings: cohereData.relatedReadings ?? [], videos: cohereData.relatedVideos ?? [] });
+            }
+          })
+          .catch(() => {});
       })
       .catch(() => setResolvedResources(r => ({ ...r, resolved: true })));
-
-    // Cohere: topic-based related reading + video search queries (in parallel)
-    fetch("/api/cohere-retrieval", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topic: thesis, domain: domain ?? null, mode: "both", pageText: "",
-        // Diagnostic-only — logged server-side on failure, never used in prompting.
-        pageTruthKey: bookId && pageNumber != null ? `${bookId}:${pageNumber}` : undefined,
-      }),
-      signal: controller.signal,
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.provider === "cohere" || data.provider === "fallback") {
-          console.log("[COHERE_QUERIES_READY]", { readings: (data.relatedReadings ?? []).length, videos: (data.relatedVideos ?? []).length, provider: data.provider });
-          setCohereQueries({ readings: data.relatedReadings ?? [], videos: data.relatedVideos ?? [] });
-        }
-      })
-      .catch(() => {});
 
     return () => controller.abort();
   }, [view.coreIdea, view.pageThesis, hasSynth, selectedBlock?.conceptId, synth?.keyMechanism, domain]);
