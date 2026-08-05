@@ -70,13 +70,21 @@ describe("TldrawCanvas.tsx — canvas initialization failure guard", () => {
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
 
   it("the rebuild effect wraps shape construction in try/catch, converting a throw into canvasInitFailure state instead of an uncaught exception", () => {
-    const idx = src.indexOf("if (!editor || !lessonPlan) return;");
+    const idx = src.indexOf("const clearTeachingLayer = useCallback");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 2200);
     expect(block).toMatch(/try\s*\{/);
     expect(block).toMatch(/catch\s*\(err\)/);
     expect(block).toMatch(/setCanvasInitFailure\(message\)/);
     expect(block).toMatch(/setCanvasInitFailure\(null\)/);
+  });
+
+  it("the rebuild effect clears the teaching layer unconditionally, BEFORE checking whether there is a lesson to draw — so a lessonPlan transition to null never leaves prior shapes visible", () => {
+    const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/if \(!lessonPlan\) \{/);
+    expect(block).toMatch(/setTotalSteps\(0\);/);
   });
 
   it("logs the failure with a dedicated diagnostic tag, not a bare console.error", () => {

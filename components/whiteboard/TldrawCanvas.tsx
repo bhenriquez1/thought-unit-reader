@@ -393,34 +393,54 @@ export default function TldrawCanvas({
     shapeIdToTargetIdRef.current = s2t;
   }, []);
 
-  // ── Rebuild: fires only when a genuinely new ProfessorLessonPlan arrives
-  //    (new page/concept, or the same identity's fresh/cached plan resolving
-  //    for the first time) — never on a play/pause/next/previous/restart
-  //    call, and never from an AI call itself (this component never calls
-  //    OpenAI; useProfessorLesson already resolved the plan before this
-  //    effect runs). ──────────────────────────────────────────────────────
+  // Clears every LOCKED (teaching-layer) shape currently on the canvas — the
+  // student's own unlocked annotations survive. Called unconditionally
+  // whenever the lesson identity changes AND whenever no valid lesson is
+  // available, so a page/document/pageTruthKey mismatch — or a plan that
+  // simply failed to generate — can never leave a PRIOR page's shapes (or
+  // whatever tldraw's own persistenceKey happened to restore from IndexedDB)
+  // visible behind the retry state. "A failure state is acceptable. A false
+  // lesson from another page is not."
+  const clearTeachingLayer = useCallback((editor: Editor) => {
+    const existingLocked = editor.getCurrentPageShapes().filter(s => s.isLocked);
+    if (existingLocked.length > 0) {
+      editor.updateShapes(existingLocked.map(s => ({ id: s.id, type: s.type, isLocked: false })));
+      editor.deleteShapes(existingLocked.map(s => s.id));
+    }
+    createdShapeIdsRef.current = new Set();
+  }, []);
+
+  // ── Rebuild: fires on every lessonPlan reference change — INCLUDING a
+  //    transition to null (page change with no plan yet, or a failed/
+  //    ungroundable generation). The canvas is cleared FIRST, unconditionally,
+  //    before checking whether there's anything new to draw — never on a
+  //    play/pause/next/previous/restart call, and never from an AI call
+  //    itself (this component never calls OpenAI; useProfessorLesson already
+  //    resolved the plan — or the lack of one — before this effect runs). ──
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || !lessonPlan) return;
+    if (!editor) return;
 
     try {
-      // Clear only the LOCKED (teaching-layer) shapes — the student's own
-      // unlocked annotations must survive a page's lesson being (re)built.
-      const existingLocked = editor.getCurrentPageShapes().filter(s => s.isLocked);
-      if (existingLocked.length > 0) {
-        editor.updateShapes(existingLocked.map(s => ({ id: s.id, type: s.type, isLocked: false })));
-        editor.deleteShapes(existingLocked.map(s => s.id));
-      }
-      createdShapeIdsRef.current = new Set();
-      registerAnchors(lessonPlan.actions);
-      setTotalSteps(lessonPlan.actions.length);
+      clearTeachingLayer(editor);
       setIsPlaying(false);
       stopAllSpeech("whiteboard-rebuild");
       setIsSpeaking(false);
       stepIndexRef.current = -1;
       setStepIndexState(-1);
-      applyStateAtStep(editor, -1);
       setCanvasInitFailure(null);
+
+      if (!lessonPlan) {
+        // Nothing valid to draw right now (loading, or a failure the retry
+        // UI is about to cover) — the canvas is genuinely blank, not holding
+        // onto whatever was there before.
+        setTotalSteps(0);
+        return;
+      }
+
+      registerAnchors(lessonPlan.actions);
+      setTotalSteps(lessonPlan.actions.length);
+      applyStateAtStep(editor, -1);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[WHITEBOARD_CANVAS_INIT_FAILURE]", message);
@@ -430,12 +450,20 @@ export default function TldrawCanvas({
   }, [lessonPlan]);
 
   // ── Mount handler ─────────────────────────────────────────────────────────
+  // Runs the SAME unconditional-clear-first sequence as the rebuild effect —
+  // tldraw's own persistenceKey may have just restored shapes from IndexedDB
+  // (a prior session's content for this storageKey) before React's lessonPlan
+  // state is known to be valid for THIS load; those restored shapes are never
+  // trusted as ground truth, only what the current, validated lessonPlan says.
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
+    clearTeachingLayer(editor);
     if (lessonPlan) {
       registerAnchors(lessonPlan.actions);
       setTotalSteps(lessonPlan.actions.length);
       applyStateAtStep(editor, -1);
+    } else {
+      setTotalSteps(0);
     }
 
     storeUnsubRef.current?.();
@@ -451,7 +479,7 @@ export default function TldrawCanvas({
       },
       { scope: "session", source: "user" },
     );
-  }, [lessonPlan, registerAnchors, applyStateAtStep]);
+  }, [lessonPlan, registerAnchors, applyStateAtStep, clearTeachingLayer]);
 
   useEffect(() => () => {
     storeUnsubRef.current?.();
@@ -623,9 +651,14 @@ export default function TldrawCanvas({
 
           {/* No fallback: a failed/ungroundable Professor Lesson Planner
               response shows a visible retry state, never a silently-
-              substituted generic diagram — see useProfessorLesson.ts. */}
+              substituted generic diagram — see useProfessorLesson.ts.
+              clearTeachingLayer() above already guarantees the canvas holds
+              no stale shapes by the time this renders; the background is
+              still fully OPAQUE (not translucent) as defense-in-depth so
+              nothing could show through even if that guarantee were ever
+              violated by a future change. */}
           {!licenseMissingInProduction && !lessonPlan && lessonStatus === "error" && (
-            <div role="alert" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.94)", zIndex: 10, gap: 14, padding: 24, textAlign: "center" }}>
+            <div role="alert" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0f172a", zIndex: 10, gap: 14, padding: 24, textAlign: "center" }}>
               <span style={{ fontSize: 20 }}>⚠</span>
               <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
                 {lessonErrorMessage ?? "Unable to generate Whiteboard for this page."}
