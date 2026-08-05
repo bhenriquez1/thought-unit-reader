@@ -110,3 +110,39 @@ describe("pages/api/page-annotation-plan.ts — density guidance (soft, defense-
     expect(src).toMatch(/the app also enforces this with a hard cap after your/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — strictly current-page grounded: structured blocks + content integrity", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("requires pageContentHash on the request, same as pageTruthKey/pageText", () => {
+    expect(src).toMatch(/if \(!body\.pageContentHash \|\| typeof body\.pageContentHash !== "string"\)/);
+    expect(src).toMatch(/missing_page_content_hash/);
+  });
+
+  it("echoes pageContentHash back unchanged in the ok:true response, never re-derived server-side", () => {
+    expect(src).toMatch(/pageContentHash:\s*body\.pageContentHash/);
+    expect(src).toMatch(/never re-derived server-side/);
+  });
+
+  it("renders the request's structured blocks (typed + reading order) to the model instead of a flat text slice", () => {
+    expect(src).toMatch(/blocksBlock/);
+    expect(src).toMatch(/b\.readingOrder/);
+    expect(src).toMatch(/String\(b\.type\)\.toUpperCase\(\)/);
+  });
+
+  it("falls back to flat pageText only when no blocks were provided", () => {
+    const idx = src.indexOf("const blocksBlock");
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/body\.pageText\.slice\(0, 6000\)/);
+  });
+
+  it("prompt instructs the model to read every block, including headings and tables, not skip them as decoration", () => {
+    expect(src).toMatch(/a table's rows are as quotable as a\s*\n?paragraph's sentences/);
+  });
+
+  it("prompt explicitly forbids quoting from headings.previous / headings.next — neighboring-page text is context only", () => {
+    expect(src).toMatch(/Never propose an exactQuote drawn\s*\n?from headings\.previous or headings\.next/);
+    expect(src).toMatch(/every exactQuote must come from THIS page's own\s*\n?blocks/);
+  });
+});

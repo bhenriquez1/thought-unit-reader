@@ -13,6 +13,8 @@ import type { SemanticPack } from "@/lib/semantic/types";
 import { resolvePageHeading, sanitizeTitle } from "@/lib/page-intelligence/titleResolution";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { splitIntoParagraphs } from "@/lib/highlights/groundHighlightAnchors";
+import { extractPageBlocks, type PageBlock } from "@/lib/insights/extractPageBlocks";
+import { computePageContentHash } from "@/lib/insights/pageContentHash";
 
 export interface ExistingCanonicalUnitContext {
   id: string;
@@ -22,10 +24,23 @@ export interface ExistingCanonicalUnitContext {
 
 export interface SurgeonAnnotationInput {
   pageTruthKey: string;
+  /** Identifies which document this page belongs to — the same value used to
+   *  build pageTruthKey, sent as its own field so pageContentHash's identity
+   *  components are explicit rather than implicit in a composite string. */
+  documentId: string;
   pageNumber: number;
+  /** Content-derived integrity key for THIS request — see pageContentHash.ts.
+   *  Echoed back unchanged by the API; the caller re-derives its own current
+   *  value at response time and discards a mismatch. */
+  pageContentHash: string;
   pageImageDataUrl: string | null;
   pageText: string;
   paragraphs: string[];
+  /** Structured, typed, reading-order decomposition of pageText — sent
+   *  instead of relying on the model to notice headings/tables/lists buried
+   *  in a flat blob. Never AI-generated; a pure classification of the same
+   *  verbatim text. */
+  blocks: PageBlock[];
   headings: {
     current: string;
     previous: string | null;
@@ -70,6 +85,7 @@ function projectSemanticPack(pack: SemanticPack): SurgeonAnnotationInput["semant
 
 export function buildSurgeonAnnotationInput(args: {
   pageTruthKey: string;
+  documentId: string;
   pageNumber: number;
   pageImageDataUrl: string | null;
   pageText: string;
@@ -83,10 +99,13 @@ export function buildSurgeonAnnotationInput(args: {
 
   return {
     pageTruthKey:     args.pageTruthKey,
+    documentId:       args.documentId,
     pageNumber:       args.pageNumber,
+    pageContentHash:  computePageContentHash(args.documentId, args.pageNumber, cleanedPageText),
     pageImageDataUrl: args.pageImageDataUrl ?? null,
     pageText:         cleanedPageText,
     paragraphs:       splitIntoParagraphs(cleanedPageText),
+    blocks:           extractPageBlocks(cleanedPageText),
     headings: {
       current:  resolvePageHeading([deriveHeadingFromPageText(args.pageText)], "Current Page"),
       previous: deriveHeadingFromPageText(args.previousPageText),
