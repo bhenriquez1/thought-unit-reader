@@ -222,3 +222,44 @@ describe("This is one Whiteboard experience — no second engine reintroduced", 
     }
   });
 });
+
+describe("No fallback — a Professor Lesson Planner failure shows a distinct retry state, never a substituted lesson", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
+
+  it("does not import or reference the retired deterministic fallback generator", () => {
+    expect(src).not.toMatch(/deterministicLessonScript/);
+    expect(src).not.toMatch(/usingFallback/);
+    expect(src).not.toMatch(/basic lesson — retry/);
+  });
+
+  it('shows a distinct role="alert" retry state when status is "error", separate from the loading skeleton', () => {
+    const idx = src.indexOf('lessonStatus === "error"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/role="alert"/);
+    expect(block).toMatch(/onClick=\{reanalyze\}/);
+    expect(block).toMatch(/Retry/);
+  });
+
+  it("the loading skeleton only renders when status is NOT error, so it never masks a real failure", () => {
+    const idx = src.indexOf('lessonStatus !== "error"');
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("reads the specific errorMessage from the hook, falling back to a sensible default", () => {
+    expect(src).toMatch(/lessonErrorMessage \?\? "Unable to generate Whiteboard for this page\."/);
+  });
+});
+
+describe("pageTeachingType (shared page classifier) threads from props into the Professor Lesson Planner", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
+
+  it("accepts a pageTeachingType prop and passes it into useProfessorLesson", () => {
+    expect(src).toMatch(/pageTeachingType\?:\s*string \| null;/);
+    const idx = src.indexOf("useProfessorLesson({");
+    const body = src.slice(idx, idx + 300);
+    expect(body).toMatch(/pageTeachingType:\s*pageTeachingType \?\? null,/);
+  });
+});

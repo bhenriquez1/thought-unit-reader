@@ -37,4 +37,14 @@ describe("buildProfessorLessonInput — never sends raw page text or coordinates
     const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
     expect(input).not.toHaveProperty("pageText");
   });
+
+  it("passes pageTeachingType through unchanged — the shared page classifier from the highlighting pass", () => {
+    const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null, pageTeachingType: "pharmacology" });
+    expect(input.pageTeachingType).toBe("pharmacology");
+  });
+
+  it("defaults pageTeachingType to null when not provided", () => {
+    const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
+    expect(input.pageTeachingType).toBeNull();
+  });
 });

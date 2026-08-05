@@ -2,7 +2,9 @@
 // Regression guards for components/whiteboard/useProfessorLesson.ts — mirrors
 // the Effect A/B pattern established by components/reader/
 // useSurgeonAnnotations.ts (tested there): cache-first, abort stale requests
-// on real identity change, never leave the canvas with nothing to perform.
+// on real identity change. Deliberately has NO fallback (see the "no
+// fallback" describe block below) — a failure surfaces as status:"error",
+// never a silently-substituted generic lesson.
 
 import fs from "fs";
 import path from "path";
@@ -28,10 +30,10 @@ describe("useProfessorLesson.ts — identity key drives both effects", () => {
     expect(body).toMatch(/\}, \[key\]\);/);
   });
 
-  it("Effect B's deps include key, enabled, and reanalyzeCount (via applyDeterministicFallback closure)", () => {
+  it("Effect B's deps include key, enabled, and reanalyzeCount", () => {
     const idx = src.indexOf("// ── Effect B:");
     const body = src.slice(idx);
-    expect(body).toMatch(/\}, \[key, enabled, reanalyzeCount, applyDeterministicFallback\]\);/);
+    expect(body).toMatch(/\}, \[key, enabled, reanalyzeCount\]\);/);
   });
 });
 
@@ -80,31 +82,55 @@ describe("useProfessorLesson.ts — cache-first, then fetch", () => {
   });
 });
 
-describe("useProfessorLesson.ts — never leaves the canvas with nothing to perform", () => {
+describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'error', never a substituted generic lesson", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("imports buildDeterministicLessonScript, the AI-free fallback generator", () => {
-    expect(src).toMatch(/import \{ buildDeterministicLessonScript \} from "@\/lib\/whiteboard\/deterministicLessonScript"/);
+  it("does not import the retired deterministic fallback generator", () => {
+    expect(src).not.toMatch(/deterministicLessonScript/);
+    expect(src).not.toMatch(/applyDeterministicFallback/);
   });
 
-  it("applies the deterministic fallback when the API returns ok:false", () => {
+  it("an API ok:false response sets status 'error' with a specific message, and leaves lessonPlan alone (stays null on first load)", () => {
     const idx = src.indexOf("if (!data.ok) {");
     const body = src.slice(idx, idx + 150);
-    expect(body).toMatch(/applyDeterministicFallback\(/);
+    expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
+    expect(body).toMatch(/setStatus\("error"\)/);
+    expect(body).not.toMatch(/setLessonPlan\(/);
   });
 
-  it("applies the deterministic fallback when grounding leaves zero targets, not an empty plan", () => {
+  it("zero groundable targets sets status 'error', not an empty-but-successful plan", () => {
     const idx = src.indexOf("if (grounded.nodeScripts.length === 0)");
     expect(idx).toBeGreaterThan(-1);
     const body = src.slice(idx, idx + 200);
-    expect(body).toMatch(/applyDeterministicFallback\(/);
+    expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
+    expect(body).toMatch(/setStatus\("error"\)/);
   });
 
-  it("applies the deterministic fallback on a thrown/network error too", () => {
+  it("a thrown/network error sets status 'error' too", () => {
     const idx = src.indexOf("} catch (err: any) {");
     const body = src.slice(idx, idx + 300);
-    expect(body).toMatch(/applyDeterministicFallback\(/);
+    expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
+    expect(body).toMatch(/setStatus\("error"\)/);
+  });
+
+  it("errorMessage (not usingFallback) is part of the returned result", () => {
+    const idx = src.lastIndexOf("return {");
+    const body = src.slice(idx, idx + 150);
+    expect(body).toMatch(/errorMessage/);
+    expect(body).not.toMatch(/usingFallback/);
+  });
+});
+
+describe("useProfessorLesson.ts — pageTeachingType (shared page classifier) threads through to the request", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("accepts pageTeachingType as an arg and passes it into buildProfessorLessonInput", () => {
+    expect(src).toMatch(/pageTeachingType\?:\s*string \| null;/);
+    const idx = src.indexOf("buildProfessorLessonInput({");
+    const body = src.slice(idx, idx + 200);
+    expect(body).toMatch(/pageTeachingType:\s*pageTeachingTypeRef\.current/);
   });
 });
 

@@ -36,8 +36,17 @@ export const SEMANTIC_PACK_VERSION = 1;
  *  slice, and the prompt explicitly forbids quoting from neighboring-page
  *  headings — a v2-cached plan is schema-compatible but was generated without
  *  these stricter current-page-only grounding instructions, so it's treated
- *  as stale rather than silently reused. */
-export const MODEL_VERSION = 3;
+ *  as stale rather than silently reused.
+ *  v4: pageRole is now the shared page CLASSIFIER — expanded from 5 generic
+ *  values to a domain-flavored taxonomy (anatomy/physiology/pharmacology/
+ *  diagnosis/histology/classification/decision-tree/workflow/mathematical-
+ *  derivation/organic-chemistry-reaction, plus the original 5 as a fallback),
+ *  and the prompt now adapts which canonicalTypes it favors per pageRole — a
+ *  v3-cached plan's pageRole was chosen under the old narrow taxonomy and its
+ *  category selection wasn't adaptive, so it's treated as stale. This same
+ *  pageRole value is also what the Whiteboard now uses to pick its teaching
+ *  grammar (lib/whiteboard/buildProfessorLessonInput.ts). */
+export const MODEL_VERSION = 4;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 

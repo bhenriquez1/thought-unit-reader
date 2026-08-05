@@ -97,3 +97,25 @@ describe("pages/api/professor-lesson-plan.ts — prompt encodes the professor-pe
     expect(src).toMatch(/synthesisQuestion/);
   });
 });
+
+describe("pages/api/professor-lesson-plan.ts — pageTeachingType (shared page classifier) informs teaching style", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs the model to let pageTeachingType strongly inform visualGrammar and narration style", () => {
+    expect(src).toMatch(/You are told this page's pageTeachingType/);
+    expect(src).toMatch(/strongly inform BOTH your visualGrammar choice and how you narrate/);
+  });
+
+  it("gives per-type teaching guidance for anatomy, pharmacology, decision-tree/diagnosis, workflow, and classification", () => {
+    expect(src).toMatch(/"anatomy" page should be taught by naming structures/);
+    expect(src).toMatch(/"pharmacology" page by walking drug -> mechanism -> indication/);
+    expect(src).toMatch(/"decision-tree" or "diagnosis" page by walking the branching decision logic/);
+    expect(src).toMatch(/"classification" page as a\s*\n?\s*taxonomy/);
+  });
+
+  it("sends pageTeachingType in the user content sent to the model", () => {
+    expect(src).toMatch(/pageTeachingType \(this page's classification from the highlighting pass/);
+    expect(src).toMatch(/\$\{body\.pageTeachingType \?\? "none"\}/);
+  });
+});

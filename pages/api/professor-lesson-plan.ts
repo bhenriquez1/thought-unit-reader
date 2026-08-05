@@ -83,6 +83,15 @@ Rules:
    "anatomy" (a structure with labeled parts), "diagnosis" (branching decision points),
    "comparison" (two things contrasted), "equation" (a formula worked through), or
    "concept-map" (a looser network of related ideas) — when nothing else clearly fits.
+   You are told this page's pageTeachingType — the classification the SAME page already
+   received from the highlighting pass (e.g. "anatomy", "pharmacology", "decision-tree",
+   "workflow"). Let it strongly inform BOTH your visualGrammar choice and how you narrate:
+   an "anatomy" page should be taught by naming structures and their relationships, a
+   "pharmacology" page by walking drug -> mechanism -> indication -> contraindication, a
+   "decision-tree" or "diagnosis" page by walking the branching decision logic, a
+   "workflow"/"procedure" page as an ordered sequence, a "classification" page as a
+   taxonomy of related categories. Don't ignore pageTeachingType and default to a generic
+   "concept-map" when a more specific grammar clearly fits it.
 7. title is a short, hand-written page title — 2 to 6 words, written in your own words for
    what this page is fundamentally about (e.g. "ASPIRIN OVERDOSE"), not copied verbatim
    from a heading.
@@ -182,6 +191,7 @@ export default async function handler(
     `documentId: ${body.documentId ?? "unknown"}\n` +
     `pageNumber: ${body.pageNumber ?? "unknown"}\n` +
     `activeCanonicalUnitId: ${body.activeCanonicalUnitId ?? "none"}\n` +
+    `pageTeachingType (this page's classification from the highlighting pass — a strong signal for visualGrammar and teaching style, see rule 6): ${body.pageTeachingType ?? "none"}\n` +
     `visualGrammarHint (already chosen by layout — you may confirm or override): ${body.visualGrammarHint ?? "flow"}\n` +
     `\nNodes:\n${JSON.stringify(body.nodes, null, 0)}\n` +
     `\nEdges:\n${JSON.stringify(body.edges ?? [], null, 0)}\n` +

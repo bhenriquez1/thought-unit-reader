@@ -135,13 +135,23 @@ export const SurgeonAnnotationPlanSchema = z.object({
    *  prior summary. */
   pageThesis:   z.string().min(1).max(200),
   /**
-   * The page's dominant grammar/kind — a single classification distinct from
-   * pageThesis's content summary (e.g. a page can be primarily "procedure" even
-   * though its thesis describes a specific clinical scenario). Model-provided,
-   * read fresh alongside pageThesis — never derived from which annotations
-   * happen to survive verification/density-limiting downstream.
+   * The page's TEACHING TYPE — what kind of page this is and therefore how it
+   * should be taught, decided BEFORE any annotation is chosen. This is the
+   * shared page classifier: the same value drives both this plan's
+   * highlighting density/category guidance (rule 9 in the system prompt) AND
+   * the Whiteboard's choice of visual teaching grammar
+   * (lib/whiteboard/buildProfessorLessonInput.ts passes it straight through
+   * as pageTeachingType) — one classification, not two independent guesses.
+   * Model-provided, read fresh alongside pageThesis — never derived from
+   * which annotations happen to survive verification/density-limiting
+   * downstream.
    */
-  pageRole:     z.enum(["definition", "procedure", "mechanism", "comparison", "example"]),
+  pageRole:     z.enum([
+    "definition", "procedure", "mechanism", "comparison", "example",
+    "anatomy", "physiology", "pharmacology", "diagnosis", "histology",
+    "classification", "decision-tree", "workflow",
+    "mathematical-derivation", "organic-chemistry-reaction",
+  ]),
   /** Ordered list of annotations derived from the current page. */
   annotations:  z.array(SurgeonAnnotationSchema),
 });

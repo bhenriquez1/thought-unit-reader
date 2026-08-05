@@ -94,10 +94,41 @@ Rules:
 6. Keep "reason" to one factual sentence (≤ 40 words) explaining why this span matters.
 7. pageThesis is a single sentence stating the page's main subject, derived fresh from
    what you read — not copied from any prior-pass context.
-8. pageRole classifies the PAGE's dominant grammar — pick whichever of
-   definition/procedure/mechanism/comparison/example best describes what this page is
-   PRIMARILY teaching, independent of pageThesis's content summary (e.g. a page can be
-   primarily "procedure" even though its thesis describes a specific clinical scenario).
+8. pageRole is the PAGE CLASSIFIER — decide this FIRST, before you pick any annotation, by
+   asking "what kind of page is this?" rather than "can I find a definition/procedure/danger
+   zone?". It drives both this plan's highlight selection (rule 8a) and, downstream, the
+   Whiteboard's choice of teaching style for this same page — one classification shared by
+   both, not two independent guesses. Pick the single best-fitting value:
+   - anatomy       — structures, origins/insertions, innervation, blood supply, relationships
+   - physiology     — mechanisms, sequences, feedback loops, cause-and-effect processes
+   - pharmacology   — drug -> mechanism -> indication -> contraindication -> adverse effect
+   - diagnosis      — clinical/dental decision-making: history -> exam -> diagnosis -> treatment
+   - histology      — tissue identification, distinguishing features, comparisons
+   - classification — a taxonomy or hierarchy of related categories/types
+   - decision-tree   — branching yes/no or either/or decision logic
+   - workflow        — an ordered clinical or procedural sequence of steps
+   - mathematical-derivation — given -> formula -> solve -> answer
+   - organic-chemistry-reaction — reaction mechanism -> intermediates -> products
+   - definition / procedure / mechanism / comparison / example — use only when none of the
+     more specific values above fits; these are the generic fallback classifications.
+   Choose independently of pageThesis's content summary (e.g. a page can be primarily
+   "pharmacology" even though its thesis describes one specific drug's clinical use).
+8a. ADAPTIVE HIGHLIGHTING — let pageRole shape WHICH canonicalTypes you actually reach for on
+    this page, instead of forcing every page through the same fixed checklist:
+    - anatomy/histology pages: favor definition (structure/tissue identification) and
+      supportingEvidence (relationships/comparisons between structures) over mechanism.
+    - physiology/mechanism/organic-chemistry-reaction pages: favor mechanism annotations that
+      capture the full causal chain in one span, per rule 2.
+    - pharmacology pages: favor mechanism (drug action) plus trap (contraindications/adverse
+      effects) — a page like this often legitimately needs both, unlike a purely mechanistic
+      physiology page.
+    - diagnosis/decision-tree/workflow/procedure pages: favor procedure/decision annotations
+      grouped into ONE sequence span (rule 2, rule 12) rather than one annotation per step.
+    - classification/comparison pages: favor comparison annotations over definition.
+    - mathematical-derivation pages: favor procedure (the solve sequence) with entity spanScope
+      (rule 11) for the formula/final-answer terms themselves.
+    This shapes emphasis, not a hard requirement — still ground every annotation in what the
+    page actually contains (rule 1), never invent a category the page doesn't support.
 9. DENSITY — a well-annotated page should read like expert marginalia, not a diagnostic
    overlay. As a strong guideline (the app also enforces this with a hard cap after your
    response, so exceeding it just means your lower-priority picks get dropped): at most one
@@ -131,7 +162,7 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
 {
   "pageTruthKey": "<string — copy from input>",
   "pageThesis": "<one-sentence string>",
-  "pageRole": "<definition|procedure|mechanism|comparison|example>",
+  "pageRole": "<anatomy|physiology|pharmacology|diagnosis|histology|classification|decision-tree|workflow|mathematical-derivation|organic-chemistry-reaction|definition|procedure|mechanism|comparison|example>",
   "annotations": [
     {
       "canonicalType": "<definition|mechanism|procedure|decision|comparison|trap|clinicalPearl|supportingEvidence>",

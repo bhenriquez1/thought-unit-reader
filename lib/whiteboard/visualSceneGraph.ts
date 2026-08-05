@@ -35,6 +35,41 @@ export const WhiteboardGrammarSchema = z.enum([
 ]);
 export type WhiteboardGrammar = z.infer<typeof WhiteboardGrammarSchema>;
 
+// ── Page classifier -> Whiteboard grammar ──────────────────────────────────
+// SurgeonAnnotationPlan.pageRole (lib/insights/pageAnnotationPlan.ts) is the
+// SHARED page classifier — the same "what kind of page is this?" judgment
+// that shapes highlight selection also picks the Whiteboard's teaching
+// grammar here, instead of the Whiteboard guessing independently from a
+// per-book semantic-pack setting. Not a 1:1 mapping (WhiteboardGrammar has
+// 7 values, pageRole has 15) — several page types share a grammar because
+// this repo's layout engine doesn't yet have a dedicated branching-tree or
+// hierarchy algorithm; decision-tree/classification currently render via the
+// hub-spoke ("case-map") layout as the closest available approximation.
+const PAGE_ROLE_TO_WHITEBOARD_GRAMMAR: Record<string, WhiteboardGrammar> = {
+  anatomy:                     "anatomy",
+  histology:                   "flow",       // lets buildVSG's comparison-suggestedLayout override apply
+  physiology:                  "flow",
+  mechanism:                   "flow",
+  pharmacology:                "flow",
+  "organic-chemistry-reaction": "worked-solution",
+  "mathematical-derivation":    "worked-solution",
+  diagnosis:                   "case-map",
+  classification:               "case-map",
+  "decision-tree":               "case-map",
+  workflow:                    "pathway",
+  procedure:                   "pathway",
+  comparison:                  "flow",       // same override path as histology
+  definition:                  "flow",
+  example:                     "flow",
+};
+
+/** Never throws — an unrecognized/missing pageRole falls back to "flow",
+ *  the same default the Whiteboard already used before pageRole existed. */
+export function pageRoleToWhiteboardGrammar(pageRole: string | null | undefined): WhiteboardGrammar {
+  if (!pageRole) return "flow";
+  return PAGE_ROLE_TO_WHITEBOARD_GRAMMAR[pageRole] ?? "flow";
+}
+
 // ── DrawType — the micro-level layout hint ────────────────────────────────────
 
 export const DrawTypeSchema = z.enum([
