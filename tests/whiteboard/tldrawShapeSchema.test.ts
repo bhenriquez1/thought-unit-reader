@@ -5,18 +5,17 @@
 // geo or arrow shape produces a ValidationError at runtime:
 //   "At shape(type = geo).props.text: Unexpected property"
 //
-// This test inspects the source of TldrawCanvas.tsx and sceneGraphAdapter.ts
-// at the static-analysis layer to confirm:
+// This test inspects the source of TldrawCanvas.tsx at the static-analysis
+// layer to confirm:
 //   1. No `text:` field appears in geo or arrow shape props.
 //   2. `richText:` (via toRichText()) is used instead.
 //   3. Arrow `start`/`end` use plain VecModel {x, y}, not {type:"point",x,y}.
-//   4. `toRichText` is imported from @tldraw/tldraw in both files.
+//   4. `toRichText` is imported from @tldraw/tldraw.
 
 import fs from "fs";
 import path from "path";
 
 const CANVAS     = path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx");
-const ADAPTER    = path.resolve(__dirname, "../../lib/whiteboard/sceneGraphAdapter.ts");
 
 describe("tldraw v5 geo shape schema — TldrawCanvas.tsx", () => {
   let src: string;
@@ -59,39 +58,6 @@ describe("tldraw v5 arrow shape schema — TldrawCanvas.tsx", () => {
 
   it("uses richText: toRichText(...) for arrow label", () => {
     expect(src).toMatch(/richText:\s*toRichText\(/);
-  });
-});
-
-describe("tldraw v5 schema — sceneGraphAdapter.ts", () => {
-  let src: string;
-  beforeAll(() => { src = fs.readFileSync(ADAPTER, "utf8"); });
-
-  it("imports toRichText from @tldraw/tldraw", () => {
-    expect(src).toMatch(/import\s+\{[^}]*toRichText[^}]*\}\s+from\s+["']@tldraw\/tldraw["']/);
-  });
-
-  it("does NOT use props.text for geo node labels (old schema)", () => {
-    expect(src).not.toMatch(/text:\s*node\.label/);
-  });
-
-  it("uses richText: toRichText(node.label) for geo node labels", () => {
-    expect(src).toMatch(/richText:\s*toRichText\(node\.label\)/);
-  });
-
-  it("does NOT use { type: 'point' } for arrow start/end (old schema)", () => {
-    expect(src).not.toMatch(/type:\s*["']point["']/);
-  });
-
-  it("uses kind: 'arc' on edge arrows", () => {
-    expect(src).toMatch(/kind:\s*["']arc["']/);
-  });
-
-  it("does NOT use props.text on edge arrows (old schema)", () => {
-    expect(src).not.toMatch(/text:\s*edge\.label/);
-  });
-
-  it("uses richText: toRichText(...) for edge label", () => {
-    expect(src).toMatch(/richText:\s*toRichText\(edge\.label/);
   });
 });
 

@@ -848,6 +848,9 @@ export default function WhiteboardPanel({
                   whiteboardGrammar={whiteboardGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                   storageKey={canvasStorageKey}
+                  documentId={bookId}
+                  pageTruthKey={bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined}
+                  activeCanonicalUnitId={knowledgeNodeId ?? null}
                 />
               </div>
             </div>

@@ -69,10 +69,10 @@ describe("TldrawCanvas.tsx — canvas initialization failure guard", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
 
-  it("buildShapes wraps shape construction in try/catch, converting a throw into canvasInitFailure state instead of an uncaught exception", () => {
-    const idx = src.indexOf("const buildShapes = useCallback");
+  it("the rebuild effect wraps shape construction in try/catch, converting a throw into canvasInitFailure state instead of an uncaught exception", () => {
+    const idx = src.indexOf("if (!editor || !lessonPlan) return;");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
+    const block = src.slice(idx, idx + 1200);
     expect(block).toMatch(/try\s*\{/);
     expect(block).toMatch(/catch\s*\(err\)/);
     expect(block).toMatch(/setCanvasInitFailure\(message\)/);
