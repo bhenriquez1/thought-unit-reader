@@ -6717,7 +6717,6 @@ export default function ThoughtUnitReader() {
                 bookTitle={uploadedFile?.name}
                 pageTitle={currentPageStudyModel?.pageThesis ?? null}
                 knowledgeNodeId={pageKgNodeIdRef.current}
-                learningProfile={learningProfile}
                 onOpenChiefResident={handleOpenChiefResident}
                 whiteboardGrammar={activePack.whiteboardGrammar}
                 canonicalEntries={whiteboardCanonicalEntries}

@@ -136,12 +136,12 @@ describe("Required regression 4 — legacy automatic overlays never render when 
     expect(block).not.toMatch(/return effectiveHighlightTargets;/);
   });
 
-  it("WhiteboardPanel.tsx no longer auto-generates the legacy AI illustration when a real page (studyModel) is open", () => {
+  it("WhiteboardPanel.tsx has no legacy AI-illustration/diagram pipeline left at all — TldrawCanvas's Professor Lesson Planner is the SOLE rendering pipeline", () => {
     const src = fs.readFileSync(WHITEBOARD_PANEL, "utf8");
-    const idx = src.indexOf("useEffect(() => {\n    if (studyModel) {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, src.indexOf("const shouldTrigger = autoTrigger", idx));
-    expect(block).not.toMatch(/generateAIDrawing\(/);
+    expect(src).not.toMatch(/generateAIDrawing/);
+    expect(src).not.toMatch(/fetch\(["']\/api\/whiteboard-explain["']/);
+    expect(src).not.toMatch(/fetch\(["']\/api\/whiteboard-image["']/);
+    expect(src).not.toMatch(/from ["']\.\/Whiteboard["']/);
   });
 });
 
