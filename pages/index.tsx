@@ -5203,18 +5203,18 @@ export default function ThoughtUnitReader() {
                 )}
 
                 {/* Surgeon Annotation Plan is reading the CURRENT page fresh — a small,
-                    non-blocking notice, never a substitute for what's already showing
-                    (the deterministic baseline / a same-pageTruthKey cached plan stay
-                    visible underneath while this is up). */}
+                    non-blocking notice. A same-pageTruthKey cached plan may already be
+                    showing underneath; there is no other fallback tier. */}
                 {surgeonAnnotations.status === "loading" && (
                   <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-sky-700/40 bg-sky-950/60 px-4 py-1 text-[11px] text-sky-200 backdrop-blur-sm">
                     <span className="animate-pulse">●</span>
-                    <span>Reading current page…</span>
+                    <span>Reading and annotating this page…</span>
                   </div>
                 )}
 
-                {/* SurgeonAnnotationPlan degraded status — existing/cached annotations stay
-                    visible underneath; this is only a small notice, never a blocking state. */}
+                {/* SurgeonAnnotationPlan failure status — SurgeonAnnotationPlan is the
+                    sole owner of automatic PDF annotations, so a failure here means the
+                    overlay is genuinely empty, not degraded to some lesser tier. */}
                 {surgeonAnnotations.status === "error" && surgeonAnnotations.annotationErrorMessage && (
                   <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-amber-700/50 bg-amber-900/70 px-4 py-1.5 text-[11px] text-amber-100 backdrop-blur-sm">
                     <span>⚠</span>
