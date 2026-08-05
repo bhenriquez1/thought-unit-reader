@@ -175,9 +175,18 @@ describe("Student layer survives a lesson rebuild — only locked (teaching-laye
   beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
 
   it("the rebuild effect filters to isLocked shapes before deleting, never a blanket deleteShapes(all)", () => {
-    const idx = src.indexOf("if (!editor || !lessonPlan) return;");
+    const idx = src.indexOf("const clearTeachingLayer = useCallback");
     const body = src.slice(idx, idx + 500);
     expect(body).toMatch(/\.filter\(s => s\.isLocked\)/);
+  });
+
+  it("clearTeachingLayer is called unconditionally from both the rebuild effect and handleMount, not gated behind a lessonPlan truthiness check", () => {
+    const rebuildIdx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
+    expect(rebuildIdx).toBeGreaterThan(-1);
+
+    const mountIdx = src.indexOf("const handleMount = useCallback((editor: Editor) => {");
+    const mountBody = src.slice(mountIdx, mountIdx + 300);
+    expect(mountBody).toMatch(/editorRef\.current = editor;\s*\n\s*clearTeachingLayer\(editor\);/);
   });
 });
 

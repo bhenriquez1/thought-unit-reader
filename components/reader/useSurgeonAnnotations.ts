@@ -22,7 +22,7 @@ const DEV = process.env.NODE_ENV === "development";
 // Never triggers on: zoom, scroll, panel toggles, thought-unit clicks — none of
 // those states are read by either effect.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import type { SemanticPack } from "@/lib/semantic/types";
 import type { HighlightTarget } from "@/lib/readerContracts";
@@ -30,10 +30,10 @@ import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/ins
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
-import { buildDeterministicAnnotationPlan } from "@/lib/highlights/deterministicAnnotationPlan";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
+import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
 import {
   getSurgeonAnnotationPlan,
   saveSurgeonAnnotationPlan,
@@ -41,7 +41,7 @@ import {
 import type { AnnotationPlanResponse } from "@/pages/api/page-annotation-plan";
 
 export type SurgeonAnnotationStatus = "idle" | "loading" | "success" | "error";
-export type SurgeonPlanTier = "enriched" | "grounded" | "degraded" | "failed";
+export type SurgeonPlanTier = "ready" | "empty" | "failed";
 
 export interface UseSurgeonAnnotationsResult {
   plan: SurgeonAnnotationPlan | null;
@@ -63,20 +63,16 @@ export interface UseSurgeonAnnotationsResult {
   groundedAnnotations: GroundedSurgeonAnnotation[];
   /**
    * What highlightTargets/groundedAnnotations are actually populated from,
-   * independent of `status` (which describes the AI fetch's own lifecycle):
-   *   "enriched" — a real, AI-enriched SurgeonAnnotationPlan produced targets.
-   *   "grounded" — AI hasn't produced targets (idle/loading/legitimately
-   *                empty), but the deterministic, AI-free baseline tier (see
-   *                lib/highlights/deterministicAnnotationPlan.ts) found
-   *                something and is showing it.
-   *   "degraded" — AI enrichment actively failed (status === "error") but the
-   *                deterministic baseline is still showing something, so the
-   *                overlay is not empty.
-   *   "failed"   — neither AI enrichment nor the deterministic baseline
-   *                produced anything for this page; the overlay is empty.
-   * Never silently "empty" without a reason: the deterministic tier is part
-   * of THIS pipeline, not the removed legacy fallback (PR #609) — "failed"
-   * only happens when the deterministic pass itself found nothing to extract.
+   * independent of `status` (which describes the AI fetch's own lifecycle).
+   * SurgeonAnnotationPlan is the SOLE source of automatic PDF annotations —
+   * there is no deterministic/AI-free fallback tier. If AI enrichment fails
+   * or produces nothing, the overlay is genuinely empty; it never silently
+   * substitutes a different, lesser tier of content.
+   *   "ready"  — a real, AI-enriched SurgeonAnnotationPlan produced targets.
+   *   "empty"  — AI hasn't produced targets yet (idle/loading), or legitimately
+   *              produced zero for this page (a valid outcome, not a failure).
+   *   "failed" — the AI request itself failed (status === "error") and there
+   *              are no targets to show.
    */
   planTier: SurgeonPlanTier;
   status: SurgeonAnnotationStatus;
@@ -103,13 +99,11 @@ interface UseSurgeonAnnotationsArgs {
   enabled: boolean;
 }
 
-// Does NOT claim AI-quality "annotations are still shown" — the legacy
-// fallback pipeline was removed (PureReaderView.tsx no longer falls back to
-// allHighlightTargets in any state). It also does NOT claim nothing is
-// visible: the deterministic baseline tier (deterministicBaseline below)
-// fills in whenever it finds something, so this message must stay accurate
-// whichever of those two is actually true for the current page.
-const DEGRADED_MESSAGE = "Advanced page analysis is temporarily unavailable. Basic grounded highlights are shown when available.";
+// Truthful, not reassuring: SurgeonAnnotationPlan is the sole owner of
+// automatic PDF annotations, and there is no fallback tier left to fall back
+// to. This message must never imply that some lesser form of highlighting is
+// still showing underneath it — when it's up, the overlay is empty.
+const DEGRADED_MESSAGE = "Advanced annotations could not be generated.";
 
 const IMPORTANCE_TO_LEVEL: Record<Importance, HighlightTarget["level"]> = {
   critical:   "important",
@@ -163,39 +157,34 @@ function groundedAnnotationsToHighlightTargets(
   });
 }
 
-// Pure — exported so its 4-way tiering (enriched/grounded/degraded/failed)
-// can be exercised directly with constructed fixtures in tests, rather than
-// only inferred by regex-matching this file's source (this repo's jest
-// config runs testEnvironment: "node" with no jsdom/RTL, so a real
-// render-hook test isn't available here). AI-enriched output wins whenever
-// it has anything to show; the deterministic baseline fills every other
-// state. Never a merge of the two — one exclusive set is returned.
+// Pure — exported so its tiering can be exercised directly with constructed
+// fixtures in tests, rather than only inferred by regex-matching this file's
+// source (this repo's jest config runs testEnvironment: "node" with no
+// jsdom/RTL, so a real render-hook test isn't available here). No fallback
+// tier: the AI-produced set is the only content this can ever return.
 export function resolveAnnotationTier(args: {
   aiHighlightTargets: HighlightTarget[];
   aiGroundedAnnotations: GroundedSurgeonAnnotation[];
-  baselineTargets: HighlightTarget[];
-  baselineGrounded: GroundedSurgeonAnnotation[];
   status: SurgeonAnnotationStatus;
 }): {
   highlightTargets: HighlightTarget[];
   groundedAnnotations: GroundedSurgeonAnnotation[];
   planTier: SurgeonPlanTier;
 } {
-  const usingEnriched = args.aiHighlightTargets.length > 0;
-  const hasBaseline = args.baselineTargets.length > 0;
+  const hasTargets = args.aiHighlightTargets.length > 0;
 
   let planTier: SurgeonPlanTier;
-  if (usingEnriched) {
-    planTier = "enriched";
+  if (hasTargets) {
+    planTier = "ready";
   } else if (args.status === "error") {
-    planTier = hasBaseline ? "degraded" : "failed";
+    planTier = "failed";
   } else {
-    planTier = hasBaseline ? "grounded" : "failed";
+    planTier = "empty";
   }
 
   return {
-    highlightTargets:    usingEnriched ? args.aiHighlightTargets    : args.baselineTargets,
-    groundedAnnotations: usingEnriched ? args.aiGroundedAnnotations : args.baselineGrounded,
+    highlightTargets:    args.aiHighlightTargets,
+    groundedAnnotations: args.aiGroundedAnnotations,
     planTier,
   };
 }
@@ -252,27 +241,6 @@ export function useSurgeonAnnotations({
     setReanalyzeCount(c => c + 1);
   }, []);
 
-  // ── Deterministic grounded baseline — always available, no network call ───
-  // exact current-page text → deterministic grounded base annotation plan →
-  // optional OpenAI enrichment → one SurgeonAnnotationPlan → one
-  // PdfEvidenceOverlay. Computed synchronously from raw pageText/pageTruthKey
-  // so the overlay is never at the mercy of an AI call: it renders instantly
-  // on page open and stays up through loading/degraded/empty AI states. Real
-  // spans extracted directly from pageText, so grounding is guaranteed by
-  // construction (still run through groundSurgeonQuotes/limitAnnotationDensity
-  // for pipeline-uniform sentence-boundary expansion and density limiting).
-  // Replaced — never merged — the instant a real AI-enriched plan produces
-  // any targets; see the tiering in the return statement below.
-  const deterministicBaseline = useMemo(() => {
-    if (!pageText || pageText.length < 200) {
-      return { targets: [] as HighlightTarget[], grounded: [] as GroundedSurgeonAnnotation[] };
-    }
-    const basePlan     = buildDeterministicAnnotationPlan(pageText, pageTruthKey);
-    const baseGrounded = limitAnnotationDensity(groundSurgeonQuotes(basePlan.annotations, pageText));
-    const baseTargets  = groundedAnnotationsToHighlightTargets(baseGrounded, pageNumber);
-    return { targets: baseTargets, grounded: baseGrounded };
-  }, [pageText, pageTruthKey, pageNumber]);
-
   // ── Effect A: page identity changed → reset + try the IDB cache first ──────
   useEffect(() => {
     setPlan(null);
@@ -314,6 +282,7 @@ export function useSurgeonAnnotations({
           // stages of the pipeline trace SmartPDFViewer's [SURGEON_PIPELINE_DIAGNOSTIC]
           // continues (geometryResolvedCount/renderedAnnotationCount).
           console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+            documentIdHash: hashDocumentId(bookIdRef.current),
             pageTruthKey,
             stage: "cache-hit",
             annotationPlanCount: stored.plan.annotations.length,
@@ -432,6 +401,7 @@ export function useSurgeonAnnotations({
 
         if (DEV) console.log("[SURGEON_PLAN_OK]", { pageTruthKey, annotationCount: targets.length });
         console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
+          documentIdHash: hashDocumentId(bookIdRef.current),
           pageTruthKey,
           stage: "fetch",
           annotationPlanCount: data.plan.annotations.length,
@@ -450,8 +420,6 @@ export function useSurgeonAnnotations({
   const tiered = resolveAnnotationTier({
     aiHighlightTargets:    highlightTargets,
     aiGroundedAnnotations: groundedAnnotations,
-    baselineTargets:       deterministicBaseline.targets,
-    baselineGrounded:      deterministicBaseline.grounded,
     status,
   });
 

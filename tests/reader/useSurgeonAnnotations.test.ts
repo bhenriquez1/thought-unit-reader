@@ -130,8 +130,9 @@ describe("useSurgeonAnnotations.ts — degraded/failure UX matches the spec verb
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("uses the exact required status message, and does NOT claim legacy annotations are still shown", () => {
-    expect(src).toMatch(/Advanced page analysis is temporarily unavailable\. Basic grounded highlights are shown when available\./);
+  it("uses the exact required status message, and does NOT claim any fallback annotations are still shown", () => {
+    expect(src).toMatch(/Advanced annotations could not be generated\./);
+    expect(src).not.toMatch(/Basic grounded highlights are shown when available/);
     expect(src).not.toMatch(/Grounded textbook annotations are still shown/);
     expect(src).not.toMatch(/No automatic highlights on this page right now/);
   });
@@ -259,9 +260,9 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
     expect(src).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
   });
 
-  it('shows a "Reading current page…" notice while status is loading — never silently rendering nothing while the fetch is in flight', () => {
+  it('shows a "Reading and annotating this page…" notice while status is loading — never silently rendering nothing while the fetch is in flight', () => {
     expect(src).toMatch(/surgeonAnnotations\.status === "loading"/);
-    expect(src).toMatch(/Reading current page…/);
+    expect(src).toMatch(/Reading and annotating this page…/);
   });
 });
 
@@ -308,42 +309,29 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
   });
 });
 
-describe("useSurgeonAnnotations.ts — deterministic baseline tier: overlay never goes empty when AI is unavailable", () => {
+describe("useSurgeonAnnotations.ts — no fallback tier: SurgeonAnnotationPlan is the sole source of automatic annotations", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("imports buildDeterministicAnnotationPlan from the AI-free extractor", () => {
-    expect(src).toMatch(/import \{ buildDeterministicAnnotationPlan \} from "@\/lib\/highlights\/deterministicAnnotationPlan"/);
+  it("does not import a deterministic/AI-free baseline extractor — that fallback tier was removed", () => {
+    expect(src).not.toMatch(/deterministicAnnotationPlan/);
+    expect(src).not.toMatch(/buildDeterministicAnnotationPlan/);
+    expect(src).not.toMatch(/deterministicBaseline/);
   });
 
-  it("deterministicBaseline is computed via useMemo, keyed on pageText/pageTruthKey/pageNumber — no network call", () => {
-    const idx = src.indexOf("const deterministicBaseline = useMemo(");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
-    expect(block).toMatch(/buildDeterministicAnnotationPlan\(pageText, pageTruthKey\)/);
-    expect(block).not.toMatch(/fetch\(/);
-    expect(block).toMatch(/\}, \[pageText, pageTruthKey, pageNumber\]\);/);
-  });
-
-  it("still runs the deterministic plan through groundSurgeonQuotes + limitAnnotationDensity for pipeline-uniform sentence expansion/density limiting", () => {
-    const idx = src.indexOf("const deterministicBaseline = useMemo(");
-    const block = src.slice(idx, idx + 700);
-    expect(block).toMatch(/limitAnnotationDensity\(groundSurgeonQuotes\(basePlan\.annotations, pageText\)\)/);
-  });
-
-  it("the hook body calls resolveAnnotationTier with both AI and baseline results plus status", () => {
+  it("the hook body calls resolveAnnotationTier with only the AI results plus status — no baseline args", () => {
     const idx = src.indexOf("const tiered = resolveAnnotationTier({");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 300);
+    const block = src.slice(idx, idx + 200);
     expect(block).toMatch(/aiHighlightTargets:\s*highlightTargets,/);
     expect(block).toMatch(/aiGroundedAnnotations:\s*groundedAnnotations,/);
-    expect(block).toMatch(/baselineTargets:\s*deterministicBaseline\.targets,/);
-    expect(block).toMatch(/baselineGrounded:\s*deterministicBaseline\.grounded,/);
     expect(block).toMatch(/status,/);
+    expect(block).not.toMatch(/baselineTargets/);
+    expect(block).not.toMatch(/baselineGrounded/);
   });
 });
 
-describe("resolveAnnotationTier — 4-way planTier (enriched/grounded/degraded/failed), executed directly", () => {
+describe("resolveAnnotationTier — planTier (ready/empty/failed), executed directly, no fallback tier", () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { resolveAnnotationTier } = require("../../components/reader/useSurgeonAnnotations");
 
@@ -358,65 +346,35 @@ describe("resolveAnnotationTier — 4-way planTier (enriched/grounded/degraded/f
       groundingState: "exact", confidence: 1 };
   }
 
-  it("REQUIRED: advanced API unavailable (status error) but grounded (deterministic) annotations still render — planTier 'degraded'", () => {
-    const result = resolveAnnotationTier({
-      aiHighlightTargets: [],
-      aiGroundedAnnotations: [],
-      baselineTargets: [target("b1")],
-      baselineGrounded: [grounded("b1")],
-      status: "error",
-    });
-    expect(result.planTier).toBe("degraded");
-    expect(result.highlightTargets).toEqual([target("b1")]);
-    expect(result.groundedAnnotations).toEqual([grounded("b1")]);
-  });
-
-  it("AI-enriched output wins whenever it has anything, regardless of baseline content", () => {
+  it("AI produced targets — planTier 'ready'", () => {
     const result = resolveAnnotationTier({
       aiHighlightTargets: [target("ai1")],
       aiGroundedAnnotations: [grounded("ai1")],
-      baselineTargets: [target("b1")],
-      baselineGrounded: [grounded("b1")],
       status: "success",
     });
-    expect(result.planTier).toBe("enriched");
+    expect(result.planTier).toBe("ready");
     expect(result.highlightTargets).toEqual([target("ai1")]);
   });
 
-  it("no AI targets, no error, baseline has content — planTier 'grounded' (idle/loading/legitimately-empty-AI states)", () => {
+  it("REQUIRED: the AI request failed and there are no targets — planTier 'failed', overlay genuinely empty, never substituted with something else", () => {
     const result = resolveAnnotationTier({
       aiHighlightTargets: [],
       aiGroundedAnnotations: [],
-      baselineTargets: [target("b1")],
-      baselineGrounded: [grounded("b1")],
-      status: "loading",
-    });
-    expect(result.planTier).toBe("grounded");
-    expect(result.highlightTargets).toEqual([target("b1")]);
-  });
-
-  it("no AI targets and no baseline content — planTier 'failed', overlay genuinely empty", () => {
-    const result = resolveAnnotationTier({
-      aiHighlightTargets: [],
-      aiGroundedAnnotations: [],
-      baselineTargets: [],
-      baselineGrounded: [],
       status: "error",
     });
     expect(result.planTier).toBe("failed");
     expect(result.highlightTargets).toEqual([]);
+    expect(result.groundedAnnotations).toEqual([]);
   });
 
-  it("never merges AI and baseline sets — output is always exactly one of the two arrays, never a concatenation", () => {
+  it("no AI targets yet and no error (idle/loading, or a legitimately empty plan) — planTier 'empty'", () => {
     const result = resolveAnnotationTier({
-      aiHighlightTargets: [target("ai1")],
-      aiGroundedAnnotations: [grounded("ai1")],
-      baselineTargets: [target("b1"), target("b2")],
-      baselineGrounded: [grounded("b1"), grounded("b2")],
-      status: "success",
+      aiHighlightTargets: [],
+      aiGroundedAnnotations: [],
+      status: "loading",
     });
-    expect(result.highlightTargets).toHaveLength(1);
-    expect(result.highlightTargets).not.toContainEqual(target("b1"));
+    expect(result.planTier).toBe("empty");
+    expect(result.highlightTargets).toEqual([]);
   });
 });
 

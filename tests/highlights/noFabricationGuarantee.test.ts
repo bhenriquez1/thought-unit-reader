@@ -1,9 +1,10 @@
 // tests/highlights/noFabricationGuarantee.test.ts
-// End-to-end guarantee: no matter which tier of the surgeon pipeline produced
-// an annotation — the deterministic baseline, or an AI-enriched plan that may
-// contain hallucinated/paraphrased wording — the text that ends up in the
-// final, exclusive PDF overlay is ALWAYS a verbatim substring of the real
-// current-page text. Never a fabricated word, never synthetic AI wording.
+// End-to-end guarantee: no matter what an AI-enriched plan proposes — including
+// hallucinated/paraphrased wording — the text that ends up in the final,
+// exclusive PDF overlay is ALWAYS a verbatim substring of the real current-page
+// text. Never a fabricated word, never synthetic AI wording. There is no
+// deterministic/AI-free fallback tier — SurgeonAnnotationPlan is the sole
+// source of automatic annotations, so this guarantee only has one path to hold.
 //
 // This exercises the full real chain each component test only covers in
 // isolation: AI plan (possibly hallucinated) -> groundSurgeonQuotes (strict
@@ -11,7 +12,6 @@
 
 import { groundSurgeonQuotes } from "../../lib/highlights/groundSurgeonQuotes";
 import { limitAnnotationDensity } from "../../lib/highlights/limitAnnotationDensity";
-import { buildDeterministicAnnotationPlan } from "../../lib/highlights/deterministicAnnotationPlan";
 import { resolveAnnotationTier } from "../../components/reader/useSurgeonAnnotations";
 import type { SurgeonAnnotationPlan } from "../../lib/insights/pageAnnotationPlan";
 
@@ -74,52 +74,34 @@ describe("No-fabrication guarantee — AI-enriched path", () => {
   });
 });
 
-describe("No-fabrication guarantee — deterministic baseline path", () => {
-  it("every annotation extracted by the deterministic plan is a verbatim substring of the source page, by construction", () => {
-    const plan = buildDeterministicAnnotationPlan(REAL_PAGE_TEXT, "acid-base::1::t");
-    const grounded = limitAnnotationDensity(groundSurgeonQuotes(plan.annotations, REAL_PAGE_TEXT));
-    expect(grounded.length).toBeGreaterThan(0);
-    assertEveryQuoteIsVerbatim(grounded.map(g => g.groundedText), REAL_PAGE_TEXT);
-  });
-});
-
-describe("No-fabrication guarantee — holds through resolveAnnotationTier regardless of which tier wins", () => {
-  it("enriched tier: final highlightTargets text is still verbatim page text (fabricated candidate already dropped upstream)", () => {
+describe("No-fabrication guarantee — holds through resolveAnnotationTier", () => {
+  it("ready tier: final highlightTargets text is still verbatim page text (fabricated candidate already dropped upstream)", () => {
     const aiPlan = [
       annotation({ exactQuote: "The kidneys regulate blood pH by reabsorbing or excreting bicarbonate ions as needed." }),
       annotation({ exactQuote: "Fabricated sentence that does not exist anywhere on this page at all." }),
     ];
     const aiGrounded = limitAnnotationDensity(groundSurgeonQuotes(aiPlan, REAL_PAGE_TEXT));
-    const basePlan = buildDeterministicAnnotationPlan(REAL_PAGE_TEXT, "acid-base::1::t");
-    const baseGrounded = limitAnnotationDensity(groundSurgeonQuotes(basePlan.annotations, REAL_PAGE_TEXT));
 
     const tiered = resolveAnnotationTier({
       aiHighlightTargets: aiGrounded.map((g, i) => ({ id: `a${i}`, page: 1, text: g.groundedText, normalizedText: g.groundedText, level: "important", score: 1, sourceParagraphIndex: i, kind: "definition", evidenceRefId: `a${i}`, reason: g.reason, treatment: g.treatment, canonicalType: g.canonicalType, groundingState: g.groundingState } as any)),
       aiGroundedAnnotations: aiGrounded,
-      baselineTargets: baseGrounded.map((g, i) => ({ id: `b${i}`, page: 1, text: g.groundedText, normalizedText: g.groundedText, level: "support", score: 1, sourceParagraphIndex: i, kind: "definition", evidenceRefId: `b${i}`, reason: g.reason, treatment: g.treatment, canonicalType: g.canonicalType, groundingState: g.groundingState } as any)),
-      baselineGrounded: baseGrounded,
       status: "success",
     });
 
-    expect(tiered.planTier).toBe("enriched");
+    expect(tiered.planTier).toBe("ready");
     assertEveryQuoteIsVerbatim(tiered.highlightTargets.map(t => t.text), REAL_PAGE_TEXT);
     assertEveryQuoteIsVerbatim(tiered.groundedAnnotations.map(g => g.groundedText), REAL_PAGE_TEXT);
   });
 
-  it("degraded tier (AI failed entirely): baseline output is still 100% verbatim page text", () => {
-    const basePlan = buildDeterministicAnnotationPlan(REAL_PAGE_TEXT, "acid-base::1::t");
-    const baseGrounded = limitAnnotationDensity(groundSurgeonQuotes(basePlan.annotations, REAL_PAGE_TEXT));
-    const baseTargets = baseGrounded.map((g, i) => ({ id: `b${i}`, page: 1, text: g.groundedText, normalizedText: g.groundedText, level: "support", score: 1, sourceParagraphIndex: i, kind: "definition", evidenceRefId: `b${i}`, reason: g.reason, treatment: g.treatment, canonicalType: g.canonicalType, groundingState: g.groundingState } as any));
-
+  it("failed tier (AI failed entirely): the overlay is genuinely empty, never substituted with something else", () => {
     const tiered = resolveAnnotationTier({
       aiHighlightTargets: [],
       aiGroundedAnnotations: [],
-      baselineTargets: baseTargets,
-      baselineGrounded: baseGrounded,
       status: "error",
     });
 
-    expect(tiered.planTier).toBe("degraded");
-    assertEveryQuoteIsVerbatim(tiered.highlightTargets.map(t => t.text), REAL_PAGE_TEXT);
+    expect(tiered.planTier).toBe("failed");
+    expect(tiered.highlightTargets).toEqual([]);
+    expect(tiered.groundedAnnotations).toEqual([]);
   });
 });

@@ -30,6 +30,7 @@ import {
 } from "@/lib/whiteboard/professorLessonPlan";
 import { getProfessorLessonPlan, saveProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlanCache";
 import type { ProfessorLessonPlanResponse } from "@/pages/api/professor-lesson-plan";
+import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
 
 export type ProfessorLessonStatus = "idle" | "loading" | "success" | "error";
 
@@ -136,6 +137,11 @@ export function useProfessorLesson({
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    const startedAt = Date.now();
+    // Diagnostic identifiers only — documentId is hashed (one-way) so a
+    // book's identity never appears in logs, and no node/edge/narration TEXT
+    // is ever logged, only counts and timings.
+    const diagnosticIds = { documentIdHash: hashDocumentId(documentId), pageTruthKey };
 
     (async () => {
       try {
@@ -153,6 +159,7 @@ export function useProfessorLesson({
         if (ctrl.signal.aborted) return;
 
         if (!data.ok) {
+          console.warn("[PROFESSOR_LESSON_DEGRADED]", { ...diagnosticIds, code: data.code, durationMs: Date.now() - startedAt });
           setErrorMessage(GENERIC_ERROR_MESSAGE);
           setErrorCode(data.code);
           setStatus("error");
@@ -168,6 +175,7 @@ export function useProfessorLesson({
         const grounded = groundProfessorLesson(script, v);
         if (grounded.nodeScripts.length === 0) {
           // Everything the model referenced was ungroundable.
+          console.warn("[PROFESSOR_LESSON_DEGRADED]", { ...diagnosticIds, code: "ungroundable_response", durationMs: Date.now() - startedAt });
           setErrorMessage(GENERIC_ERROR_MESSAGE);
           setErrorCode("ungroundable_response");
           setStatus("error");
@@ -182,11 +190,19 @@ export function useProfessorLesson({
         setErrorMessage(null);
         setStatus("success");
 
+        // Production-safe — counts and timing only, never label/narration text.
+        console.log("[PROFESSOR_LESSON_PIPELINE_DIAGNOSTIC]", {
+          ...diagnosticIds,
+          nodeScriptCount: grounded.nodeScripts.length,
+          sceneActionCount: plan.actions.length,
+          durationMs: Date.now() - startedAt,
+        });
+
         const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId });
         saveProfessorLessonPlan(cacheKey, plan).catch(() => {});
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
-        console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { pageTruthKey, message: err?.message ?? String(err) });
+        console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { ...diagnosticIds, message: err?.message ?? String(err), durationMs: Date.now() - startedAt });
         setErrorMessage(GENERIC_ERROR_MESSAGE);
         setErrorCode("network_error");
         setStatus("error");

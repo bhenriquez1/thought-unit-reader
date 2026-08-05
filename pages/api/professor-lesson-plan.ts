@@ -25,8 +25,7 @@ import {
 } from "@/lib/whiteboard/professorLessonPlan";
 import type { ProfessorLessonInput } from "@/lib/whiteboard/buildProfessorLessonInput";
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
-
-const DEV = process.env.NODE_ENV === "development";
+import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 
 export const config = {
   maxDuration: 30,
@@ -161,7 +160,17 @@ export default async function handler(
   }
 
   const body = req.body as Partial<ProfessorLessonInput>;
-  let diagnosticIds: Record<string, unknown> = { pageTruthKey: body?.pageTruthKey ?? null, documentId: body?.documentId ?? null, pageNumber: body?.pageNumber ?? null };
+  const requestId = newRequestId();
+  // Diagnostic identifiers only — documentId is hashed (one-way) so a book's
+  // identity never appears in logs, and no node/edge TEXT is ever logged.
+  let diagnosticIds: Record<string, unknown> = {
+    requestId,
+    documentIdHash: body?.documentId ? hashDocumentId(body.documentId) : null,
+    pageTruthKey:   body?.pageTruthKey ?? null,
+    pageNumber:     body?.pageNumber ?? null,
+    nodeCount:      Array.isArray(body?.nodes) ? body.nodes.length : null,
+    edgeCount:      Array.isArray(body?.edges) ? body.edges.length : null,
+  };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
     res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
@@ -263,10 +272,16 @@ export default async function handler(
     return;
   }
 
-  DEV && console.log("[PROFESSOR_LESSON_OK]", {
+  // Production-safe — counts and timings only, never node/edge/narration text.
+  console.log("[PROFESSOR_LESSON_OK]", {
     ...diagnosticIds,
     model,
     nodeScriptCount: result.data.nodeScripts.length,
+    // "scene action count" per the required diagnostics — the number of
+    // drawing actions this script will expand into is decided downstream by
+    // buildProfessorTeachingActions.ts (deterministic, non-AI), but each
+    // nodeScript/edgeScript here becomes at least one action, so this count
+    // is the direct upstream signal for it.
     durationMs:      Date.now() - startedAt,
   });
 

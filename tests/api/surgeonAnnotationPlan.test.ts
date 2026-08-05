@@ -166,3 +166,32 @@ describe("pages/api/page-annotation-plan.ts — strictly current-page grounded: 
     expect(src).toMatch(/every exactQuote must come from THIS page's own\s*\n?blocks/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — required production diagnostics", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("generates a per-request requestId and a one-way hash of documentId — never the raw documentId", () => {
+    expect(src).toMatch(/import \{ hashDocumentId, newRequestId \} from "@\/lib\/insights\/requestDiagnostics"/);
+    expect(src).toMatch(/const requestId = newRequestId\(\);/);
+    expect(src).toMatch(/documentIdHash:\s*body\?\.documentId \? hashDocumentId\(body\.documentId\) : null,/);
+  });
+
+  it("diagnosticIds carries pageTruthKey, pageNumber, and extracted-text length — never the text itself", () => {
+    const idx = src.indexOf("const diagnosticIds = {");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/pageTruthKey:\s*body\?\.pageTruthKey \?\? null,/);
+    expect(block).toMatch(/pageNumber:\s*body\?\.pageNumber \?\? null,/);
+    expect(block).toMatch(/pageTextLength:\s*body\?\.pageText\?\.length \?\? null,/);
+    expect(block).not.toMatch(/pageText:\s*body\.pageText/);
+  });
+
+  it("the success log runs unconditionally (production-safe), not DEV-gated, and logs only counts/timing", () => {
+    const idx = src.indexOf('console.log("[SURGEON_PLAN_OK]"');
+    expect(idx).toBeGreaterThan(-1);
+    expect(src.slice(idx - 20, idx)).not.toMatch(/DEV\s*&&\s*$/);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/annotationCount:\s*result\.data\.annotations\.length,/);
+    expect(block).toMatch(/durationMs:\s*Date\.now\(\) - startedAt,/);
+  });
+});
