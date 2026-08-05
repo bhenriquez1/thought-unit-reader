@@ -27,6 +27,7 @@ import type { ProfessorLessonInput } from "@/lib/whiteboard/buildProfessorLesson
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
+import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
 
 export const config = {
   maxDuration: 30,
@@ -123,12 +124,14 @@ async function callOpenAI(
     return await client.chat.completions.create(
       {
         model,
-        temperature:      0.4, // some genuine variety in phrasing/tone is desirable here, unlike the strict-extraction annotation pass
-        // max_tokens is deprecated and REJECTED (HTTP 400) by newer reasoning-
-        // family models (o-series, gpt-5.x) that resolveTeachingModel can
-        // dynamically select — max_completion_tokens is the modern parameter,
-        // universally accepted across model generations.
-        max_completion_tokens: 2000,
+        // temperature/max_tokens are only sent when the resolved model
+        // actually supports overriding them — a newer reasoning-family
+        // model (o-series, gpt-5.x) that resolveTeachingModel can
+        // dynamically select REJECTS both with HTTP 400. See
+        // lib/insights/openaiChatParams.ts for the shared rule. 0.4 (some
+        // genuine variety in phrasing/tone, unlike the strict-extraction
+        // annotation pass) only applies on models that support it.
+        ...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens: 2000 }),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },

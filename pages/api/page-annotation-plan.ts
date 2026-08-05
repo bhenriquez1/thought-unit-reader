@@ -29,6 +29,7 @@ import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotati
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
+import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
 
 export const config = {
   maxDuration: 30,
@@ -198,12 +199,12 @@ async function callOpenAI(
     return await client.chat.completions.create(
       {
         model,
-        temperature:      0,
-        // max_tokens is deprecated and REJECTED (HTTP 400) by newer reasoning-
-        // family models (o-series, gpt-5.x) that resolveTeachingModel can
-        // dynamically select — max_completion_tokens is the modern parameter,
-        // universally accepted across model generations.
-        max_completion_tokens: 2500,
+        // temperature/max_tokens are only sent when the resolved model
+        // actually supports overriding them — a newer reasoning-family
+        // model (o-series, gpt-5.x) that resolveTeachingModel can
+        // dynamically select REJECTS both with HTTP 400. See
+        // lib/insights/openaiChatParams.ts for the shared rule.
+        ...buildChatCompletionTuning(model, { temperature: 0, maxCompletionTokens: 2500 }),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },

@@ -173,9 +173,16 @@ describe("pages/api/professor-lesson-plan.ts — max_completion_tokens, not the 
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
   it("REQUIRED: uses max_completion_tokens — resolveTeachingModel can dynamically select a reasoning-family model (o-series/gpt-5.x) that REJECTS max_tokens with HTTP 400", () => {
-    expect(src).toMatch(/max_completion_tokens:\s*2000,/);
+    expect(src).toMatch(/maxCompletionTokens:\s*2000/);
     expect(src).not.toMatch(/max_tokens:\s*2000,/);
     expect(src).not.toMatch(/\bmax_tokens:/);
+  });
+
+  it("REQUIRED: temperature/max_completion_tokens are built through the shared buildChatCompletionTuning helper, never hardcoded directly on the request — the same model can also reject a custom temperature (HTTP 400)", () => {
+    expect(src).toMatch(/import \{ buildChatCompletionTuning \} from "@\/lib\/insights\/openaiChatParams"/);
+    const idx = src.indexOf("...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens: 2000 }),");
+    expect(idx).toBeGreaterThan(-1);
+    expect(src).not.toMatch(/temperature:\s*0\.4,\n/);
   });
 
   it("REQUIRED: does not retry a 400 invalid_request_error — retrying an identical malformed request only reproduces the identical failure", () => {
