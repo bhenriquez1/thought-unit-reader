@@ -8,7 +8,6 @@ import { Button } from "./ui/button";
 import { AnimatePresence, motion } from "framer-motion";
 import type { DiagramPlan } from "@/lib/whiteboard/diagramPlan";
 import type { WhiteboardVisualPlan } from "@/lib/whiteboard/visualPlan";
-import { buildVisualPlanFromStudyModel, detectSubjectFull } from "@/lib/whiteboard/visualPlan";
 import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
@@ -636,20 +635,21 @@ export default function WhiteboardPanel({
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
     if (studyModel) {
-      // WorkspaceSteps renders instantly from noteCards; kick off the
-      // AI illustration in the background as the "big visual overview".
+      // A real page is open — TldrawCanvas's Professor Lesson Planner is the
+      // SOLE automatic visual for this page (see the Whiteboard directive: "no
+      // stale visual content, no silent fallback"). The legacy AI illustration
+      // (/api/whiteboard-image) used to auto-generate here as a "big visual
+      // overview" stacked above the canvas; that's exactly the kind of
+      // automatic content fallback that has to go. The manual "🖌️
+      // Illustration" bottom-action button still calls generateAIDrawing on
+      // explicit user request — this only removes the automatic, mount-time
+      // trigger.
       DEV && console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
         page: currentPage ?? null,
         hasThesis: !!(studyModel as any).pageThesis,
         hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
         conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
       });
-      if (effectiveConcept && illustrationCacheKeyRef.current !== cacheKey) {
-        illustrationCacheKeyRef.current = cacheKey;
-        const subject = detectSubjectFull(studyModel, teachNoteCards);
-        const vp = buildVisualPlanFromStudyModel(studyModel as Record<string, unknown>, subject);
-        generateAIDrawing(null, vp);
-      }
       return;
     }
     const shouldTrigger = autoTrigger && !!effectiveConcept && !!effectiveContext;

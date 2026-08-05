@@ -141,3 +141,21 @@ describe("Scene Builder — end-to-end smoke: grounded page content produces a r
     expect(entries).toEqual([]);
   });
 });
+
+describe("WhiteboardPanel.tsx — the legacy AI illustration (/api/whiteboard-image) no longer auto-fires when a real page is open", () => {
+  const PANEL_FILE = path.resolve(__dirname, "../../components/WhiteboardPanel.tsx");
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
+
+  it("the studyModel branch of the mount effect no longer calls generateAIDrawing — TldrawCanvas's Professor Lesson Planner is the sole automatic visual for a real page", () => {
+    const idx = src.indexOf("useEffect(() => {\n    if (studyModel) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf("const shouldTrigger = autoTrigger", idx));
+    expect(block).not.toMatch(/generateAIDrawing\(/);
+    expect(block).not.toMatch(/buildVisualPlanFromStudyModel/);
+  });
+
+  it("the manual 'Illustration' bottom-action button still exists — this only removes the automatic mount-time trigger, not the user-initiated feature", () => {
+    expect(src).toMatch(/onClick=\{\(\) => generateAIDrawing\(diagramPlan\)\}/);
+  });
+});
