@@ -2,20 +2,28 @@
 // components/whiteboard/TldrawCanvas.tsx
 // Interactive tldraw whiteboard canvas — the Avrrio Visual Reasoning Engine.
 //
-// One always-fully-populated, editable canvas. No slideshow/reveal mode, no
-// Student/Instructor toggle — those were removed because they added UI
-// surface without adding teaching value: a diagram the student has to click
-// "Next" through isn't more understandable than the same diagram shown whole.
-// The canvas opens already constructed — nodes, connectors, and labels all
-// visible immediately — because the VisualSceneGraph it renders already
-// encodes structure (see lib/whiteboard/visualSceneGraph.ts and
-// lib/whiteboard/canonicalRelationshipGraph.ts): every node is a complete,
-// non-truncated teaching statement, and every edge is a real inferred
-// relationship (never a floating, disconnected box).
+// One Whiteboard experience: a locked, replayable "recorded professor" that
+// draws the lesson while narrating it, plus an always-available, unlocked
+// student-annotation layer for personal pen strokes/circles/notes/arrows
+// (tldraw's own native toolbar, already visible — no separate mode/tab).
 //
-// Architecture: two integrated phases
-//   Phase 1  Shape → Reader sync   clicking a shape sets readingFocusStore
-//   Phase 2  VSG-first rendering   uses VisualSceneGraph node positions + edge kinds
+//   TEACHING LAYER — locked (isLocked: true on every AI/deterministic shape)
+//     canonicalUnitId, source grounding, and reveal order are preserved on
+//     each shape's def; students cannot move/delete/edit these shapes.
+//   STUDENT LAYER — unlocked, ordinary tldraw shapes the student draws with
+//     the native toolbar. Untouched by playback.
+//
+// Playback is driven by a TeachingTimeline (lib/whiteboard/teachingTimeline.ts)
+// built ONCE from the current VisualSceneGraph and never touched again during
+// play/pause/next/previous/restart — every one of those operations calls the
+// SAME pure computeVisualStates(defs, stepIndex) to reconstruct exactly what
+// the canvas should look like, so Previous/Next are exact-state jumps, not
+// incremental mutations, and there is no AI call anywhere in this file.
+//
+// Architecture: three integrated phases
+//   Phase 1  Shape → Reader sync     clicking a shape sets readingFocusStore
+//   Phase 2  VSG-first rendering     uses VisualSceneGraph node positions + edge kinds
+//   Phase 3  Teaching timeline       deterministic play/pause/next/prev/restart
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Tldraw, createShapeId, toRichText, type Editor } from "@tldraw/tldraw";
@@ -23,7 +31,17 @@ import "@tldraw/tldraw/tldraw.css";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { VisualSceneGraph } from "@/lib/whiteboard/visualSceneGraph";
 import { vsgToShapeDefs, type ShapeDef } from "@/lib/whiteboard/sceneGraphAdapter";
+import {
+  buildTeachingTimeline, computeVisualStates, stepDurationMs, FAINT_OPACITY,
+  type TeachingTimeline,
+} from "@/lib/whiteboard/teachingTimeline";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import {
+  claimSpeech, registerActiveUtterance, notifySpeechStart, notifySpeechEnd,
+  notifySpeechError, stopAllSpeech,
+} from "@/lib/speech/speechController";
+
+const SPEECH_OWNER = "whiteboard" as const;
 
 // ── Tier colors ───────────────────────────────────────────────────────────────
 const CARD_TYPE_TIER: Record<string, string> = {
@@ -57,11 +75,33 @@ function getPositions(count: number, grammar: string): Array<{ x: number; y: num
   return flowPositions(count);
 }
 
+// ── Speed config ──────────────────────────────────────────────────────────────
+const SPEED_FACTOR = { slow: 0.6, normal: 1, fast: 2.2 } as const;
+type PlaybackSpeed = keyof typeof SPEED_FACTOR;
+// Floor so a step is never so short narration can't be heard, even on "fast".
+const MIN_STEP_MS = 500;
+
 // ── Shared styles ─────────────────────────────────────────────────────────────
-const BTN_MUTED: React.CSSProperties = {
+const BTN_BASE: React.CSSProperties = {
   fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
   lineHeight: "16px", userSelect: "none",
-  background: "rgba(148,163,184,0.08)", color: "#94a3b8",
+};
+const BTN_PRIMARY: React.CSSProperties = {
+  ...BTN_BASE, background: "rgba(134,239,172,0.18)", color: "#86efac",
+  border: "1px solid rgba(134,239,172,0.35)",
+};
+const BTN_MUTED: React.CSSProperties = {
+  ...BTN_BASE, background: "rgba(148,163,184,0.08)", color: "#94a3b8",
+  border: "1px solid rgba(148,163,184,0.2)",
+};
+const BTN_DISABLED: React.CSSProperties = { ...BTN_MUTED, opacity: 0.35, cursor: "default" };
+const BTN_ACTIVE: React.CSSProperties = {
+  ...BTN_BASE, background: "rgba(96,165,250,0.22)", color: "#93c5fd",
+  border: "1px solid rgba(96,165,250,0.45)",
+};
+const SELECT_STYLE: React.CSSProperties = {
+  fontSize: 10, padding: "2px 4px", borderRadius: 4, cursor: "pointer",
+  background: "rgba(15,23,42,0.95)", color: "#64748b",
   border: "1px solid rgba(148,163,184,0.2)",
 };
 
@@ -112,7 +152,19 @@ export default function TldrawCanvas({
   const editorRef  = useRef<Editor | null>(null);
   const builtRef   = useRef(false);
 
-  // Phase 1 + Phase 1 One Brain sync refs
+  // ── Phase 3: teaching timeline + playback state ───────────────────────────
+  const defsRef     = useRef<ShapeDef[]>([]);
+  const timelineRef = useRef<TeachingTimeline>({ steps: [] });
+  const [totalSteps,    setTotalSteps]    = useState(0);
+  const [stepIndex,      setStepIndexState] = useState(-1);
+  const stepIndexRef = useRef(-1);
+  const [isPlaying,      setIsPlaying]      = useState(false);
+  const [speed,          setSpeed]          = useState<PlaybackSpeed>("normal");
+  const [narrationEnabled, setNarrationEnabled] = useState(false);
+  const [isSpeaking,       setIsSpeaking]       = useState(false);
+  const [narrationText,    setNarrationText]    = useState<string | null>(null);
+
+  // Phase 1 + Phase 3 One Brain sync refs
   const sourceIdToShapeIdRef = useRef<Map<string, string>>(new Map());
   const shapeIdToSourceIdRef = useRef<Map<string, string>>(new Map());
   const onAnchorClickRef     = useRef(onAnchorClick);
@@ -127,9 +179,68 @@ export default function TldrawCanvas({
   useEffect(() => { noteCardsRef.current = noteCards; }, [noteCards]);
   useEffect(() => { storageKeyRef.current = storageKey; }, [storageKey]);
 
+  // Deterministic canvas-state application — the ONLY place that decides what
+  // a shape should look like at a given timeline position. Called identically
+  // by the autoplay timer, Next, Previous, Restart, and "Show complete
+  // diagram" — every entry point is guaranteed to agree with every other.
+  const applyVisualStates = useCallback((editor: Editor, index: number, emphasize: boolean) => {
+    const defs = defsRef.current;
+    const states = computeVisualStates(defs, index, { emphasizeCurrent: emphasize });
+    const updates: any[] = [];
+    for (const def of defs) {
+      const state = states.get(String(def.id));
+      const shape = editor.getShape(def.id);
+      if (!state || !shape) continue;
+      updates.push({ id: def.id, type: shape.type, opacity: state.opacity });
+    }
+    if (updates.length === 0) return;
+    // Confirmed via direct testing: editor.updateShapes(...) on a LOCKED
+    // shape accepts an opacity change into the store (getShape immediately
+    // after reflects the new value) but tldraw does not visually repaint it
+    // — the shape stays rendered at its previous opacity on screen. Locking
+    // still needs to block the STUDENT from moving/deleting/editing these
+    // shapes, so the fix is this narrow unlock -> apply the real update ->
+    // relock sequence, not "leave shapes unlocked" (would sacrifice the
+    // whole point of a locked teaching layer) and not "skip locking during
+    // animation" (a locked shape must never be draggable, even mid-reveal).
+    editor.updateShapes(updates.map(u => ({ id: u.id, type: u.type, isLocked: false })));
+    editor.updateShapes(updates);
+    editor.updateShapes(updates.map(u => ({ id: u.id, type: u.type, isLocked: true })));
+  }, []);
+
+  const setStepIndex = useCallback((n: number, opts: { emphasize?: boolean } = {}) => {
+    stepIndexRef.current = n;
+    setStepIndexState(n);
+    const editor = editorRef.current;
+    if (editor) applyVisualStates(editor, n, opts.emphasize ?? false);
+  }, [applyVisualStates]);
+
+  // ── Narration ──────────────────────────────────────────────────────────────
+  const speakStep = useCallback((text: string) => {
+    setNarrationText(text || null);
+    if (!narrationEnabled || !text) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const token = claimSpeech(SPEECH_OWNER);
+    setIsSpeaking(true);
+    const utter = new SpeechSynthesisUtterance(text);
+    registerActiveUtterance(token, utter, () => setIsSpeaking(false));
+    utter.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
+    utter.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); setIsSpeaking(false); };
+    utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); setIsSpeaking(false); };
+    window.speechSynthesis.speak(utter);
+  }, [narrationEnabled]);
+
+  const stopNarration = useCallback(() => {
+    stopAllSpeech("whiteboard-step-change");
+    setIsSpeaking(false);
+  }, []);
+
   // ── Phase 2: VSG-first shape building ─────────────────────────────────────
-  // Shapes are created at full (default) opacity — the canvas opens already
-  // populated with the complete diagram, never a hidden-then-revealed sequence.
+  // Every shape created here is TEACHING LAYER: locked (isLocked: true) so
+  // students cannot move/delete/edit it, and created at FAINT_OPACITY — the
+  // "clean board with faint planning marks" state before playback begins.
+  // The student-annotation layer is simply whatever the student draws with
+  // tldraw's own (unlocked, always-visible) native toolbar — untouched here.
 
   const registerAnchors = useCallback((defs: ShapeDef[]) => {
     for (const def of defs) {
@@ -146,9 +257,15 @@ export default function TldrawCanvas({
     shapeIdToSourceIdRef.current  = new Map();
 
     for (const def of defs) {
-      editor.createShape({ id: def.id, type: def.type, x: def.x, y: def.y, props: def.props } as any);
+      editor.createShape({
+        id: def.id, type: def.type, x: def.x, y: def.y, props: def.props,
+        opacity: FAINT_OPACITY, isLocked: true,
+      } as any);
     }
     registerAnchors(defs);
+    defsRef.current     = defs;
+    timelineRef.current = buildTeachingTimeline(defs);
+    setTotalSteps(defs.length);
     editor.zoomToFit();
   }, [registerAnchors]);
 
@@ -156,6 +273,9 @@ export default function TldrawCanvas({
     sourceIdToShapeIdRef.current  = new Map();
     shapeIdToSourceIdRef.current  = new Map();
     registerAnchors(defs);
+    defsRef.current     = defs;
+    timelineRef.current = buildTeachingTimeline(defs);
+    setTotalSteps(defs.length);
   }, [registerAnchors]);
 
   // ── Shared anchor helpers for noteCards fallback ──────────────────────────
@@ -179,6 +299,8 @@ export default function TldrawCanvas({
   );
 
   // ── NoteCards fallback builder ─────────────────────────────────────────────
+  // Same teaching-layer treatment (locked, faint-then-revealed) as the VSG
+  // path — this is still AI/deterministic-derived content, not the student's.
 
   const buildShapesFromNoteCards = useCallback((editor: Editor) => {
     if (!noteCards.length) return;
@@ -191,6 +313,8 @@ export default function TldrawCanvas({
       sourceIdToShapeIdRef.current.set(sourceId, String(sid));
       shapeIdToSourceIdRef.current.set(String(sid), sourceId);
     };
+    const defs: ShapeDef[] = [];
+    let order = 0;
 
     let y = 60;
     noteCards.forEach((card, cardIdx) => {
@@ -201,34 +325,40 @@ export default function TldrawCanvas({
 
       if (nodes.length === 0) {
         const sid = createShapeId(`card-${cardIdx}`);
-        editor.createShape({
-          id: sid, type: "geo", x: 80, y,
-          props: {
-            geo:      "rectangle", w: 300, h: 68,
-            richText: toRichText(card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100)),
-            fill:     "solid", size: "s",
-            color: tier === "master" ? "yellow" : tier === "step" ? "green"
-                 : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
-          },
-        } as any);
+        const props = {
+          geo:      "rectangle", w: 300, h: 68,
+          richText: toRichText(card.title ? `${card.title}\n${card.body.slice(0, 100)}` : card.body.slice(0, 100)),
+          fill:     "solid", size: "s",
+          color: tier === "master" ? "yellow" : tier === "step" ? "green"
+               : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
+        };
+        editor.createShape({ id: sid, type: "geo", x: 80, y, props, opacity: FAINT_OPACITY, isLocked: true } as any);
         registerAnchor(sid, anchorId);
+        defs.push({ id: sid, type: "geo", x: 80, y, props, sourceId: anchorId, narration: card.body, revealOrder: order++ });
         y += 90;
         return;
       }
 
       const positions = getPositions(nodes.length, whiteboardGrammar);
+      const nodeShapeIds: ReturnType<typeof createShapeId>[] = [];
       nodes.forEach((node, nIdx) => {
         const sid = createShapeId(`n-${cardIdx}-${nIdx}`);
         const pos = positions[nIdx] ?? { x: 100, y: y + nIdx * 110 };
-        editor.createShape({
-          id: sid, type: "geo", x: pos.x, y: pos.y + y,
-          props: {
-            geo: "rectangle", w: 230, h: 56, richText: toRichText(node.label), fill: "solid", size: "s",
-            color: tier === "master" ? "yellow" : tier === "step"  ? "green"
-                 : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
-          },
-        } as any);
+        const px = pos.x, py = pos.y + y;
+        const props = {
+          geo: "rectangle", w: 230, h: 56, richText: toRichText(node.label), fill: "solid", size: "s",
+          color: tier === "master" ? "yellow" : tier === "step"  ? "green"
+               : tier === "danger" ? "red"    : tier === "pearl" ? "light-blue" : "blue",
+        };
+        editor.createShape({ id: sid, type: "geo", x: px, y: py, props, opacity: FAINT_OPACITY, isLocked: true } as any);
+        nodeShapeIds.push(sid);
         if (nIdx === 0) registerAnchor(sid, anchorId);
+        defs.push({
+          id: sid, type: "geo", x: px, y: py, props,
+          sourceId: nIdx === 0 ? anchorId : undefined,
+          narration: nIdx === 0 ? (card.title ? `${card.title}. ${card.body}` : card.body) : node.label,
+          revealOrder: order++,
+        });
       });
 
       arrows.forEach((arrow, aIdx) => {
@@ -238,23 +368,25 @@ export default function TldrawCanvas({
         const fromPos = positions[fromIdx] ?? { x: 100, y: 0 };
         const toPos   = positions[toIdx]   ?? { x: 100, y: 110 };
         const sid = createShapeId(`a-${cardIdx}-${aIdx}`);
-        editor.createShape({
-          id: sid, type: "arrow",
-          x: fromPos.x + 115 + 100, y: fromPos.y + y + 28,
-          props: {
-            kind:     "arc",
-            start:    { x: 0, y: 0 },
-            end:      { x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
-            richText: toRichText(arrow.label ?? ""),
-            size:     "s",
-            color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
-          },
-        } as any);
+        const ax = fromPos.x + 115 + 100, ay = fromPos.y + y + 28;
+        const props = {
+          kind:     "arc",
+          start:    { x: 0, y: 0 },
+          end:      { x: toPos.x - fromPos.x, y: toPos.y - fromPos.y + 28 },
+          richText: toRichText(arrow.label ?? ""),
+          size:     "s",
+          color: tier === "step" ? "green" : tier === "danger" ? "red" : "blue",
+        };
+        editor.createShape({ id: sid, type: "arrow", x: ax, y: ay, props, opacity: FAINT_OPACITY, isLocked: true } as any);
+        defs.push({ id: sid, type: "arrow", x: ax, y: ay, props, narration: arrow.label ?? undefined, revealOrder: order++ });
       });
 
       y += Math.max(nodes.length, 1) * 110 + 60;
     });
 
+    defsRef.current     = defs;
+    timelineRef.current = buildTeachingTimeline(defs);
+    setTotalSteps(defs.length);
     editor.zoomToFit();
   }, [noteCards, whiteboardGrammar, makeVsgLabelMap, makeAnchorSourceId]);
 
@@ -279,6 +411,14 @@ export default function TldrawCanvas({
         if (nIdx === 0) registerAnchor(sid, anchorId);
       });
     });
+    // Shapes already exist on the canvas (restored from persistence) — we
+    // can't recover their exact prior ShapeDef[] from the store, so treat a
+    // restored board as a completed performance (fully revealed) rather than
+    // leaving locked shapes stuck at faint opacity with no way to un-faint
+    // them short of pressing Restart.
+    defsRef.current     = [];
+    timelineRef.current = { steps: [] };
+    setTotalSteps(0);
   }, [makeVsgLabelMap, makeAnchorSourceId]);
 
   // ── Unified buildShapes: VSG first, noteCards fallback ────────────────────
@@ -336,21 +476,98 @@ export default function TldrawCanvas({
   // Cleanup on unmount
   useEffect(() => () => {
     storeUnsubRef.current?.();
+    stopAllSpeech("whiteboard-unmount");
   }, []);
 
-  // Single rebuild effect — VSG-first, noteCards fallback.
-  // One effect prevents the double-build race where both noteCards and vsg
-  // change simultaneously (e.g. on page navigation), which would previously
-  // cause two sequential deleteShapes + createShapes cycles.
+  // Single rebuild effect — VSG-first, noteCards fallback. One effect prevents
+  // the double-build race where both noteCards and vsg change simultaneously
+  // (e.g. on page navigation), which would previously cause two sequential
+  // deleteShapes + createShapes cycles. A rebuild is the ONLY thing that
+  // regenerates the timeline — never a play/pause/next/previous/restart call,
+  // and never an AI call (buildTeachingTimeline is pure, non-network).
   useEffect(() => {
     vsgRef.current = vsg;
     builtRef.current = false;
     const editor = editorRef.current;
     if (editor) {
       builtRef.current = true;
+      setIsPlaying(false);
+      stopAllSpeech("whiteboard-rebuild");
+      setIsSpeaking(false);
+      setNarrationText(null);
       buildShapes(editor);
+      stepIndexRef.current = -1;
+      setStepIndexState(-1);
     }
   }, [noteCards, vsg, buildShapes]);
+
+  // ── Playback: the ONLY code that advances the timeline during Play ───────
+  const advanceForPlayback = useCallback(() => {
+    const timeline = timelineRef.current;
+    const next = stepIndexRef.current + 1;
+    if (next >= timeline.steps.length) { setIsPlaying(false); return; }
+    setStepIndex(next, { emphasize: true });
+    speakStep(timeline.steps[next].narration);
+  }, [setStepIndex, speakStep]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timeline = timelineRef.current;
+    const next = stepIndexRef.current + 1;
+    if (next >= timeline.steps.length) { setIsPlaying(false); return; }
+    const duration = Math.max(stepDurationMs(timeline.steps[next]), MIN_STEP_MS) / SPEED_FACTOR[speed];
+    const t = window.setTimeout(advanceForPlayback, duration);
+    return () => clearTimeout(t);
+  }, [isPlaying, stepIndex, speed, advanceForPlayback]);
+
+  // ── Manual controls ────────────────────────────────────────────────────────
+
+  const handleNext = useCallback(() => {
+    setIsPlaying(false);
+    stopNarration();
+    const timeline = timelineRef.current;
+    const next = Math.min(stepIndexRef.current + 1, timeline.steps.length - 1);
+    setStepIndex(next);
+  }, [setStepIndex, stopNarration]);
+
+  const handlePrev = useCallback(() => {
+    setIsPlaying(false);
+    stopNarration();
+    const prev = Math.max(stepIndexRef.current - 1, -1);
+    setStepIndex(prev);
+  }, [setStepIndex, stopNarration]);
+
+  const handleRestart = useCallback(() => {
+    stopNarration();
+    setNarrationText(null);
+    setStepIndex(-1);
+    setIsPlaying(true);
+  }, [setStepIndex, stopNarration]);
+
+  const handleShowComplete = useCallback(() => {
+    setIsPlaying(false);
+    stopNarration();
+    setNarrationText(null);
+    const timeline = timelineRef.current;
+    setStepIndex(timeline.steps.length - 1);
+  }, [setStepIndex, stopNarration]);
+
+  const handlePlayPause = useCallback(() => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      stopNarration();
+      return;
+    }
+    const timeline = timelineRef.current;
+    const atEnd = timeline.steps.length > 0 && stepIndexRef.current >= timeline.steps.length - 1;
+    if (atEnd) {
+      // "Play after completion must replay the entire teaching performance."
+      stopNarration();
+      setNarrationText(null);
+      setStepIndex(-1);
+    }
+    setIsPlaying(true);
+  }, [isPlaying, setStepIndex, stopNarration]);
 
   // Phase 1 world→canvas: external anchor focus → select + center shape
   useEffect(() => {
@@ -390,18 +607,74 @@ export default function TldrawCanvas({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const atStart = stepIndex < 0;
+  const atEnd   = totalSteps > 0 && stepIndex >= totalSteps - 1;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 480, background: "#0f172a" }}>
 
-      {/* ── Header bar ────────────────────────────────────────────────────── */}
+      {/* ── Controls bar ──────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace", flexShrink: 0 }}>
           {pageTitle ?? "Whiteboard"}
         </span>
-        <span style={{ marginLeft: "auto" }}>
+
+        <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
+          {totalSteps > 0 && (
+            <span style={{ fontSize: 10, color: "#475569", fontVariantNumeric: "tabular-nums", marginRight: 2 }}>
+              {Math.max(stepIndex + 1, 0)} / {totalSteps}
+            </span>
+          )}
+
+          <button onClick={handleRestart} title="Restart" style={BTN_MUTED}>&#x23EE;</button>
+          <button onClick={handlePrev} disabled={atStart} title="Previous"
+            style={atStart ? BTN_DISABLED : BTN_MUTED}>&#x25C4;</button>
+          <button onClick={handlePlayPause} style={BTN_PRIMARY}>
+            {isPlaying ? "⏸ Pause" : "▶ Play"}
+          </button>
+          <button onClick={handleNext} disabled={atEnd} title="Next"
+            style={atEnd ? BTN_DISABLED : BTN_MUTED}>&#x25BA;</button>
+          <button onClick={handleShowComplete} title="Show complete diagram" style={BTN_MUTED}>All</button>
+
+          <select value={speed} onChange={e => setSpeed(e.target.value as PlaybackSpeed)}
+            style={SELECT_STYLE} title="Speed">
+            <option value="slow">Slow</option>
+            <option value="normal">Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+
+          <button
+            onClick={() => {
+              const next = !narrationEnabled;
+              setNarrationEnabled(next);
+              if (!next) stopNarration();
+            }}
+            title={narrationEnabled ? "Mute narration" : "Enable voice narration"}
+            style={narrationEnabled ? BTN_ACTIVE : BTN_MUTED}
+          >
+            {isSpeaking ? "🔊" : narrationEnabled ? "🔉" : "🔇"}
+          </button>
+
           <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
         </span>
       </div>
+
+      {/* ── Narration panel ───────────────────────────────────────────────── */}
+      {narrationText && (
+        <div style={{
+          padding: "8px 14px",
+          background: "rgba(15,23,42,0.97)",
+          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          fontSize: 12, color: "#cbd5e1", lineHeight: 1.6,
+          maxHeight: 76, overflowY: "auto",
+          display: "flex", alignItems: "flex-start", gap: 8,
+        }}>
+          {isSpeaking && (
+            <span style={{ fontSize: 10, color: "#60a5fa", flexShrink: 0, marginTop: 2 }}>🔊</span>
+          )}
+          <span>{narrationText}</span>
+        </div>
+      )}
 
       {/* ── Canvas ────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative" }}>
