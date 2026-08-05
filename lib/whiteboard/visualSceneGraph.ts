@@ -19,6 +19,7 @@ import {
   buildRelationshipGraph,
   type CanonicalEntryInput,
   type RelationshipGraph,
+  type RelationshipEdgeType,
 } from "./canonicalRelationshipGraph";
 import {
   flowLayout, timelineLayout, hubSpokeLayout, comparisonLayout, equationLayout,
@@ -26,7 +27,7 @@ import {
   type LayoutInput,
 } from "./layoutAdapters";
 import { buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
-import type { CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
+import type { CanonicalType, Importance, Relationship } from "@/lib/insights/pageAnnotationPlan";
 
 // ── Grammar schema ─────────────────────────────────────────────────────────────
 
@@ -498,11 +499,28 @@ const SURGEON_IMPORTANCE_TO_PRIORITY_TIER: Record<Importance, number> = {
   supporting: 2, // → "reference", the lowest VSG tier — matches "supporting" being the lowest SurgeonAnnotationPlan tier
 };
 
+// SurgeonAnnotation.relationship.type (4 values) → RelationshipEdgeType, so an
+// explicit, model-declared relationship flows through the SAME edge-kind
+// vocabulary buildRelationshipGraph's RULES already use — see
+// canonicalRelationshipGraph.ts's EntryRelatesTo / RULE_EDGE_LABEL.
+const RELATIONSHIP_TYPE_TO_EDGE_TYPE: Record<Relationship["type"], RelationshipEdgeType> = {
+  sequence:      "summarizes", // only RelationshipEdgeType whose EdgeKind is "sequence" (see EDGE_KIND in this file)
+  "cause-effect": "leads_to",
+  comparison:    "contrasts",
+  supports:      "supports",
+};
+
+const RELATIONSHIP_TYPE_LABEL: Record<Relationship["type"], string> = {
+  sequence:      "next",
+  "cause-effect": "leads to",
+  comparison:    "vs",
+  supports:      "supports",
+};
+
 /**
  * Convert GroundedSurgeonAnnotation[] (the deterministic, page-verified output
- * of the SurgeonAnnotationPlan pipeline, already density-limited by
- * limitAnnotationDensity() before it ever reaches this adapter) into
- * CanonicalEntryInput[] for the Scene Builder.
+ * of the SurgeonAnnotationPlan pipeline) into CanonicalEntryInput[] for the
+ * Scene Builder.
  *
  * Each entry's id is buildSurgeonEvidenceId(pageNumber, index) — the SAME id
  * format components/reader/useSurgeonAnnotations.ts uses for
@@ -513,17 +531,44 @@ const SURGEON_IMPORTANCE_TO_PRIORITY_TIER: Record<Importance, number> = {
  * pass the array in the same order it was produced by groundSurgeonQuotes() —
  * index `i` here must match the index used to build the corresponding
  * HighlightTarget for a given annotation.
+ *
+ * An annotation's optional `relationship.targetIndex` refers to the OTHER
+ * annotation's position in the ORIGINAL (pre-grounding, pre-filtering)
+ * annotations[] array — GroundedSurgeonAnnotation.originalIndex preserves
+ * that through whatever got dropped, so it can still be resolved against
+ * whichever other annotations survived into THIS SAME `grounded` array. When
+ * the declared target didn't survive (or the model referenced itself / an
+ * out-of-range index), relatesTo is simply omitted — buildRelationshipGraph's
+ * own canonicalType-based inference still fills the gap.
  */
 export function surgeonAnnotationsToCanonicalEntries(
   grounded:   GroundedSurgeonAnnotation[],
   pageNumber: number,
 ): CanonicalEntryInput[] {
-  return grounded.map((g, i) => ({
-    id:            buildSurgeonEvidenceId(pageNumber, i),
-    text:          g.groundedText,
-    canonicalType: SURGEON_CANONICAL_TYPE_TO_VSG_TYPE[g.canonicalType],
-    priorityTier:  SURGEON_IMPORTANCE_TO_PRIORITY_TIER[g.importance],
-    page:          pageNumber,
-    reason:        g.reason,
-  }));
+  const idByOriginalIndex = new Map<number, string>();
+  grounded.forEach((g, i) => idByOriginalIndex.set(g.originalIndex, buildSurgeonEvidenceId(pageNumber, i)));
+
+  return grounded.map((g, i) => {
+    const id = buildSurgeonEvidenceId(pageNumber, i);
+    let relatesTo: CanonicalEntryInput["relatesTo"];
+    if (g.relationship) {
+      const targetId = idByOriginalIndex.get(g.relationship.targetIndex);
+      if (targetId && targetId !== id) {
+        relatesTo = {
+          targetId,
+          type:  RELATIONSHIP_TYPE_TO_EDGE_TYPE[g.relationship.type],
+          label: RELATIONSHIP_TYPE_LABEL[g.relationship.type],
+        };
+      }
+    }
+    return {
+      id,
+      text:          g.groundedText,
+      canonicalType: SURGEON_CANONICAL_TYPE_TO_VSG_TYPE[g.canonicalType],
+      priorityTier:  SURGEON_IMPORTANCE_TO_PRIORITY_TIER[g.importance],
+      page:          pageNumber,
+      reason:        g.reason,
+      relatesTo,
+    };
+  });
 }

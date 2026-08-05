@@ -82,16 +82,22 @@ export type Importance = z.infer<typeof ImportanceSchema>;
 export const SpanScopeSchema = z.enum(["fullSentence", "entity"]);
 export type SpanScope = z.infer<typeof SpanScopeSchema>;
 
-// ── Relationship (schema-only for now — not yet driving any new rendering) ─────
-// Explicit annotation-to-annotation link the model may declare. Not required and
-// not currently read by anything downstream: the three treatments that need
-// grouping (mechanismBrace/procedureRail/comparisonBracket) already draw correct
+// ── Relationship ─────────────────────────────────────────────────────────────
+// Explicit annotation-to-annotation link the model may declare. Not required
+// for the PDF overlay — the three treatments that need grouping
+// (mechanismBrace/procedureRail/comparisonBracket) already draw correct
 // chains from implicit same-treatment + vertical-proximity detection in
-// PdfEvidenceOverlay.tsx. Captured now so it's available for a future rendering
-// pass without another schema migration. targetIndex is an index into this same
-// plan's annotations[] array — never a resurrected canonicalUnitId-style
-// identity; grounding stays 100% exactQuote-based (see the note at the bottom
-// of this file).
+// PdfEvidenceOverlay.tsx, so this field is never read there. It IS read by
+// the Whiteboard: lib/whiteboard/visualSceneGraph.ts's
+// surgeonAnnotationsToCanonicalEntries() resolves targetIndex to the
+// surviving target annotation's real VSG node id and wires it into
+// lib/whiteboard/canonicalRelationshipGraph.ts's buildRelationshipGraph() as
+// an explicit edge — taking priority over that function's own
+// canonicalType-based inference, since a model-declared relationship from
+// the same page read is stronger evidence than a guess. targetIndex is an
+// index into this same plan's annotations[] array — never a resurrected
+// canonicalUnitId-style identity; grounding stays 100% exactQuote-based (see
+// the note at the bottom of this file).
 export const RelationshipSchema = z.object({
   type:        z.enum(["sequence", "cause-effect", "comparison", "supports"]),
   targetIndex: z.number().int().nonnegative(),

@@ -118,6 +118,7 @@ describe("Scene Builder — end-to-end smoke: grounded page content produces a r
       groundedText:  "Glycolysis converts glucose into pyruvate in the cytosol.",
       groundingState: "exact",
       confidence:    1.0,
+      originalIndex: 0,
       ...overrides,
     };
   }

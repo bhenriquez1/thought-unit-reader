@@ -30,6 +30,17 @@ export type RelationshipEdgeType =
   | "has_warning"
   | "explains";
 
+/** An explicit, source-declared edge from one entry to another entry in the
+ *  SAME entries array — e.g. SurgeonAnnotation.relationship, resolved from
+ *  its original targetIndex to the target's real entry id upstream (see
+ *  lib/whiteboard/visualSceneGraph.ts's surgeonAnnotationsToCanonicalEntries).
+ *  Takes priority over RULES-based / sequential-fallback edge inference. */
+export interface EntryRelatesTo {
+  targetId: string;
+  type: RelationshipEdgeType;
+  label?: string;
+}
+
 export interface RelationshipNode {
   id: string;
   label: string;
@@ -44,6 +55,7 @@ export interface RelationshipNode {
    *  annotation (e.g. SurgeonAnnotation.reason) so the Professor Lesson
    *  Planner has more than a bare quote to teach from. */
   reason?: string;
+  relatesTo?: EntryRelatesTo;
 }
 
 export interface RelationshipEdge {
@@ -94,6 +106,13 @@ const RULES: Array<[string, string, RelationshipEdgeType, string]> = [
   ["clinical-pearl",  "treatment",        "supports",      "guides"        ],
   ["decision-point",  "treatment",        "leads_to",      "leads to"      ],
 ];
+
+// Fallback human label for an explicit relatesTo edge whose caller didn't
+// supply its own label — first RULES row for each edgeType wins.
+const RULE_EDGE_LABEL: Partial<Record<RelationshipEdgeType, string>> = {};
+for (const [, , edgeType, label] of RULES) {
+  if (!(edgeType in RULE_EDGE_LABEL)) RULE_EDGE_LABEL[edgeType] = label;
+}
 
 // ---------------------------------------------------------------------------
 // Layout selection
@@ -153,6 +172,8 @@ export interface CanonicalEntryInput {
   page?: number;
   /** Why this point matters — see RelationshipNode.reason. */
   reason?: string;
+  /** See RelationshipNode.relatesTo. */
+  relatesTo?: EntryRelatesTo;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +225,7 @@ export function buildRelationshipGraph(
     title:          e.title,
     page:           e.page,
     reason:         e.reason,
+    relatesTo:      e.relatesTo,
   }));
 
   // Group nodes by canonicalType for rule matching.
@@ -214,10 +236,26 @@ export function buildRelationshipGraph(
     byType.set(n.canonicalType, arr);
   }
 
-  // Build edges: for each rule, connect top-importance pair only.
   const edges: RelationshipEdge[] = [];
   const seenEdge = new Set<string>();
 
+  // ── Explicit, source-declared edges take priority ───────────────────────
+  // SurgeonAnnotation.relationship (resolved upstream to a real target id) is
+  // a genuine claim from the same page read that selected these entries —
+  // stronger evidence than the canonicalType co-occurrence rules below, which
+  // only ever guess at a relationship. Added first so seenEdge prevents the
+  // rules/fallback passes from duplicating or silently overriding it.
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  for (const n of nodes) {
+    const rel = n.relatesTo;
+    if (!rel || !nodeIds.has(rel.targetId) || rel.targetId === n.id) continue;
+    const key = `${n.id}->${rel.targetId}`;
+    if (seenEdge.has(key)) continue;
+    seenEdge.add(key);
+    edges.push({ from: n.id, to: rel.targetId, type: rel.type, label: rel.label ?? RULE_EDGE_LABEL[rel.type] ?? "related" });
+  }
+
+  // ── Rule-inferred edges (canonicalType co-occurrence) ────────────────────
   for (const [fromType, toType, edgeType, edgeLabel] of RULES) {
     const fromNodes = byType.get(fromType);
     const toNodes   = byType.get(toType);

@@ -233,3 +233,23 @@ describe("pages/api/page-annotation-plan.ts — max_completion_tokens, not the d
     expect(src).not.toMatch(/attempts:\s*2,/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — relationship (optional annotation-to-annotation link)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("prompt instructs the model when to set relationship, pointing the LATER annotation's targetIndex back at the earlier one", () => {
+    expect(src).toMatch(/set relationship on the LATER\s*\n?\s*annotation, pointing back at the earlier one/);
+    expect(src).toMatch(/"type": "sequence"\|"cause-effect"\|\s*\n?\s*"comparison"\|"supports"/);
+  });
+
+  it("prompt tells the model this becomes a real connecting line on the Whiteboard, not two disconnected boxes", () => {
+    expect(src).toMatch(/This becomes a real connecting line on the Whiteboard/);
+  });
+
+  it("prompt's JSON output shape includes the optional relationship field", () => {
+    const idx = src.indexOf('"annotations": [');
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/"relationship":/);
+  });
+});

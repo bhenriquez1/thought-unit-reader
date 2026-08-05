@@ -44,6 +44,13 @@ export type GroundedSurgeonAnnotation = SurgeonAnnotationPlan["annotations"][num
   groundedText: string;
   groundingState: "exact" | "normalized";
   confidence: number;
+  /** This annotation's index in the ORIGINAL annotations[] array passed in —
+   *  preserved through rejection/dedup so a surviving annotation.relationship
+   *  .targetIndex (also an index into that same original array) can still be
+   *  resolved against whichever OTHER annotations also survived, even though
+   *  some entries were dropped and the surviving array is shorter/reordered
+   *  relative to the input. */
+  originalIndex: number;
 };
 
 /**
@@ -133,7 +140,7 @@ export function groundSurgeonQuotes(
   const normedPage = normText(pageText);
   const grounded: GroundedSurgeonAnnotation[] = [];
 
-  for (const annotation of annotations) {
+  for (const [originalIndex, annotation] of annotations.entries()) {
     const quote = annotation.exactQuote;
     const isEntity = annotation.spanScope === "entity";
 
@@ -146,7 +153,7 @@ export function groundSurgeonQuotes(
             const { start, end } = expandToSentenceBoundaries(pageText, exactPos, exactPos + quote.length);
             return pageText.slice(start, end);
           })();
-      grounded.push({ ...annotation, groundedText, groundingState: "exact", confidence: 1.0 });
+      grounded.push({ ...annotation, groundedText, groundingState: "exact", confidence: 1.0, originalIndex });
       continue;
     }
 
@@ -165,7 +172,7 @@ export function groundSurgeonQuotes(
             const { start, end } = expandToSentenceBoundaries(pageText, caseInsensitivePos, caseInsensitivePos + quote.length);
             return pageText.slice(start, end);
           })();
-      grounded.push({ ...annotation, groundedText, groundingState: "normalized", confidence: 0.95 });
+      grounded.push({ ...annotation, groundedText, groundingState: "normalized", confidence: 0.95, originalIndex });
       continue;
     }
 
