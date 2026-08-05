@@ -8,9 +8,16 @@
 // Textbook TEXT (page content, quotes, narration) must never be logged by
 // callers of these helpers — only identifiers, counts, and timings.
 
+// Caps how much of a caller-supplied string this ever hashes — documentId is
+// a request-body value (bounded by the route's own body-size limit, but not
+// by anything in this module), so the loop bound here must never be taken
+// directly from an unbounded/attacker-controlled length.
+const MAX_HASH_INPUT_LENGTH = 2048;
+
 function fnv1a(str: string): string {
   let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
+  const len = Math.min(str.length, MAX_HASH_INPUT_LENGTH);
+  for (let i = 0; i < len; i++) {
     hash ^= str.charCodeAt(i);
     hash = (hash * 0x01000193) >>> 0;
   }
