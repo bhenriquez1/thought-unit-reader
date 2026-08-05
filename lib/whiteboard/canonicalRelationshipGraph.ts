@@ -40,6 +40,10 @@ export interface RelationshipNode {
   text: string;
   title?: string;
   page?: number;
+  /** Why this point matters — carried through unchanged from the source
+   *  annotation (e.g. SurgeonAnnotation.reason) so the Professor Lesson
+   *  Planner has more than a bare quote to teach from. */
+  reason?: string;
 }
 
 export interface RelationshipEdge {
@@ -147,6 +151,8 @@ export interface CanonicalEntryInput {
   importanceScore?: number;
   priorityTier?: number;
   page?: number;
+  /** Why this point matters — see RelationshipNode.reason. */
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +203,7 @@ export function buildRelationshipGraph(
     text:           e.text,
     title:          e.title,
     page:           e.page,
+    reason:         e.reason,
   }));
 
   // Group nodes by canonicalType for rule matching.

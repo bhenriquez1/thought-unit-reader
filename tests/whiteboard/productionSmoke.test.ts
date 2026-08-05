@@ -142,20 +142,27 @@ describe("Scene Builder — end-to-end smoke: grounded page content produces a r
   });
 });
 
-describe("WhiteboardPanel.tsx — the legacy AI illustration (/api/whiteboard-image) no longer auto-fires when a real page is open", () => {
+describe("WhiteboardPanel.tsx — the legacy AI illustration / diagram pipeline was removed entirely, not just its auto-trigger", () => {
   const PANEL_FILE = path.resolve(__dirname, "../../components/WhiteboardPanel.tsx");
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
-  it("the studyModel branch of the mount effect no longer calls generateAIDrawing — TldrawCanvas's Professor Lesson Planner is the sole automatic visual for a real page", () => {
-    const idx = src.indexOf("useEffect(() => {\n    if (studyModel) {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, src.indexOf("const shouldTrigger = autoTrigger", idx));
-    expect(block).not.toMatch(/generateAIDrawing\(/);
-    expect(block).not.toMatch(/buildVisualPlanFromStudyModel/);
+  it("REQUIRED: no reference to the retired /api/whiteboard-explain or /api/whiteboard-image call sites — TldrawCanvas's Professor Lesson Planner is the SOLE rendering pipeline", () => {
+    expect(src).not.toMatch(/generateAIDrawing/);
+    expect(src).not.toMatch(/fetch\(["']\/api\/whiteboard-explain["']/);
+    expect(src).not.toMatch(/fetch\(["']\/api\/whiteboard-image["']/);
+    expect(src).not.toMatch(/buildVisualPlanFromStudyModel/);
+    expect(src).not.toMatch(/runGenerate/);
   });
 
-  it("the manual 'Illustration' bottom-action button still exists — this only removes the automatic mount-time trigger, not the user-initiated feature", () => {
-    expect(src).toMatch(/onClick=\{\(\) => generateAIDrawing\(diagramPlan\)\}/);
+  it("no longer imports the legacy <Whiteboard> slideshow component or its DiagramPlan/WhiteboardVisualPlan types", () => {
+    expect(src).not.toMatch(/from ["']\.\/Whiteboard["']/);
+    expect(src).not.toMatch(/DiagramPlan/);
+    expect(src).not.toMatch(/WhiteboardVisualPlan/);
+  });
+
+  it("TldrawCanvas is the only rendering surface in the component", () => {
+    const canvasOccurrences = (src.match(/<TldrawCanvas/g) ?? []).length;
+    expect(canvasOccurrences).toBe(1);
   });
 });

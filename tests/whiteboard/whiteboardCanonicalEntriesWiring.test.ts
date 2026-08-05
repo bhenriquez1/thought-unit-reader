@@ -21,11 +21,12 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
     expect(src).toMatch(/import \{ surgeonAnnotationsToCanonicalEntries \} from "@\/lib\/whiteboard\/visualSceneGraph"/);
   });
 
-  it("derives whiteboardCanonicalEntries from surgeonAnnotations.groundedAnnotations (not the lossy highlightTargets)", () => {
+  it("derives whiteboardCanonicalEntries from surgeonAnnotations.wholePageAnnotations (not the lossy highlightTargets, and not groundedAnnotations' PDF-margin-note density cap)", () => {
     const idx = src.indexOf("const whiteboardCanonicalEntries = useMemo(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.groundedAnnotations, currentPage\)/);
+    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, currentPage\)/);
+    expect(block).not.toMatch(/surgeonAnnotations\.groundedAnnotations/);
   });
 
   it("the real <WhiteboardPanel> JSX block passes canonicalEntries={whiteboardCanonicalEntries}", () => {

@@ -195,3 +195,34 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
     expect(block).toMatch(/durationMs:\s*Date\.now\(\) - startedAt,/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — max_completion_tokens, not the deprecated max_tokens", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: uses max_completion_tokens — resolveTeachingModel can dynamically select a reasoning-family model (o-series/gpt-5.x) that REJECTS max_tokens with HTTP 400", () => {
+    expect(src).toMatch(/max_completion_tokens:\s*2500,/);
+    expect(src).not.toMatch(/max_tokens:\s*2500,/);
+    expect(src).not.toMatch(/\bmax_tokens:/);
+  });
+
+  it("REQUIRED: does not retry a 400 invalid_request_error — retrying an identical malformed request only reproduces the identical failure", () => {
+    expect(src).toMatch(/import \{ isInvalidRequestError \} from "@\/lib\/insights\/openaiErrorClassification"/);
+    const idx = src.indexOf("} catch (firstErr: any) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 450);
+    expect(block).toMatch(/if \(isInvalidRequestError\(firstErr\)\) throw firstErr;/);
+  });
+
+  it("surfaces a distinct INVALID_REQUEST code/message, not the generic UPSTREAM_UNAVAILABLE, when the request itself was malformed", () => {
+    expect(src).toMatch(/"INVALID_REQUEST"/);
+    expect(src).toMatch(/request configuration error/);
+  });
+
+  it("attempts count reflects whether a retry actually happened — 1 when the 400 short-circuited, 2 when a genuine retry ran", () => {
+    expect(src).toMatch(/let attempts = 1;/);
+    expect(src).toMatch(/attempts = 2;/);
+    expect(src).toMatch(/attempts,\n/);
+    expect(src).not.toMatch(/attempts:\s*2,/);
+  });
+});

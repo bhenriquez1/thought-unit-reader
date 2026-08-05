@@ -14,10 +14,24 @@ const VSG: VisualSceneGraph = {
 describe("buildProfessorLessonInput — never sends raw page text or coordinates", () => {
   it("sends node ids, labels, and body text — never position/size", () => {
     const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
-    expect(input.nodes[0]).toEqual({ id: "n1", label: "n1", body: "Full body text for n1.", canonicalType: "definition", importanceLevel: "critical", role: "step" });
+    expect(input.nodes[0]).toEqual({ id: "n1", label: "n1", body: "Full body text for n1.", canonicalType: "definition", importanceLevel: "critical", role: "step", reason: null });
     const serialized = JSON.stringify(input);
     expect(serialized).not.toMatch(/"position"/);
     expect(serialized).not.toMatch(/"size"/);
+  });
+
+  it("passes each node's reason through unchanged — why this point matters, from the same page read that selected it", () => {
+    const vsgWithReason: VisualSceneGraph = {
+      ...VSG,
+      nodes: [{ ...VSG.nodes[0], reason: "This is the page's core definition." }],
+    };
+    const input = buildProfessorLessonInput({ vsg: vsgWithReason, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
+    expect(input.nodes[0].reason).toBe("This is the page's core definition.");
+  });
+
+  it("defaults a node's reason to null when the source annotation didn't have one", () => {
+    const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
+    expect(input.nodes[0].reason).toBeNull();
   });
 
   it("carries documentId/pageTruthKey/activeCanonicalUnitId through unchanged", () => {

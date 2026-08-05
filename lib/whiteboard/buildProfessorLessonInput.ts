@@ -13,6 +13,10 @@ export interface ProfessorLessonNodeInput {
   canonicalType: string | null;
   importanceLevel: string;
   role: string;
+  /** Why this point matters — SurgeonAnnotation.reason, carried through
+   *  unchanged from the same page read that selected this node. Gives the
+   *  teaching AI more than a bare quote to narrate from. */
+  reason: string | null;
 }
 
 export interface ProfessorLessonEdgeInput {
@@ -63,6 +67,7 @@ export function buildProfessorLessonInput(args: {
       canonicalType: n.canonicalType,
       importanceLevel: n.importanceLevel,
       role: n.role,
+      reason: n.reason ?? null,
     })),
     edges: vsg.edges.map(e => ({
       id: e.id,

@@ -28,6 +28,7 @@ import {
 import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
+import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
 
 export const config = {
   maxDuration: 30,
@@ -198,7 +199,11 @@ async function callOpenAI(
       {
         model,
         temperature:      0,
-        max_tokens:       2500,
+        // max_tokens is deprecated and REJECTED (HTTP 400) by newer reasoning-
+        // family models (o-series, gpt-5.x) that resolveTeachingModel can
+        // dynamically select — max_completion_tokens is the modern parameter,
+        // universally accepted across model generations.
+        max_completion_tokens: 2500,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },
@@ -301,10 +306,17 @@ export default async function handler(
   const model = await resolveTeachingModel(client);
 
   let completion: Awaited<ReturnType<typeof callOpenAI>>;
+  let attempts = 1;
   try {
     try {
       completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     } catch (firstErr: any) {
+      // A 400 (invalid_request_error) means THIS request is malformed for the
+      // resolved model — e.g. an unsupported parameter. Retrying the exact
+      // same request just reproduces the exact same failure a second time;
+      // it never resolves a config bug, so don't mask it behind a retry.
+      if (isInvalidRequestError(firstErr)) throw firstErr;
+      attempts = 2;
       console.warn("[SURGEON_PLAN_RETRY]", {
         ...diagnosticIds,
         attempt:   1,
@@ -315,17 +327,22 @@ export default async function handler(
       completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     }
   } catch (err: any) {
-    const isRateLimited = err instanceof OpenAI.APIError && err.status === 429;
+    const isRateLimited     = err instanceof OpenAI.APIError && err.status === 429;
+    const isInvalidRequest  = isInvalidRequestError(err);
     console.error("[SURGEON_PLAN_FAILED]", {
       ...diagnosticIds,
-      attempts:   2,
+      attempts,
       error:      err?.message ?? String(err),
       status:     err?.status ?? null,
       durationMs: Date.now() - startedAt,
     });
     res.status(200).json(degraded(
-      isRateLimited ? "Advanced page analysis is rate-limited — try again shortly." : "Advanced page analysis is temporarily unavailable.",
-      isRateLimited ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE",
+      isRateLimited
+        ? "Advanced page analysis is rate-limited — try again shortly."
+        : isInvalidRequest
+        ? "Advanced page analysis failed due to a request configuration error."
+        : "Advanced page analysis is temporarily unavailable.",
+      isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "UPSTREAM_UNAVAILABLE",
     ));
     return;
   }
