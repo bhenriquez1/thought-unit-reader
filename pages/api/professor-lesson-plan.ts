@@ -18,11 +18,13 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import {
   ProfessorLessonScriptSchema,
   type ProfessorLessonScript,
 } from "@/lib/whiteboard/professorLessonPlan";
 import type { ProfessorLessonInput } from "@/lib/whiteboard/buildProfessorLessonInput";
+import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 
 const DEV = process.env.NODE_ENV === "development";
 
@@ -94,32 +96,21 @@ Rules:
    "concept-map" when a more specific grammar clearly fits it.
 7. title is a short, hand-written page title — 2 to 6 words, written in your own words for
    what this page is fundamentally about (e.g. "ASPIRIN OVERDOSE"), not copied verbatim
-   from a heading.
-8. synthesisQuestion is ONE question you'd ask the student at the end to make them explain
+   from a heading. "definition" is also a valid visualGrammar choice — use it when the page
+   is fundamentally introducing/defining one core term rather than a process or comparison.
+8. learningObjective is ONE sentence stating what the student should be able to DO after
+   this lesson (e.g. "Explain the five stages of the diagnostic process and why the patient's
+   own stated concern matters."), not a restatement of the title.
+9. synthesisQuestion is ONE question you'd ask the student at the end to make them explain
    the idea back, not a yes/no question.
-9. Every exactQuote-free field must still be YOUR OWN spoken teaching language — never copy
-   long verbatim spans of the given node/edge text into narration; teach it, don't read it.
+10. Every exactQuote-free field must still be YOUR OWN spoken teaching language — never copy
+    long verbatim spans of the given node/edge text into narration; teach it, don't read it.
 
-Respond ONLY with a JSON object matching this schema — no prose, no markdown fences:
-{
-  "pageTruthKey": "<string — copy from input>",
-  "visualGrammar": "<procedure|mechanism|anatomy|diagnosis|comparison|equation|concept-map>",
-  "title": "<2-6 word hand-written title>",
-  "nodeScripts": [
-    {
-      "targetId": "<a node or edge id from the input, verbatim>",
-      "shortLabel": "<2-8 word hand-written phrase>",
-      "narration": "<1-3 sentence spoken teaching line>",
-      "tone": "<introduce|explain|warn|connect|question>",
-      "pace": "<slow|normal>",
-      "emphasize": <true on exactly one entry total, false on the rest>
-    }
-  ],
-  "synthesisQuestion": "<one question for the student>"
-}`;
+Respond with a ProfessorLessonScript matching the required structure exactly.`;
 
 async function callOpenAI(
   client: OpenAI,
+  model: string,
   userContent: string,
   timeoutMs: number,
 ) {
@@ -128,14 +119,21 @@ async function callOpenAI(
   try {
     return await client.chat.completions.create(
       {
-        model:            "gpt-4o",
+        model,
         temperature:      0.4, // some genuine variety in phrasing/tone is desirable here, unlike the strict-extraction annotation pass
         max_tokens:       2000,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },
         ],
-        response_format:  { type: "json_object" },
+        // Structured Outputs (strict:true) — the API itself enforces the
+        // schema shape, rather than this endpoint hoping a "respond only
+        // with JSON matching this shape" instruction was followed. OpenAI
+        // is never asked to emit tldraw records — this schema is
+        // ProfessorLessonScript (meaning: labels/narration/targetId), never
+        // coordinates; lib/whiteboard/buildProfessorTeachingActions.ts is
+        // the only place geometry gets decided.
+        response_format:  zodResponseFormat(ProfessorLessonScriptSchema, "ProfessorLessonScript"),
       },
       { signal: ctrl.signal },
     );
@@ -163,7 +161,7 @@ export default async function handler(
   }
 
   const body = req.body as Partial<ProfessorLessonInput>;
-  const diagnosticIds = { pageTruthKey: body?.pageTruthKey ?? null, documentId: body?.documentId ?? null, pageNumber: body?.pageNumber ?? null };
+  let diagnosticIds: Record<string, unknown> = { pageTruthKey: body?.pageTruthKey ?? null, documentId: body?.documentId ?? null, pageNumber: body?.pageNumber ?? null };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
     res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
@@ -199,11 +197,13 @@ export default async function handler(
 
   const client = new OpenAI({ apiKey });
   const startedAt = Date.now();
+  const model = await resolveTeachingModel(client);
+  diagnosticIds = { ...diagnosticIds, model };
 
   let completion: Awaited<ReturnType<typeof callOpenAI>>;
   try {
     try {
-      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     } catch (firstErr: any) {
       console.warn("[PROFESSOR_LESSON_RETRY]", {
         ...diagnosticIds,
@@ -212,7 +212,7 @@ export default async function handler(
         elapsedMs: Date.now() - startedAt,
       });
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-      completion = await callOpenAI(client, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     }
   } catch (err: any) {
     const isRateLimited = err instanceof OpenAI.APIError && err.status === 429;
@@ -239,8 +239,11 @@ export default async function handler(
 
   let parsed: unknown;
   try {
-    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-    parsed = JSON.parse(jsonStr);
+    // Structured Outputs (strict:true) guarantees raw is valid JSON matching
+    // the schema shape — no markdown-fence stripping needed here, unlike the
+    // loose json_object mode. JSON.parse + the Zod safeParse below stay as
+    // defense-in-depth, not because either is expected to fail.
+    parsed = JSON.parse(raw);
   } catch {
     console.error("[PROFESSOR_LESSON_FAILED]", { ...diagnosticIds, reason: "parse_error", durationMs: Date.now() - startedAt });
     res.status(200).json(degraded("The professor lesson planner returned invalid output."));
@@ -262,6 +265,7 @@ export default async function handler(
 
   DEV && console.log("[PROFESSOR_LESSON_OK]", {
     ...diagnosticIds,
+    model,
     nodeScriptCount: result.data.nodeScripts.length,
     durationMs:      Date.now() - startedAt,
   });

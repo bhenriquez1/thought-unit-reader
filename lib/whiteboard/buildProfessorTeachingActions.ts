@@ -85,6 +85,7 @@ export function buildProfessorTeachingActions(
   const actions: ProfessorTeachingAction[] = [];
   const segments: NarrationSegment[] = [];
   const nodeBoundsById = new Map<string, ResolvedNodeBounds>();
+  let stepSequenceCounter = 0;
 
   // Pushes a narration segment's speak+pause actions IMMEDIATELY (not
   // batched at the end) so drawing and narration stay interleaved — this is
@@ -124,6 +125,12 @@ export function buildProfessorTeachingActions(
     pushSegment(`${grounded.title}.`, "introduce", "normal", [titleActionId]);
   }
 
+  // ── Step 1b: learning objective, spoken only — states what the student
+  //     should be able to do after this lesson, right up front. ────────────
+  if (grounded.learningObjective) {
+    pushSegment(grounded.learningObjective, "introduce", "normal", []);
+  }
+
   // ── Step 2..N: one draw-shape + write (+ optional emphasize) per node,
   //     one draw-arrow per edge — in the grounded script's own order, which
   //     IS the teaching sequence the professor performs. ───────────────────
@@ -158,6 +165,29 @@ export function buildProfessorTeachingActions(
           treatment: "circle", durationMs: EMPHASIZE_DURATION_MS,
         });
         linked.push(emphasizeActionId);
+      }
+      // Deterministic, non-AI treatments derived from data the VSG already
+      // carries — "draw the five numbered stages" (sequential step-role
+      // nodes get a running number badge) and "add a small warning beside
+      // the common diagnostic error" (danger-tier nodes get a highlight)
+      // both come from node.role/node.tier, never from the model choosing
+      // a treatment.
+      if (node.role === "step") {
+        stepSequenceCounter += 1;
+        const numberActionId = nextActionId();
+        actions.push({
+          type: "emphasize", actionId: numberActionId, targetId: shapeId,
+          treatment: "number", sequenceNumber: stepSequenceCounter, durationMs: EMPHASIZE_DURATION_MS,
+        });
+        linked.push(numberActionId);
+      }
+      if (node.tier === "danger") {
+        const warnActionId = nextActionId();
+        actions.push({
+          type: "emphasize", actionId: warnActionId, targetId: shapeId,
+          treatment: "highlight", durationMs: EMPHASIZE_DURATION_MS,
+        });
+        linked.push(warnActionId);
       }
 
       pushSegment(entry.narration, entry.tone, entry.pace, linked);
@@ -198,9 +228,10 @@ export function buildProfessorTeachingActions(
   return {
     actions,
     segments,
-    visualGrammar:     grounded.visualGrammar,
-    title:              grounded.title,
-    synthesisQuestion:  grounded.synthesisQuestion,
+    visualGrammar:      grounded.visualGrammar,
+    title:               grounded.title,
+    learningObjective:   grounded.learningObjective,
+    synthesisQuestion:   grounded.synthesisQuestion,
     sourceSnapshot,
   };
 }

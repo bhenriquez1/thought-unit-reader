@@ -24,6 +24,7 @@ function makeScript(overrides: Partial<ProfessorLessonScript> = {}): ProfessorLe
     pageTruthKey: "doc::1::t",
     visualGrammar: "concept-map",
     title: "Test Title",
+    learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [
       { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false },
     ],

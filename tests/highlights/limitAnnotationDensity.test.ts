@@ -140,7 +140,7 @@ describe("limitAnnotationDensity — mechanism/procedure mutual exclusion", () =
 });
 
 describe("limitAnnotationDensity — global backstop cap", () => {
-  it("caps total output at 7 even when every per-category cap is individually satisfied", () => {
+  it("caps total output at 8 even when every per-category cap is individually satisfied", () => {
     const input: GroundedSurgeonAnnotation[] = [
       ...Array.from({ length: 3 }, (_, i) => makeGrounded("definition", "critical", { exactQuote: `def${i}` })),
       makeGrounded("mechanism", "critical", { exactQuote: "mech" }),
@@ -150,27 +150,32 @@ describe("limitAnnotationDensity — global backstop cap", () => {
       makeGrounded("comparison", "critical", { exactQuote: "cmp" }),
       makeGrounded("clinicalPearl", "critical", { exactQuote: "pearl" }),
     ];
-    // Per-category selection alone would yield 3+1+1+1+1+1+1 = 9.
+    // Per-category selection alone would yield 3+1+1+1+1+1+1 = 9 — one over
+    // the 8-item ceiling (a genuinely dense page — 7 distinct categories —
+    // must still land within the 5-8 target range, not be clipped to 7).
     const result = limitAnnotationDensity(input);
-    expect(result.length).toBeLessThanOrEqual(7);
-    expect(result).toHaveLength(7);
+    expect(result.length).toBeLessThanOrEqual(8);
+    expect(result).toHaveLength(8);
   });
 
   it("when the global cap trims entries, lower-importance survivors are dropped first", () => {
     const input: GroundedSurgeonAnnotation[] = [
       ...Array.from({ length: 3 }, (_, i) => makeGrounded("definition", "critical", { exactQuote: `def${i}` })),
       makeGrounded("mechanism", "critical", { exactQuote: "mech" }),
-      makeGrounded("trap", "supporting", { exactQuote: "trap-low" }),
+      makeGrounded("trap", "critical", { exactQuote: "trap" }),
       makeGrounded("supportingEvidence", "supporting", { exactQuote: "evid-low" }),
       makeGrounded("decision", "critical", { exactQuote: "dec" }),
       makeGrounded("comparison", "critical", { exactQuote: "cmp" }),
-      makeGrounded("clinicalPearl", "critical", { exactQuote: "pearl" }),
+      makeGrounded("clinicalPearl", "supporting", { exactQuote: "pearl-low" }),
     ];
+    // 9 candidates, cap 8 — exactly one must be dropped: the lowest-ranked
+    // by importance, tie-broken by later original index (pearl-low is both
+    // "supporting" AND appears after evid-low, so it's the one cut).
     const result = limitAnnotationDensity(input);
-    expect(result).toHaveLength(7);
+    expect(result).toHaveLength(8);
     const quotes = result.map(r => r.exactQuote);
-    expect(quotes).not.toContain("trap-low");
-    expect(quotes).not.toContain("evid-low");
+    expect(quotes).toContain("evid-low");
+    expect(quotes).not.toContain("pearl-low");
   });
 
   it("preserves original relative order in the final output, not importance order", () => {

@@ -18,10 +18,13 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
   let src: string;
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
-  it("calls a vision-capable model with an image_url content part at detail:\"high\"", () => {
-    expect(src).toMatch(/model:\s*"gpt-4o"/);
+  it("sends an image_url content part at detail:\"high\", using a dynamically-resolved model rather than a hardcoded literal", () => {
     expect(src).toMatch(/type:\s*"image_url"/);
     expect(src).toMatch(/detail:\s*"high"/);
+    expect(src).not.toMatch(/model:\s*"gpt-4o"/);
+    expect(src).not.toMatch(/model:\s*"gpt-5\.5"/);
+    expect(src).toMatch(/import \{ resolveTeachingModel \} from "@\/lib\/insights\/resolveOpenAIModel"/);
+    expect(src).toMatch(/const model = await resolveTeachingModel\(client\)/);
   });
 
   it("wraps the OpenAI call with a request timeout via AbortController", () => {
@@ -110,12 +113,17 @@ describe("pages/api/page-annotation-plan.ts — density guidance (soft, defense-
 
   it("prompt instructs at most one mechanism-or-procedure annotation total per page", () => {
     expect(src).toMatch(/DENSITY/);
-    expect(src).toMatch(/ONE mechanism-or-procedure annotation total/);
+    expect(src).toMatch(/ONE mechanism-or-procedure\s*\n?\s*annotation total/);
   });
 
   it("prompt instructs capping trap, comparison, decision, clinicalPearl, and example annotations at one each", () => {
     expect(src).toMatch(/at most one trap\/warning, one/);
-    expect(src).toMatch(/comparison, one decision point, one clinical pearl, and one supporting example/);
+    expect(src).toMatch(/comparison, one decision point, one\s*\n?\s*clinical pearl, and one supporting example/);
+  });
+
+  it("prompt states an explicit 5-8 annotation target range for a dense page, and warns against under-annotating", () => {
+    expect(src).toMatch(/5 to 8 annotations total/);
+    expect(src).toMatch(/Under-annotating a dense page is as much a failure as over-annotating a sparse one/);
   });
 
   it("prompt tells the model the app enforces this with a hard cap after its response", () => {

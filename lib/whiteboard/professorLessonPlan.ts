@@ -32,11 +32,17 @@ export interface Bounds { x: number; y: number; w: number; h: number; }
 export type ProfessorTeachingAction =
   | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number }
   | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number }
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace"; bounds: Bounds; durationMs: number }
-  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse"; durationMs: number }
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line"; bounds: Bounds; durationMs: number }
+  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number"; sequenceNumber?: number; durationMs: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number }
   | { type: "pause"; actionId: string; durationMs: number }
-  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number };
+  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number }
+  /** Removes a previously-drawn shape from the canvas from this point in the
+   *  timeline forward — e.g. clearing a rough sketch before drawing the
+   *  clean version. Handled by computeCanvasStateAtStep exactly like every
+   *  other action: state-at-step is recomputed from scratch, so an erase is
+   *  just "this shapeId's entry doesn't exist for index >= this action's". */
+  | { type: "erase"; actionId: string; targetShapeId: string; durationMs: number };
 
 // ── NarrationSegment — the spoken teaching script, tightly linked to actions ─
 
@@ -63,7 +69,7 @@ export interface NarrationSegment {
 // OpenAI out of the coordinate business for PDF highlights.
 
 export const VisualGrammarChoiceSchema = z.enum([
-  "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map",
+  "definition", "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map",
 ]);
 export type VisualGrammarChoice = z.infer<typeof VisualGrammarChoiceSchema>;
 
@@ -80,8 +86,11 @@ export const ProfessorNodeScriptSchema = z.object({
   pace:       NarrationPaceSchema,
   /** At most one node/edge across the whole script should set this true —
    *  the single "circle the high-yield point" moment. Enforced (not just
-   *  requested) by groundProfessorLesson.ts, which keeps only the first. */
-  emphasize:  z.boolean().optional().default(false),
+   *  requested) by groundProfessorLesson.ts, which keeps only the first.
+   *  Required (not optional+default) — OpenAI Structured Outputs strict
+   *  mode requires every property to always be present; the prompt already
+   *  instructs the model to explicitly set this false everywhere else. */
+  emphasize:  z.boolean(),
 });
 export type ProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
 
@@ -90,6 +99,9 @@ export const ProfessorLessonScriptSchema = z.object({
   visualGrammar:     VisualGrammarChoiceSchema,
   /** Short hand-written title, e.g. "ASPIRIN OVERDOSE" — 2-6 words. */
   title:             z.string().min(1).max(50),
+  /** One sentence: what the student should be able to do after this lesson.
+   *  Spoken as its own intro segment, right after the title. */
+  learningObjective: z.string().min(1).max(300),
   nodeScripts:       z.array(ProfessorNodeScriptSchema).min(1).max(20),
   /** The lesson's closing "one synthesis question." */
   synthesisQuestion: z.string().min(1).max(240),
@@ -118,6 +130,7 @@ export interface ProfessorLessonPlan {
   segments:          NarrationSegment[];
   visualGrammar:      VisualGrammarChoice;
   title:              string;
+  learningObjective:  string;
   synthesisQuestion:  string;
   sourceSnapshot:     ProfessorLessonSourceSnapshot;
 }
@@ -127,7 +140,11 @@ export interface ProfessorLessonPlan {
 // the user's spec — fresh, page-specific teaching without repeatedly paying
 // for identical generation. Bump PLANNER_VERSION whenever the prompt/schema
 // changes so a stale cached script isn't silently reused.
-export const PLANNER_VERSION = 1;
+// v2: added learningObjective, made emphasize required (Structured Outputs
+// strict-mode compatibility), added "definition" visualGrammar, "line" draw-
+// shape variant, "highlight"/"number" emphasize treatments, and the "erase"
+// action type — a v1-cached plan predates all of these.
+export const PLANNER_VERSION = 2;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

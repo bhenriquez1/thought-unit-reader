@@ -102,7 +102,7 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
   it("zero groundable targets sets status 'error', not an empty-but-successful plan", () => {
     const idx = src.indexOf("if (grounded.nodeScripts.length === 0)");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 200);
+    const body = src.slice(idx, idx + 260);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
   });

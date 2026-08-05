@@ -20,6 +20,7 @@ function makeGrounded(overrides: Partial<GroundedProfessorLessonScript> = {}): G
   return {
     title: "Test Lesson",
     visualGrammar: "procedure",
+    learningObjective: "Explain how to stabilize the patient before diagnosis.",
     synthesisQuestion: "How would you explain this back?",
     nodeScripts: [
       { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start with the central problem.", tone: "introduce", pace: "normal", emphasize: true },
@@ -113,5 +114,74 @@ describe("buildProfessorTeachingActions — a move-camera action precedes each n
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     const drawIdx = plan.actions.findIndex(a => a.type === "draw-shape");
     expect(plan.actions[drawIdx - 1].type).toBe("move-camera");
+  });
+});
+
+describe("buildProfessorTeachingActions — deterministic, non-AI treatments from VSG data (never model-chosen)", () => {
+  function makeSequentialVsg(): VisualSceneGraph {
+    return {
+      id: "vsg_seq", grammar: "flow", drawType: "flow",
+      nodes: [
+        { id: "n1", label: "Step one", body: "body", canonicalType: "procedure", importanceLevel: "high", tier: "step", role: "step", position: { x: 85, y: 22 }, size: { w: 290, h: 52 }, sourceId: "src-n1" },
+        { id: "n2", label: "Step two", body: "body", canonicalType: "procedure", importanceLevel: "high", tier: "step", role: "step", position: { x: 85, y: 104 }, size: { w: 290, h: 52 }, sourceId: "src-n2" },
+        { id: "n3", label: "Danger point", body: "body", canonicalType: "trap", importanceLevel: "high", tier: "danger", role: "spoke", position: { x: 85, y: 186 }, size: { w: 290, h: 52 }, sourceId: "src-n3" },
+      ],
+      edges: [], canvas: { width: 460, height: 400 }, builtAt: 0,
+    };
+  }
+  function seqGrounded(): GroundedProfessorLessonScript {
+    return {
+      title: "Test", visualGrammar: "procedure", learningObjective: "Learn the steps.",
+      synthesisQuestion: "Explain the steps back.",
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false },
+        { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false },
+        { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false },
+      ],
+    };
+  }
+
+  it("step-role nodes get an automatic 'number' emphasize action, numbered in order — 'draw the five numbered stages'", () => {
+    const plan = buildProfessorTeachingActions(makeSequentialVsg(), seqGrounded(), SNAPSHOT);
+    const numberActions = plan.actions.filter(a => a.type === "emphasize" && a.treatment === "number");
+    expect(numberActions).toHaveLength(2);
+    expect((numberActions[0] as any).sequenceNumber).toBe(1);
+    expect((numberActions[1] as any).sequenceNumber).toBe(2);
+  });
+
+  it("danger-tier nodes get an automatic 'highlight' emphasize action — 'a small warning beside the common diagnostic error'", () => {
+    const plan = buildProfessorTeachingActions(makeSequentialVsg(), seqGrounded(), SNAPSHOT);
+    const highlightActions = plan.actions.filter(a => a.type === "emphasize" && a.treatment === "highlight");
+    expect(highlightActions).toHaveLength(1);
+    expect((highlightActions[0] as any).targetId).toBe(String((plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n3") as any).shapeId));
+  });
+
+  it("these deterministic treatments are NOT driven by the AI script — absent from ProfessorNodeScript, derived purely from node.role/node.tier", () => {
+    const grounded = seqGrounded();
+    for (const entry of grounded.nodeScripts) {
+      expect(entry).not.toHaveProperty("treatment");
+    }
+    // Yet the plan still carries number/highlight actions, proving they came
+    // from the VSG's own role/tier data, not from anything the script said.
+    const plan = buildProfessorTeachingActions(makeSequentialVsg(), grounded, SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "emphasize" && a.treatment === "number")).toBe(true);
+    expect(plan.actions.some(a => a.type === "emphasize" && a.treatment === "highlight")).toBe(true);
+  });
+});
+
+describe("buildProfessorTeachingActions — learningObjective is spoken right after the title", () => {
+  it("produces a segment for the learningObjective, before any node's narration", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const objectiveIdx = plan.segments.findIndex(s => s.text === makeGrounded().learningObjective);
+    const titleIdx = plan.segments.findIndex(s => s.text === `${makeGrounded().title}.`);
+    const firstNodeNarrationIdx = plan.segments.findIndex(s => s.text === makeGrounded().nodeScripts[0].narration);
+    expect(objectiveIdx).toBeGreaterThan(-1);
+    expect(objectiveIdx).toBeGreaterThan(titleIdx);
+    expect(objectiveIdx).toBeLessThan(firstNodeNarrationIdx);
+  });
+
+  it("carries learningObjective through onto the final plan", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    expect(plan.learningObjective).toBe(makeGrounded().learningObjective);
   });
 });

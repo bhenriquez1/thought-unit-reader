@@ -45,8 +45,13 @@ export const SEMANTIC_PACK_VERSION = 1;
  *  v3-cached plan's pageRole was chosen under the old narrow taxonomy and its
  *  category selection wasn't adaptive, so it's treated as stale. This same
  *  pageRole value is also what the Whiteboard now uses to pick its teaching
- *  grammar (lib/whiteboard/buildProfessorLessonInput.ts). */
-export const MODEL_VERSION = 4;
+ *  grammar (lib/whiteboard/buildProfessorLessonInput.ts).
+ *  v5: explicit 5-8 annotation density TARGET (not just a ceiling) with a
+ *  warning against under-annotating a dense page, and the model/endpoint
+ *  now resolves its OpenAI model dynamically via resolveOpenAIModel.ts
+ *  instead of a hardcoded "gpt-4o" — a v4-cached plan was generated under
+ *  the old, looser density guidance. */
+export const MODEL_VERSION = 5;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 

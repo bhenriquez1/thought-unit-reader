@@ -5,7 +5,7 @@ import {
 } from "../../lib/whiteboard/professorLessonPlan";
 
 function validNodeScript() {
-  return { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal" };
+  return { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false };
 }
 
 function validScript() {
@@ -13,15 +13,21 @@ function validScript() {
     pageTruthKey: "doc::1::t",
     visualGrammar: "procedure",
     title: "Test Title",
+    learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [validNodeScript()],
     synthesisQuestion: "What comes next?",
   };
 }
 
 describe("ProfessorNodeScriptSchema", () => {
-  it("parses a valid entry, defaulting emphasize to false", () => {
+  it("parses a valid entry", () => {
     const parsed = ProfessorNodeScriptSchema.parse(validNodeScript());
     expect(parsed.emphasize).toBe(false);
+  });
+
+  it("REQUIRED: emphasize must be explicitly present — no optional+default, for OpenAI Structured Outputs strict-mode compatibility", () => {
+    const { emphasize, ...withoutEmphasize } = validNodeScript();
+    expect(() => ProfessorNodeScriptSchema.parse(withoutEmphasize)).toThrow();
   });
 
   it("rejects an unknown tone", () => {
@@ -50,8 +56,8 @@ describe("ProfessorLessonScriptSchema", () => {
     expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), visualGrammar: "bar-chart" })).toThrow();
   });
 
-  it("accepts all 7 documented visualGrammar values", () => {
-    const values = ["procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map"];
+  it("accepts all 8 documented visualGrammar values, including 'definition'", () => {
+    const values = ["definition", "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map"];
     for (const v of values) {
       expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), visualGrammar: v })).not.toThrow();
     }
@@ -59,6 +65,12 @@ describe("ProfessorLessonScriptSchema", () => {
 
   it("requires a non-empty synthesisQuestion", () => {
     expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), synthesisQuestion: "" })).toThrow();
+  });
+
+  it("requires a non-empty learningObjective", () => {
+    const { learningObjective, ...withoutObjective } = validScript();
+    expect(() => ProfessorLessonScriptSchema.parse(withoutObjective)).toThrow();
+    expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), learningObjective: "" })).toThrow();
   });
 });
 

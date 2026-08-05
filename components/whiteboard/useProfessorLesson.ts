@@ -39,6 +39,12 @@ export interface UseProfessorLessonResult {
   /** Set only when status is "error" — a short, specific reason the caller
    *  can show alongside the retry button. */
   errorMessage: string | null;
+  /** Diagnostic metadata for the retry state — the API's own failure code
+   *  (e.g. "UPSTREAM_UNAVAILABLE", "RATE_LIMITED") or a client-side code
+   *  ("stale_response_dropped" doesn't apply here since that's not a
+   *  failure; "network_error", "ungroundable", "missing_config"). Shown
+   *  alongside errorMessage, never in place of it. */
+  errorCode: string | null;
   reanalyze: () => void;
 }
 
@@ -63,6 +69,7 @@ export function useProfessorLesson({
   const [lessonPlan, setLessonPlan]   = useState<ProfessorLessonPlan | null>(null);
   const [status, setStatus]           = useState<ProfessorLessonStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorCode, setErrorCode]       = useState<string | null>(null);
   const [reanalyzeCount, setReanalyzeCount] = useState(0);
 
   const abortRef       = useRef<AbortController | null>(null);
@@ -87,6 +94,7 @@ export function useProfessorLesson({
     setLessonPlan(null);
     setStatus("idle");
     setErrorMessage(null);
+    setErrorCode(null);
     startedKeyRef.current = null;
 
     let cancelled = false;
@@ -124,6 +132,7 @@ export function useProfessorLesson({
 
     setStatus("loading");
     setErrorMessage(null);
+    setErrorCode(null);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -145,6 +154,7 @@ export function useProfessorLesson({
 
         if (!data.ok) {
           setErrorMessage(GENERIC_ERROR_MESSAGE);
+          setErrorCode(data.code);
           setStatus("error");
           return;
         }
@@ -159,6 +169,7 @@ export function useProfessorLesson({
         if (grounded.nodeScripts.length === 0) {
           // Everything the model referenced was ungroundable.
           setErrorMessage(GENERIC_ERROR_MESSAGE);
+          setErrorCode("ungroundable_response");
           setStatus("error");
           return;
         }
@@ -177,11 +188,12 @@ export function useProfessorLesson({
         if (ctrl.signal.aborted) return;
         console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { pageTruthKey, message: err?.message ?? String(err) });
         setErrorMessage(GENERIC_ERROR_MESSAGE);
+        setErrorCode("network_error");
         setStatus("error");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, reanalyzeCount]);
 
-  return { lessonPlan, status, errorMessage, reanalyze };
+  return { lessonPlan, status, errorMessage, errorCode, reanalyze };
 }

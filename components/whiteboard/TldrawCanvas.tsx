@@ -108,9 +108,56 @@ function shapeIdOf(raw: string): ReturnType<typeof createShapeId> {
 // that validation and crashes the whole editor — createShapeId already
 // prefixes whatever string it's given, so the primary id's own "shape:"
 // prefix must be stripped first or it ends up embedded mid-string instead
-// of at the start.
-function emphasisShapeId(primaryShapeId: string): string {
-  return String(createShapeId(`emphasis-${primaryShapeId.replace(/^shape:/, "")}`));
+// of at the start. Keyed by treatment too — a shape can carry more than one
+// simultaneous emphasis (e.g. circled AND numbered), each needs its own id.
+function emphasisShapeId(primaryShapeId: string, treatment: string): string {
+  return String(createShapeId(`emphasis-${treatment}-${primaryShapeId.replace(/^shape:/, "")}`));
+}
+
+type EmphasisTreatment = "circle" | "underline" | "pulse" | "highlight" | "number";
+
+/** One overlay shape spec per emphasis treatment. Pure — bounds in, tldraw
+ *  shape spec out, no editor access. */
+function emphasisOverlaySpec(treatment: EmphasisTreatment, bounds: Bounds, sequenceNumber: number | undefined): { type: "geo"; x: number; y: number; props: Record<string, unknown>; opacity: number } {
+  switch (treatment) {
+    case "underline":
+      // A thin bar just under the box — reads as "underline this", not a
+      // full second outline.
+      return {
+        type: "geo", x: bounds.x, y: bounds.y + bounds.h + 4,
+        props: { geo: "rectangle", w: bounds.w, h: 4, fill: "solid", dash: "solid", size: "s", color: "orange" },
+        opacity: 1,
+      };
+    case "highlight":
+      // A translucent wash behind the shape — a warm color for "pay
+      // attention here" (used for danger-tier/trap points), not the strong
+      // orange ring reserved for the single "decisive point" circle.
+      return {
+        type: "geo", x: bounds.x - 6, y: bounds.y - 6,
+        props: { geo: "rectangle", w: bounds.w + 12, h: bounds.h + 12, fill: "solid", color: "red", size: "m" },
+        opacity: 0.22,
+      };
+    case "number": {
+      const label = String(sequenceNumber ?? "");
+      return {
+        type: "geo", x: bounds.x - 14, y: bounds.y - 14,
+        props: { geo: "ellipse", w: 26, h: 26, fill: "solid", color: "violet", size: "s", richText: toRichText(label), font: "sans" },
+        opacity: 1,
+      };
+    }
+    case "pulse":
+    case "circle":
+    default:
+      // tldraw shapes are static — there is no built-in pulsing animation,
+      // so "pulse" deliberately renders identically to "circle" (a ring)
+      // rather than silently doing nothing. A true pulse would need an
+      // external rAF loop layered outside the deterministic action model.
+      return {
+        type: "geo", x: bounds.x - 8, y: bounds.y - 8,
+        props: { geo: "ellipse", w: bounds.w + 16, h: bounds.h + 16, fill: "none", dash: "draw", size: "m", color: "orange" },
+        opacity: 1,
+      };
+  }
 }
 
 export default function TldrawCanvas({
@@ -146,7 +193,7 @@ export default function TldrawCanvas({
   const effectiveDocumentId = documentId ?? storageKey ?? "unknown-document";
   const effectivePageTruthKey = pageTruthKey ?? derivedVsg?.id ?? "unknown-page";
 
-  const { lessonPlan, status: lessonStatus, errorMessage: lessonErrorMessage, reanalyze } = useProfessorLesson({
+  const { lessonPlan, status: lessonStatus, errorMessage: lessonErrorMessage, errorCode: lessonErrorCode, reanalyze } = useProfessorLesson({
     vsg: derivedVsg,
     documentId: effectiveDocumentId,
     pageTruthKey: effectivePageTruthKey,
@@ -198,7 +245,7 @@ export default function TldrawCanvas({
 
     const wantedPrimaryIds = new Set(state.keys());
     const wantedEmphasisIds = new Set(
-      Array.from(state.values()).filter(s => s.emphasized).map(s => emphasisShapeId(s.shapeId)),
+      Array.from(state.values()).flatMap(s => s.emphasisTreatments.map(t => emphasisShapeId(s.shapeId, t.treatment))),
     );
     const wantedIds = new Set<string>([...wantedPrimaryIds, ...wantedEmphasisIds]);
 
@@ -225,17 +272,17 @@ export default function TldrawCanvas({
       }
 
       if (s.emphasized && s.bounds) {
-        const emphId = emphasisShapeId(s.shapeId);
-        const emphSpec = {
-          type: "geo" as const,
-          x: s.bounds.x - 8, y: s.bounds.y - 8,
-          props: { geo: "ellipse", w: s.bounds.w + 16, h: s.bounds.h + 16, fill: "none", dash: "draw", size: "m", color: "orange" },
-        };
-        if (createdShapeIdsRef.current.has(emphId)) {
-          updates.push({ id: shapeIdOf(emphId), ...emphSpec });
-        } else {
-          creates.push({ id: shapeIdOf(emphId), ...emphSpec, opacity: 1, isLocked: true });
-          createdShapeIdsRef.current.add(emphId);
+        // One overlay shape PER treatment — a shape can be circled AND
+        // numbered at once, each gets its own id so neither is dropped.
+        for (const { treatment, sequenceNumber } of s.emphasisTreatments) {
+          const emphId = emphasisShapeId(s.shapeId, treatment);
+          const emphSpec = emphasisOverlaySpec(treatment, s.bounds, sequenceNumber);
+          if (createdShapeIdsRef.current.has(emphId)) {
+            updates.push({ id: shapeIdOf(emphId), type: emphSpec.type, x: emphSpec.x, y: emphSpec.y, props: emphSpec.props });
+          } else {
+            creates.push({ id: shapeIdOf(emphId), type: emphSpec.type, x: emphSpec.x, y: emphSpec.y, props: emphSpec.props, opacity: emphSpec.opacity, isLocked: true });
+            createdShapeIdsRef.current.add(emphId);
+          }
         }
       }
     }
@@ -583,6 +630,11 @@ export default function TldrawCanvas({
               <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
                 {lessonErrorMessage ?? "Unable to generate Whiteboard for this page."}
               </span>
+              {lessonErrorCode && (
+                <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
+                  code: {lessonErrorCode}
+                </span>
+              )}
               <button onClick={reanalyze} style={BTN_PRIMARY}>Retry</button>
             </div>
           )}
@@ -634,6 +686,15 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
     return {
       type: "arrow", x: s.from.x, y: s.from.y,
       props: { kind: "arc", start: { x: 0, y: 0 }, end: { x: s.to.x - s.from.x, y: s.to.y - s.from.y }, richText: toRichText(s.text ?? ""), size: "s", color },
+    };
+  }
+  if (s.kind === "line") {
+    // A short, thin filled bar rather than a full outline — reads as "a
+    // drawn line/connector," distinct from a box/circle's outlined shape.
+    if (!s.bounds) return null;
+    return {
+      type: "geo", x: s.bounds.x, y: s.bounds.y,
+      props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: "solid", dash: "draw", size: "s", color },
     };
   }
   if (s.kind === "box" || s.kind === "circle" || s.kind === "brace") {
