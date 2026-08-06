@@ -134,9 +134,20 @@ export default function WhiteboardPanel({
     });
   }, [canonicalEntries, teachNoteCards, effectiveGrammar, currentPage]);
 
-  // Stable key for localStorage canvas persistence — scoped to book + page.
-  const canvasStorageKey = bookId && currentPage != null
-    ? `${bookId}_p${currentPage}`
+  // Stable key for tldraw's own IndexedDB canvas persistence — keyed by
+  // pageTruthKey (documentId + pageNumber + text-ready flag), not just
+  // bookId + pageNumber. A re-extraction that produces different text for
+  // the SAME page slot changes pageTruthKey, so it gets a genuinely
+  // distinct persistence key instead of silently sharing storage with
+  // whatever was cached under the old extraction. (clearTeachingLayer's
+  // unconditional clear on every mount/lessonPlan change already prevents
+  // stale shapes from ever being visible even without this — this closes
+  // the gap at the storage-key level too, not just the render level.)
+  // Falls back to the same bookId::pageNumber synthetic key already used
+  // for the pageTruthKey prop below when a real pageTruthKey isn't passed.
+  const effectivePageTruthKey = pageTruthKey ?? (bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined);
+  const canvasStorageKey = bookId && effectivePageTruthKey
+    ? `${bookId}_${effectivePageTruthKey}`
     : undefined;
 
   const [isOpen, setIsOpen] = useState(true);
@@ -260,7 +271,7 @@ export default function WhiteboardPanel({
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                   storageKey={canvasStorageKey}
                   documentId={bookId}
-                  pageTruthKey={pageTruthKey ?? (bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined)}
+                  pageTruthKey={effectivePageTruthKey}
                   activeCanonicalUnitId={knowledgeNodeId ?? null}
                   pageTeachingType={pageTeachingType ?? null}
                 />
