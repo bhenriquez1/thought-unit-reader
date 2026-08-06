@@ -44,13 +44,23 @@ import type { AnnotationPlanResponse, ServerFailureStage } from "@/pages/api/pag
 export type SurgeonAnnotationStatus = "idle" | "loading" | "success" | "error";
 export type SurgeonPlanTier = "ready" | "empty" | "failed";
 
-// The server's own failure-stage codes, plus 3 that can only be detected
+// The server's own failure-stage codes, plus 2 that can only be detected
 // client-side: a response whose echoed pageTruthKey/pageContentHash no
-// longer matches the current page (the student navigated away before the
-// response arrived), every proposed quote failing client-side sentence
-// grounding despite a non-empty plan, or a network-level failure that never
-// reached the server at all (no HTTP response to carry a server code).
-export type ClientFailureStage = ServerFailureStage | "page_identity_mismatch" | "no_grounded_annotations" | "network_error";
+// longer matches the current page (identity_mismatch — the student
+// navigated away before the response arrived), or a network-level failure
+// that never reached the server at all (network_error — no HTTP response to
+// carry a server code). "quote_grounding" is deliberately the SAME code the
+// server's own (non-authoritative) plausibility check uses — every proposed
+// quote failing client-side sentence grounding despite a non-empty plan is
+// conceptually the same pipeline stage, just caught by the authoritative
+// check instead of the server's defense-in-depth one.
+// Two more stages exist ONE layer further downstream — geometry_resolution
+// (a grounded quote failing to locate in the live PDF text layer) and render
+// (geometry resolved but the final dedup pass dropped it) — but this hook has
+// no visibility into that layer at all; SmartPDFViewer.tsx is the only place
+// that can observe it, and reports those two stages via
+// lib/readingFocus/readingFocusStore.ts's annotationRenderStage instead.
+export type ClientFailureStage = ServerFailureStage | "identity_mismatch" | "network_error";
 
 export interface UseSurgeonAnnotationsResult {
   plan: SurgeonAnnotationPlan | null;
@@ -251,6 +261,16 @@ export function useSurgeonAnnotations({
   // real trigger, unlike useTeachingSynthesis's ref-based domain/pack exclusion.
   const startedKeyRef      = useRef<string | null>(null);
   const forceRefetchRef    = useRef(false);
+  // Composite key of whatever plan/highlightTargets are CURRENTLY on screen
+  // (set alongside every successful setPlan/setHighlightTargets call, both
+  // Effect A's cache hit and Effect B's fetch success). Distinct from
+  // startedKeyRef (which just tracks "have we already tried this combo") —
+  // this tracks "what combo does the content on screen actually belong to."
+  // Effect B reads it to decide whether a NEW fetch (domain/pack changed)
+  // must clear stale content from a DIFFERENT combination before it starts,
+  // vs. a same-key reanalyze() retry, which intentionally leaves prior
+  // content up while the retry runs.
+  const displayedKeyRef    = useRef<string | null>(null);
 
   // Live refs for values not meant to abort/restart the effects on their own.
   const pageTextRef              = useRef(pageText);
@@ -287,6 +307,7 @@ export function useSurgeonAnnotations({
     setAnnotationFailureStage(null);
     setAnnotationRequestId(null);
     startedKeyRef.current = null;
+    displayedKeyRef.current = null;
 
     let cancelled = false;
     (async () => {
@@ -317,6 +338,7 @@ export function useSurgeonAnnotations({
           // Mark this (page, domain, pack) combination as already satisfied so
           // Effect B doesn't immediately re-fetch what we just loaded from cache.
           startedKeyRef.current = `${pageTruthKey}|${domain}|${semanticPack.id}`;
+          displayedKeyRef.current = startedKeyRef.current;
           if (DEV) console.log("[SURGEON_PLAN_CACHE_HIT]", { pageTruthKey, cacheKey, annotationCount: targets.length });
           // Production-safe (no DEV gate, no annotation text) — the first two
           // stages of the pipeline trace SmartPDFViewer's [SURGEON_PIPELINE_DIAGNOSTIC]
@@ -358,6 +380,23 @@ export function useSurgeonAnnotations({
     startedKeyRef.current = compositeKey;
     const wasForced = forceRefetchRef.current;
     forceRefetchRef.current = false;
+
+    // A genuine domain/pack change (not a same-key reanalyze() retry) while
+    // content from a DIFFERENT combination is still displayed: clear it now,
+    // before this fetch starts. Without this, a failed fetch for the NEW
+    // combination could leave a failure banner showing on top of highlights
+    // that belong to the OLD, unrelated combination — confusing at best,
+    // actively misleading at worst (the banner reads as "nothing was
+    // generated" while something clearly IS showing). A same-key retry
+    // intentionally skips this — showing what you had while a retry runs is
+    // reasonable; showing something from an unrelated combination is not.
+    if (displayedKeyRef.current !== null && displayedKeyRef.current !== compositeKey) {
+      setPlan(null);
+      setHighlightTargets([]);
+      setGroundedAnnotations([]);
+      setWholePageAnnotations([]);
+      displayedKeyRef.current = null;
+    }
 
     setStatus("loading");
     if (!wasForced) setAnnotationErrorMessage(null);
@@ -423,7 +462,7 @@ export function useSurgeonAnnotations({
           // than silently doing nothing (the student is left on whatever was
           // already showing; this is diagnostic, not a blocking error state).
           console.warn("[SURGEON_PLAN_PAGE_IDENTITY_MISMATCH]", { expected: pageTruthKey, received: data.plan.pageTruthKey, requestId: data.requestId });
-          setAnnotationFailureStage("page_identity_mismatch");
+          setAnnotationFailureStage("identity_mismatch");
           setAnnotationRequestId(data.requestId);
           return;
         }
@@ -440,7 +479,7 @@ export function useSurgeonAnnotations({
         );
         if (data.pageContentHash !== currentContentHash) {
           console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash, requestId: data.requestId });
-          setAnnotationFailureStage("page_identity_mismatch");
+          setAnnotationFailureStage("identity_mismatch");
           setAnnotationRequestId(data.requestId);
           return;
         }
@@ -453,7 +492,7 @@ export function useSurgeonAnnotations({
           // degraded, not a hard error, but a distinct stage from the
           // server's own (non-authoritative) quote_grounding_failed check.
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
-          setAnnotationFailureStage("no_grounded_annotations");
+          setAnnotationFailureStage("quote_grounding");
           setAnnotationRequestId(data.requestId);
           setStatus("error");
           return;
@@ -467,6 +506,7 @@ export function useSurgeonAnnotations({
         setAnnotationFailureStage(null);
         setAnnotationRequestId(data.requestId);
         setStatus("success");
+        displayedKeyRef.current = compositeKey;
 
         const cacheKey = buildAnnotationCacheKey({
           bookId:         bookIdRef.current,

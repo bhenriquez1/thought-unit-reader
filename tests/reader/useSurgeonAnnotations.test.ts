@@ -84,7 +84,7 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 650);
     expect(block).toMatch(/Stale response for a page we've since navigated away from — drop/);
-    expect(block).toMatch(/setAnnotationFailureStage\("page_identity_mismatch"\);/);
+    expect(block).toMatch(/setAnnotationFailureStage\("identity_mismatch"\);/);
     expect(block).toMatch(/return;/);
   });
 
@@ -147,6 +147,56 @@ describe("useSurgeonAnnotations.ts — degraded/failure UX matches the spec verb
 
   it("zero annotations surviving quote verification is also treated as degraded, not silently empty", () => {
     expect(src).toMatch(/targets\.length === 0 && data\.plan\.annotations\.length > 0/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — stale content from a DIFFERENT domain/pack must not survive a genuine combination change", () => {
+  // Regression: a real bug where switching domain/semanticPack while a plan
+  // from the OLD combination was displayed, followed by a failed refetch for
+  // the NEW combination, left the failure banner ("could not be generated")
+  // showing on top of highlights that belonged to a completely different,
+  // unrelated combination — self-contradictory and misleading. This is
+  // DISTINCT from the same-key reanalyze() case just above, which
+  // intentionally keeps prior content up while a retry runs.
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: tracks displayedKeyRef separately from startedKeyRef — 'what's on screen' vs 'what's already been tried'", () => {
+    expect(src).toMatch(/const displayedKeyRef\s+= useRef<string \| null>\(null\);/);
+  });
+
+  it("REQUIRED: Effect B clears plan/highlightTargets/groundedAnnotations/wholePageAnnotations when the new fetch is for a DIFFERENT compositeKey than what's currently displayed", () => {
+    const idx = src.indexOf("if (displayedKeyRef.current !== null && displayedKeyRef.current !== compositeKey) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/setPlan\(null\);/);
+    expect(block).toMatch(/setHighlightTargets\(\[\]\);/);
+    expect(block).toMatch(/setGroundedAnnotations\(\[\]\);/);
+    expect(block).toMatch(/setWholePageAnnotations\(\[\]\);/);
+  });
+
+  it("this clear runs BEFORE setStatus(\"loading\") — so the UI never shows stale cross-combination content even for one render", () => {
+    const clearIdx = src.indexOf("if (displayedKeyRef.current !== null && displayedKeyRef.current !== compositeKey) {");
+    const loadingIdx = src.indexOf('setStatus("loading");', clearIdx);
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(loadingIdx).toBeGreaterThan(clearIdx);
+  });
+
+  it("displayedKeyRef is set on Effect A's cache-hit success (reusing the same compositeKey as startedKeyRef)", () => {
+    const idx = src.indexOf("startedKeyRef.current = `${pageTruthKey}|${domain}|${semanticPack.id}`;");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 130);
+    expect(block).toMatch(/displayedKeyRef\.current = startedKeyRef\.current;/);
+  });
+
+  it("displayedKeyRef is set on Effect B's fetch success, to that fetch's own compositeKey", () => {
+    const idx = src.indexOf("setStatus(\"success\");\n        displayedKeyRef.current = compositeKey;");
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("displayedKeyRef is reset to null in Effect A's page-reset block — a page change (not just a domain/pack change) clears the same way", () => {
+    const idx = src.indexOf("startedKeyRef.current = null;\n    displayedKeyRef.current = null;");
+    expect(idx).toBeGreaterThan(-1);
   });
 });
 
@@ -271,6 +321,35 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
   it('shows a "Reading and annotating this page…" notice while status is loading — never silently rendering nothing while the fetch is in flight', () => {
     expect(src).toMatch(/surgeonAnnotations\.status === "loading"/);
     expect(src).toMatch(/Reading and annotating this page…/);
+  });
+});
+
+describe("pages/index.tsx — geometry_resolution / render banner (stages downstream of a successful plan)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
+
+  it("subscribes to annotationRenderStage/annotationRenderCounts from the shared readingFocusStore", () => {
+    expect(src).toMatch(/const annotationRenderStage\s*=\s*useReadingFocusStore\(s => s\.annotationRenderStage\);/);
+    expect(src).toMatch(/const annotationRenderCounts = useReadingFocusStore\(s => s\.annotationRenderCounts\);/);
+  });
+
+  it("REQUIRED: only shows this banner when the AI plan itself SUCCEEDED — never stacked with the status===\"error\" failure banner for the same page", () => {
+    const idx = src.indexOf('surgeonAnnotations.status === "success" && annotationRenderStage && annotationRenderCounts');
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("distinguishes geometry_resolution copy (could not be located) from render copy (could not be rendered)", () => {
+    const idx = src.indexOf('surgeonAnnotations.status === "success" && annotationRenderStage');
+    const block = src.slice(idx, idx + 900);
+    expect(block).toMatch(/annotationRenderStage === "geometry_resolution"/);
+    expect(block).toMatch(/could not be located on this page/);
+    expect(block).toMatch(/could not be rendered/);
+  });
+
+  it("this banner also offers Retry wired to reanalyze()", () => {
+    const idx = src.indexOf('surgeonAnnotations.status === "success" && annotationRenderStage');
+    const block = src.slice(idx, idx + 1200);
+    expect(block).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
   });
 });
 
@@ -406,7 +485,7 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
     const idx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 400);
-    expect(block).toMatch(/setAnnotationFailureStage\("page_identity_mismatch"\);/);
+    expect(block).toMatch(/setAnnotationFailureStage\("identity_mismatch"\);/);
     expect(block).toMatch(/return;/);
   });
 

@@ -13,8 +13,11 @@
 //     visibly constructing the idea" — the canvas starts nearly blank and
 //     shapes are born as the professor writes/draws them, not pre-placed and
 //     faded in.
-//   STUDENT LAYER — unlocked, tldraw's own native (always-visible) toolbar.
-//     Untouched by playback.
+//   STUDENT LAYER — tldraw's own native (always-visible) toolbar draws on
+//     top of the teaching layer, but the editor itself is READ-ONLY by
+//     default: locked while playing, and locked even while paused/finished
+//     until the student explicitly clicks "Edit a copy" (editingEnabled
+//     state below). A fresh lesson always resets this back to locked.
 //
 // Every entry point (autoplay's forward step, Next, Previous, Restart, "Show
 // complete diagram") funnels through ONE function, applyStateAtStep, which
@@ -207,6 +210,12 @@ export default function TldrawCanvas({
   const [stepIndex, setStepIndexState] = useState(-1);
   const stepIndexRef = useRef(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  // The teaching canvas is READ-ONLY by default — locked while playing AND
+  // while paused/finished, until the student explicitly clicks "Edit a
+  // copy." A fresh lesson (new pageTruthKey/documentId/activeCanonicalUnitId
+  // — see the rebuild effect below) always resets this back to false, so
+  // editing access from a PRIOR page's lesson never carries over.
+  const [editingEnabled, setEditingEnabled] = useState(false);
   const [speed, setSpeed] = useState<PlaybackSpeed>("normal");
   const [narrationEnabled, setNarrationEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -231,6 +240,12 @@ export default function TldrawCanvas({
     if (!v || !targetId) return fallback;
     const node = v.nodes.find(n => n.sourceId === targetId);
     if (node) return TIER_COLOR[node.tier] ?? fallback;
+    // targetId is an edge id for a draw-arrow action (registerAnchors below
+    // registers edge.id the same way it registers a node's sourceId) — was
+    // previously never reached because draw-arrow never carried a targetId
+    // at all, leaving EDGE_COLOR entirely dead code and every arrow grey.
+    const edge = v.edges.find(e => e.id === targetId);
+    if (edge) return EDGE_COLOR[edge.kind] ?? fallback;
     return fallback;
   }, []);
 
@@ -305,8 +320,21 @@ export default function TldrawCanvas({
         .map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
       const merged = mergeBounds(bounds);
       if (merged) {
+        // A single node's bounds are ~290x56 — a flat 40px pad on that made
+        // the per-step camera crop tight enough to read as "punched in on a
+        // random screenshot" rather than a professor stepping back a little
+        // between points. Padding now scales with content size, with a
+        // floor big enough to keep a single small node from filling the
+        // whole frame, and is deliberately taller than it is wide (nodes are
+        // wide/short, so the pad needs the most room on the axis the
+        // content itself doesn't already fill) — the goal is "still visibly
+        // zoomed to the active point" while showing meaningfully more of
+        // its surrounding context than before, per rule "fit the complete
+        // active teaching region, zoom only to emphasize a detail."
+        const padX = Math.max(100, merged.w * 0.3);
+        const padY = Math.max(140, merged.h * 1.2);
         editor.zoomToBounds(
-          { x: merged.x - 40, y: merged.y - 40, w: merged.w + 80, h: merged.h + 80 } as any,
+          { x: merged.x - padX, y: merged.y - padY, w: merged.w + padX * 2, h: merged.h + padY * 2 } as any,
           { animation: { duration: 300 } } as any,
         );
       }
@@ -384,7 +412,10 @@ export default function TldrawCanvas({
     const t2s = new Map<string, string>();
     const s2t = new Map<string, string>();
     for (const a of actions) {
-      if ((a.type === "write" || a.type === "draw-shape") && a.targetId && a.shapeId) {
+      // "draw-arrow" carries an edge id as targetId (buildProfessorTeachingActions.ts)
+      // — registering it here is what lets colorForTarget resolve an edge's
+      // kind and apply EDGE_COLOR instead of always falling back to grey.
+      if ((a.type === "write" || a.type === "draw-shape" || a.type === "draw-arrow") && a.targetId && a.shapeId) {
         t2s.set(a.targetId, a.shapeId);
         s2t.set(a.shapeId, a.targetId);
       }
@@ -446,8 +477,21 @@ export default function TldrawCanvas({
       console.error("[WHITEBOARD_CANVAS_INIT_FAILURE]", message);
       setCanvasInitFailure(message);
     }
+    // A new lesson always starts read-only — see editingEnabled above.
+    setEditingEnabled(false);
+    editor.updateInstanceState({ isReadonly: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonPlan]);
+
+  // Keeps the editor's actual readonly flag in sync with isPlaying/
+  // editingEnabled on every change — separate from the two "reset to
+  // readonly" call sites above (mount, lesson change) because those fire
+  // BEFORE this effect would otherwise run for the very first render.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.updateInstanceState({ isReadonly: isPlaying || !editingEnabled });
+  }, [isPlaying, editingEnabled]);
 
   // ── Mount handler ─────────────────────────────────────────────────────────
   // Runs the SAME unconditional-clear-first sequence as the rebuild effect —
@@ -458,6 +502,11 @@ export default function TldrawCanvas({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
     clearTeachingLayer(editor);
+    // Read-only by default (see editingEnabled) — the isPlaying/editingEnabled
+    // effect above can't apply this on its own for the very first mount,
+    // since editorRef.current is still null when that effect's first run
+    // fires (this callback is what SETS editorRef.current).
+    editor.updateInstanceState({ isReadonly: true });
     if (lessonPlan) {
       registerAnchors(lessonPlan.actions);
       setTotalSteps(lessonPlan.actions.length);
@@ -627,6 +676,20 @@ export default function TldrawCanvas({
           </button>
 
           <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
+
+          {/* Read-only by default (locked during playback AND while paused/
+              finished) — this is the explicit, deliberate opt-in to draw on
+              top of the diagram. Disabled while playing (editing mid-lesson
+              would fight with the locked teaching layer's own updates) and
+              once already enabled (nothing left to opt into). */}
+          <button
+            onClick={() => setEditingEnabled(true)}
+            disabled={isPlaying || editingEnabled}
+            title={editingEnabled ? "Editing enabled" : "Unlock this canvas for your own annotations"}
+            style={isPlaying || editingEnabled ? BTN_DISABLED : BTN_MUTED}
+          >
+            {editingEnabled ? "✓ Editing" : "✎ Edit a copy"}
+          </button>
         </span>
       </div>
 
@@ -730,14 +793,22 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
       props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: "solid", dash: "draw", size: "s", color },
     };
   }
-  if (s.kind === "box" || s.kind === "circle" || s.kind === "brace") {
+  if (s.kind === "box" || s.kind === "circle" || s.kind === "brace" || s.kind === "diamond" || s.kind === "hexagon" || s.kind === "cloud") {
     if (!s.bounds) return null;
     // dash:"draw" gives tldraw's sketchy hand-drawn stroke; fill:"none" so the
     // performance reads as strokes being drawn, not solid cards being placed.
+    // "diamond"/"hexagon"/"cloud" map 1:1 to tldraw's own built-in geo shapes
+    // (decision points, warnings, and clinical pearls each get a real,
+    // distinct SHAPE — not just a different color on an identical
+    // rectangle). "brace" has no true tldraw equivalent and falls back to
+    // rectangle, same as before this change.
+    const GEO_FOR_KIND: Record<string, string> = {
+      circle: "ellipse", diamond: "diamond", hexagon: "hexagon", cloud: "cloud",
+    };
     return {
       type: "geo", x: s.bounds.x, y: s.bounds.y,
       props: {
-        geo: s.kind === "circle" ? "ellipse" : "rectangle",
+        geo: GEO_FOR_KIND[s.kind] ?? "rectangle",
         w: s.bounds.w, h: s.bounds.h,
         richText: toRichText(s.text ?? ""),
         fill: "none", dash: "draw", size: "m", color, font: "draw",

@@ -239,8 +239,8 @@ describe("pages/api/page-annotation-plan.ts — max_completion_tokens, not the d
     expect(block).toMatch(/if \(isInvalidRequestError\(firstErr\)\) throw firstErr;/);
   });
 
-  it("surfaces a distinct INVALID_REQUEST code/message, not the generic UPSTREAM_UNAVAILABLE, when the request itself was malformed", () => {
-    expect(src).toMatch(/"INVALID_REQUEST"/);
+  it("surfaces a distinct invalid_request code/message, not the generic provider_request, when the request itself was malformed", () => {
+    expect(src).toMatch(/"invalid_request"/);
     expect(src).toMatch(/request configuration error/);
   });
 
@@ -327,8 +327,8 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
     const idx = src.indexOf("export type ServerFailureStage =");
     const block = src.slice(idx, idx + 400);
     for (const stage of [
-      "missing_configuration", "openai_request_failed", "timeout", "empty_response",
-      "invalid_json", "schema_validation_failed", "quote_grounding_failed",
+      "configuration", "provider_request", "timeout", "empty_response",
+      "invalid_json", "schema_validation", "quote_grounding",
     ]) {
       expect(block).toMatch(new RegExp(`"${stage}"`));
     }
@@ -344,6 +344,36 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
   it("missing OPENAI_API_KEY uses the missing_configuration code specifically, not the generic openai_request_failed", () => {
     const idx = src.indexOf("if (!apiKey) {");
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/"missing_configuration"/);
+    expect(block).toMatch(/"configuration"/);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — prompt-contamination regression guard", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  // A real bug found in production: rule 11's worked "Good:" example was
+  // verbatim a real book page's actual sentence (about a patient interview).
+  // When that same page was later analyzed for real, the model echoed ONLY
+  // that one example sentence instead of comprehensively reading the whole
+  // page — a known LLM failure mode where a system-prompt example matching
+  // the live input gets reproduced instead of the input being read fresh.
+  // The fix: the worked example must be synthetic prose that can never
+  // collide with a real textbook page.
+  it("REQUIRED: rule 11's worked example is NOT the real 'patient interview' sentence that caused this bug", () => {
+    expect(src).not.toMatch(/the clinician should interview the\s*\n?\s*patient to identify and explore all the concerns, related conditions/);
+    expect(src).not.toMatch(/expectations that prompted the patient to seek care/);
+  });
+
+  it("rule 11 still demonstrates the full-sentence boundary with a Bad:/Good: pair, just using synthetic content", () => {
+    const idx = src.indexOf('Bad:  "...before recording the findings..."');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/Good: "Before recording the findings,/);
+    expect(block).toMatch(/\./); // still ends in terminal punctuation, demonstrating the rule
+  });
+
+  it("the prompt documents WHY the example must stay synthetic, so a future edit doesn't reintroduce real book text", () => {
+    expect(src).toMatch(/never copy real textbook\s*\n?\s*wording into this instruction/);
   });
 });

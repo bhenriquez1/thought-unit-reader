@@ -735,6 +735,12 @@ export default function ThoughtUnitReader() {
   // Reading position from the single ReadingFocusStore — no local state needed.
   const focusedEvidenceId = useReadingFocusStore(s => s.thoughtUnitId);
   const setFocusedEvidenceId = useReadingFocusStore.getState().setThoughtUnit;
+  // Two pipeline stages AFTER a SurgeonAnnotationPlan succeeds — geometry
+  // resolution against the live PDF text layer, and the final render pass —
+  // that useSurgeonAnnotations has no visibility into (only SmartPDFViewer
+  // can observe them). See lib/readingFocus/readingFocusStore.ts.
+  const annotationRenderStage  = useReadingFocusStore(s => s.annotationRenderStage);
+  const annotationRenderCounts = useReadingFocusStore(s => s.annotationRenderCounts);
   // True while Study Speech is actively reading a sentence aloud — keeps the
   // focusSnippet highlight in the PDF on the active sentence instead of auto-fading.
   const [speechReadingActive, setSpeechReadingActive] = useState(false);
@@ -5228,6 +5234,29 @@ export default function ThoughtUnitReader() {
                     <button
                       onClick={surgeonAnnotations.reanalyze}
                       className="ml-auto shrink-0 text-amber-300 hover:text-white underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {/* Distinct from the failure banner above: the AI analysis itself
+                    SUCCEEDED (status === "success") but a downstream stage this
+                    hook has no visibility into — locating the grounded quote in
+                    the live PDF text layer, or the final render pass — dropped
+                    some or all of it. Showing this only on success avoids ever
+                    stacking two banners for what is really one failed page. */}
+                {surgeonAnnotations.status === "success" && annotationRenderStage && annotationRenderCounts && (
+                  <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-orange-700/50 bg-orange-900/70 px-4 py-1.5 text-[11px] text-orange-100 backdrop-blur-sm">
+                    <span>⚠</span>
+                    <span className="flex-1">
+                      {annotationRenderStage === "geometry_resolution"
+                        ? `${annotationRenderCounts.grounded - annotationRenderCounts.geometryResolved} of ${annotationRenderCounts.grounded} annotations could not be located on this page.`
+                        : `${annotationRenderCounts.grounded - annotationRenderCounts.rendered} of ${annotationRenderCounts.grounded} located annotations could not be rendered.`}
+                    </span>
+                    <button
+                      onClick={surgeonAnnotations.reanalyze}
+                      className="ml-auto shrink-0 text-orange-300 hover:text-white underline"
                     >
                       Retry
                     </button>

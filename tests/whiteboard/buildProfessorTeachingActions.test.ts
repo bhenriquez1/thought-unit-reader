@@ -97,6 +97,15 @@ describe("buildProfessorTeachingActions — geometry is deterministic, never AI-
     expect(plan.actions.some(a => a.type === "draw-arrow")).toBe(false);
   });
 
+  it("REQUIRED: an edge script entry BETWEEN its two endpoints ('here's A... this leads to... here's B') still draws the arrow — a real bug where bounds were only computed when a node's OWN script entry was reached, so any edge mentioned before its 'to' node was silently dropped with no error, even though both endpoints ARE going to be drawn", () => {
+    // makeGrounded()'s default nodeScripts order is exactly this shape:
+    // [n1, e1, n2] — the edge sits between its own two endpoints, which is
+    // also the natural conversational order rule 3 of the AI prompt asks
+    // for ("connect... explaining why two points relate").
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "draw-arrow")).toBe(true);
+  });
+
   it("is deterministic — same vsg/script/snapshot always produce an equal plan", () => {
     const a = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     const b = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
@@ -183,5 +192,124 @@ describe("buildProfessorTeachingActions — learningObjective is spoken right af
   it("carries learningObjective through onto the final plan", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     expect(plan.learningObjective).toBe(makeGrounded().learningObjective);
+  });
+});
+
+describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/pearl node gets its OWN shape, not just a rectangle in a different color", () => {
+  function makeVariedVsg(): VisualSceneGraph {
+    return {
+      id: "vsg_shapes", grammar: "flow", drawType: "flow",
+      nodes: [
+        { id: "hub",      label: "hub",      body: "b", canonicalType: "definition",         importanceLevel: "critical",  tier: "master",   role: "hub",     position: { x: 85, y: 22 },  size: { w: 200, h: 52 }, sourceId: "src-hub" },
+        { id: "decision", label: "decision", body: "b", canonicalType: "decision",            importanceLevel: "high",      tier: "decision", role: "spoke",   position: { x: 85, y: 104 }, size: { w: 290, h: 52 }, sourceId: "src-decision" },
+        { id: "trap",     label: "trap",     body: "b", canonicalType: "trap",                importanceLevel: "high",      tier: "danger",   role: "spoke",   position: { x: 85, y: 186 }, size: { w: 290, h: 52 }, sourceId: "src-trap" },
+        { id: "pearl",    label: "pearl",    body: "b", canonicalType: "clinicalPearl",       importanceLevel: "reference", tier: "pearl",    role: "spoke",   position: { x: 85, y: 268 }, size: { w: 290, h: 52 }, sourceId: "src-pearl" },
+        { id: "step",     label: "step",     body: "b", canonicalType: "procedure",           importanceLevel: "high",      tier: "step",     role: "step",    position: { x: 85, y: 350 }, size: { w: 290, h: 52 }, sourceId: "src-step" },
+      ],
+      edges: [], canvas: { width: 460, height: 500 }, builtAt: 0,
+    };
+  }
+  function variedGrounded(): GroundedProfessorLessonScript {
+    return {
+      title: "Test", visualGrammar: "procedure", learningObjective: "Learn.", synthesisQuestion: "Explain back.",
+      nodeScripts: [
+        { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false },
+        { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false },
+        { targetId: "trap",     shortLabel: "Trap",     narration: "Careful.",  tone: "warn",       pace: "normal", emphasize: false },
+        { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false },
+        { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false },
+      ],
+    };
+  }
+
+  function shapeFor(sourceId: string, plan = buildProfessorTeachingActions(makeVariedVsg(), variedGrounded(), SNAPSHOT)) {
+    const action = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === sourceId);
+    return (action as any)?.shape;
+  }
+
+  it("REQUIRED: a hub-role node draws as a circle", () => {
+    expect(shapeFor("src-hub")).toBe("circle");
+  });
+
+  it("REQUIRED: a decision-tier/canonicalType node draws as a diamond — the standard flowchart decision symbol", () => {
+    expect(shapeFor("src-decision")).toBe("diamond");
+  });
+
+  it("REQUIRED: a danger-tier (trap) node draws as a hexagon, not a rectangle with just a different border color", () => {
+    expect(shapeFor("src-trap")).toBe("hexagon");
+  });
+
+  it("REQUIRED: a pearl-tier (clinical insight) node draws as a cloud", () => {
+    expect(shapeFor("src-pearl")).toBe("cloud");
+  });
+
+  it("a plain step/procedure node still draws as a box (the sensible default for a process step)", () => {
+    expect(shapeFor("src-step")).toBe("box");
+  });
+
+  it("REQUIRED: the 5 nodes above produce at least 4 DISTINCT shape kinds on one lesson — the concrete fix for 'everything renders as the same bordered box'", () => {
+    const plan = buildProfessorTeachingActions(makeVariedVsg(), variedGrounded(), SNAPSHOT);
+    const shapes = new Set(["src-hub", "src-decision", "src-trap", "src-pearl", "src-step"].map(id => shapeFor(id, plan)));
+    expect(shapes.size).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("buildProfessorTeachingActions — edge arrows carry a targetId and a short deterministic label", () => {
+  it("REQUIRED: a draw-arrow action's targetId is the edge's own id — previously arrows carried no targetId at all, leaving TldrawCanvas's EDGE_COLOR permanently dead code", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const arrow = plan.actions.find(a => a.type === "draw-arrow");
+    expect(arrow).toBeDefined();
+    expect((arrow as any).targetId).toBe("e1");
+  });
+
+  it("REQUIRED: a 'sequence'-kind edge gets a short deterministic label ('then') as its own write action, positioned at the arrow's midpoint", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const arrowAction = plan.actions.find(a => a.type === "draw-arrow") as any;
+    const labelAction = plan.actions.find(a => a.type === "write" && a.text === "then") as any;
+    expect(labelAction).toBeDefined();
+    const midX = (arrowAction.from.x + arrowAction.to.x) / 2;
+    const midY = (arrowAction.from.y + arrowAction.to.y) / 2;
+    expect(labelAction.y).toBeCloseTo(midY - 8, 0);
+    // x is midX minus HALF the label's own estimated width (centering, not
+    // an exact pixel match since width depends on estimateLabelWidth) — a
+    // short 4-char label like "then" is well under 100px wide either way.
+    expect(Math.abs(labelAction.x - midX)).toBeLessThan(100);
+  });
+
+  it("the edge label's action is linked into that edge's own narration segment", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const labelAction = plan.actions.find(a => a.type === "write" && a.text === "then") as any;
+    const segment = plan.segments.find(s => s.text === "This leads directly to stabilization.");
+    expect(segment).toBeDefined();
+    expect(segment!.linkedActionIds).toContain(labelAction.actionId);
+  });
+
+  it("every EDGE_KIND_LABEL value is short (<=3 words) — an arrow label is a connective phrase, not another sentence to read", () => {
+    // Exercise all 5 kinds via 5 one-edge VSGs, confirming each produces a short label.
+    const kinds = ["sequence", "causation", "contrast", "elaboration", "reference"] as const;
+    for (const kind of kinds) {
+      const vsg: VisualSceneGraph = {
+        id: `vsg_${kind}`, grammar: "flow", drawType: "flow",
+        nodes: [
+          { id: "n1", label: "n1", body: "b", canonicalType: "definition", importanceLevel: "critical", tier: "master", role: "step", position: { x: 85, y: 22 }, size: { w: 290, h: 52 }, sourceId: "src-n1" },
+          { id: "n2", label: "n2", body: "b", canonicalType: "procedure", importanceLevel: "high", tier: "step", role: "step", position: { x: 85, y: 104 }, size: { w: 290, h: 52 }, sourceId: "src-n2" },
+        ],
+        edges: [{ id: "e1", fromId: "n1", toId: "n2", kind }],
+        canvas: { width: 460, height: 300 }, builtAt: 0,
+      };
+      const grounded: GroundedProfessorLessonScript = {
+        title: "T", visualGrammar: "procedure", learningObjective: "L", synthesisQuestion: "Q",
+        nodeScripts: [
+          { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false },
+          { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false },
+          { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false },
+        ],
+      };
+      const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+      const arrow = plan.actions.find(a => a.type === "draw-arrow") as any;
+      const label = plan.actions.find(a => a.type === "write" && a.shapeId === `shape:pe-label-${arrow.targetId}`) as any;
+      expect(label).toBeDefined();
+      expect(label.text.split(/\s+/).length).toBeLessThanOrEqual(3);
+    }
   });
 });
