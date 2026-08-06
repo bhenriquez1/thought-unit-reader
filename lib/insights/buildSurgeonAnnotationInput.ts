@@ -57,6 +57,16 @@ export interface SurgeonAnnotationInput {
   };
   /** Light continuity context only — never the primary description of the page. */
   existingCanonicalUnits: ExistingCanonicalUnitContext[];
+  /**
+   * Gemini's description of any figure/diagram/chart/table/radiograph/
+   * histology/anatomy image visible on this page (pages/api/gemini-visual.ts),
+   * resolved BEFORE this request is built — see
+   * components/reader/useSurgeonAnnotations.ts's resolveVisualContext(). Null
+   * when Gemini is unconfigured, found nothing, or its call failed/timed out
+   * — text-only analysis proceeds exactly as before Gemini existed; this is
+   * additive merge input, never a required dependency.
+   */
+  visualContext: string | null;
 }
 
 /** Best-effort heading for a page from its raw extracted text — the first
@@ -94,6 +104,7 @@ export function buildSurgeonAnnotationInput(args: {
   domain: PageDomain;
   semanticPack: SemanticPack;
   existingCanonicalUnits: ExistingCanonicalUnitContext[];
+  visualContext?: string | null;
 }): SurgeonAnnotationInput {
   const cleanedPageText = cleanActivePageText(args.pageText, "surgeon-input");
 
@@ -114,5 +125,6 @@ export function buildSurgeonAnnotationInput(args: {
     domain:                 args.domain,
     semanticPack:           projectSemanticPack(args.semanticPack),
     existingCanonicalUnits: args.existingCanonicalUnits.slice(0, 20),
+    visualContext:          args.visualContext ?? null,
   };
 }

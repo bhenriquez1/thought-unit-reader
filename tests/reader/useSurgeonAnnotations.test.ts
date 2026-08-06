@@ -444,3 +444,37 @@ describe("useSurgeonAnnotations.ts — grounds against cleaned text, matching wh
     expect(src).not.toMatch(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current\)/);
   });
 });
+
+describe("useSurgeonAnnotations.ts — Gemini visual context is merged into the ONE page read, never a second independent analysis", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("imports resolveVisualContext", () => {
+    expect(src).toMatch(/import \{ resolveVisualContext \} from "@\/lib\/insights\/resolveVisualContext"/);
+  });
+
+  it("REQUIRED: resolveVisualContext is awaited BEFORE buildSurgeonAnnotationInput is called, so its result can be included in the SAME request", () => {
+    const visualIdx = src.indexOf("const visualContext = await resolveVisualContext({");
+    const inputIdx = src.indexOf("const input = buildSurgeonAnnotationInput({");
+    expect(visualIdx).toBeGreaterThan(-1);
+    expect(inputIdx).toBeGreaterThan(visualIdx);
+  });
+
+  it("passes visualContext into buildSurgeonAnnotationInput", () => {
+    const idx = src.indexOf("const input = buildSurgeonAnnotationInput({");
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/visualContext,/);
+  });
+
+  it("REQUIRED: uses the SAME AbortController as the OpenAI fetch that follows — a real page navigation cancels both, not just one", () => {
+    const idx = src.indexOf("const visualContext = await resolveVisualContext({");
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/signal:\s*ctrl\.signal,/);
+  });
+
+  it("checks ctrl.signal.aborted immediately after resolveVisualContext resolves, before building the OpenAI request", () => {
+    const idx = src.indexOf("const visualContext = await resolveVisualContext({");
+    const block = src.slice(idx, src.indexOf("const input = buildSurgeonAnnotationInput({"));
+    expect(block).toMatch(/if \(ctrl\.signal\.aborted\) return;/);
+  });
+});
