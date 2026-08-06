@@ -154,7 +154,25 @@ describe("pages/api/page-annotation-plan.ts — strictly current-page grounded: 
   it("falls back to flat pageText only when no blocks were provided", () => {
     const idx = src.indexOf("const blocksBlock");
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/body\.pageText\.slice\(0, 6000\)/);
+    expect(block).toMatch(/body\.pageText\.slice\(0, PAGE_TEXT_FALLBACK_LIMIT\)/);
+  });
+
+  it("REQUIRED: the fallback-path text limit is a generous upper bound for an ordinary textbook page (~18,000 chars), not the old, much tighter 6000-char cut", () => {
+    expect(src).toMatch(/const PAGE_TEXT_FALLBACK_LIMIT = 18_000;/);
+    expect(src).not.toMatch(/\.slice\(0,\s*6000\)/);
+  });
+
+  it("REQUIRED: truncation on the fallback path is reported explicitly, never silent", () => {
+    const idx = src.indexOf("const pageTextTruncated =");
+    expect(idx).toBeGreaterThan(-1);
+    expect(src.slice(idx, idx + 120)).toMatch(/blocks\.length === 0 && body\.pageText\.length > PAGE_TEXT_FALLBACK_LIMIT/);
+    expect(src).toMatch(/if \(pageTextTruncated\) \{\s*\n\s*console\.warn\("\[SURGEON_PLAN_PAGE_TEXT_TRUNCATED\]"/);
+  });
+
+  it("truncation is only ever a fallback-path concern — the primary structured-blocks path is never capped", () => {
+    const idx = src.indexOf("const pageTextTruncated =");
+    const block = src.slice(idx, idx + 120);
+    expect(block).toMatch(/blocks\.length === 0/); // only applies when the primary path had nothing
   });
 
   it("prompt instructs the model to read every block, including headings and tables, not skip them as decoration", () => {
@@ -282,5 +300,50 @@ describe("pages/api/page-annotation-plan.ts — visualContext (Gemini's merged f
     const idx = src.indexOf("const userTextBlock =");
     const block = src.slice(idx, idx + 700);
     expect(block).toMatch(/visualContextBlock \+/);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage codes on every response", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: requestId is generated before any validation, so even a rejected request (wrong method, missing field) carries one", () => {
+    const requestIdIdx = src.indexOf("const requestId = newRequestId();");
+    const methodCheckIdx = src.indexOf('if (req.method !== "POST")');
+    expect(requestIdIdx).toBeGreaterThan(-1);
+    expect(methodCheckIdx).toBeGreaterThan(requestIdIdx);
+  });
+
+  it("REQUIRED: requestId is present on the ok:true success response", () => {
+    expect(src).toMatch(/res\.status\(200\)\.json\(\{ ok: true, plan: result\.data, pageContentHash: body\.pageContentHash, requestId \}\);/);
+  });
+
+  it("REQUIRED: requestId is present on every degraded (ok:false) response via the shared degraded() helper", () => {
+    expect(src).toMatch(/function degraded\(message: string, code: ServerFailureStage, requestId: string\): AnnotationPlanResponse \{/);
+    expect(src).toMatch(/return \{ ok: false, error: message, code, requestId, fallbackAllowed: true \};/);
+  });
+
+  it("REQUIRED: the full documented failure-stage taxonomy is present in ServerFailureStage", () => {
+    const idx = src.indexOf("export type ServerFailureStage =");
+    const block = src.slice(idx, idx + 400);
+    for (const stage of [
+      "missing_configuration", "openai_request_failed", "timeout", "empty_response",
+      "invalid_json", "schema_validation_failed", "quote_grounding_failed",
+    ]) {
+      expect(block).toMatch(new RegExp(`"${stage}"`));
+    }
+  });
+
+  it("distinguishes a timeout/abort from a generic upstream failure, using its own distinct code", () => {
+    const idx = src.indexOf("const isTimeout");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 600);
+    expect(block).toMatch(/isTimeout \? "timeout"/);
+  });
+
+  it("missing OPENAI_API_KEY uses the missing_configuration code specifically, not the generic openai_request_failed", () => {
+    const idx = src.indexOf("if (!apiKey) {");
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/"missing_configuration"/);
   });
 });

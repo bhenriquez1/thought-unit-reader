@@ -34,15 +34,23 @@ import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity"
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
-import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
+import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 import {
   getSurgeonAnnotationPlan,
   saveSurgeonAnnotationPlan,
 } from "@/lib/canonical/surgeonAnnotationPlanStore";
-import type { AnnotationPlanResponse } from "@/pages/api/page-annotation-plan";
+import type { AnnotationPlanResponse, ServerFailureStage } from "@/pages/api/page-annotation-plan";
 
 export type SurgeonAnnotationStatus = "idle" | "loading" | "success" | "error";
 export type SurgeonPlanTier = "ready" | "empty" | "failed";
+
+// The server's own failure-stage codes, plus 3 that can only be detected
+// client-side: a response whose echoed pageTruthKey/pageContentHash no
+// longer matches the current page (the student navigated away before the
+// response arrived), every proposed quote failing client-side sentence
+// grounding despite a non-empty plan, or a network-level failure that never
+// reached the server at all (no HTTP response to carry a server code).
+export type ClientFailureStage = ServerFailureStage | "page_identity_mismatch" | "no_grounded_annotations" | "network_error";
 
 export interface UseSurgeonAnnotationsResult {
   plan: SurgeonAnnotationPlan | null;
@@ -94,6 +102,16 @@ export interface UseSurgeonAnnotationsResult {
    *  quotes survived verification) — whatever was already showing (cache or
    *  nothing) stays up; this is shown alongside it, never in place of it. */
   annotationErrorMessage: string | null;
+  /** Exact pipeline stage a failure occurred at — current page extraction ->
+   *  /api/page-annotation-plan -> OpenAI -> schema validation -> sentence
+   *  grounding -> density limiting -> PDF overlay. Null when there is no
+   *  active failure. Paired with annotationRequestId for support/debugging
+   *  without ever needing to log page or annotation text. */
+  annotationFailureStage: ClientFailureStage | null;
+  /** The requestId the server (or, for a network failure, this client)
+   *  assigned to the most recent attempt — privacy-safe, carries no page
+   *  content, safe to show in a UI or support ticket. */
+  annotationRequestId: string | null;
   /** Explicit "reanalyze page" — bypasses the cache-hit check, always fetches fresh. */
   reanalyze: () => void;
 }
@@ -223,6 +241,8 @@ export function useSurgeonAnnotations({
   const [wholePageAnnotations, setWholePageAnnotations] = useState<GroundedSurgeonAnnotation[]>([]);
   const [status,           setStatus]           = useState<SurgeonAnnotationStatus>("idle");
   const [annotationErrorMessage, setAnnotationErrorMessage] = useState<string | null>(null);
+  const [annotationFailureStage, setAnnotationFailureStage] = useState<ClientFailureStage | null>(null);
+  const [annotationRequestId, setAnnotationRequestId]       = useState<string | null>(null);
   const [reanalyzeCount,   setReanalyzeCount]   = useState(0);
 
   const abortRef          = useRef<AbortController | null>(null);
@@ -264,6 +284,8 @@ export function useSurgeonAnnotations({
     setWholePageAnnotations([]);
     setStatus("idle");
     setAnnotationErrorMessage(null);
+    setAnnotationFailureStage(null);
+    setAnnotationRequestId(null);
     startedKeyRef.current = null;
 
     let cancelled = false;
@@ -387,14 +409,22 @@ export function useSurgeonAnnotations({
         if (ctrl.signal.aborted) return;
 
         if (!data.ok) {
-          console.warn("[SURGEON_PLAN_DEGRADED]", { pageTruthKey, code: data.code, message: data.error });
+          console.warn("[SURGEON_PLAN_DEGRADED]", { pageTruthKey, code: data.code, requestId: data.requestId, message: data.error });
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
+          setAnnotationFailureStage(data.code);
+          setAnnotationRequestId(data.requestId);
           setStatus("error");
           return; // keep whatever plan/highlightTargets were already set (cache or none)
         }
 
         if (data.plan.pageTruthKey !== pageTruthKey) {
-          // Stale response for a page we've since navigated away from — drop it.
+          // Stale response for a page we've since navigated away from — drop
+          // it, but still surface a traceable identity-mismatch stage rather
+          // than silently doing nothing (the student is left on whatever was
+          // already showing; this is diagnostic, not a blocking error state).
+          console.warn("[SURGEON_PLAN_PAGE_IDENTITY_MISMATCH]", { expected: pageTruthKey, received: data.plan.pageTruthKey, requestId: data.requestId });
+          setAnnotationFailureStage("page_identity_mismatch");
+          setAnnotationRequestId(data.requestId);
           return;
         }
 
@@ -409,7 +439,9 @@ export function useSurgeonAnnotations({
           cleanActivePageText(pageTextRef.current),
         );
         if (data.pageContentHash !== currentContentHash) {
-          console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash });
+          console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash, requestId: data.requestId });
+          setAnnotationFailureStage("page_identity_mismatch");
+          setAnnotationRequestId(data.requestId);
           return;
         }
 
@@ -417,8 +449,12 @@ export function useSurgeonAnnotations({
         const grounded = limitAnnotationDensity(wholePage);
         const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
-          // Every proposed quote failed verification — degraded, not a hard error.
+          // Every proposed quote failed client-side sentence grounding —
+          // degraded, not a hard error, but a distinct stage from the
+          // server's own (non-authoritative) quote_grounding_failed check.
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
+          setAnnotationFailureStage("no_grounded_annotations");
+          setAnnotationRequestId(data.requestId);
           setStatus("error");
           return;
         }
@@ -428,6 +464,8 @@ export function useSurgeonAnnotations({
         setGroundedAnnotations(grounded);
         setWholePageAnnotations(wholePage);
         setAnnotationErrorMessage(null);
+        setAnnotationFailureStage(null);
+        setAnnotationRequestId(data.requestId);
         setStatus("success");
 
         const cacheKey = buildAnnotationCacheKey({
@@ -448,8 +486,14 @@ export function useSurgeonAnnotations({
         });
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
-        console.error("[SURGEON_PLAN_ERROR]", { pageTruthKey, message: err?.message ?? String(err) });
+        // No HTTP response ever arrived — the failure never reached the
+        // server, so there's no server-issued requestId to carry. Mint one
+        // client-side so this failure is still traceable the same way.
+        const clientRequestId = newRequestId();
+        console.error("[SURGEON_PLAN_ERROR]", { pageTruthKey, requestId: clientRequestId, message: err?.message ?? String(err) });
         setAnnotationErrorMessage(DEGRADED_MESSAGE);
+        setAnnotationFailureStage("network_error");
+        setAnnotationRequestId(clientRequestId);
         setStatus("error");
       }
     })();
@@ -473,6 +517,8 @@ export function useSurgeonAnnotations({
     planTier:             tiered.planTier,
     status,
     annotationErrorMessage,
+    annotationFailureStage,
+    annotationRequestId,
     reanalyze,
   };
 }
