@@ -660,6 +660,7 @@ export default function SmartPDFViewer({
   useEffect(() => {
     setOverlayRects([]);
     useReadingFocusStore.getState().setPdfRenderedAnchors([]);
+    useReadingFocusStore.getState().setAnnotationRenderStage(null, null);
     dismissChip();
   }, [effectiveZoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -691,6 +692,7 @@ export default function SmartPDFViewer({
     console.log("[OVERLAY_CLEAR] highlightKey changed", { highlightKey });
     setOverlayRects([]);
     useReadingFocusStore.getState().setPdfRenderedAnchors([]);
+    useReadingFocusStore.getState().setAnnotationRenderStage(null, null);
     setOverlayVersion(v => v + 1);
 
     // [TEXT_LAYER_CLEANUP] — verify no lingering CSS highlight marks on text layer spans.
@@ -1263,14 +1265,36 @@ export default function SmartPDFViewer({
       // annotationPlanCount, the stage before grounding).
       //   planner annotation → grounded quote → resolved sentence →
       //   PDF text-layer match → geometry rectangles → PdfEvidenceOverlay render
+      const canonicalTargetCount = highlightTargets?.length ?? 0;
+      // Two pipeline stages AFTER quote grounding that previously had no
+      // signal outside this console.log: a grounded quote can still fail to
+      // locate in the live PDF text layer at all (geometry_resolution — the
+      // most likely explanation for "the AI proposed several annotations
+      // but only one/none actually appear on the page"), or resolve to
+      // geometry that the final dedup pass then drops entirely (render).
+      // null means either nothing to resolve, every target located, or only
+      // a MINORITY (<half) failed to locate — a single occasional miss from
+      // minor PDF-text-extraction whitespace differences isn't itself an
+      // error state; a majority silently vanishing is. Same "at least half"
+      // threshold pages/api/page-annotation-plan.ts's own quotesPlausible()
+      // already uses, for consistency.
+      const geometryDropRatio = canonicalTargetCount > 0
+        ? (canonicalTargetCount - geometryResolvedCount) / canonicalTargetCount
+        : 0;
+      const renderStage: "geometry_resolution" | "render" | null =
+        canonicalTargetCount === 0     ? null
+        : geometryDropRatio >= 0.5     ? "geometry_resolution"
+        : afterDedup.length === 0      ? "render"
+        : null;
       console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
         pageTruthKey:            pageTruthKey ?? null,
         documentId:              docId ?? null,
         pageNumber:              currentPage,
-        groundedAnnotationCount: highlightTargets?.length ?? 0,
+        groundedAnnotationCount: canonicalTargetCount,
         geometryResolvedCount,
-        geometryFailedCount:     (highlightTargets?.length ?? 0) - geometryResolvedCount,
+        geometryFailedCount:     canonicalTargetCount - geometryResolvedCount,
         renderedAnnotationCount: afterDedup.length,
+        renderStage,
       });
       if (staleBuildCancelled) return;
       setOverlayRects(afterDedup);
@@ -1278,6 +1302,14 @@ export default function SmartPDFViewer({
       // [CANONICAL_SYNC] can report pdfAnchorRendered from observed state, not assumption.
       useReadingFocusStore.getState().setPdfRenderedAnchors(
         [...new Set(afterDedup.map(r => r.id).filter(Boolean))]
+      );
+      useReadingFocusStore.getState().setAnnotationRenderStage(
+        renderStage,
+        canonicalTargetCount === 0 ? null : {
+          grounded:         canonicalTargetCount,
+          geometryResolved: geometryResolvedCount,
+          rendered:         afterDedup.length,
+        },
       );
     };
 

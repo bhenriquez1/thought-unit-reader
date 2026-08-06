@@ -43,25 +43,27 @@ const RETRY_BACKOFF_MS = 700;
 // Exact failure-stage codes for this endpoint — every degraded response
 // carries one, alongside requestId, so a specific request's failure point in
 // the pipeline (current page extraction -> /api/page-annotation-plan ->
-// OpenAI -> schema validation -> sentence grounding -> density limiting ->
-// PDF overlay) can be identified without ever logging page/annotation text.
-// RATE_LIMITED and INVALID_REQUEST are additional, more specific
-// subcategories of openai_request_failed retained for their existing,
+// provider request -> schema validation -> sentence/quote grounding ->
+// [client-only, see ClientFailureStage in useSurgeonAnnotations.ts:
+// geometry resolution against the live PDF text layer -> render]) can be
+// identified without ever logging page/annotation text.
+// rate_limited and invalid_request are additional, more specific
+// subcategories of provider_request retained for their existing,
 // already-tested behavior (skip-retry-on-400, distinct rate-limit message).
 export type ServerFailureStage =
   | "method_not_allowed"
   | "missing_ptk"
   | "missing_page_text"
   | "missing_page_content_hash"
-  | "missing_configuration"
-  | "openai_request_failed"
+  | "configuration"
+  | "provider_request"
   | "timeout"
   | "empty_response"
   | "invalid_json"
-  | "schema_validation_failed"
-  | "quote_grounding_failed"
-  | "RATE_LIMITED"
-  | "INVALID_REQUEST";
+  | "schema_validation"
+  | "quote_grounding"
+  | "rate_limited"
+  | "invalid_request";
 
 export type AnnotationPlanResponse =
   | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string; requestId: string }
@@ -173,12 +175,14 @@ Rules:
     5-8 range for what a well-annotated dense page actually looks like.
 11. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
     looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
-    - spanScope: "fullSentence" (the default — use this for almost everything) — exactQuote
       MUST run from the sentence's first meaningful word to its ending punctuation (. ; or :).
-      Bad:  "...before considering a diagnosis or treatment..."
-      Good: "Before considering a diagnosis or treatment, the clinician should interview the
-             patient to identify and explore all the concerns, related conditions, and
-             expectations that prompted the patient to seek care."
+      This worked example is deliberately generic, invented prose — never copy real textbook
+      wording into this instruction, or a page containing a similar real passage will bias you
+      toward echoing the example instead of reading that page fresh.
+      Bad:  "...before recording the findings..."
+      Good: "Before recording the findings, the examiner should re-check the instrument
+             calibration, confirm the patient's identity against the chart, and note the
+             time the measurement was taken."
     - spanScope: "entity" — ONLY for a single term being defined, a drug name, an anatomical
       structure, an equation, a chemical formula, or a short symbol/definition-term where
       highlighting just that span (not the whole sentence) is the deliberately correct
@@ -320,7 +324,7 @@ export default async function handler(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("[SURGEON_PLAN_UNAVAILABLE]", { reason: "OPENAI_API_KEY missing", ...diagnosticIds });
-    res.status(200).json(degraded("Advanced page analysis is not configured on the server.", "missing_configuration", requestId));
+    res.status(200).json(degraded("Advanced page analysis is not configured on the server.", "configuration", requestId));
     return;
   }
 
@@ -398,7 +402,7 @@ export default async function handler(
     const isRateLimited     = err instanceof OpenAI.APIError && err.status === 429;
     const isInvalidRequest  = isInvalidRequestError(err);
     const code: ServerFailureStage =
-      isTimeout ? "timeout" : isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "openai_request_failed";
+      isTimeout ? "timeout" : isRateLimited ? "rate_limited" : isInvalidRequest ? "invalid_request" : "provider_request";
     console.error("[SURGEON_PLAN_FAILED]", {
       ...diagnosticIds,
       stage:      code,
@@ -440,14 +444,14 @@ export default async function handler(
 
   const result = SurgeonAnnotationPlanSchema.safeParse(parsed);
   if (!result.success) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation_failed", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation_failed", requestId));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation", requestId));
     return;
   }
 
   if (!quotesPlausible(result.data, body.pageText)) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "quote_grounding_failed", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "quote_grounding_failed", requestId));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "quote_grounding", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "quote_grounding", requestId));
     return;
   }
 
