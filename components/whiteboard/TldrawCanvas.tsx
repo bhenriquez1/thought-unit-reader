@@ -13,8 +13,11 @@
 //     visibly constructing the idea" — the canvas starts nearly blank and
 //     shapes are born as the professor writes/draws them, not pre-placed and
 //     faded in.
-//   STUDENT LAYER — unlocked, tldraw's own native (always-visible) toolbar.
-//     Untouched by playback.
+//   STUDENT LAYER — tldraw's own native (always-visible) toolbar draws on
+//     top of the teaching layer, but the editor itself is READ-ONLY by
+//     default: locked while playing, and locked even while paused/finished
+//     until the student explicitly clicks "Edit a copy" (editingEnabled
+//     state below). A fresh lesson always resets this back to locked.
 //
 // Every entry point (autoplay's forward step, Next, Previous, Restart, "Show
 // complete diagram") funnels through ONE function, applyStateAtStep, which
@@ -207,6 +210,12 @@ export default function TldrawCanvas({
   const [stepIndex, setStepIndexState] = useState(-1);
   const stepIndexRef = useRef(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  // The teaching canvas is READ-ONLY by default — locked while playing AND
+  // while paused/finished, until the student explicitly clicks "Edit a
+  // copy." A fresh lesson (new pageTruthKey/documentId/activeCanonicalUnitId
+  // — see the rebuild effect below) always resets this back to false, so
+  // editing access from a PRIOR page's lesson never carries over.
+  const [editingEnabled, setEditingEnabled] = useState(false);
   const [speed, setSpeed] = useState<PlaybackSpeed>("normal");
   const [narrationEnabled, setNarrationEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -468,8 +477,21 @@ export default function TldrawCanvas({
       console.error("[WHITEBOARD_CANVAS_INIT_FAILURE]", message);
       setCanvasInitFailure(message);
     }
+    // A new lesson always starts read-only — see editingEnabled above.
+    setEditingEnabled(false);
+    editor.updateInstanceState({ isReadonly: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonPlan]);
+
+  // Keeps the editor's actual readonly flag in sync with isPlaying/
+  // editingEnabled on every change — separate from the two "reset to
+  // readonly" call sites above (mount, lesson change) because those fire
+  // BEFORE this effect would otherwise run for the very first render.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.updateInstanceState({ isReadonly: isPlaying || !editingEnabled });
+  }, [isPlaying, editingEnabled]);
 
   // ── Mount handler ─────────────────────────────────────────────────────────
   // Runs the SAME unconditional-clear-first sequence as the rebuild effect —
@@ -480,6 +502,11 @@ export default function TldrawCanvas({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
     clearTeachingLayer(editor);
+    // Read-only by default (see editingEnabled) — the isPlaying/editingEnabled
+    // effect above can't apply this on its own for the very first mount,
+    // since editorRef.current is still null when that effect's first run
+    // fires (this callback is what SETS editorRef.current).
+    editor.updateInstanceState({ isReadonly: true });
     if (lessonPlan) {
       registerAnchors(lessonPlan.actions);
       setTotalSteps(lessonPlan.actions.length);
@@ -649,6 +676,20 @@ export default function TldrawCanvas({
           </button>
 
           <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
+
+          {/* Read-only by default (locked during playback AND while paused/
+              finished) — this is the explicit, deliberate opt-in to draw on
+              top of the diagram. Disabled while playing (editing mid-lesson
+              would fight with the locked teaching layer's own updates) and
+              once already enabled (nothing left to opt into). */}
+          <button
+            onClick={() => setEditingEnabled(true)}
+            disabled={isPlaying || editingEnabled}
+            title={editingEnabled ? "Editing enabled" : "Unlock this canvas for your own annotations"}
+            style={isPlaying || editingEnabled ? BTN_DISABLED : BTN_MUTED}
+          >
+            {editingEnabled ? "✓ Editing" : "✎ Edit a copy"}
+          </button>
         </span>
       </div>
 

@@ -76,3 +76,38 @@ describe("TldrawCanvas.tsx — per-step camera padding scales with content, floo
     expect(src).toMatch(/else if \(index === -1\) \{\s*\n\s*editor\.zoomToFit\(\);/);
   });
 });
+
+describe("TldrawCanvas.tsx — read-only teaching canvas + explicit 'Edit a copy' opt-in", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: editingEnabled defaults to false — the canvas is read-only until an explicit opt-in, not just during active playback", () => {
+    expect(src).toMatch(/const \[editingEnabled, setEditingEnabled\] = useState\(false\);/);
+  });
+
+  it("REQUIRED: the editor's readonly flag is isPlaying OR NOT editingEnabled — locked during playback, and locked by default even while paused/finished until the student opts in", () => {
+    const idx = src.indexOf("editor.updateInstanceState({ isReadonly: isPlaying || !editingEnabled });");
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("REQUIRED: handleMount sets isReadonly:true immediately — the canvas is never briefly editable on first paint before the sync effect catches up", () => {
+    const idx = src.indexOf("const handleMount = useCallback((editor: Editor) => {");
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/editor\.updateInstanceState\(\{ isReadonly: true \}\)/);
+  });
+
+  it("REQUIRED: a new lesson (lessonPlan reference change) resets editingEnabled back to false and re-locks the canvas — editing access from a prior page's lesson never carries over", () => {
+    const idx = src.indexOf("// A new lesson always starts read-only");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 160);
+    expect(block).toMatch(/setEditingEnabled\(false\);/);
+    expect(block).toMatch(/editor\.updateInstanceState\(\{ isReadonly: true \}\)/);
+  });
+
+  it("REQUIRED: the 'Edit a copy' button exists, is disabled while playing, and is disabled once already enabled", () => {
+    const idx = src.indexOf('onClick={() => setEditingEnabled(true)}');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/disabled=\{isPlaying \|\| editingEnabled\}/);
+  });
+});
