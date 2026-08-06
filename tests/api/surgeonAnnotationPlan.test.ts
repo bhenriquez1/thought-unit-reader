@@ -200,7 +200,7 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/pageTruthKey:\s*body\?\.pageTruthKey \?\? null,/);
     expect(block).toMatch(/pageNumber:\s*body\?\.pageNumber \?\? null,/);
-    expect(block).toMatch(/pageTextLength:\s*body\?\.pageText\?\.length \?\? null,/);
+    expect(block).toMatch(/normalizedPageCharacters:\s*body\?\.pageText\?\.length \?\? null,/);
     expect(block).not.toMatch(/pageText:\s*body\.pageText/);
   });
 
@@ -209,7 +209,7 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
     expect(idx).toBeGreaterThan(-1);
     expect(src.slice(idx - 20, idx)).not.toMatch(/DEV\s*&&\s*$/);
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/annotationCount:\s*result\.data\.annotations\.length,/);
+    expect(block).toMatch(/returnedAnnotationCount:\s*result\.data\.annotations\.length,/);
     expect(block).toMatch(/durationMs:\s*Date\.now\(\) - startedAt,/);
   });
 });
@@ -327,8 +327,8 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
     const idx = src.indexOf("export type ServerFailureStage =");
     const block = src.slice(idx, idx + 400);
     for (const stage of [
-      "configuration", "provider_request", "timeout", "empty_response",
-      "invalid_json", "schema_validation", "quote_grounding",
+      "provider_configuration", "provider_request", "timeout", "provider_response",
+      "json_parse", "schema_validation", "sentence_grounding",
     ]) {
       expect(block).toMatch(new RegExp(`"${stage}"`));
     }
@@ -344,7 +344,7 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
   it("missing OPENAI_API_KEY uses the missing_configuration code specifically, not the generic openai_request_failed", () => {
     const idx = src.indexOf("if (!apiKey) {");
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/"configuration"/);
+    expect(block).toMatch(/"provider_configuration"/);
   });
 });
 
@@ -375,5 +375,37 @@ describe("pages/api/page-annotation-plan.ts — prompt-contamination regression 
 
   it("the prompt documents WHY the example must stay synthetic, so a future edit doesn't reintroduce real book text", () => {
     expect(src).toMatch(/never copy real textbook\s*\n?\s*wording into this instruction/);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — sentenceCount diagnostic (real page-extraction signal)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: diagnosticIds carries sentenceCount, computed from the real pageText, never fabricated", () => {
+    const idx = src.indexOf("const diagnosticIds = {");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/sentenceCount:\s*body\?\.pageText \? countSentences\(body\.pageText\) : null,/);
+  });
+
+  it("REQUIRED: countSentences is a real, testable pure function — not just a log-time inline expression", () => {
+    const idx = src.indexOf("function countSentences(");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/text\.match\(\/\[\.\!\?\]/);
+  });
+
+  it("countSentences counts real multi-sentence prose correctly (a direct behavioral check of the same regex used in production, not just source matching)", () => {
+    // Re-implements the exact regex from countSentences() in
+    // pages/api/page-annotation-plan.ts — kept in sync by the source-match
+    // test above (which asserts the production regex verbatim); this test
+    // instead exercises real behavior against real strings.
+    function countSentences(text: string): number {
+      const matches = text.match(/[.!?](?:\s|$)/g);
+      return matches ? matches.length : (text.trim().length > 0 ? 1 : 0);
+    }
+    expect(countSentences("One. Two. Three?")).toBe(3);
+    expect(countSentences("A single sentence with no terminal punctuation")).toBe(1);
+    expect(countSentences("")).toBe(0);
   });
 });

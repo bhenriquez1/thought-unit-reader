@@ -92,7 +92,7 @@ describe("TldrawCanvas.tsx — read-only teaching canvas + explicit 'Edit a copy
 
   it("REQUIRED: handleMount sets isReadonly:true immediately — the canvas is never briefly editable on first paint before the sync effect catches up", () => {
     const idx = src.indexOf("const handleMount = useCallback((editor: Editor) => {");
-    const block = src.slice(idx, idx + 500);
+    const block = src.slice(idx, idx + 1700);
     expect(block).toMatch(/editor\.updateInstanceState\(\{ isReadonly: true \}\)/);
   });
 
@@ -135,5 +135,116 @@ describe("TldrawCanvas.tsx — a pageTruthKey/lessonPlan change cancels narratio
   it("the rebuild effect is keyed on [lessonPlan] alone — a page/concept change is a lessonPlan identity change (useProfessorLesson.ts is the single owner of when a NEW plan object is produced)", () => {
     const idx = src.indexOf("// eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [lessonPlan]);");
     expect(idx).toBeGreaterThan(-1);
+  });
+});
+
+describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] per-step logging, privacy-safe", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: logs every field the diagnosis brief asked for — pageTruthKey, sceneGraphId, currentTeachingStep, totalTeachingSteps, nodeCount, edgeCount, shapeRecordsGenerated, shapeRecordsCreated, currentStepShapeIds, editorShapeCount, visibleShapeCount", () => {
+    const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 900);
+    for (const field of [
+      "pageTruthKey:", "sceneGraphId:", "currentTeachingStep:", "totalTeachingSteps:",
+      "nodeCount:", "edgeCount:", "shapeRecordsGenerated:", "shapeRecordsCreated:",
+      "currentStepShapeIds:", "editorShapeCount:", "visibleShapeCount:",
+    ]) {
+      expect(block).toContain(field);
+    }
+  });
+
+  it("REQUIRED: editorShapeCount is queried directly from tldraw's own store (ground truth), not from this component's own bookkeeping — a real create/store discrepancy must be visible, not just inferred", () => {
+    const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
+    const block = src.slice(idx, idx + 900);
+    expect(block).toMatch(/editorShapeCount:\s*editor\.getCurrentPageShapeIds\(\)\.size,/);
+  });
+
+  it("REQUIRED: never logs narration/label/quote text — only ids and counts", () => {
+    const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
+    const block = src.slice(idx, idx + 900);
+    expect(block).not.toMatch(/text:/);
+    expect(block).not.toMatch(/narration/i);
+    expect(block).not.toMatch(/shortLabel/i);
+  });
+
+  it("REQUIRED: a second log carries cameraBounds, queried directly from the editor's actual viewport, not the internally-computed target bounds", () => {
+    const idx = src.indexOf('console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/cameraBounds:/);
+    const boundsIdx = src.indexOf("const vpBounds = editor.getViewportPageBounds();");
+    expect(boundsIdx).toBeGreaterThan(-1);
+    expect(boundsIdx).toBeLessThan(idx);
+  });
+});
+
+describe("TldrawCanvas.tsx — dev-only visible step readout (never rendered in production)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: renders 'Step N/total · X scene nodes · Y generated shapes · Z visible', gated on DEV", () => {
+    const idx = src.indexOf("{DEV && stepDiagnostic && (");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/Step \{stepDiagnostic\.step\}\/\{stepDiagnostic\.total\} · \{stepDiagnostic\.nodeCount\} scene nodes · \{stepDiagnostic\.generated\} generated shapes · \{stepDiagnostic\.visible\} visible/);
+  });
+
+  it("stepDiagnostic state is populated inside applyStateAtStep, from the SAME values as the console log (never a second, independently-computed source that could drift)", () => {
+    const idx = src.indexOf("if (DEV) {\n      setStepDiagnostic({");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/generated: wantedIds\.size, visible: createdShapeIdsRef\.current\.size,/);
+  });
+
+  it("DEV is a real NODE_ENV check, not a hardcoded true — this must never render in production", () => {
+    expect(src).toMatch(/const DEV = process\.env\.NODE_ENV === "development";/);
+  });
+});
+
+describe("TldrawCanvas.tsx — handleMount is idempotent against React StrictMode's double-invocation", () => {
+  // Found via direct Playwright reproduction: next.config.js sets
+  // reactStrictMode: true, and instrumenting handleMount showed it firing
+  // twice for the SAME editor instance on every normal mount (mountCount
+  // reaches 2, editorIdentity: "same"). Re-running the full clear+rebuild
+  // sequence (clearTeachingLayer + registerAnchors + applyStateAtStep(-1))
+  // a second time for an editor already fully initialized is unnecessary
+  // risk in an async, multi-step process — this guards that it's skipped.
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: detects a duplicate mount by reference-comparing the incoming editor against editorRef.current, BEFORE reassigning it", () => {
+    const idx = src.indexOf("const handleMount = useCallback((editor: Editor) => {");
+    const block = src.slice(idx, idx + 1200);
+    const compareIdx = block.indexOf("const isDuplicateMount = editor === editorRef.current;");
+    const assignIdx = block.indexOf("editorRef.current = editor;");
+    expect(compareIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeGreaterThan(compareIdx); // compared BEFORE the ref is overwritten
+  });
+
+  it("REQUIRED: clearTeachingLayer/registerAnchors/applyStateAtStep(-1) are all skipped on a duplicate mount", () => {
+    const idx = src.indexOf("if (!isDuplicateMount) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/clearTeachingLayer\(editor\);/);
+    expect(block).toMatch(/registerAnchors\(lessonPlan\.actions\);/);
+    expect(block).toMatch(/applyStateAtStep\(editor, -1\);/);
+  });
+
+  it("the store-listener (re-)subscription runs on EVERY mount, including duplicates — it's idempotent (no async sequence to race) unlike the full rebuild above", () => {
+    const guardEndIdx = src.indexOf("if (!isDuplicateMount) {");
+    const guardCloseIdx = src.indexOf("\n    }\n", guardEndIdx);
+    const afterGuard = src.slice(guardCloseIdx, guardCloseIdx + 400);
+    expect(afterGuard).toMatch(/storeUnsubRef\.current\?\.\(\);/);
+    expect(afterGuard).toMatch(/storeUnsubRef\.current = editor\.store\.listen\(/);
+  });
+
+  it("the mount is logged with a running count and whether the editor identity matched — the exact evidence that revealed this bug", () => {
+    const idx = src.indexOf('console.log("[WHITEBOARD_MOUNT_DIAGNOSTIC]"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/mountCount: mountCountRef\.current/);
+    expect(block).toMatch(/editorIdentity: isDuplicateMount \? "same" : "different"/);
   });
 });

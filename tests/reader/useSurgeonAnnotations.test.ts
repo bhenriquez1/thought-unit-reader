@@ -84,7 +84,7 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 650);
     expect(block).toMatch(/Stale response for a page we've since navigated away from — drop/);
-    expect(block).toMatch(/setAnnotationFailureStage\("identity_mismatch"\);/);
+    expect(block).toMatch(/setAnnotationFailureStage\("page_identity"\);/);
     expect(block).toMatch(/return;/);
   });
 
@@ -485,7 +485,7 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
     const idx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 400);
-    expect(block).toMatch(/setAnnotationFailureStage\("identity_mismatch"\);/);
+    expect(block).toMatch(/setAnnotationFailureStage\("page_identity"\);/);
     expect(block).toMatch(/return;/);
   });
 
@@ -557,5 +557,29 @@ describe("useSurgeonAnnotations.ts — Gemini visual context is merged into the 
     const idx = src.indexOf("const visualContext = await resolveVisualContext({");
     const block = src.slice(idx, src.indexOf("const input = buildSurgeonAnnotationInput({"));
     expect(block).toMatch(/if \(ctrl\.signal\.aborted\) return;/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — page_extraction: a genuinely-too-short page gets a diagnosable stage, not silence", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: distinguishes 'pageText hasn't loaded yet' (rawPageTextLength === 0, normal/transient, no failure stage) from 'extraction produced too little' (rawPageTextLength > 0 but still under the floor, a real page_extraction failure)", () => {
+    const idx = src.indexOf("const rawPageTextLength = pageText?.length ?? 0;");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 900);
+    expect(block).toMatch(/if \(rawPageTextLength > 0\) \{/);
+    expect(block).toMatch(/setAnnotationFailureStage\("page_extraction"\);/);
+  });
+
+  it("does NOT set page_extraction when pageText is still empty (rawPageTextLength === 0) — this is the normal state right after a page navigation, before async extraction has produced anything yet", () => {
+    const idx = src.indexOf("if (!hasPageText) {");
+    const block = src.slice(idx, idx + 500);
+    // The guard must be `if (rawPageTextLength > 0)`, not unconditional.
+    expect(block).not.toMatch(/setAnnotationFailureStage\("page_extraction"\);\s*\n\s*return;\s*\n\s*\}/);
+  });
+
+  it("page_extraction is part of the exported ClientFailureStage union", () => {
+    expect(src).toMatch(/export type ClientFailureStage = ServerFailureStage \| "page_extraction" \| "page_identity" \| "network_error";/);
   });
 });

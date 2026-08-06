@@ -21,7 +21,7 @@ describe("SmartPDFViewer.tsx — annotationRenderStage computation", () => {
   });
 
   it("reports 'render' only when geometry resolved but the final dedup pass dropped everything", () => {
-    const idx = src.indexOf("const renderStage: \"geometry_resolution\" | \"render\" | null =");
+    const idx = src.indexOf("const renderStage: \"geometry_resolution\" | \"overlay_render\" | null =");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
     expect(block).toMatch(/afterDedup\.length === 0/);
@@ -53,7 +53,7 @@ describe("SmartPDFViewer.tsx — annotationRenderStage computation", () => {
   });
 
   it("does not compute a render stage when there are zero canonical targets to resolve in the first place", () => {
-    const idx = src.indexOf("const renderStage: \"geometry_resolution\" | \"render\" | null =");
+    const idx = src.indexOf("const renderStage: \"geometry_resolution\" | \"overlay_render\" | null =");
     const block = src.slice(idx, idx + 300);
     expect(block).toMatch(/canonicalTargetCount === 0\s*\?\s*null/);
   });

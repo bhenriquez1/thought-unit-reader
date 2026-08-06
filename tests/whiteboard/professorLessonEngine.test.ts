@@ -185,8 +185,13 @@ describe("Student layer survives a lesson rebuild — only locked (teaching-laye
     expect(rebuildIdx).toBeGreaterThan(-1);
 
     const mountIdx = src.indexOf("const handleMount = useCallback((editor: Editor) => {");
-    const mountBody = src.slice(mountIdx, mountIdx + 300);
-    expect(mountBody).toMatch(/editorRef\.current = editor;\s*\n\s*clearTeachingLayer\(editor\);/);
+    const mountBody = src.slice(mountIdx, mountIdx + 1400);
+    // clearTeachingLayer still runs unconditionally with respect to
+    // lessonPlan truthiness (no `if (lessonPlan)` gate around it) — it's
+    // only skipped on a confirmed duplicate mount (React StrictMode
+    // double-invoking onMount for the SAME editor instance, see
+    // isDuplicateMount above), never based on whether a plan exists yet.
+    expect(mountBody).toMatch(/editorRef\.current = editor;\s*\n\s*if \(!isDuplicateMount\) \{\s*\n\s*clearTeachingLayer\(editor\);/);
   });
 });
 

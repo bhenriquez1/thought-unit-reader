@@ -42,26 +42,31 @@ const RETRY_BACKOFF_MS = 700;
 
 // Exact failure-stage codes for this endpoint — every degraded response
 // carries one, alongside requestId, so a specific request's failure point in
-// the pipeline (current page extraction -> /api/page-annotation-plan ->
-// provider request -> schema validation -> sentence/quote grounding ->
-// [client-only, see ClientFailureStage in useSurgeonAnnotations.ts:
-// geometry resolution against the live PDF text layer -> render]) can be
-// identified without ever logging page/annotation text.
-// rate_limited and invalid_request are additional, more specific
+// the FULL pipeline can be identified without ever logging page/annotation
+// text. This vocabulary is shared end to end (see ClientFailureStage in
+// useSurgeonAnnotations.ts, and readingFocusStore.ts's annotationRenderStage
+// for the two client-only stages this endpoint can never observe):
+//   page_extraction (client, pre-request) -> provider_configuration ->
+//   provider_request -> provider_response -> json_parse -> schema_validation
+//   -> page_identity (client) -> sentence_grounding -> geometry_resolution
+//   (client) -> overlay_render (client)
+// timeout/rate_limited/invalid_request are additional, more specific
 // subcategories of provider_request retained for their existing,
-// already-tested behavior (skip-retry-on-400, distinct rate-limit message).
+// already-tested behavior (skip-retry-on-400, distinct rate-limit/timeout
+// messages) — not in the canonical 10-stage list above, but a genuine
+// refinement of it, not a competing vocabulary.
 export type ServerFailureStage =
   | "method_not_allowed"
   | "missing_ptk"
   | "missing_page_text"
   | "missing_page_content_hash"
-  | "configuration"
+  | "provider_configuration"
   | "provider_request"
-  | "timeout"
-  | "empty_response"
-  | "invalid_json"
+  | "provider_response"
+  | "json_parse"
   | "schema_validation"
-  | "quote_grounding"
+  | "sentence_grounding"
+  | "timeout"
   | "rate_limited"
   | "invalid_request";
 
@@ -71,6 +76,15 @@ export type AnnotationPlanResponse =
 
 function degraded(message: string, code: ServerFailureStage, requestId: string): AnnotationPlanResponse {
   return { ok: false, error: message, code, requestId, fallbackAllowed: true };
+}
+
+// Rough diagnostic count only — not used for grounding/selection logic
+// anywhere, just a cheap signal in logs that the model was actually handed
+// a full multi-sentence page (a suspiciously low count for a long page is
+// a red flag that page_extraction produced something truncated/wrong).
+function countSentences(text: string): number {
+  const matches = text.match(/[.!?](?:\s|$)/g);
+  return matches ? matches.length : (text.trim().length > 0 ? 1 : 0);
 }
 
 // ── Static system prompt ───────────────────────────────────────────────────────
@@ -305,7 +319,8 @@ export default async function handler(
     documentIdHash: body?.documentId ? hashDocumentId(body.documentId) : null,
     pageTruthKey:   body?.pageTruthKey ?? null,
     pageNumber:     body?.pageNumber ?? null,
-    pageTextLength: body?.pageText?.length ?? null,
+    normalizedPageCharacters: body?.pageText?.length ?? null,
+    sentenceCount:  body?.pageText ? countSentences(body.pageText) : null,
   };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
@@ -324,7 +339,7 @@ export default async function handler(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("[SURGEON_PLAN_UNAVAILABLE]", { reason: "OPENAI_API_KEY missing", ...diagnosticIds });
-    res.status(200).json(degraded("Advanced page analysis is not configured on the server.", "configuration", requestId));
+    res.status(200).json(degraded("Advanced page analysis is not configured on the server.", "provider_configuration", requestId));
     return;
   }
 
@@ -427,8 +442,8 @@ export default async function handler(
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "empty_response", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned no content.", "empty_response", requestId));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "provider_response", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned no content.", "provider_response", requestId));
     return;
   }
 
@@ -437,8 +452,8 @@ export default async function handler(
     const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     parsed = JSON.parse(jsonStr);
   } catch {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "invalid_json", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned invalid output.", "invalid_json", requestId));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "json_parse", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned invalid output.", "json_parse", requestId));
     return;
   }
 
@@ -450,16 +465,21 @@ export default async function handler(
   }
 
   if (!quotesPlausible(result.data, body.pageText)) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "quote_grounding", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "quote_grounding", requestId));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "sentence_grounding", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId));
     return;
   }
 
   // Production-safe — counts and timings only, never the annotation/quote text.
+  // returnedAnnotationCount is what the model proposed BEFORE client-side
+  // sentence_grounding/geometry_resolution/overlay_render — see
+  // useSurgeonAnnotations.ts's [SURGEON_PIPELINE_DIAGNOSTIC] log for
+  // groundedCount, and SmartPDFViewer.tsx's for geometryResolvedCount — this
+  // server has no visibility into either of those later stages.
   console.log("[SURGEON_PLAN_OK]", {
     ...diagnosticIds,
-    annotationCount: result.data.annotations.length,
-    durationMs:      Date.now() - startedAt,
+    returnedAnnotationCount: result.data.annotations.length,
+    durationMs:              Date.now() - startedAt,
   });
 
   // pageContentHash is echoed back unchanged, never re-derived server-side —
