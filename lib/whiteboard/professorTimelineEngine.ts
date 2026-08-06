@@ -18,7 +18,7 @@
 
 import type { Bounds, Point, ProfessorTeachingAction } from "./professorLessonPlan";
 
-export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text";
+export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text" | "diamond" | "hexagon" | "cloud";
 
 export interface ShapeVisualState {
   shapeId: string;

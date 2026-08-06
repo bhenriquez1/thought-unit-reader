@@ -32,7 +32,13 @@ export interface Bounds { x: number; y: number; w: number; h: number; }
 export type ProfessorTeachingAction =
   | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number }
   | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number }
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line"; bounds: Bounds; durationMs: number }
+  // "circle"/"box" map to tldraw's ellipse/rectangle geo shapes (the only
+  // two ever produced before this comment was added). "diamond"/"hexagon"/
+  // "cloud" are real, additional tldraw geo shapes — decision points, traps/
+  // warnings, and clinical pearls now get their OWN distinct shape, not just
+  // a different fill color on an identical rectangle. See
+  // shapeKindForNode() in buildProfessorTeachingActions.ts for the mapping.
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number }
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number"; sequenceNumber?: number; durationMs: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number }
   | { type: "pause"; actionId: string; durationMs: number }

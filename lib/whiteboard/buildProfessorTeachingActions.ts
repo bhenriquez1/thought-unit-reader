@@ -41,6 +41,20 @@ const PAUSE_AFTER_MS_BY_TONE: Record<string, number> = {
   question:  900,
 };
 
+// Short, deterministic label per edge kind — every drawn arrow gets ONE of
+// these as a small write action at its midpoint (see below), instead of
+// rendering as an unlabeled grey line. Never derived from the model; VSGEdge
+// already carries `kind` from deterministic relationship inference
+// (canonicalRelationshipGraph.ts / the SurgeonAnnotation.relationship field),
+// so this needs no extra AI call and can never be blank or hallucinated.
+const EDGE_KIND_LABEL: Record<string, string> = {
+  causation:   "leads to",
+  contrast:    "vs.",
+  elaboration: "explains",
+  sequence:    "then",
+  reference:   "relates to",
+};
+
 let actionCounter = 0;
 let segmentCounter = 0;
 function nextActionId(): string { return `a${actionCounter++}`; }
@@ -64,6 +78,22 @@ function speakDurationMs(text: string): number {
 interface ResolvedNodeBounds extends Bounds {
   centerWriteX: number;
   centerWriteY: number;
+}
+
+// A professor's diagram uses different SHAPES for different kinds of ideas,
+// not just one box with a different border color — a diamond at a decision
+// point, a hexagon for a warning, a cloud for an expert aside, matching how
+// this same distinction is already drawn as trapNotch/decisionConnector/
+// pearlMarker on the PDF (components/pdf/PdfEvidenceOverlay.tsx). tier is
+// checked before role: a "danger" or "pearl" idea keeps that shape even if
+// it also happens to be the page's hub node, since the warning/insight
+// reading matters more than "this is the central concept" once both are true.
+function shapeKindForNode(node: VSGNode): "circle" | "box" | "diamond" | "hexagon" | "cloud" {
+  if (node.tier === "danger") return "hexagon";
+  if (node.tier === "pearl")  return "cloud";
+  if (node.tier === "decision" || node.canonicalType === "decision" || node.canonicalType === "comparison") return "diamond";
+  if (node.role === "hub") return "circle";
+  return "box";
 }
 
 function resizeAroundCenter(node: VSGNode, label: string): ResolvedNodeBounds {
@@ -131,14 +161,33 @@ export function buildProfessorTeachingActions(
     pushSegment(grounded.learningObjective, "introduce", "normal", []);
   }
 
+  // ── Pre-pass: every node's bounds, computed BEFORE any actions are built ──
+  // A real professor narrates connections the moment they're relevant — "here's
+  // the trigger... and that leads to..." — which naturally places an edge's
+  // nodeScript entry BETWEEN its two endpoints, not strictly after both. That
+  // conversational order is exactly what rule 3 of the AI prompt in
+  // pages/api/professor-lesson-plan.ts asks for ("connect... explaining why
+  // two points relate"). Computing bounds only when a node's OWN script entry
+  // was reached (the previous approach) silently dropped any edge whose "to"
+  // node hadn't been drawn yet — arrows the AI correctly proposed just
+  // vanished, with no error, no log, nothing (a real, hard-to-notice cause of
+  // "the Whiteboard doesn't show relationships between ideas"). Bounds are
+  // pure geometry — the VSG already knows every node's position/size — so
+  // there's no reason computing them needs to wait for script-processing
+  // order at all; only the DRAWING (the write/draw-shape actions) does.
+  const scriptByTargetId = new Map(grounded.nodeScripts.map(e => [e.targetId, e]));
+  for (const node of vsg.nodes) {
+    const label = scriptByTargetId.get(node.id)?.shortLabel ?? node.label;
+    nodeBoundsById.set(node.id, resizeAroundCenter(node, label));
+  }
+
   // ── Step 2..N: one draw-shape + write (+ optional emphasize) per node,
   //     one draw-arrow per edge — in the grounded script's own order, which
   //     IS the teaching sequence the professor performs. ───────────────────
   for (const entry of grounded.nodeScripts) {
     const node = vsg.nodes.find(n => n.id === entry.targetId);
     if (node) {
-      const bounds = resizeAroundCenter(node, entry.shortLabel);
-      nodeBoundsById.set(node.id, bounds);
+      const bounds = nodeBoundsById.get(node.id)!; // set for every vsg.node in the pre-pass above
       const shapeId = String(createShapeId(`pn-${node.id}`));
 
       const cameraActionId = nextActionId();
@@ -147,7 +196,7 @@ export function buildProfessorTeachingActions(
       const drawActionId = nextActionId();
       actions.push({
         type: "draw-shape", actionId: drawActionId, shapeId, targetId: node.sourceId,
-        shape: node.role === "hub" ? "circle" : "box", bounds, durationMs: STROKE_DURATION_MS,
+        shape: shapeKindForNode(node), bounds, durationMs: STROKE_DURATION_MS,
       });
 
       const writeActionId = nextActionId();
@@ -196,9 +245,16 @@ export function buildProfessorTeachingActions(
 
     const edge = vsg.edges.find(e => e.id === entry.targetId);
     if (edge) {
+      // Bounds are now precomputed for every real VSG node regardless of
+      // script order (see the pre-pass above) — the guard that matters here
+      // is different: does EACH endpoint actually get a visible draw-shape
+      // action at some point in this timeline? An edge pointing at a node
+      // the AI chose to skip narrating (rule 1 allows skipping "a couple of
+      // nodes") would otherwise draw an arrow to/from an invisible box.
+      if (!scriptByTargetId.has(edge.fromId) || !scriptByTargetId.has(edge.toId)) continue;
       const fromBounds = nodeBoundsById.get(edge.fromId);
       const toBounds   = nodeBoundsById.get(edge.toId);
-      if (!fromBounds || !toBounds) continue; // endpoint not drawn (density-capped) — skip the arrow, not a crash
+      if (!fromBounds || !toBounds) continue; // edge references a node id not in this VSG at all — skip, not a crash
 
       const shapeId = String(createShapeId(`pe-${edge.id}`));
       const from: ResolvedNodeBounds = fromBounds;
@@ -207,15 +263,33 @@ export function buildProfessorTeachingActions(
       const cameraActionId = nextActionId();
       actions.push({ type: "move-camera", actionId: cameraActionId, targetIds: [String(createShapeId(`pn-${edge.fromId}`)), String(createShapeId(`pn-${edge.toId}`))], durationMs: CAMERA_DURATION_MS });
 
+      const arrowFrom = { x: from.centerWriteX, y: from.y + from.h };
+      const arrowTo   = { x: to.centerWriteX,   y: to.y };
+
       const arrowActionId = nextActionId();
       actions.push({
-        type: "draw-arrow", actionId: arrowActionId, shapeId,
-        from: { x: from.centerWriteX, y: from.y + from.h },
-        to:   { x: to.centerWriteX,   y: to.y },
-        durationMs: ARROW_DURATION_MS,
+        type: "draw-arrow", actionId: arrowActionId, shapeId, targetId: edge.id,
+        from: arrowFrom, to: arrowTo, durationMs: ARROW_DURATION_MS,
       });
+      const linkedArrowActions = [arrowActionId];
 
-      pushSegment(entry.narration, entry.tone, entry.pace, [arrowActionId]);
+      // A short, deterministic label at the arrow's midpoint — "leads to",
+      // "vs.", "then" — so the relationship reads visually, not only through
+      // the (previously never-applied) arrow color. See EDGE_KIND_LABEL.
+      const edgeLabel = EDGE_KIND_LABEL[edge.kind];
+      if (edgeLabel) {
+        const labelActionId = nextActionId();
+        actions.push({
+          type: "write", actionId: labelActionId, shapeId: String(createShapeId(`pe-label-${edge.id}`)),
+          text: edgeLabel,
+          x: (arrowFrom.x + arrowTo.x) / 2 - estimateLabelWidth(edgeLabel) / 2,
+          y: (arrowFrom.y + arrowTo.y) / 2 - 8,
+          durationMs: writeDurationMs(edgeLabel),
+        });
+        linkedArrowActions.push(labelActionId);
+      }
+
+      pushSegment(entry.narration, entry.tone, entry.pace, linkedArrowActions);
     }
   }
 

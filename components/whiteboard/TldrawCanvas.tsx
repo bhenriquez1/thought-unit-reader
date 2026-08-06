@@ -231,6 +231,12 @@ export default function TldrawCanvas({
     if (!v || !targetId) return fallback;
     const node = v.nodes.find(n => n.sourceId === targetId);
     if (node) return TIER_COLOR[node.tier] ?? fallback;
+    // targetId is an edge id for a draw-arrow action (registerAnchors below
+    // registers edge.id the same way it registers a node's sourceId) — was
+    // previously never reached because draw-arrow never carried a targetId
+    // at all, leaving EDGE_COLOR entirely dead code and every arrow grey.
+    const edge = v.edges.find(e => e.id === targetId);
+    if (edge) return EDGE_COLOR[edge.kind] ?? fallback;
     return fallback;
   }, []);
 
@@ -305,8 +311,21 @@ export default function TldrawCanvas({
         .map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
       const merged = mergeBounds(bounds);
       if (merged) {
+        // A single node's bounds are ~290x56 — a flat 40px pad on that made
+        // the per-step camera crop tight enough to read as "punched in on a
+        // random screenshot" rather than a professor stepping back a little
+        // between points. Padding now scales with content size, with a
+        // floor big enough to keep a single small node from filling the
+        // whole frame, and is deliberately taller than it is wide (nodes are
+        // wide/short, so the pad needs the most room on the axis the
+        // content itself doesn't already fill) — the goal is "still visibly
+        // zoomed to the active point" while showing meaningfully more of
+        // its surrounding context than before, per rule "fit the complete
+        // active teaching region, zoom only to emphasize a detail."
+        const padX = Math.max(100, merged.w * 0.3);
+        const padY = Math.max(140, merged.h * 1.2);
         editor.zoomToBounds(
-          { x: merged.x - 40, y: merged.y - 40, w: merged.w + 80, h: merged.h + 80 } as any,
+          { x: merged.x - padX, y: merged.y - padY, w: merged.w + padX * 2, h: merged.h + padY * 2 } as any,
           { animation: { duration: 300 } } as any,
         );
       }
@@ -384,7 +403,10 @@ export default function TldrawCanvas({
     const t2s = new Map<string, string>();
     const s2t = new Map<string, string>();
     for (const a of actions) {
-      if ((a.type === "write" || a.type === "draw-shape") && a.targetId && a.shapeId) {
+      // "draw-arrow" carries an edge id as targetId (buildProfessorTeachingActions.ts)
+      // — registering it here is what lets colorForTarget resolve an edge's
+      // kind and apply EDGE_COLOR instead of always falling back to grey.
+      if ((a.type === "write" || a.type === "draw-shape" || a.type === "draw-arrow") && a.targetId && a.shapeId) {
         t2s.set(a.targetId, a.shapeId);
         s2t.set(a.shapeId, a.targetId);
       }
@@ -730,14 +752,22 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
       props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: "solid", dash: "draw", size: "s", color },
     };
   }
-  if (s.kind === "box" || s.kind === "circle" || s.kind === "brace") {
+  if (s.kind === "box" || s.kind === "circle" || s.kind === "brace" || s.kind === "diamond" || s.kind === "hexagon" || s.kind === "cloud") {
     if (!s.bounds) return null;
     // dash:"draw" gives tldraw's sketchy hand-drawn stroke; fill:"none" so the
     // performance reads as strokes being drawn, not solid cards being placed.
+    // "diamond"/"hexagon"/"cloud" map 1:1 to tldraw's own built-in geo shapes
+    // (decision points, warnings, and clinical pearls each get a real,
+    // distinct SHAPE — not just a different color on an identical
+    // rectangle). "brace" has no true tldraw equivalent and falls back to
+    // rectangle, same as before this change.
+    const GEO_FOR_KIND: Record<string, string> = {
+      circle: "ellipse", diamond: "diamond", hexagon: "hexagon", cloud: "cloud",
+    };
     return {
       type: "geo", x: s.bounds.x, y: s.bounds.y,
       props: {
-        geo: s.kind === "circle" ? "ellipse" : "rectangle",
+        geo: GEO_FOR_KIND[s.kind] ?? "rectangle",
         w: s.bounds.w, h: s.bounds.h,
         richText: toRichText(s.text ?? ""),
         fill: "none", dash: "draw", size: "m", color, font: "draw",
