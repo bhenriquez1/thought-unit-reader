@@ -82,8 +82,9 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
   it("REQUIRED: a fetch response whose plan.pageTruthKey does not match the current pageTruthKey is dropped, not applied", () => {
     const idx = src.indexOf('if (data.plan.pageTruthKey !== pageTruthKey) {');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 150);
-    expect(block).toMatch(/Stale response for a page we've since navigated away from — drop it\./);
+    const block = src.slice(idx, idx + 650);
+    expect(block).toMatch(/Stale response for a page we've since navigated away from — drop/);
+    expect(block).toMatch(/setAnnotationFailureStage\("page_identity_mismatch"\);/);
     expect(block).toMatch(/return;/);
   });
 
@@ -292,7 +293,7 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
     expect(calls).toHaveLength(2);
     const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
-      const nearby = block.slice(0, 700);
+      const nearby = block.slice(0, 1000);
       expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
       expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
@@ -404,7 +405,8 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
   it("REQUIRED: a fetch response whose pageContentHash does not match a freshly re-derived current value is dropped", () => {
     const idx = src.indexOf("if (data.pageContentHash !== currentContentHash)");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 300);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/setAnnotationFailureStage\("page_identity_mismatch"\);/);
     expect(block).toMatch(/return;/);
   });
 

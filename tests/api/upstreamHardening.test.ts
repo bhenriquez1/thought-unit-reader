@@ -28,7 +28,7 @@ describe("pages/api/claudeEnrichment.ts — upstream hardening", () => {
     expect(src).toMatch(/function degraded\(message: string\): ClaudeEnrichmentOutput \{\s*\n\s*return \{ \.\.\.emptyOutput\(\)/);
   });
 
-  it("missing ANTHROPIC_API_KEY logs unconditionally (not DEV-gated) and returns 200, not a hard error", () => {
+  it("missing CLAUDE_API_KEY logs unconditionally (not DEV-gated) and returns 200, not a hard error", () => {
     expect(src).toMatch(/if \(!apiKey\) \{[\s\S]{0,300}console\.error\("\[CLAUDE_ENRICHMENT_UNAVAILABLE\]"/);
     expect(src).toMatch(/return res\.status\(200\)\.json\(degraded\(/);
   });

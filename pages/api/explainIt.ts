@@ -154,7 +154,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
 
   const openaiKey   = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.CLAUDE_API_KEY;
 
   // isFirstTurn is derived server-side — safe to use in system prompt.
   const isFirstTurn  = body.messages.length <= 1;

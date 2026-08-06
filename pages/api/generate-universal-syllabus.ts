@@ -210,7 +210,7 @@ export default async function handler(
   const userPrompt   = buildUserPrompt(body.intelligence, candidates, body.totalPages, body.contextSample);
 
   const openaiKey    = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.CLAUDE_API_KEY;
 
   if (openaiKey) {
     try {

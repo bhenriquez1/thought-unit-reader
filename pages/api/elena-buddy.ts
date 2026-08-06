@@ -132,7 +132,7 @@ export default async function handler(
   const system  = BUDDY_SYSTEM;
   const context = buildContextMessages(body);
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.CLAUDE_API_KEY;
   if (!anthropicKey) {
     return res.status(503).json({ reply: "", error: "Reading Buddy is not available right now." });
   }

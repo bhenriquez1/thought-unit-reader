@@ -6,9 +6,10 @@ import {
 
 const ENV_VARS = {
   openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
+  claude: "CLAUDE_API_KEY",
   gemini: "GEMINI_API_KEY",
   cohere: "COHERE_API_KEY",
+  tldraw: "NEXT_PUBLIC_TLDRAW_LICENSE_KEY",
 } as const;
 
 describe("isProviderConfigured / getProviderStatus", () => {
@@ -39,12 +40,38 @@ describe("isProviderConfigured / getProviderStatus", () => {
     }
   });
 
-  it("getProviderStatus reports all 4 providers, keyed by name", () => {
+  it("getProviderStatus reports all 5 providers, keyed by name", () => {
     process.env.OPENAI_API_KEY = "x";
-    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLAUDE_API_KEY;
     process.env.GEMINI_API_KEY = "x";
     delete process.env.COHERE_API_KEY;
-    expect(getProviderStatus()).toEqual({ openai: true, anthropic: false, gemini: true, cohere: false });
+    delete process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
+    expect(getProviderStatus()).toEqual({ openai: true, claude: false, gemini: true, cohere: false, tldraw: false });
+  });
+
+  it("REQUIRED: uses CLAUDE_API_KEY, not the retired ANTHROPIC_API_KEY name — renamed for a consistent CLAUDE_/OPENAI_/GEMINI_/COHERE_ provider-name convention", () => {
+    delete process.env.CLAUDE_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "sk-ant-still-set-under-the-old-name";
+    expect(isProviderConfigured("claude")).toBe(false);
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_API_KEY = "sk-ant-under-the-new-name";
+    expect(isProviderConfigured("claude")).toBe(true);
+  });
+
+  it("REQUIRED: never accepts a mixed-case alias of the canonical env var name — process.env lookups are case-sensitive by construction, and this module must not work around that with its own fallback matching", () => {
+    delete process.env.COHERE_API_KEY;
+    process.env.Cohere_API_Key = "sk-wrong-casing";
+    process.env.cohere_api_key = "sk-also-wrong-casing";
+    expect(isProviderConfigured("cohere")).toBe(false);
+
+    delete process.env.GEMINI_API_KEY;
+    process.env.Gemini_API_Key = "sk-wrong-casing";
+    expect(isProviderConfigured("gemini")).toBe(false);
+
+    // Cleanup — these aren't real env vars this suite otherwise touches.
+    delete process.env.Cohere_API_Key;
+    delete process.env.cohere_api_key;
+    delete process.env.Gemini_API_Key;
   });
 });
 

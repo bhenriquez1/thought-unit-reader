@@ -11,7 +11,7 @@
 //   Stage 2 (OpenAI, required) — writes the actual diagnostic questions as
 //     strict JSON, grounded in the topic map (when available) and source
 //     excerpts.
-// If ANTHROPIC_API_KEY is missing, Stage 1 is skipped and Stage 2 runs alone
+// If CLAUDE_API_KEY is missing, Stage 1 is skipped and Stage 2 runs alone
 // (same behavior as before).
 // SECURITY: API keys are server-side only, never sent to the browser.
 
@@ -77,10 +77,10 @@ OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 Return ONLY the JSON object — no markdown fences, no explanation outside the JSON.`;
 
 /** Stage 1 — Claude reads the full source text and builds a whole-document
- *  topic map. Returns null if ANTHROPIC_API_KEY is unset or the call fails;
+ *  topic map. Returns null if CLAUDE_API_KEY is unset or the call fails;
  *  callers must treat this as optional. */
 async function buildTopicOutline(sourceText: string, bookTitle?: string, chapterTitle?: string): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) return null;
 
   try {

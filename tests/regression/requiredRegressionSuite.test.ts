@@ -72,7 +72,7 @@ describe("Required regression 2 — a mismatched pageTruthKey cannot render", ()
     const src = fs.readFileSync(ANNOTATIONS_HOOK, "utf8");
     const idx = src.indexOf("if (data.plan.pageTruthKey !== pageTruthKey) {");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 150);
+    const block = src.slice(idx, idx + 650);
     expect(block).toMatch(/return;/);
     // setPlan/setHighlightTargets must appear AFTER this guard, not before.
     const setPlanIdx = src.indexOf("setPlan(data.plan)");

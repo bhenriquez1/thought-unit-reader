@@ -52,3 +52,30 @@ describe("WhiteboardPanel.tsx — canonicalEntries fallback logic is unchanged",
     expect(src).toMatch(/canonicalEntries && canonicalEntries\.length > 0\s*\n\s*\? canonicalEntries\s*\n\s*: noteCardsToCanonicalEntries\(teachNoteCards\)/);
   });
 });
+
+describe("WhiteboardPanel.tsx — canvas persistence key includes pageTruthKey, not just bookId + pageNumber", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
+
+  it("REQUIRED: canvasStorageKey is built from effectivePageTruthKey, not a bare bookId_p{pageNumber} composite — a re-extraction that changes pageTruthKey for the SAME page slot must get a genuinely distinct persistence key", () => {
+    const idx = src.indexOf("const canvasStorageKey = bookId && effectivePageTruthKey");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 150);
+    expect(block).toMatch(/\$\{bookId\}_\$\{effectivePageTruthKey\}/);
+  });
+
+  it("effectivePageTruthKey is computed once and reused for both the storage key and the TldrawCanvas pageTruthKey prop — no duplicated fallback logic that could drift", () => {
+    const idx = src.indexOf("const effectivePageTruthKey =");
+    expect(idx).toBeGreaterThan(-1);
+    expect(src).toMatch(/pageTruthKey=\{effectivePageTruthKey\}/);
+    // The old duplicated inline fallback expression must not still exist elsewhere.
+    const occurrences = (src.match(/pageTruthKey \?\? \(bookId && currentPage != null \? `\$\{bookId\}::\$\{currentPage\}` : undefined\)/g) ?? []).length;
+    expect(occurrences).toBe(1); // exactly the one definition of effectivePageTruthKey itself
+  });
+
+  it("falls back to the same bookId::pageNumber synthetic key as before when no real pageTruthKey is passed", () => {
+    const idx = src.indexOf("const effectivePageTruthKey =");
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/pageTruthKey \?\? \(bookId && currentPage != null \? `\$\{bookId\}::\$\{currentPage\}` : undefined\)/);
+  });
+});

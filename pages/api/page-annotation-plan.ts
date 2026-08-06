@@ -40,12 +40,35 @@ export const config = {
 const PLAN_TIMEOUT_MS  = 25_000;
 const RETRY_BACKOFF_MS = 700;
 
-export type AnnotationPlanResponse =
-  | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string }
-  | { ok: false; error: string; code: string; fallbackAllowed: true };
+// Exact failure-stage codes for this endpoint — every degraded response
+// carries one, alongside requestId, so a specific request's failure point in
+// the pipeline (current page extraction -> /api/page-annotation-plan ->
+// OpenAI -> schema validation -> sentence grounding -> density limiting ->
+// PDF overlay) can be identified without ever logging page/annotation text.
+// RATE_LIMITED and INVALID_REQUEST are additional, more specific
+// subcategories of openai_request_failed retained for their existing,
+// already-tested behavior (skip-retry-on-400, distinct rate-limit message).
+export type ServerFailureStage =
+  | "method_not_allowed"
+  | "missing_ptk"
+  | "missing_page_text"
+  | "missing_page_content_hash"
+  | "missing_configuration"
+  | "openai_request_failed"
+  | "timeout"
+  | "empty_response"
+  | "invalid_json"
+  | "schema_validation_failed"
+  | "quote_grounding_failed"
+  | "RATE_LIMITED"
+  | "INVALID_REQUEST";
 
-function degraded(message: string, code = "UPSTREAM_UNAVAILABLE"): AnnotationPlanResponse {
-  return { ok: false, error: message, code, fallbackAllowed: true };
+export type AnnotationPlanResponse =
+  | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string; requestId: string }
+  | { ok: false; error: string; code: ServerFailureStage; requestId: string; fallbackAllowed: true };
+
+function degraded(message: string, code: ServerFailureStage, requestId: string): AnnotationPlanResponse {
+  return { ok: false, error: message, code, requestId, fallbackAllowed: true };
 }
 
 // ── Static system prompt ───────────────────────────────────────────────────────
@@ -259,14 +282,18 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<AnnotationPlanResponse>,
 ): Promise<void> {
+  // Generated before any validation so even a rejected request (wrong
+  // method, missing field) carries a traceable, privacy-safe requestId —
+  // never the page/annotation text itself.
+  const requestId = newRequestId();
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed", fallbackAllowed: true });
+    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed", requestId, fallbackAllowed: true });
     return;
   }
 
   const body = req.body as Partial<SurgeonAnnotationInput>;
-  const requestId = newRequestId();
   // Diagnostic identifiers only — never the page/annotation TEXT itself.
   // documentId is hashed (one-way) so a book's identity never appears in logs.
   const diagnosticIds = {
@@ -278,29 +305,40 @@ export default async function handler(
   };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
-    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
+    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", requestId, fallbackAllowed: true });
     return;
   }
   if (!body.pageText || typeof body.pageText !== "string") {
-    res.status(400).json({ ok: false, error: "pageText is required", code: "missing_page_text", fallbackAllowed: true });
+    res.status(400).json({ ok: false, error: "pageText is required", code: "missing_page_text", requestId, fallbackAllowed: true });
     return;
   }
   if (!body.pageContentHash || typeof body.pageContentHash !== "string") {
-    res.status(400).json({ ok: false, error: "pageContentHash is required", code: "missing_page_content_hash", fallbackAllowed: true });
+    res.status(400).json({ ok: false, error: "pageContentHash is required", code: "missing_page_content_hash", requestId, fallbackAllowed: true });
     return;
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("[SURGEON_PLAN_UNAVAILABLE]", { reason: "OPENAI_API_KEY missing", ...diagnosticIds });
-    res.status(200).json(degraded("Advanced page analysis is not configured on the server."));
+    res.status(200).json(degraded("Advanced page analysis is not configured on the server.", "missing_configuration", requestId));
     return;
   }
 
+  // Fallback path only (no structured blocks provided) — the primary path
+  // sends the complete typed blocks[] decomposition below, uncapped. This
+  // fallback is bounded to a generous upper bound for an ordinary textbook
+  // page rather than the old, much tighter 6000-char cut — truncation is
+  // reported explicitly (never silent) so an unusually dense page's loss is
+  // visible in the diagnostic log, not just guessed at.
+  const PAGE_TEXT_FALLBACK_LIMIT = 18_000;
   const blocks = Array.isArray(body.blocks) ? body.blocks.slice(0, 200) : [];
+  const pageTextTruncated = blocks.length === 0 && body.pageText.length > PAGE_TEXT_FALLBACK_LIMIT;
   const blocksBlock = blocks.length > 0
     ? blocks.map(b => `[${b.readingOrder}][${String(b.type).toUpperCase()}] ${b.text}`).join("\n")
-    : body.pageText.slice(0, 6000); // fallback: no structured blocks provided
+    : body.pageText.slice(0, PAGE_TEXT_FALLBACK_LIMIT);
+  if (pageTextTruncated) {
+    console.warn("[SURGEON_PLAN_PAGE_TEXT_TRUNCATED]", { ...diagnosticIds, limit: PAGE_TEXT_FALLBACK_LIMIT, actualLength: body.pageText.length });
+  }
 
   // Gemini's description of any figure/diagram/chart/table/radiograph on this
   // page (pages/api/gemini-visual.ts), resolved BEFORE this request was built
@@ -356,30 +394,37 @@ export default async function handler(
       completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
     }
   } catch (err: any) {
+    const isTimeout        = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");
     const isRateLimited     = err instanceof OpenAI.APIError && err.status === 429;
     const isInvalidRequest  = isInvalidRequestError(err);
+    const code: ServerFailureStage =
+      isTimeout ? "timeout" : isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "openai_request_failed";
     console.error("[SURGEON_PLAN_FAILED]", {
       ...diagnosticIds,
+      stage:      code,
       attempts,
       error:      err?.message ?? String(err),
       status:     err?.status ?? null,
       durationMs: Date.now() - startedAt,
     });
     res.status(200).json(degraded(
-      isRateLimited
+      isTimeout
+        ? "Advanced page analysis timed out."
+        : isRateLimited
         ? "Advanced page analysis is rate-limited — try again shortly."
         : isInvalidRequest
         ? "Advanced page analysis failed due to a request configuration error."
         : "Advanced page analysis is temporarily unavailable.",
-      isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "UPSTREAM_UNAVAILABLE",
+      code,
+      requestId,
     ));
     return;
   }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "empty_response", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned no content."));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "empty_response", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned no content.", "empty_response", requestId));
     return;
   }
 
@@ -388,21 +433,21 @@ export default async function handler(
     const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     parsed = JSON.parse(jsonStr);
   } catch {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "parse_error", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned invalid output."));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "invalid_json", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned invalid output.", "invalid_json", requestId));
     return;
   }
 
   const result = SurgeonAnnotationPlanSchema.safeParse(parsed);
   if (!result.success) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "schema_error", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned a malformed plan."));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation_failed", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation_failed", requestId));
     return;
   }
 
   if (!quotesPlausible(result.data, body.pageText)) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, reason: "quotes_implausible", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page."));
+    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "quote_grounding_failed", durationMs: Date.now() - startedAt });
+    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "quote_grounding_failed", requestId));
     return;
   }
 
@@ -417,5 +462,5 @@ export default async function handler(
   // the client's own fresh recomputation at response-apply time (against
   // whatever page is ACTUALLY on screen then) is the real check; this is
   // just carrying the request's identity through to that comparison.
-  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash });
+  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash, requestId });
 }
