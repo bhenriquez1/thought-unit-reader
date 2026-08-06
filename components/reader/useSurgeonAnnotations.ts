@@ -44,23 +44,28 @@ import type { AnnotationPlanResponse, ServerFailureStage } from "@/pages/api/pag
 export type SurgeonAnnotationStatus = "idle" | "loading" | "success" | "error";
 export type SurgeonPlanTier = "ready" | "empty" | "failed";
 
-// The server's own failure-stage codes, plus 2 that can only be detected
-// client-side: a response whose echoed pageTruthKey/pageContentHash no
-// longer matches the current page (identity_mismatch — the student
-// navigated away before the response arrived), or a network-level failure
-// that never reached the server at all (network_error — no HTTP response to
-// carry a server code). "quote_grounding" is deliberately the SAME code the
-// server's own (non-authoritative) plausibility check uses — every proposed
-// quote failing client-side sentence grounding despite a non-empty plan is
+// The server's own failure-stage codes, plus 3 that can only be detected
+// client-side:
+//   page_extraction — the CURRENT page's own text never reached a usable
+//     length (see hasPageText below) — this happens BEFORE any request is
+//     even built, so the server can never see or report it.
+//   page_identity — a response whose echoed pageTruthKey/pageContentHash no
+//     longer matches the current page (the student navigated away before
+//     the response arrived).
+//   network_error — a network-level failure that never reached the server
+//     at all (no HTTP response to carry a server code).
+// "sentence_grounding" is deliberately the SAME code the server's own
+// (non-authoritative) plausibility check uses — every proposed quote
+// failing client-side sentence grounding despite a non-empty plan is
 // conceptually the same pipeline stage, just caught by the authoritative
 // check instead of the server's defense-in-depth one.
 // Two more stages exist ONE layer further downstream — geometry_resolution
-// (a grounded quote failing to locate in the live PDF text layer) and render
-// (geometry resolved but the final dedup pass dropped it) — but this hook has
-// no visibility into that layer at all; SmartPDFViewer.tsx is the only place
-// that can observe it, and reports those two stages via
+// (a grounded quote failing to locate in the live PDF text layer) and
+// overlay_render (geometry resolved but the final dedup pass dropped it) —
+// but this hook has no visibility into that layer at all; SmartPDFViewer.tsx
+// is the only place that can observe it, and reports those two stages via
 // lib/readingFocus/readingFocusStore.ts's annotationRenderStage instead.
-export type ClientFailureStage = ServerFailureStage | "identity_mismatch" | "network_error";
+export type ClientFailureStage = ServerFailureStage | "page_extraction" | "page_identity" | "network_error";
 
 export interface UseSurgeonAnnotationsResult {
   plan: SurgeonAnnotationPlan | null;
@@ -347,8 +352,8 @@ export function useSurgeonAnnotations({
             documentIdHash: hashDocumentId(bookIdRef.current),
             pageTruthKey,
             stage: "cache-hit",
-            annotationPlanCount: stored.plan.annotations.length,
-            groundedAnnotationCount: targets.length,
+            returnedAnnotationCount: stored.plan.annotations.length,
+            groundedCount: targets.length,
           });
         }
       } catch {
@@ -370,8 +375,21 @@ export function useSurgeonAnnotations({
   // No abort in this effect's cleanup — enabled/text flicker must not kill a run.
   useEffect(() => {
     if (!enabled) return;
-    const hasPageText = (pageText?.length ?? 0) > 200;
-    if (!hasPageText) return;
+    const rawPageTextLength = pageText?.length ?? 0;
+    const hasPageText = rawPageTextLength > 200;
+    if (!hasPageText) {
+      // Distinguish "hasn't loaded yet" (pageText still empty right after a
+      // page navigation — normal and transient, not a failure) from
+      // "extraction genuinely produced too little for a real page" (pageText
+      // is defined and non-trivial but still under the safety floor — e.g. a
+      // scanned page with no text layer). Only the latter is worth surfacing
+      // as page_extraction; flagging the former would false-positive on
+      // every single page turn, since text extraction is always async.
+      if (rawPageTextLength > 0) {
+        setAnnotationFailureStage("page_extraction");
+      }
+      return;
+    }
 
     const compositeKey = `${pageTruthKey}|${domain}|${semanticPack.id}`;
     if (startedKeyRef.current === compositeKey && !forceRefetchRef.current) {
@@ -462,7 +480,7 @@ export function useSurgeonAnnotations({
           // than silently doing nothing (the student is left on whatever was
           // already showing; this is diagnostic, not a blocking error state).
           console.warn("[SURGEON_PLAN_PAGE_IDENTITY_MISMATCH]", { expected: pageTruthKey, received: data.plan.pageTruthKey, requestId: data.requestId });
-          setAnnotationFailureStage("identity_mismatch");
+          setAnnotationFailureStage("page_identity");
           setAnnotationRequestId(data.requestId);
           return;
         }
@@ -479,7 +497,7 @@ export function useSurgeonAnnotations({
         );
         if (data.pageContentHash !== currentContentHash) {
           console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash, requestId: data.requestId });
-          setAnnotationFailureStage("identity_mismatch");
+          setAnnotationFailureStage("page_identity");
           setAnnotationRequestId(data.requestId);
           return;
         }
@@ -492,7 +510,7 @@ export function useSurgeonAnnotations({
           // degraded, not a hard error, but a distinct stage from the
           // server's own (non-authoritative) quote_grounding_failed check.
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
-          setAnnotationFailureStage("quote_grounding");
+          setAnnotationFailureStage("sentence_grounding");
           setAnnotationRequestId(data.requestId);
           setStatus("error");
           return;
@@ -520,8 +538,8 @@ export function useSurgeonAnnotations({
           documentIdHash: hashDocumentId(bookIdRef.current),
           pageTruthKey,
           stage: "fetch",
-          annotationPlanCount: data.plan.annotations.length,
-          groundedAnnotationCount: targets.length,
+          returnedAnnotationCount: data.plan.annotations.length,
+          groundedCount: targets.length,
           hasVisualContext: visualContext !== null,
         });
       } catch (err: any) {

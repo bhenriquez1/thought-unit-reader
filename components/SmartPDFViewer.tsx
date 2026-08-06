@@ -1259,10 +1259,10 @@ export default function SmartPDFViewer({
       // Production-safe pipeline trace — counts only, never annotation text,
       // so this is safe to leave enabled in production for diagnosing "the
       // right panel shows a grounded concept but the PDF isn't highlighted"
-      // reports. groundedAnnotationCount === canonicalTargetCount by
+      // reports. groundedCount === canonicalTargetCount by
       // construction (groundedAnnotationsToHighlightTargets in
       // useSurgeonAnnotations.ts is a 1:1 map — see that file's own log for
-      // annotationPlanCount, the stage before grounding).
+      // returnedAnnotationCount, the stage before grounding).
       //   planner annotation → grounded quote → resolved sentence →
       //   PDF text-layer match → geometry rectangles → PdfEvidenceOverlay render
       const canonicalTargetCount = highlightTargets?.length ?? 0;
@@ -1281,16 +1281,16 @@ export default function SmartPDFViewer({
       const geometryDropRatio = canonicalTargetCount > 0
         ? (canonicalTargetCount - geometryResolvedCount) / canonicalTargetCount
         : 0;
-      const renderStage: "geometry_resolution" | "render" | null =
+      const renderStage: "geometry_resolution" | "overlay_render" | null =
         canonicalTargetCount === 0     ? null
         : geometryDropRatio >= 0.5     ? "geometry_resolution"
-        : afterDedup.length === 0      ? "render"
+        : afterDedup.length === 0      ? "overlay_render"
         : null;
       console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
         pageTruthKey:            pageTruthKey ?? null,
         documentId:              docId ?? null,
         pageNumber:              currentPage,
-        groundedAnnotationCount: canonicalTargetCount,
+        groundedCount: canonicalTargetCount,
         geometryResolvedCount,
         geometryFailedCount:     canonicalTargetCount - geometryResolvedCount,
         renderedAnnotationCount: afterDedup.length,

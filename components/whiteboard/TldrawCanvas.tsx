@@ -170,6 +170,15 @@ export default function TldrawCanvas({
 }: Props) {
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
   const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
+  const DEV = process.env.NODE_ENV === "development";
+
+  // Dev-only visible readout of [WHITEBOARD_STEP_DIAGNOSTIC] — the same
+  // counts as the console log, but visible without opening devtools, so
+  // "is the drawing layer actually keeping up with the narration" is a
+  // glance, not a log search. Never rendered in production.
+  const [stepDiagnostic, setStepDiagnostic] = useState<{
+    step: number; total: number; nodeCount: number; generated: number; visible: number;
+  } | null>(null);
 
   useEffect(() => {
     console.log("[WHITEBOARD_LICENSE_DIAGNOSTIC]", {
@@ -182,6 +191,7 @@ export default function TldrawCanvas({
 
   const [canvasInitFailure, setCanvasInitFailure] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const mountCountRef = useRef(0);
 
   // ── Fallback VSG: derive one from noteCards when no vsg prop was given.
   //    The professor engine ALWAYS operates on a VisualSceneGraph — there is
@@ -312,6 +322,35 @@ export default function TldrawCanvas({
       editor.updateShapes(updates.map((u: any) => ({ id: u.id, type: u.type, isLocked: true })));
     }
 
+    // Privacy-safe per-step diagnostic — no narration/label/quote text, only
+    // ids and counts. The one signal previously missing to answer "narration
+    // is progressing but the canvas looks blank": editorShapeCount is
+    // queried directly from tldraw's OWN store (ground truth — not this
+    // component's own createdShapeIdsRef bookkeeping, which could silently
+    // drift from what the editor actually has), so a real discrepancy
+    // between "we called createShape" and "tldraw actually has the shape"
+    // is visible here, not just inferred.
+    const vsgNow = vsgForColorsRef.current;
+    console.log("[WHITEBOARD_STEP_DIAGNOSTIC]", {
+      pageTruthKey:        plan.sourceSnapshot?.pageTruthKey ?? null,
+      sceneGraphId:        vsgNow?.id ?? null,
+      currentTeachingStep: index,
+      totalTeachingSteps:  plan.actions.length,
+      nodeCount:           vsgNow?.nodes.length ?? 0,
+      edgeCount:           vsgNow?.edges.length ?? 0,
+      shapeRecordsGenerated: wantedIds.size,
+      shapeRecordsCreated:   creates.length,
+      currentStepShapeIds:   Array.from(state.values()).map(s => s.shapeId),
+      editorShapeCount:      editor.getCurrentPageShapeIds().size,
+      visibleShapeCount:     createdShapeIdsRef.current.size,
+    });
+    if (DEV) {
+      setStepDiagnostic({
+        step: index + 1, total: plan.actions.length, nodeCount: vsgNow?.nodes.length ?? 0,
+        generated: wantedIds.size, visible: createdShapeIdsRef.current.size,
+      });
+    }
+
     const cameraTargets = resolveCameraTargetAtStep(plan.actions, index);
     if (cameraTargets && cameraTargets.length > 0) {
       const bounds = cameraTargets
@@ -341,6 +380,17 @@ export default function TldrawCanvas({
     } else if (index === -1) {
       editor.zoomToFit();
     }
+
+    // A second small log for cameraBounds specifically — the camera call
+    // above animates (300ms), so this is the viewport at the MOMENT the
+    // step was applied, not necessarily the final settled position; still a
+    // real, directly-queried value (not the internally-computed target) for
+    // answering "are shapes being drawn outside what the camera can see."
+    const vpBounds = editor.getViewportPageBounds();
+    console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]", {
+      currentTeachingStep: index,
+      cameraBounds: { x: Math.round(vpBounds.x), y: Math.round(vpBounds.y), w: Math.round(vpBounds.w), h: Math.round(vpBounds.h) },
+    });
 
     setActiveSegmentId(resolveActiveSegmentIdAtStep(plan.actions, index));
   }, [colorForTarget]);
@@ -500,21 +550,40 @@ export default function TldrawCanvas({
   // state is known to be valid for THIS load; those restored shapes are never
   // trusted as ground truth, only what the current, validated lessonPlan says.
   const handleMount = useCallback((editor: Editor) => {
+    mountCountRef.current += 1;
+    const isDuplicateMount = editor === editorRef.current;
+    console.log("[WHITEBOARD_MOUNT_DIAGNOSTIC]", { mountCount: mountCountRef.current, editorIdentity: isDuplicateMount ? "same" : "different" });
+    // React 18 StrictMode (next.config.js: reactStrictMode: true) double-
+    // invokes onMount in dev — confirmed via the log above (mountCount
+    // reaches 2 for the SAME editor instance on a normal load). Re-running
+    // clearTeachingLayer + applyStateAtStep(editor, -1) a second time for an
+    // editor we already fully initialized is redundant, unnecessary risk in
+    // an async multi-step sequence — skip the duplicate work, but still keep
+    // the ref assignment (harmless no-op when it's the same value) and the
+    // listener re-subscription below, since StrictMode's real contract is
+    // "effects must be safe to run twice," not "skip the second call
+    // entirely" — only the parts of this callback that are NOT idempotent
+    // (full state rebuild) are the ones being skipped here.
     editorRef.current = editor;
-    clearTeachingLayer(editor);
-    // Read-only by default (see editingEnabled) — the isPlaying/editingEnabled
-    // effect above can't apply this on its own for the very first mount,
-    // since editorRef.current is still null when that effect's first run
-    // fires (this callback is what SETS editorRef.current).
-    editor.updateInstanceState({ isReadonly: true });
-    if (lessonPlan) {
-      registerAnchors(lessonPlan.actions);
-      setTotalSteps(lessonPlan.actions.length);
-      applyStateAtStep(editor, -1);
-    } else {
-      setTotalSteps(0);
+    if (!isDuplicateMount) {
+      clearTeachingLayer(editor);
+      // Read-only by default (see editingEnabled) — the isPlaying/editingEnabled
+      // effect above can't apply this on its own for the very first mount,
+      // since editorRef.current is still null when that effect's first run
+      // fires (this callback is what SETS editorRef.current).
+      editor.updateInstanceState({ isReadonly: true });
+      if (lessonPlan) {
+        registerAnchors(lessonPlan.actions);
+        setTotalSteps(lessonPlan.actions.length);
+        applyStateAtStep(editor, -1);
+      } else {
+        setTotalSteps(0);
+      }
     }
 
+    // Listener (re-)subscription is idempotent and safe to redo on a
+    // duplicate mount — unlike the full clear+rebuild above, there's no
+    // async multi-step sequence here to race against.
     storeUnsubRef.current?.();
     storeUnsubRef.current = editor.store.listen(
       () => {
@@ -648,6 +717,14 @@ export default function TldrawCanvas({
         <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace", flexShrink: 0 }}>
           {lessonPlan?.title || pageTitle || "Whiteboard"}
         </span>
+        {/* Dev-only visible readout — see [WHITEBOARD_STEP_DIAGNOSTIC] above.
+            Never rendered in production; a glance answer to "is the drawing
+            layer actually keeping up with the narration," not a log search. */}
+        {DEV && stepDiagnostic && (
+          <span style={{ fontSize: 10, color: "#64748b", fontFamily: "monospace", flexShrink: 0 }}>
+            Step {stepDiagnostic.step}/{stepDiagnostic.total} · {stepDiagnostic.nodeCount} scene nodes · {stepDiagnostic.generated} generated shapes · {stepDiagnostic.visible} visible
+          </span>
+        )}
         <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
           {totalSteps > 0 && (
             <span style={{ fontSize: 10, color: "#475569", fontVariantNumeric: "tabular-nums", marginRight: 2 }}>

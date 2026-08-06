@@ -29,14 +29,14 @@ describe("SmartPDFViewer.tsx — [SURGEON_PIPELINE_DIAGNOSTIC] geometry-stage co
     expect(incrementCount).toBe(3);
   });
 
-  it("logs [SURGEON_PIPELINE_DIAGNOSTIC] with pageTruthKey, documentId, pageNumber, groundedAnnotationCount, geometryResolvedCount, geometryFailedCount, renderedAnnotationCount — never annotation text", () => {
+  it("logs [SURGEON_PIPELINE_DIAGNOSTIC] with pageTruthKey, documentId, pageNumber, groundedCount, geometryResolvedCount, geometryFailedCount, renderedAnnotationCount — never annotation text", () => {
     const idx = src.indexOf('console.log("[SURGEON_PIPELINE_DIAGNOSTIC]"');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 500);
     expect(block).toMatch(/pageTruthKey:\s*pageTruthKey/);
     expect(block).toMatch(/documentId:\s*docId/);
     expect(block).toMatch(/pageNumber:\s*currentPage/);
-    expect(block).toMatch(/groundedAnnotationCount:/);
+    expect(block).toMatch(/groundedCount:/);
     expect(block).toMatch(/geometryResolvedCount,/);
     expect(block).toMatch(/geometryFailedCount:/);
     expect(block).toMatch(/renderedAnnotationCount:\s*afterDedup\.length/);
@@ -63,24 +63,24 @@ describe("useSurgeonAnnotations.ts — [SURGEON_PIPELINE_DIAGNOSTIC] planner/gro
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("logs annotationPlanCount and groundedAnnotationCount at the cache-hit site, production-safe (no DEV gate)", () => {
+  it("logs returnedAnnotationCount and groundedCount at the cache-hit site, production-safe (no DEV gate)", () => {
     const idx = src.indexOf('stage: "cache-hit"');
     expect(idx).toBeGreaterThan(-1);
     const before = src.slice(Math.max(0, idx - 120), idx);
     expect(before).not.toMatch(/if \(DEV\)\s*console\.log\(\s*$/);
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/annotationPlanCount:\s*stored\.plan\.annotations\.length/);
-    expect(block).toMatch(/groundedAnnotationCount:\s*targets\.length/);
+    expect(block).toMatch(/returnedAnnotationCount:\s*stored\.plan\.annotations\.length/);
+    expect(block).toMatch(/groundedCount:\s*targets\.length/);
   });
 
-  it("logs annotationPlanCount and groundedAnnotationCount at the fresh-fetch site, production-safe (no DEV gate)", () => {
+  it("logs returnedAnnotationCount and groundedCount at the fresh-fetch site, production-safe (no DEV gate)", () => {
     const idx = src.indexOf('stage: "fetch"');
     expect(idx).toBeGreaterThan(-1);
     const before = src.slice(Math.max(0, idx - 120), idx);
     expect(before).not.toMatch(/if \(DEV\)\s*console\.log\(\s*$/);
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/annotationPlanCount:\s*data\.plan\.annotations\.length/);
-    expect(block).toMatch(/groundedAnnotationCount:\s*targets\.length/);
+    expect(block).toMatch(/returnedAnnotationCount:\s*data\.plan\.annotations\.length/);
+    expect(block).toMatch(/groundedCount:\s*targets\.length/);
   });
 });
 

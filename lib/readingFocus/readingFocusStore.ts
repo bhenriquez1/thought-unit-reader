@@ -46,7 +46,7 @@ export interface ReadingFocusState {
    * console.log ([SURGEON_PIPELINE_DIAGNOSTIC]): a grounded quote can still
    * fail to locate in the live PDF text layer ("geometry_resolution"), or
    * resolve to geometry that the final dedup/render pass then drops
-   * entirely ("render"). Null means the last rebuild had no targets to
+   * entirely ("overlay_render"). Null means the last rebuild had no targets to
    * resolve, or every target that had one made it all the way to a painted
    * rect — i.e. no problem at this stage. This is genuinely different from
    * useSurgeonAnnotations' own annotationFailureStage: that hook can report
@@ -55,7 +55,7 @@ export interface ReadingFocusState {
    * has no visibility into at all (SmartPDFViewer's own PDF.js text-layer
    * coordinate matching).
    */
-  annotationRenderStage: "geometry_resolution" | "render" | null;
+  annotationRenderStage: "geometry_resolution" | "overlay_render" | null;
   /** Raw counts backing annotationRenderStage — set together, always in sync.
    *  Lets the UI say "4 of 6 annotations could not be located on this page"
    *  instead of a binary pass/fail, since a PARTIAL geometry-resolution

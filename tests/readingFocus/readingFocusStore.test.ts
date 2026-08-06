@@ -38,12 +38,12 @@ describe("readingFocusStore — annotationRenderStage / annotationRenderCounts",
     expect(s.annotationRenderCounts).toEqual({ grounded: 6, geometryResolved: 1, rendered: 1 });
   });
 
-  it("accepts the render stage distinctly from geometry_resolution", () => {
+  it("accepts the overlay_render stage distinctly from geometry_resolution", () => {
     useReadingFocusStore.getState().setAnnotationRenderStage(
-      "render",
+      "overlay_render",
       { grounded: 4, geometryResolved: 4, rendered: 0 },
     );
-    expect(useReadingFocusStore.getState().annotationRenderStage).toBe("render");
+    expect(useReadingFocusStore.getState().annotationRenderStage).toBe("overlay_render");
   });
 
   it("clearing back to null resets both fields together (never one without the other)", () => {
