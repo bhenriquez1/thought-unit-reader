@@ -176,6 +176,13 @@ Rules:
     two disconnected boxes. Only set it when the connection is genuinely part of the page's
     content — do not force a relationship between two annotations that merely happen to be
     on the same page. Omit the field entirely when there isn't one.
+14. VISUAL CONTEXT (when provided) — a separate pass may tell you what figure/diagram/chart/
+    table/radiograph/histology image appears on this page, below your other input. Use it only
+    as CONTEXT for judging what the page is about and which surrounding text deserves an
+    annotation (e.g. text that explains or captions that visual is more likely to matter) — never
+    quote from it, never treat it as if it were page text you read yourself, and never let its
+    absence change how you analyze the page. If no visual context is provided, proceed exactly
+    as you would for a plain text-only page.
 
 Respond ONLY with a JSON object matching this schema — no prose, no markdown fences:
 {
@@ -295,6 +302,16 @@ export default async function handler(
     ? blocks.map(b => `[${b.readingOrder}][${String(b.type).toUpperCase()}] ${b.text}`).join("\n")
     : body.pageText.slice(0, 6000); // fallback: no structured blocks provided
 
+  // Gemini's description of any figure/diagram/chart/table/radiograph on this
+  // page (pages/api/gemini-visual.ts), resolved BEFORE this request was built
+  // — additive merge input, not a second independent analysis. Null whenever
+  // Gemini is unconfigured, found nothing, or its call failed/timed out; the
+  // prompt below is written so its absence changes nothing about how you read
+  // the page otherwise.
+  const visualContextBlock = body.visualContext
+    ? `\nA separate visual-understanding pass identified this on the page (context only — a data point about what's on the page, not a substitute for reading the page yourself, and never a source for an exactQuote):\n${body.visualContext}\n`
+    : "";
+
   const userTextBlock =
     `pageTruthKey: ${body.pageTruthKey}\n` +
     `pageNumber: ${body.pageNumber ?? "unknown"}\n` +
@@ -303,6 +320,7 @@ export default async function handler(
     `headings: ${JSON.stringify(body.headings ?? {})}\n` +
     `existingCanonicalUnits (context only — re-verify against the page, do not trust blindly): ${JSON.stringify((body.existingCanonicalUnits ?? []).slice(0, 20))}\n` +
     `\nCurrent page — structured blocks in reading order (read ALL of them; headings and tables carry real content, not decoration):\n${blocksBlock}\n` +
+    visualContextBlock +
     `\nProduce the SurgeonAnnotationPlan JSON.`;
 
   const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [

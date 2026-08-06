@@ -253,3 +253,34 @@ describe("pages/api/page-annotation-plan.ts — relationship (optional annotatio
     expect(block).toMatch(/"relationship":/);
   });
 });
+
+describe("pages/api/page-annotation-plan.ts — visualContext (Gemini's merged figure/diagram description)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: includes visualContext in the user content sent to the model when provided, but never claims it as page text the model itself read", () => {
+    const idx = src.indexOf("const visualContextBlock = body.visualContext");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/A separate visual-understanding pass identified this on the page/);
+    expect(block).toMatch(/never a source for an exactQuote/);
+  });
+
+  it("omits the visual context block entirely when visualContext is null/absent — never sends an empty or placeholder section", () => {
+    const idx = src.indexOf("const visualContextBlock = body.visualContext");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/\?\s*`\\n/);
+    expect(block).toMatch(/:\s*""/);
+  });
+
+  it("prompt rule 14 tells the model visual context is context only — never quote from it, and its absence changes nothing", () => {
+    expect(src).toMatch(/never\s*\n?\s*quote from it, never treat it as if it were page text you read yourself/);
+    expect(src).toMatch(/If no visual context is provided, proceed exactly\s*\n\s*as you would for a plain text-only page/);
+  });
+
+  it("visualContextBlock is actually spliced into the final userTextBlock sent to the model", () => {
+    const idx = src.indexOf("const userTextBlock =");
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/visualContextBlock \+/);
+  });
+});

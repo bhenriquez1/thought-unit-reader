@@ -142,3 +142,20 @@ describe("buildSurgeonAnnotationInput — structured blocks + content-derived in
     expect(input.documentId).toBe("doc-1");
   });
 });
+
+describe("buildSurgeonAnnotationInput — visualContext (Gemini's figure/diagram description, merged before this request is built)", () => {
+  it("passes visualContext through unchanged when provided", () => {
+    const input = buildSurgeonAnnotationInput({ ...BASE_ARGS, visualContext: "A labeled diagram of the glycolysis pathway." });
+    expect(input.visualContext).toBe("A labeled diagram of the glycolysis pathway.");
+  });
+
+  it("defaults visualContext to null when not provided — Gemini is optional, this must never be required", () => {
+    const input = buildSurgeonAnnotationInput(BASE_ARGS);
+    expect(input.visualContext).toBeNull();
+  });
+
+  it("defaults visualContext to null when explicitly passed as null (Gemini unconfigured/failed/timed out)", () => {
+    const input = buildSurgeonAnnotationInput({ ...BASE_ARGS, visualContext: null });
+    expect(input.visualContext).toBeNull();
+  });
+});

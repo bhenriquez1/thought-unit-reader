@@ -28,6 +28,7 @@ import type { SemanticPack } from "@/lib/semantic/types";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
+import { resolveVisualContext } from "@/lib/insights/resolveVisualContext";
 import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
@@ -344,6 +345,23 @@ export function useSurgeonAnnotations({
 
     (async () => {
       try {
+        // Best-effort, additive: Gemini's figure/diagram/table description for
+        // THIS page, resolved BEFORE the OpenAI request is built, so it can be
+        // merged into the ONE SurgeonAnnotationPlan read as extra context —
+        // never a second independent analysis Highlights/Whiteboard consume
+        // separately. Never blocks: resolves to null on any failure/missing
+        // key/no-image/no-visual-content, and text-only analysis proceeds
+        // exactly as it did before Gemini existed. Same AbortController as
+        // the OpenAI call below, so a real page navigation cancels both.
+        const visualContext = await resolveVisualContext({
+          pageImageDataUrl: pageImageDataUrlRef.current,
+          documentId:       bookIdRef.current,
+          pageNumber:       pageNumberRef.current,
+          pageTruthKey,
+          signal:           ctrl.signal,
+        });
+        if (ctrl.signal.aborted) return;
+
         const input = buildSurgeonAnnotationInput({
           pageTruthKey,
           documentId:       bookIdRef.current,
@@ -355,6 +373,7 @@ export function useSurgeonAnnotations({
           domain,
           semanticPack,
           existingCanonicalUnits: existingCanonicalUnitsRef.current,
+          visualContext,
         });
 
         const res = await fetch("/api/page-annotation-plan", {
@@ -425,6 +444,7 @@ export function useSurgeonAnnotations({
           stage: "fetch",
           annotationPlanCount: data.plan.annotations.length,
           groundedAnnotationCount: targets.length,
+          hasVisualContext: visualContext !== null,
         });
       } catch (err: any) {
         if (ctrl.signal.aborted) return;

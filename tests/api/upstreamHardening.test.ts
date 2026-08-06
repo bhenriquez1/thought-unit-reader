@@ -125,6 +125,29 @@ describe("RightPanel.tsx — visible degraded-mode message (no silent gap)", () 
   });
 });
 
+describe("RightPanel.tsx — Cohere is a gap-filler, not a second independent analysis of the same topic", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(RIGHT_PANEL, "utf8"); });
+
+  it("REQUIRED: the cohere-retrieval fetch is nested inside resolveResources' success handler, not fired in parallel — it only runs once OpenAI's response is known", () => {
+    const openaiIdx = src.indexOf('fetch("/api/resolveResources"');
+    const cohereIdx = src.indexOf('fetch("/api/cohere-retrieval"');
+    expect(openaiIdx).toBeGreaterThan(-1);
+    expect(cohereIdx).toBeGreaterThan(openaiIdx);
+    // The cohere fetch must appear within the resolveResources .then() callback,
+    // not as a sibling top-level fetch() call in the same effect.
+    const between = src.slice(openaiIdx, cohereIdx);
+    expect(between).toMatch(/\.then\(data => \{/);
+    expect(between).not.toMatch(/\n {4}fetch\(/); // no other top-level fetch between them
+  });
+
+  it("REQUIRED: skips the cohere-retrieval call entirely when OpenAI already resolved both articles and videos — nothing for Cohere to fill in", () => {
+    const idx = src.indexOf('fetch("/api/resolveResources"');
+    const block = src.slice(idx, src.indexOf('fetch("/api/cohere-retrieval"'));
+    expect(block).toMatch(/if \(articles\.length > 0 && videos\.length > 0\) return;/);
+  });
+});
+
 describe("TldrawCanvas.tsx — production license guard", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
