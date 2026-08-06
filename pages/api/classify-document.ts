@@ -248,7 +248,7 @@ export default async function handler(
 
   const prompt = buildPrompt(body);
   const openaiKey = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.CLAUDE_API_KEY;
 
   if (openaiKey) {
     try {

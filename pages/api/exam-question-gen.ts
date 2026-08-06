@@ -90,9 +90,9 @@ OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 Return ONLY the JSON object — no markdown fences, no explanation outside the JSON.`;
 
 /** Stage 1 — optional Claude pass distilling the concept into a skill map.
- *  Returns null if ANTHROPIC_API_KEY is unset or the call fails. */
+ *  Returns null if CLAUDE_API_KEY is unset or the call fails. */
 async function buildSkillMap(conceptText: string, topic?: string): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) return null;
 
   try {

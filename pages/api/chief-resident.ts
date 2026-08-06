@@ -60,9 +60,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    return res.status(503).json({ error: "Chief Resident not configured — ANTHROPIC_API_KEY missing" });
+    return res.status(503).json({ error: "Chief Resident not configured — CLAUDE_API_KEY missing" });
   }
 
   const body = req.body as ChiefResidentInput;

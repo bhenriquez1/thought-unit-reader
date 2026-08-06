@@ -164,8 +164,8 @@ Output JSON only. No markdown. Schema:
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Diagnostic: confirm the env variable name is correct in Render / .env.local
   DEV && console.log("[CLAUDE_ENV_CHECK]", {
-    ANTHROPIC_API_KEY_loaded: Boolean(process.env.ANTHROPIC_API_KEY),
-    note: "If false — add/rename the env variable to ANTHROPIC_API_KEY in Render and redeploy",
+    CLAUDE_API_KEY_loaded: Boolean(process.env.CLAUDE_API_KEY),
+    note: "If false — add/rename the env variable to CLAUDE_API_KEY in Render and redeploy",
   });
 
   if (req.method !== "POST") {
@@ -173,11 +173,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
     // Always log (not DEV-gated) — a missing key in production is a config error, not routine noise.
     console.error("[CLAUDE_ENRICHMENT_UNAVAILABLE]", {
-      reason:       "ANTHROPIC_API_KEY missing",
+      reason:       "CLAUDE_API_KEY missing",
       pageTruthKey: (req.body as ClaudeEnrichmentInput)?.pageTruthKey ?? null,
     });
     return res.status(200).json(degraded("Claude enrichment is not configured on the server."));

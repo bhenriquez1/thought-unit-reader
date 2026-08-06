@@ -106,7 +106,7 @@ export default async function handler(
 
   const body = sanitise(raw);
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.CLAUDE_API_KEY;
   if (!anthropicKey) {
     return res.status(503).json({ words: [], error: "Vocabulary feature is not available right now." });
   }
