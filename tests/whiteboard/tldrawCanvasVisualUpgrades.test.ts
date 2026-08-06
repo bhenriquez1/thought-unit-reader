@@ -111,3 +111,29 @@ describe("TldrawCanvas.tsx — read-only teaching canvas + explicit 'Edit a copy
     expect(block).toMatch(/disabled=\{isPlaying \|\| editingEnabled\}/);
   });
 });
+
+describe("TldrawCanvas.tsx — a pageTruthKey/lessonPlan change cancels narration AND clears the scene immediately, not just one or the other", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: the rebuild effect (fires on every lessonPlan reference change) both clears the teaching layer AND stops all speech, in the same synchronous block — before the 'nothing to draw yet' early return", () => {
+    const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/clearTeachingLayer\(editor\);/);
+    expect(block).toMatch(/stopAllSpeech\("whiteboard-rebuild"\);/);
+    // Both must run BEFORE the null-plan early return, so a page change with
+    // no new plan yet (loading, or a failed generation) still clears the OLD
+    // page's shapes/narration instead of leaving them visible.
+    const clearIdx = block.indexOf("clearTeachingLayer(editor);");
+    const stopIdx  = block.indexOf('stopAllSpeech("whiteboard-rebuild");');
+    const returnIdx = block.indexOf("if (!lessonPlan) {");
+    expect(clearIdx).toBeLessThan(returnIdx);
+    expect(stopIdx).toBeLessThan(returnIdx);
+  });
+
+  it("the rebuild effect is keyed on [lessonPlan] alone — a page/concept change is a lessonPlan identity change (useProfessorLesson.ts is the single owner of when a NEW plan object is produced)", () => {
+    const idx = src.indexOf("// eslint-disable-next-line react-hooks/exhaustive-deps\n  }, [lessonPlan]);");
+    expect(idx).toBeGreaterThan(-1);
+  });
+});
