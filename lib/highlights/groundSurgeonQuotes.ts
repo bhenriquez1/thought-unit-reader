@@ -13,6 +13,12 @@
 // substituting a different one.
 //
 // Pipeline per annotation:
+//   0. sentenceId lookup       → keep, confidence 1.0, guaranteed-exact by
+//      construction (see lib/insights/segmentPageSentences.ts) — no string
+//      matching involved at all, so it can't be defeated by a small
+//      paraphrase the way Stage 1/2 can. Preferred path for "fullSentence"
+//      scope; skipped entirely for "entity" scope (sub-sentence spans aren't
+//      covered by sentence segmentation) or when sentenceId is absent/stale.
 //   1. Exact substring match   → keep, confidence 1.0
 //   2. Normalized match        → keep, confidence 0.95 (ligatures/quotes/dashes/whitespace)
 //   3. No match                → drop entirely — "no highlight is better than a wrong highlight"
@@ -42,7 +48,7 @@ export type GroundedSurgeonAnnotation = SurgeonAnnotationPlan["annotations"][num
    *  expanded to full sentence boundaries for "fullSentence"-scope matches
    *  (the default) whenever a raw-text position could be located. */
   groundedText: string;
-  groundingState: "exact" | "normalized";
+  groundingState: "sentenceId" | "exact" | "normalized";
   confidence: number;
   /** This annotation's index in the ORIGINAL annotations[] array passed in —
    *  preserved through rejection/dedup so a surviving annotation.relationship
@@ -128,12 +134,20 @@ function expandToSentenceBoundaries(
 
 /**
  * Verify every annotation's exactQuote against the current page's real text.
- * Only annotations that match (exact or normalized) are returned — anything
- * that doesn't match is dropped, never substituted or guessed.
+ * Only annotations that match (sentenceId, exact, or normalized) are
+ * returned — anything that doesn't match is dropped, never substituted or
+ * guessed.
+ *
+ * @param sentencesById  id -> exact text, from segmentPageSentences() run
+ *   against this SAME pageText — see lib/insights/segmentPageSentences.ts.
+ *   Optional so existing callers/tests that only exercise exactQuote-based
+ *   grounding keep working unchanged; omit it (or pass an empty map) to
+ *   disable Stage 0 entirely.
  */
 export function groundSurgeonQuotes(
   annotations: SurgeonAnnotationPlan["annotations"],
   pageText: string,
+  sentencesById?: Map<string, string>,
 ): GroundedSurgeonAnnotation[] {
   if (!pageText || pageText.length < 10) return [];
 
@@ -143,6 +157,49 @@ export function groundSurgeonQuotes(
   for (const [originalIndex, annotation] of annotations.entries()) {
     const quote = annotation.exactQuote;
     const isEntity = annotation.spanScope === "entity";
+
+    // ── Stage 0: sentenceId lookup — guaranteed-exact, no string matching ──
+    // Only for "fullSentence" scope: an entity is a sub-sentence span the
+    // sentence segmentation doesn't represent, so it always uses exactQuote.
+    if (!isEntity && annotation.sentenceId && sentencesById?.has(annotation.sentenceId)) {
+      const sentenceText = sentencesById.get(annotation.sentenceId)!;
+      const startIdx = pageText.indexOf(sentenceText);
+      if (startIdx !== -1) {
+        let groundedText = sentenceText;
+        // Multi-sentence span (prompt rule 12): the model's own exactQuote is
+        // meaningfully longer than the single resolved sentence — walk
+        // forward, sentence by sentence, until the accumulated span roughly
+        // covers what exactQuote implies. Bounded defensively; if this loop
+        // can't catch up within a few sentences, keep whatever was
+        // accumulated rather than looping indefinitely — a shorter-than-
+        // intended (but still 100% real, still useful) grounded span beats
+        // both an unbounded expansion and rejecting the annotation outright.
+        const wantsMore = normText(quote).length > normText(sentenceText).length + 15;
+        if (wantsMore) {
+          // +1 to step past sentenceText's own trailing boundary — findSentenceEnd
+          // treats "already at a boundary" as "nothing to expand," so starting
+          // exactly AT that boundary would return immediately instead of
+          // advancing into the next sentence.
+          let end = findSentenceEnd(pageText, startIdx + sentenceText.length + 1);
+          let guard = 0;
+          while (
+            normText(pageText.slice(startIdx, end)).length < normText(quote).length - 15 &&
+            guard < 5
+          ) {
+            const next = findSentenceEnd(pageText, end + 1);
+            if (next <= end) break;
+            end = next;
+            guard++;
+          }
+          groundedText = pageText.slice(startIdx, end);
+        }
+        grounded.push({ ...annotation, groundedText, groundingState: "sentenceId", confidence: 1.0, originalIndex });
+        continue;
+      }
+      // sentenceId was set but doesn't resolve against this pageText (stale
+      // segmentation, id typo) — fall through to exact/normalized/reject
+      // below, exactly as if sentenceId had never been provided.
+    }
 
     // ── Stage 1: exact substring match ──────────────────────────────────────
     const exactPos = pageText.indexOf(quote);

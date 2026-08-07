@@ -67,6 +67,25 @@ function categoryCapsForPageRole(pageRole: string | null | undefined): Partial<R
 // categories) isn't clipped to 7 before it even reaches its own ceiling.
 const GLOBAL_CAP = 8;
 
+// A dense procedural/protocol/decision-branching page is a genuinely
+// different shape of content: the sequence itself (each step, each branch)
+// IS the page's substance, not one of several competing concepts sharing an
+// 8-slot budget with definitions/traps/pearls. A chapter-opener/definition
+// page deserves few, well-chosen annotations; a clinical checklist or
+// branching decision tree deserves many more, because under-annotating THAT
+// page silently drops steps a student needs to see. Only these specific
+// pageRoles get the wider ceiling — every other page keeps the standard
+// "expert marginalia, not a diagnostic overlay" budget.
+const GLOBAL_CAP_OVERRIDES: Partial<Record<string, number>> = {
+  procedure:       15,
+  workflow:        15,
+  "decision-tree": 15,
+};
+
+function globalCapForPageRole(pageRole: string | null | undefined): number {
+  return (pageRole ? GLOBAL_CAP_OVERRIDES[pageRole] : undefined) ?? GLOBAL_CAP;
+}
+
 interface IndexedEntry {
   item: GroundedSurgeonAnnotation;
   index: number;
@@ -90,11 +109,22 @@ function earliestIndex(entries: IndexedEntry[]): number {
 // Pages whose OWN classification is fundamentally about a multi-step process
 // get two mechanism/procedure slots instead of one — a procedure page routinely
 // has both a numbered sequence AND the mechanism it accomplishes, and clipping
-// to one silently drops half the page's actual content.
+// to one silently drops half the page's actual content. procedure/workflow/
+// decision-tree pages get a higher ceiling than mechanism-only pages: a dense
+// clinical checklist or branching protocol page often legitimately contains
+// SEVERAL distinct numbered sequences (e.g. three different treatment
+// protocols being laid out), not just one mechanism plus one procedure — see
+// selectMechanismOrProcedure's cap-vs-procedureSlots split below.
 const MECHANISM_PROCEDURE_CAP_OVERRIDES: Partial<Record<string, number>> = {
-  procedure: 2,
-  workflow:  2,
-  mechanism: 2,
+  // procedure gets (cap - 1) slots below — deliberately close to the raised
+  // 15-item GLOBAL_CAP_OVERRIDES ceiling for these SAME three pageRoles, so a
+  // genuinely dense checklist/workflow/branching-decision page isn't
+  // bottlenecked by a small procedure-specific sub-cap once it's already
+  // earned the wider page-level budget.
+  procedure:                    13,
+  workflow:                     13,
+  "decision-tree":               13,
+  mechanism:                    2,
   "organic-chemistry-reaction": 2,
   "mathematical-derivation":    2,
 };
@@ -103,10 +133,13 @@ const MECHANISM_PROCEDURE_CAP_OVERRIDES: Partial<Record<string, number>> = {
  * mechanism and procedure share ONE slot by default (not one each) — "one
  * mechanism or procedure" per the density rule — unless the page's own
  * pageRole is itself about a multi-step process (see
- * MECHANISM_PROCEDURE_CAP_OVERRIDES above), in which case both the top
- * mechanism AND the top procedure survive. Ties within a single slot are
- * broken by higher importance within the tied group, then by whichever
- * group's earliest annotation appeared first in the original plan.
+ * MECHANISM_PROCEDURE_CAP_OVERRIDES above), in which case mechanism keeps its
+ * single top pick (multiple competing "mechanism" annotations for one page is
+ * rarely correct even on a mechanism-heavy page) while procedure gets the
+ * REMAINING slots (cap - 1) — a dense procedural/workflow/decision-tree page
+ * can legitimately carry several distinct numbered sequences. Ties within a
+ * slot are broken by higher importance within the tied group, then by
+ * whichever group's earliest annotation appeared first in the original plan.
  */
 function selectMechanismOrProcedure(
   byType: Map<CanonicalType, IndexedEntry[]>,
@@ -118,10 +151,10 @@ function selectMechanismOrProcedure(
 
   const cap = (pageRole ? MECHANISM_PROCEDURE_CAP_OVERRIDES[pageRole] : undefined) ?? 1;
   if (cap >= 2) {
-    // Both types get their own top pick — no "winner take all" contest.
+    // Both types get their own slot(s) — no "winner take all" contest.
     return [
       ...byImportanceThenOriginalOrder(mechanism).slice(0, 1),
-      ...byImportanceThenOriginalOrder(procedure).slice(0, 1),
+      ...byImportanceThenOriginalOrder(procedure).slice(0, cap - 1),
     ];
   }
 
@@ -167,8 +200,9 @@ export function limitAnnotationDensity(
   selected.push(...selectMechanismOrProcedure(byType, pageRole));
 
   // Global backstop: rank ALL per-category survivors by importance, cap at
-  // GLOBAL_CAP, then restore original relative order for the final output.
-  const globallyCapped = byImportanceThenOriginalOrder(selected).slice(0, GLOBAL_CAP);
+  // the page-role-adaptive ceiling, then restore original relative order for
+  // the final output.
+  const globallyCapped = byImportanceThenOriginalOrder(selected).slice(0, globalCapForPageRole(pageRole));
   const finalOrder = [...globallyCapped].sort((a, b) => a.index - b.index);
 
   return finalOrder.map(e => e.item);

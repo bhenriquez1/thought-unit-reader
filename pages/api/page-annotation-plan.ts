@@ -30,6 +30,7 @@ import { resolveTeachingModel } from "@/lib/insights/resolveOpenAIModel";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
 import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
+import { formatSentenceList, type PageSentence } from "@/lib/insights/segmentPageSentences";
 
 export const config = {
   maxDuration: 30,
@@ -106,10 +107,25 @@ place in the book — they are NOT this page's content. Never propose an exactQu
 from headings.previous or headings.next; every exactQuote must come from THIS page's own
 blocks.
 
-Your task: identify what on this page deserves a highlight/annotation, and propose the
-EXACT verbatim quote for it. You do NOT propose coordinates — the app finds your quote
-in the real PDF text and draws it. If you cannot quote something exactly as it appears
-on the page, do not propose it as an annotation.
+Your task: identify what on this page deserves a highlight/annotation, and identify EXACTLY
+which span of the page it is. You do NOT propose coordinates — the app finds your quote (or
+sentenceId) in the real PDF text and draws it. If you cannot identify something exactly as
+it appears on the page, do not propose it as an annotation.
+
+The current page's text is ALSO provided below as a numbered list of complete sentences
+(pageSentences: "S001: ...", "S002: ...", etc.) — every sentence the app was able to isolate
+from this page's raw text, in reading order. For any "fullSentence"-scope annotation (the
+default — see rule 11), set sentenceId to the id of the sentence you are annotating INSTEAD
+OF relying on exactQuote to be typed perfectly: this is the preferred, more reliable path —
+the app resolves sentenceId directly against its own copy of this exact same numbered list,
+so there is zero risk of a small paraphrase (a dropped comma, a contraction) causing your
+annotation to be silently rejected. Still fill in exactQuote as your best verbatim
+transcription too (required by the schema either way, and it is the ONLY path used for
+"entity"-scope annotations, which are sub-sentence spans not covered by pageSentences) — but
+whenever a fullSentence annotation's content matches one of the numbered sentences, prefer
+setting sentenceId over leaving it blank. If your annotation spans MULTIPLE consecutive
+sentences (rule 12), set sentenceId to the FIRST sentence's id and let exactQuote carry the
+full multi-sentence span — the app will still ground exactQuote normally for the remainder.
 
 Rules:
 1. Every exactQuote must be copied verbatim from the page text/image — same words, same
@@ -238,7 +254,8 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
       "importance": "<critical|high|supporting>",
       "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>",
       "spanScope": "<fullSentence|entity — defaults to fullSentence>",
-      "relationship": "<optional: {\"type\": \"sequence\"|\"cause-effect\"|\"comparison\"|\"supports\", \"targetIndex\": <number>} — see rule 13>"
+      "relationship": "<optional: {\"type\": \"sequence\"|\"cause-effect\"|\"comparison\"|\"supports\", \"targetIndex\": <number>} — see rule 13>",
+      "sentenceId": "<optional but PREFERRED for fullSentence scope — the id from the numbered pageSentences list below, e.g. \"S004\">"
     }
   ]
 }`;
@@ -285,9 +302,16 @@ function normalizeForServerCheck(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function quotesPlausible(plan: SurgeonAnnotationPlan, pageText: string): boolean {
+function quotesPlausible(plan: SurgeonAnnotationPlan, pageText: string, validSentenceIds: Set<string>): boolean {
   const normPage = normalizeForServerCheck(pageText);
-  const plausible = plan.annotations.filter(a => normPage.includes(normalizeForServerCheck(a.exactQuote)));
+  const plausible = plan.annotations.filter(a =>
+    // A sentenceId this server itself handed the model (in the numbered
+    // pageSentences list) is authoritative — the real grounding check
+    // happens client-side by id lookup, not text matching, so there is
+    // nothing to plausibility-check here beyond "is this a real id."
+    (a.sentenceId && validSentenceIds.has(a.sentenceId)) ||
+    normPage.includes(normalizeForServerCheck(a.exactQuote)),
+  );
   // Require at least half the proposed quotes to plausibly appear — a lower bar
   // than the client's strict per-quote gate, just enough to catch a badly
   // hallucinated response before it's returned at all.
@@ -369,6 +393,17 @@ export default async function handler(
     ? `\nA separate visual-understanding pass identified this on the page (context only — a data point about what's on the page, not a substitute for reading the page yourself, and never a source for an exactQuote):\n${body.visualContext}\n`
     : "";
 
+  // Segmented server-side from the fallback pageText path is NOT used here —
+  // pageSentences is built CLIENT-side (buildSurgeonAnnotationInput.ts) against
+  // the raw page text and sent as part of the request body, so the exact same
+  // list this prompt shows the model is the one groundSurgeonQuotes.ts resolves
+  // sentenceId against later — the server never re-segments on its own copy,
+  // which could drift from the client's raw text extraction.
+  const pageSentences: PageSentence[] = Array.isArray(body.pageSentences) ? body.pageSentences : [];
+  const pageSentencesBlock = pageSentences.length > 0
+    ? `\nCurrent page — numbered sentences (use sentenceId, see the instructions above):\n${formatSentenceList(pageSentences)}\n`
+    : "";
+
   const userTextBlock =
     `pageTruthKey: ${body.pageTruthKey}\n` +
     `pageNumber: ${body.pageNumber ?? "unknown"}\n` +
@@ -377,6 +412,7 @@ export default async function handler(
     `headings: ${JSON.stringify(body.headings ?? {})}\n` +
     `existingCanonicalUnits (context only — re-verify against the page, do not trust blindly): ${JSON.stringify((body.existingCanonicalUnits ?? []).slice(0, 20))}\n` +
     `\nCurrent page — structured blocks in reading order (read ALL of them; headings and tables carry real content, not decoration):\n${blocksBlock}\n` +
+    pageSentencesBlock +
     visualContextBlock +
     `\nProduce the SurgeonAnnotationPlan JSON.`;
 
@@ -464,7 +500,8 @@ export default async function handler(
     return;
   }
 
-  if (!quotesPlausible(result.data, body.pageText)) {
+  const validSentenceIds = new Set(pageSentences.map(s => s.id));
+  if (!quotesPlausible(result.data, body.pageText, validSentenceIds)) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "sentence_grounding", durationMs: Date.now() - startedAt });
     res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId));
     return;

@@ -519,7 +519,7 @@ describe("useSurgeonAnnotations.ts — grounds against RAW page text, matching w
   });
 
   it("REQUIRED: both groundSurgeonQuotes call sites ground against the RAW pageTextRef.current, not cleanActivePageText(...)", () => {
-    const calls = src.match(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current\)/g) ?? [];
+    const calls = src.match(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current,\s*sentenceMap\)/g) ?? [];
     expect(calls).toHaveLength(2);
     // Grounding against the CLEANED text was a proven bug: downstream PDF-
     // coordinate resolution (both the TextLayerRegistry-backed strategy and

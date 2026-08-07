@@ -15,6 +15,7 @@ function validScript() {
     title: "Test Title",
     learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [validNodeScript()],
+    groups: [],
     synthesisQuestion: "What comes next?",
   };
 }

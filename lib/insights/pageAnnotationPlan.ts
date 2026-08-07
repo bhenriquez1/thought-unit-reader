@@ -124,6 +124,20 @@ export const SurgeonAnnotationSchema = z.object({
   spanScope:     SpanScopeSchema.optional().default("fullSentence"),
   /** Optional explicit link to another annotation in this same plan. */
   relationship:  RelationshipSchema.optional(),
+  /**
+   * For a "fullSentence"-scope annotation, the id (from the numbered
+   * pageSentences list the prompt provides — see
+   * lib/insights/segmentPageSentences.ts) of the sentence this annotation
+   * IS. When present and it resolves against that same segmentation
+   * (re-run client-side against the identical raw page text before
+   * grounding — see groundSurgeonQuotes.ts's Stage 0), the resolved text is
+   * used directly instead of string-matching exactQuote: a guaranteed-exact
+   * raw-text substring by construction, with no verbatim-reproduction risk.
+   * exactQuote remains required and is still the ONLY grounding path for
+   * "entity"-scope spans (sub-sentence, not covered by segmentation) and the
+   * fallback whenever sentenceId is absent or fails to resolve.
+   */
+  sentenceId:    z.string().optional(),
 });
 
 export type SurgeonAnnotation = z.infer<typeof SurgeonAnnotationSchema>;

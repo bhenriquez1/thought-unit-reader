@@ -109,6 +109,28 @@ Rules:
    the idea back, not a yes/no question.
 10. Every exactQuote-free field must still be YOUR OWN spoken teaching language — never copy
     long verbatim spans of the given node/edge text into narration; teach it, don't read it.
+11. GROUPS — organize every node (never edges) into semantic regions before you narrate them.
+    This is the ONE piece of visual structure you DO decide — not pixels, but composition: what
+    belongs together, what stands apart, and in what order you'd build it on the board. Assign
+    each node's id to exactly one group in "groups". Each group has:
+      - type: "core" (the page's central anchor idea — usually one group, drawn first),
+        "mechanism" (a causal chain), "sequence" (ordered steps), "comparison" (things
+        contrasted side by side), "clinical" (significance/application/decision), "warning"
+        (a trap/exception/danger — this should read as SET APART from the main flow, not
+        crammed into the same line as everything else), or "summary" (a closing synthesis
+        point, drawn last).
+      - order: the 1-based sequence you'd physically build these regions in, top to bottom —
+        the SAME order your nodeScripts narrates that group's nodes in. A page's core idea is
+        almost always order 1; a warning is usually NOT order 1 even if it's important, because
+        a professor establishes the main idea before flagging an exception to it; summary (if
+        used) is always the LAST order value.
+      - nodeIds: every node id that belongs in this region.
+    A page rarely needs more than 4-5 groups. Every node you narrate in nodeScripts must belong
+    to exactly one group — do not leave a node ungrouped, and do not put one node in two groups.
+    Example for a page about a diagnostic interview: group "core" (order 1) = the central
+    concern; group "mechanism" (order 2) = the physical/psychological/social context nodes;
+    group "sequence" (order 3) = interview -> complete picture -> diagnosis; group "warning"
+    (order 4) = the "exam alone isn't enough" caution.
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 

@@ -30,6 +30,7 @@ import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/ins
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { resolveVisualContext } from "@/lib/insights/resolveVisualContext";
 import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
+import { segmentPageSentences, sentencesById as buildSentencesById } from "@/lib/insights/segmentPageSentences";
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
@@ -341,7 +342,11 @@ export function useSurgeonAnnotations({
           // will search — the same "no highlight is better than a wrong highlight"
           // logic this file already applies now also rules out an ungeometrizable
           // one. See conversation/PR notes for the reproduction.
-          const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current);
+          // Re-segmented fresh against the SAME raw text every grounding pass
+          // — segmentPageSentences is a pure function, so this always agrees
+          // with whatever list buildSurgeonAnnotationInput.ts sent the model.
+          const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
+          const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current, sentenceMap);
           const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRole);
           const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
           setPlan(stored.plan);
@@ -515,7 +520,8 @@ export function useSurgeonAnnotations({
         // branch above for why: grounding must search the same text basis
         // geometry resolution will search, or a "grounded" quote can end up
         // permanently unrenderable on the actual PDF.
-        const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current);
+        const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
+        const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current, sentenceMap);
         const grounded = limitAnnotationDensity(wholePage, data.plan.pageRole);
         const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {

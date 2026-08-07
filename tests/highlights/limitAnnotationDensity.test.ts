@@ -251,3 +251,56 @@ describe("limitAnnotationDensity — page-role-adaptive category caps", () => {
     expect(result).toHaveLength(1);
   });
 });
+
+describe("limitAnnotationDensity — page-role-adaptive GLOBAL_CAP for dense procedural pages", () => {
+  it("REQUIRED: without a pageRole, the global cap stays 8 even with 15 well-distributed candidates", () => {
+    const input = [
+      ...Array.from({ length: 4 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `p${i}` })),
+      ...Array.from({ length: 4 }, (_, i) => makeGrounded("decision", "critical", { exactQuote: `d${i}` })),
+      ...Array.from({ length: 4 }, (_, i) => makeGrounded("clinicalPearl", "critical", { exactQuote: `c${i}` })),
+      ...Array.from({ length: 3 }, (_, i) => makeGrounded("trap", "critical", { exactQuote: `t${i}` })),
+    ];
+    const result = limitAnnotationDensity(input);
+    expect(result.length).toBeLessThanOrEqual(8);
+  });
+
+  it("REQUIRED: pageRole 'procedure' raises the global backstop to 15, letting other categories fill the remaining slots alongside a large procedure block", () => {
+    const input = [
+      ...Array.from({ length: 12 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `p${i}` })),
+      ...Array.from({ length: 5 }, (_, i) => makeGrounded("trap", "critical", { exactQuote: `t${i}` })), // trap cap is still 1 (base)
+      ...Array.from({ length: 5 }, (_, i) => makeGrounded("clinicalPearl", "critical", { exactQuote: `c${i}` })), // clinicalPearl cap is still 1
+      ...Array.from({ length: 5 }, (_, i) => makeGrounded("decision", "critical", { exactQuote: `d${i}` })), // decision cap is still 1
+    ];
+    const result = limitAnnotationDensity(input, "procedure");
+    // 12 procedure (at its own 12-item cap) + 1 trap + 1 clinicalPearl + 1 decision = 15,
+    // exactly filling the raised page-level ceiling.
+    expect(result).toHaveLength(15);
+  });
+
+  it("pageRole 'workflow' and 'decision-tree' also raise the procedure sub-cap and the global backstop together", () => {
+    const workflowInput = Array.from({ length: 20 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `w${i}` }));
+    expect(limitAnnotationDensity(workflowInput, "workflow")).toHaveLength(12); // procedure sub-cap, well under the 15 global backstop
+
+    const decisionInput = Array.from({ length: 20 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `dt${i}` }));
+    expect(limitAnnotationDensity(decisionInput, "decision-tree")).toHaveLength(12);
+  });
+
+  it("REQUIRED: pageRole 'procedure' lets procedure keep up to 12 distinct sequences (mechanism keeps its single top pick)", () => {
+    const input = [
+      makeGrounded("mechanism", "critical", { exactQuote: "mech1" }),
+      makeGrounded("mechanism", "high", { exactQuote: "mech2" }),
+      ...Array.from({ length: 14 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `proc${i}` })),
+    ];
+    const result = limitAnnotationDensity(input, "procedure");
+    const procedures = result.filter(r => r.canonicalType === "procedure");
+    const mechanisms = result.filter(r => r.canonicalType === "mechanism").map(r => r.exactQuote);
+    expect(mechanisms).toEqual(["mech1"]); // single top pick, unchanged
+    expect(procedures).toHaveLength(12); // top 12 of 14
+  });
+
+  it("an unrelated pageRole (e.g. 'anatomy') keeps the base 8-item global cap even for procedure-type content", () => {
+    const input = Array.from({ length: 20 }, (_, i) => makeGrounded("procedure", "critical", { exactQuote: `p${i}` }));
+    const result = limitAnnotationDensity(input, "anatomy");
+    expect(result.length).toBeLessThanOrEqual(8);
+  });
+});

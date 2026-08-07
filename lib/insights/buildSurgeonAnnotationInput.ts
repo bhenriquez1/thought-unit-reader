@@ -15,6 +15,7 @@ import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { splitIntoParagraphs } from "@/lib/highlights/groundHighlightAnchors";
 import { extractPageBlocks, type PageBlock } from "@/lib/insights/extractPageBlocks";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
+import { segmentPageSentences, type PageSentence } from "@/lib/insights/segmentPageSentences";
 
 export interface ExistingCanonicalUnitContext {
   id: string;
@@ -57,6 +58,19 @@ export interface SurgeonAnnotationInput {
   };
   /** Light continuity context only — never the primary description of the page. */
   existingCanonicalUnits: ExistingCanonicalUnitContext[];
+  /**
+   * The current page's RAW text, segmented into ID'd sentences (S001, S002,
+   * ...) — see lib/insights/segmentPageSentences.ts. For a "fullSentence"-
+   * scope annotation, the model should return sentenceId instead of typing
+   * exactQuote out by hand: the server never re-derives or trusts the
+   * model's echoed text for that case, it looks the id up directly against
+   * this SAME segmentation (re-run client-side against the identical raw
+   * text before grounding), which is exact by construction. exactQuote is
+   * still required by the schema (Structured Outputs strict mode requires
+   * every field present) and remains the ONLY path for "entity"-scope
+   * annotations (a sub-sentence span, which segmentation doesn't cover).
+   */
+  pageSentences: PageSentence[];
   /**
    * Gemini's description of any figure/diagram/chart/table/radiograph/
    * histology/anatomy image visible on this page (pages/api/gemini-visual.ts),
@@ -126,5 +140,10 @@ export function buildSurgeonAnnotationInput(args: {
     semanticPack:           projectSemanticPack(args.semanticPack),
     existingCanonicalUnits: args.existingCanonicalUnits.slice(0, 20),
     visualContext:          args.visualContext ?? null,
+    // Segmented from the RAW page text (args.pageText), not cleanedPageText —
+    // sentenceId must resolve against the same raw text groundSurgeonQuotes.ts
+    // grounds against downstream, or the id-based lookup would reintroduce
+    // exactly the cleaned-vs-raw mismatch this whole design exists to avoid.
+    pageSentences:          segmentPageSentences(args.pageText),
   };
 }
