@@ -220,7 +220,7 @@ describe("useSurgeonAnnotations.ts — hands off HighlightTarget[], never comput
     const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
       const nearby = block.slice(0, 400);
-      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage\);/);
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRole\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
     }
   });
@@ -367,13 +367,16 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
     expect(src).toMatch(/const tiered = resolveAnnotationTier\(\{/);
   });
 
-  it("limitAnnotationDensity(groundSurgeonQuotes(...)) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
+  it("limitAnnotationDensity(groundSurgeonQuotes(...), pageRole) is called exactly twice (once per effect), each feeding both setGroundedAnnotations and groundedAnnotationsToHighlightTargets from the same local variable", () => {
     const calls = src.match(/const wholePage = groundSurgeonQuotes\(/g) ?? [];
     expect(calls).toHaveLength(2);
     const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
       const nearby = block.slice(0, 1000);
-      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage\);/);
+      // REQUIRED: pageRole is threaded through so density caps adapt to the
+      // page's own classification (comparison/example/procedure pages get a
+      // different budget than the base default) — see limitAnnotationDensity.ts.
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRole\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
       expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
       expect(nearby).toMatch(/setWholePageAnnotations\(wholePage\)/);
@@ -507,22 +510,28 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
   });
 });
 
-describe("useSurgeonAnnotations.ts — grounds against cleaned text, matching what the model actually saw", () => {
+describe("useSurgeonAnnotations.ts — grounds against RAW page text, matching what geometry resolution searches", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("imports cleanActivePageText", () => {
+  it("still imports cleanActivePageText (used for content-hash identity checking, not grounding)", () => {
     expect(src).toMatch(/import \{ cleanActivePageText \} from "@\/lib\/insights\/cleanActivePageText"/);
   });
 
-  it("both groundSurgeonQuotes call sites ground against cleanActivePageText(pageTextRef.current), not the raw ref", () => {
-    const calls = src.match(/groundSurgeonQuotes\([^,]+,\s*cleanActivePageText\(pageTextRef\.current\)\)/g) ?? [];
+  it("REQUIRED: both groundSurgeonQuotes call sites ground against the RAW pageTextRef.current, not cleanActivePageText(...)", () => {
+    const calls = src.match(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current\)/g) ?? [];
     expect(calls).toHaveLength(2);
-    // The raw, uncleaned ref must never be passed directly as the grounding text —
-    // buildSurgeonAnnotationInput.ts sends the model cleanActivePageText(pageText),
-    // so grounding against raw pageTextRef.current would false-reject any quote
-    // touching a merged drop-cap or a stripped running header/caption.
-    expect(src).not.toMatch(/groundSurgeonQuotes\([^,]+,\s*pageTextRef\.current\)/);
+    // Grounding against the CLEANED text was a proven bug: downstream PDF-
+    // coordinate resolution (both the TextLayerRegistry-backed strategy and
+    // SmartPDFViewer's own DOM-fallback match) always searches the RAW, live
+    // PDF text layer — never the cleaned text. A quote whose sentence-boundary
+    // expansion ran through a stripped running header/footer/caption, or across
+    // a merged drop-cap, could verify fine against cleaned text yet never be
+    // located in the actual rendered PDF — "grounded" in the right panel,
+    // permanently invisible on the page. Grounding against raw text guarantees
+    // any successful match is, by construction, findable in the same text
+    // geometry resolution will search.
+    expect(src).not.toMatch(/groundSurgeonQuotes\([^,]+,\s*cleanActivePageText\(pageTextRef\.current\)\)/);
   });
 });
 

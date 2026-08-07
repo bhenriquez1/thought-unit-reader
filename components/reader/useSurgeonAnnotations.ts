@@ -325,15 +325,24 @@ export function useSurgeonAnnotations({
         const stored = await getSurgeonAnnotationPlan(cacheKey);
         if (cancelled) return;
         if (stored && stored.plan.pageTruthKey === pageTruthKey) {
-          // Ground against cleanActivePageText(pageText), NOT the raw pageText — the
-          // model was given the CLEANED text (buildSurgeonAnnotationInput.ts applies
-          // the same transform before it's sent), so a quote spanning a merged
-          // drop-cap or a stripped running header/caption is accurate against what
-          // the model actually saw but would fail exact/normalized matching against
-          // the raw, uncleaned text. Grounding against raw text was silently
-          // dropping otherwise-correct annotations.
-          const wholePage = groundSurgeonQuotes(stored.plan.annotations, cleanActivePageText(pageTextRef.current));
-          const grounded = limitAnnotationDensity(wholePage);
+          // Ground against the RAW pageText, NOT cleanActivePageText(pageText).
+          // This used to ground against the cleaned text (matching what the model
+          // was shown), but that created a proven downstream failure: PDF-coordinate
+          // resolution downstream (both the TextLayerRegistry-backed strategy and
+          // SmartPDFViewer's own DOM-text-layer fallback match — this hook stays
+          // coordinate-free and never touches either) search the RAW, live PDF
+          // text — never the cleaned text. A quote whose sentence-
+          // boundary expansion ran through a stripped running header/footer/caption,
+          // or across a merged drop-cap, produced a groundedText that verified fine
+          // against the cleaned text but could never be located in the actual PDF —
+          // "grounded" in the right panel, permanently invisible on the page.
+          // Grounding against raw text instead guarantees any successful match is,
+          // by construction, present verbatim in the exact text geometry resolution
+          // will search — the same "no highlight is better than a wrong highlight"
+          // logic this file already applies now also rules out an ungeometrizable
+          // one. See conversation/PR notes for the reproduction.
+          const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current);
+          const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRole);
           const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
@@ -502,8 +511,12 @@ export function useSurgeonAnnotations({
           return;
         }
 
-        const wholePage = groundSurgeonQuotes(data.plan.annotations, cleanActivePageText(pageTextRef.current));
-        const grounded = limitAnnotationDensity(wholePage);
+        // Raw pageText, not cleanActivePageText(pageText) — see the cache-hit
+        // branch above for why: grounding must search the same text basis
+        // geometry resolution will search, or a "grounded" quote can end up
+        // permanently unrenderable on the actual PDF.
+        const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current);
+        const grounded = limitAnnotationDensity(wholePage, data.plan.pageRole);
         const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed client-side sentence grounding —

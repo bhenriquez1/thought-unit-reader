@@ -5367,6 +5367,7 @@ export default function ThoughtUnitReader() {
                     return next;
                   })}
                   surgeonHighlightTargets={surgeonAnnotations.highlightTargets}
+                  surgeonAnnotationCount={surgeonAnnotations.plan?.annotations.length ?? 0}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                   emptyThoughtUnitReason={canonicalLeftPanelDiagnostic}
                   onEffectivePresetChange={setSharedPresetId}

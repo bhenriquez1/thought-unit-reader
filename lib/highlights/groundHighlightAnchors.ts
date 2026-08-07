@@ -45,6 +45,7 @@ export type GroundedAnchor = RawAnchor & {
 export function normText(s: string): string {
   return s
     .toLowerCase()
+    .replace(/\u00A0/g, ' ')             // non-breaking space (common in PDF.js text extraction)
     .replace(/[­​]/g, '')               // zero-width / soft-hyphen
     .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
     .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl')

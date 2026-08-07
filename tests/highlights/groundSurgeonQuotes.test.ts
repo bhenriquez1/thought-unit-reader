@@ -62,6 +62,46 @@ describe("groundSurgeonQuotes — Stage 2: normalized match", () => {
     expect(result).toHaveLength(1);
     expect(result[0].groundingState).toBe("normalized");
   });
+
+  it("REGRESSION GUARD: accepts a quote when the live PDF text layer used a non-breaking space (\\u00A0) where the quote has a plain space", () => {
+    // Real PDF.js text extraction sometimes emits U+00A0 for a rendered space —
+    // normText() previously had no NBSP handling, so raw-page-text grounding
+    // (see useSurgeonAnnotations.ts) would silently reject an otherwise-correct
+    // quote at exactly this kind of character difference.
+    const pageWithNbsp = "Glycolysis converts glucose into pyruvate in the cytosol.";
+    const annotation = makeAnnotation({ exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol." });
+    const result = groundSurgeonQuotes([annotation], pageWithNbsp);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("normalized");
+  });
+});
+
+describe("groundSurgeonQuotes — grounding against RAW (uncleaned) page text", () => {
+  // useSurgeonAnnotations.ts grounds against the raw PDF text layer, not
+  // cleanActivePageText's output, so that a successful match is guaranteed
+  // findable by downstream PDF-coordinate resolution (which only ever
+  // searches the raw text). This suite proves the realistic case works:
+  // a running header/title that sits in its OWN paragraph (the normal
+  // outcome of geometry-based page-text reconstruction, which inserts a
+  // paragraph break at genuine visual gaps) must never leak into the
+  // grounded body sentence, even though no cleanActivePageText call ran.
+  it("does not leak a running header into groundedText when the header is on its own paragraph", () => {
+    const rawPageText =
+      "30  UNIT ONE  The Chemistry of Life\n\n" +
+      "The mechanism by which buffer solutions resist changes in pH depends on the equilibrium " +
+      "between a weak acid and its conjugate base. A second sentence follows here for context.";
+    const annotation = makeAnnotation({
+      canonicalType: "mechanism",
+      exactQuote: "The mechanism by which buffer solutions resist changes in pH depends on the equilibrium between a weak acid and its conjugate base.",
+      treatment: "mechanismBrace",
+    });
+    const result = groundSurgeonQuotes([annotation], rawPageText);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundedText).toBe(
+      "The mechanism by which buffer solutions resist changes in pH depends on the equilibrium between a weak acid and its conjugate base."
+    );
+    expect(result[0].groundedText).not.toMatch(/UNIT ONE|Chemistry of Life/);
+  });
 });
 
 describe("groundSurgeonQuotes — Stage 3: strict reject (no semantic substitution)", () => {

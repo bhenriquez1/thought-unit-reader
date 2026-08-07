@@ -34,7 +34,7 @@ describe("Shapes are created LAZILY, not pre-placed and faded in", () => {
 
   it("a shape that shouldn't exist yet (backward jump) is deleted, not merely hidden — genuinely blank, not faint", () => {
     const idx = src.indexOf("const applyStateAtStep = useCallback");
-    const body = src.slice(idx, idx + 900);
+    const body = src.slice(idx, idx + 2300);
     expect(body).toMatch(/editor\.deleteShapes\(\[shapeIdOf\(id\)\]\)/);
   });
 
@@ -82,42 +82,65 @@ describe("Playback controls funnel through ONE deterministic path", () => {
     expect(body).toMatch(/applyStateAtStep\(editor, n\)/);
   });
 
-  it("manual Next/Previous/Restart stop any in-flight narration — never leaves stale audio playing across a jump", () => {
+  it("manual Next/Previous/Restart stop any in-flight narration (with an explicit, traceable reason) — never leaves stale audio playing across a jump", () => {
     for (const handler of ["handleNext", "handlePrev", "handleRestart"]) {
       const idx = src.indexOf(`const ${handler} = useCallback`);
       const body = src.slice(idx, idx + 300);
-      expect(body).toMatch(/stopNarration\(\)/);
+      expect(body).toMatch(/stopNarration\("manual-[a-z-]+"\)/);
     }
   });
 
   it('"Play after completion must replay the entire performance" — handlePlayPause resets to -1 when already at the end', () => {
     const idx = src.indexOf("const handlePlayPause = useCallback");
-    const body = src.slice(idx, idx + 700);
+    const body = src.slice(idx, idx + 1200);
     expect(body).toMatch(/atEnd/);
     expect(body).toMatch(/setStepIndex\(-1\)/);
   });
 
-  it("exact pause/resume: Pause stops the autoplay timer via useEffect cleanup, keyed on isPlaying", () => {
-    const idx = src.indexOf("useEffect(() => {\n    if (!isPlaying) return;");
-    expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 500);
-    expect(body).toMatch(/window\.setTimeout\(advanceForPlayback, duration\)/);
-    expect(body).toMatch(/return \(\) => clearTimeout\(t\)/);
+  it("REQUIRED: Pause preserves audio position — it pauses the active audio/utterance in place rather than calling stopNarration (which would release ownership and abandon the segment)", () => {
+    const idx = src.indexOf("const handlePlayPause = useCallback");
+    const ifPlayingIdx = src.indexOf("if (isPlaying) {", idx);
+    const elseIdx = src.indexOf("const plan = planRef.current;", ifPlayingIdx);
+    const pauseBranch = src.slice(ifPlayingIdx, elseIdx);
+    expect(pauseBranch).toMatch(/activeAudioElRef\.current\.pause\(\)/);
+    expect(pauseBranch).toMatch(/window\.speechSynthesis\.pause\(\)/);
+    expect(pauseBranch).not.toMatch(/stopNarration\(/);
+  });
+
+  it("REQUIRED: Resume continues the SAME audio/utterance (play()/speechSynthesis.resume()) rather than restarting the segment from a fresh fetch", () => {
+    const idx = src.indexOf("const handlePlayPause = useCallback");
+    const body = src.slice(idx, idx + 1600);
+    expect(body).toMatch(/activeAudioElRef\.current\.play\(\)\.catch/);
+    expect(body).toMatch(/window\.speechSynthesis\.resume\(\)/);
+  });
+
+  it("REQUIRED: a 'speak' step never schedules the fixed-duration dwell timer — it advances only from playSegmentThenAdvance's own onended/onend callback, never a blind timeout", () => {
+    const idx = src.indexOf("const advanceForPlayback = useCallback");
+    const body = src.slice(idx, idx + 700);
+    const speakBranchIdx = body.indexOf('if (action.type === "speak") {');
+    const speakBranchEnd = body.indexOf("}", body.indexOf("return;", speakBranchIdx));
+    const speakBranch = body.slice(speakBranchIdx, speakBranchEnd);
+    expect(speakBranch).toMatch(/playSegmentThenAdvance\(segment, next\)/);
+    expect(speakBranch).toMatch(/return;/);
+    // The dwell-timer line must be OUTSIDE (after) the speak branch's return.
+    const timerIdx = body.indexOf("window.setTimeout(() => advanceForPlaybackRef.current(), duration)");
+    expect(timerIdx).toBeGreaterThan(speakBranchEnd);
   });
 });
 
-describe("Narration: single active speech, real neural TTS with a browser fallback", () => {
+describe("Narration: single ordered queue, pre-buffered, advance-on-ended — never a blind fixed-duration timer for speech", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS, "utf8"); });
 
-  it("playSegment claims speech ownership before starting — the shared controller force-stops any prior speech from anywhere", () => {
-    const idx = src.indexOf("const playSegment = useCallback");
-    const body = src.slice(idx, idx + 400);
+  it("REQUIRED: playSegmentThenAdvance claims speech ownership before starting — the shared controller force-stops any prior speech from anywhere", () => {
+    const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 800);
     expect(body).toMatch(/claimSpeech\(SPEECH_OWNER\)/);
   });
 
   it("checks isSpeechStale before applying an async TTS response — a superseded request can't still speak", () => {
-    const idx = src.indexOf("const playSegment = useCallback");
+    const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
     const body = src.slice(idx, src.indexOf("const stopNarration = useCallback"));
     const staleChecks = (body.match(/isSpeechStale\(token\)/g) ?? []).length;
     expect(staleChecks).toBeGreaterThanOrEqual(2);
@@ -135,11 +158,89 @@ describe("Narration: single active speech, real neural TTS with a browser fallba
     for (const handler of ["handleNext", "handlePrev", "handleRestart"]) {
       const idx = src.indexOf(`const ${handler} = useCallback`);
       const body = src.slice(idx, idx + 300);
-      expect(body).not.toMatch(/playSegment\(/);
+      expect(body).not.toMatch(/playSegmentThenAdvance\(/);
     }
     const advIdx = src.indexOf("const advanceForPlayback = useCallback");
-    const advBody = src.slice(advIdx, advIdx + 500);
-    expect(advBody).toMatch(/playSegment\(segment\)/);
+    const advBody = src.slice(advIdx, advIdx + 700);
+    expect(advBody).toMatch(/playSegmentThenAdvance\(segment, next\)/);
+  });
+
+  it("REQUIRED: pre-buffers the NEXT segment's audio while the current one plays — findNextSegment looks ahead, resolveSegmentAudio is called before this segment finishes", () => {
+    const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
+    const body = src.slice(idx, idx + 900);
+    expect(body).toMatch(/const nextSegment = findNextSegment\(index\);/);
+    expect(body).toMatch(/if \(nextSegment\) resolveSegmentAudio\(nextSegment\);/);
+  });
+
+  it("REQUIRED: resolveSegmentAudio caches by segment id and dedupes concurrent fetches — a segment revisited (e.g. stepping back then forward) is never re-fetched from the network", () => {
+    const idx = src.indexOf("const resolveSegmentAudio = useCallback");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 1500);
+    expect(body).toMatch(/narrationCacheRef\.current\.get\(segment\.id\)/);
+    expect(body).toMatch(/narrationPendingRef\.current\.get\(segment\.id\)/);
+    expect(body).toMatch(/narrationCacheRef\.current\.set\(segment\.id, resolved\)/);
+  });
+
+  it("REQUIRED: every narration trace log carries the requested diagnostic fields — stepId, chunkIndex, and (where applicable) queueLength/audioStarted/audioEnded/cancelReason", () => {
+    const traceLogs = src.match(/console\.log\("\[WHITEBOARD_NARRATION_TRACE\]", \{[^}]*\}\)/g) ?? [];
+    expect(traceLogs.length).toBeGreaterThanOrEqual(5);
+    expect(src).toMatch(/stepId, chunkIndex: index,\s*\n\s*queueLength: narrationPendingRef\.current\.size \+ narrationCacheRef\.current\.size,/);
+    expect(src).toMatch(/stepId, chunkIndex: index, audioStarted: true/);
+    expect(src).toMatch(/stepId, chunkIndex: index, audioEnded: true, reason/);
+  });
+
+  it("REQUIRED: any cancellation carries an explicit, non-empty reason string — never a bare stopNarration() with no cause", () => {
+    expect(src).not.toMatch(/stopNarration\(\)/); // every call site must pass a reason
+    const idx = src.indexOf("const stopNarration = useCallback");
+    const body = src.slice(idx, idx + 100);
+    expect(body).toMatch(/\(cancelReason: string\)/);
+  });
+
+  it("does not cancel narration on ordinary React rerenders, canvas updates, shape creation, or transcript updates — stopNarration is called only from explicit navigation/lifecycle sites (rebuild, unmount, manual nav, mute, restart-after-completion), never from applyStateAtStep", () => {
+    const idx = src.indexOf("const applyStateAtStep = useCallback");
+    const body = src.slice(idx, src.indexOf("const setStepIndex = useCallback"));
+    expect(body).not.toMatch(/stopNarration\(/);
+    expect(body).not.toMatch(/stopAllSpeech\(/);
+  });
+
+  // REGRESSION GUARD for a confirmed real bug, caught only by a live
+  // Playwright repro (source-regex checks alone did not catch it): a natural
+  // completion handler that checked isSpeechStale(token) AFTER already
+  // calling notifySpeechEnd(token, ...) always saw its own just-released
+  // token as stale (releaseSpeech sets active=null on completion) and
+  // silently skipped advancing — narration played its FIRST segment
+  // correctly, then the whole lesson stalled forever with no error. Fixed by
+  // splitting into two callbacks: onNaturalEnd (audio/utterance's own ended/
+  // onend — can only fire from genuine completion, since .pause() never
+  // raises it — always advances, unconditionally) vs onForceStopCleanup (the
+  // shared controller's onForceStop hook — visual cleanup only, never
+  // advances, since whatever triggered the force-stop already decides what
+  // happens next). Verified end-to-end via a live Playwright repro: 8 mocked
+  // narration segments, all 8 played audioStarted->audioEnded to completion
+  // in sequence across the full teaching timeline (was: stalled after 1).
+  it("REQUIRED: the natural-completion path (onNaturalEnd) advances unconditionally — never gated on isSpeechStale, which is always true immediately after this token's own notifySpeechEnd call", () => {
+    const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
+    const onNaturalEndIdx = src.indexOf("const onNaturalEnd = (reason:", idx);
+    expect(onNaturalEndIdx).toBeGreaterThan(idx);
+    const onForceStopIdx = src.indexOf("const onForceStopCleanup = ()", onNaturalEndIdx);
+    expect(onForceStopIdx).toBeGreaterThan(onNaturalEndIdx);
+    const onNaturalEndBody = src.slice(onNaturalEndIdx, onForceStopIdx);
+    expect(onNaturalEndBody).toMatch(/advanceForPlaybackRef\.current\(\);/);
+    expect(onNaturalEndBody).not.toMatch(/isSpeechStale/);
+  });
+
+  it("REQUIRED: the force-stop cleanup path (onForceStopCleanup, wired to registerActiveAudio/registerActiveUtterance) never advances the timeline — whatever triggered the stop already handles what happens next", () => {
+    const idx = src.indexOf("const onForceStopCleanup = () => {");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 300);
+    expect(body).not.toMatch(/advanceForPlaybackRef/);
+    expect(src).toMatch(/registerActiveAudio\(token, audio, onForceStopCleanup\)/);
+    expect(src).toMatch(/registerActiveUtterance\(token, utter, onForceStopCleanup\)/);
+  });
+
+  it("audio.onended/utter.onend (genuine media completion) call onNaturalEnd; the onForceStop callback registered with the shared controller calls onForceStopCleanup — the two paths are never swapped", () => {
+    expect(src).toMatch(/audio\.onended = \(\) => \{ notifySpeechEnd\(token, SPEECH_OWNER\); onNaturalEnd\("ended"\); \};/);
+    expect(src).toMatch(/utter\.onend\s+= \(\) => \{ notifySpeechEnd\(token, SPEECH_OWNER\); onNaturalEnd\("ended"\); \};/);
   });
 });
 

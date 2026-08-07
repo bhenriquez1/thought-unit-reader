@@ -188,3 +188,66 @@ describe("limitAnnotationDensity — global backstop cap", () => {
     expect(result.map(r => r.exactQuote)).toEqual(["t1", "d1"]);
   });
 });
+
+describe("limitAnnotationDensity — page-role-adaptive category caps", () => {
+  it("REQUIRED: without a pageRole, comparison stays capped at 1 (base default, no regression)", () => {
+    const input = [
+      makeGrounded("comparison", "critical", { exactQuote: "cmp1" }),
+      makeGrounded("comparison", "high", { exactQuote: "cmp2" }),
+      makeGrounded("comparison", "supporting", { exactQuote: "cmp3" }),
+    ];
+    const result = limitAnnotationDensity(input);
+    expect(result).toHaveLength(1);
+  });
+
+  it("REQUIRED: pageRole 'comparison' raises the comparison cap to 3", () => {
+    const input = [
+      makeGrounded("comparison", "critical", { exactQuote: "cmp1" }),
+      makeGrounded("comparison", "high", { exactQuote: "cmp2" }),
+      makeGrounded("comparison", "supporting", { exactQuote: "cmp3" }),
+    ];
+    const result = limitAnnotationDensity(input, "comparison");
+    expect(result).toHaveLength(3);
+  });
+
+  it("REQUIRED: pageRole 'comparison' does NOT loosen unrelated categories (trap stays capped at 1)", () => {
+    const input = [
+      makeGrounded("trap", "critical", { exactQuote: "trap1" }),
+      makeGrounded("trap", "high", { exactQuote: "trap2" }),
+    ];
+    const result = limitAnnotationDensity(input, "comparison");
+    expect(result).toHaveLength(1);
+  });
+
+  it("REQUIRED: pageRole 'example' raises the supportingEvidence ('worked example') cap to 3", () => {
+    const input = [
+      makeGrounded("supportingEvidence", "critical", { exactQuote: "ex1" }),
+      makeGrounded("supportingEvidence", "high", { exactQuote: "ex2" }),
+      makeGrounded("supportingEvidence", "supporting", { exactQuote: "ex3" }),
+    ];
+    expect(limitAnnotationDensity(input, "example")).toHaveLength(3);
+    expect(limitAnnotationDensity(input, null)).toHaveLength(1);
+  });
+
+  it("REQUIRED: pageRole 'procedure' gives mechanism AND procedure their OWN slot instead of one shared slot", () => {
+    const input = [
+      makeGrounded("mechanism", "critical", { exactQuote: "mech1" }),
+      makeGrounded("procedure", "critical", { exactQuote: "proc1" }),
+    ];
+    const withoutOverride = limitAnnotationDensity(input);
+    expect(withoutOverride).toHaveLength(1); // shared slot, one winner
+
+    const withOverride = limitAnnotationDensity(input, "procedure");
+    expect(withOverride).toHaveLength(2);
+    expect(withOverride.map(r => r.exactQuote).sort()).toEqual(["mech1", "proc1"]);
+  });
+
+  it("an unrecognized pageRole string falls back to the base caps (no throw)", () => {
+    const input = [
+      makeGrounded("comparison", "critical", { exactQuote: "cmp1" }),
+      makeGrounded("comparison", "high", { exactQuote: "cmp2" }),
+    ];
+    const result = limitAnnotationDensity(input, "anatomy");
+    expect(result).toHaveLength(1);
+  });
+});

@@ -165,6 +165,46 @@ describe("pages/index.tsx — [PIPELINE_WIRING_TRACE], the unified data-flow tra
   });
 });
 
+describe("SmartPDFViewer.tsx — [HIGHLIGHT_PIPELINE_TRACE], the exact 5-boundary-count trace", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(VIEWER_FILE, "utf8"); });
+
+  it("REQUIRED: logs pageTextLength, annotationCount, groundedQuoteCount, geometryRectCount, renderedOverlayCount — the exact requested field names", () => {
+    const idx = src.indexOf('console.log("[HIGHLIGHT_PIPELINE_TRACE]"');
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/pageTextLength:\s*pageTextLength \?\? null,/);
+    expect(block).toMatch(/annotationCount:\s*surgeonAnnotationCount \?\? null,/);
+    expect(block).toMatch(/groundedQuoteCount:\s*canonicalTargetCount,/);
+    expect(block).toMatch(/geometryRectCount:\s*geometryResolvedCount,/);
+    expect(block).toMatch(/renderedOverlayCount:\s*afterDedup\.length,/);
+  });
+
+  it("accepts pageTextLength and surgeonAnnotationCount as props, threaded from the caller", () => {
+    expect(src).toMatch(/pageTextLength\?:\s*number;/);
+    expect(src).toMatch(/surgeonAnnotationCount\?:\s*number;/);
+  });
+});
+
+describe("PureReaderView.tsx — pageTextLength/surgeonAnnotationCount threaded into SmartPDFViewer for the trace", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(PURE_READER_FILE, "utf8"); });
+
+  it("passes pageTextLength and surgeonAnnotationCount into <SmartPDFViewer>", () => {
+    const idx = src.indexOf("<SmartPDFViewer");
+    const block = src.slice(idx, idx + 2200);
+    expect(block).toMatch(/pageTextLength=\{pageText\?\.length \?\? 0\}/);
+    expect(block).toMatch(/surgeonAnnotationCount=\{surgeonAnnotationCount \?\? 0\}/);
+  });
+});
+
+describe("pages/index.tsx — surgeonAnnotationCount is the REAL pre-grounding count, not a guess", () => {
+  it("passes plan.annotations.length (before grounding/density-limiting) as surgeonAnnotationCount", () => {
+    const src = fs.readFileSync(INDEX_FILE, "utf8");
+    expect(src).toMatch(/surgeonAnnotationCount=\{surgeonAnnotations\.plan\?\.annotations\.length \?\? 0\}/);
+  });
+});
+
 describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] carries drawActionCount", () => {
   it("REQUIRED: distinct from totalTeachingSteps — counts only draw-shape/draw-arrow actions, not speak/pause/write/camera/emphasize/erase", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx"), "utf8");
