@@ -121,12 +121,12 @@ describe("TldrawCanvas.tsx — a pageTruthKey/lessonPlan change cancels narratio
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 500);
     expect(block).toMatch(/clearTeachingLayer\(editor\);/);
-    expect(block).toMatch(/stopAllSpeech\("whiteboard-rebuild"\);/);
+    expect(block).toMatch(/stopNarration\("rebuild"\);/);
     // Both must run BEFORE the null-plan early return, so a page change with
     // no new plan yet (loading, or a failed generation) still clears the OLD
     // page's shapes/narration instead of leaving them visible.
     const clearIdx = block.indexOf("clearTeachingLayer(editor);");
-    const stopIdx  = block.indexOf('stopAllSpeech("whiteboard-rebuild");');
+    const stopIdx  = block.indexOf('stopNarration("rebuild");');
     const returnIdx = block.indexOf("if (!lessonPlan) {");
     expect(clearIdx).toBeLessThan(returnIdx);
     expect(stopIdx).toBeLessThan(returnIdx);
@@ -246,5 +246,57 @@ describe("TldrawCanvas.tsx — handleMount is idempotent against React StrictMod
     const block = src.slice(idx, idx + 200);
     expect(block).toMatch(/mountCount: mountCountRef\.current/);
     expect(block).toMatch(/editorIdentity: isDuplicateMount \? "same" : "different"/);
+  });
+});
+
+describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly lock around its own mutations", () => {
+  // ROOT CAUSE, confirmed against the installed tldraw source
+  // (node_modules/@tldraw/editor): Editor.createShapes/_updateShapes/
+  // deleteShapes each do `if (this.getIsReadonly()) return` as an
+  // unconditional, silent no-op — no thrown error, no console warning.
+  // This component keeps the editor readonly for most of its lifecycle
+  // (isPlaying || !editingEnabled) specifically to stop the STUDENT from
+  // dragging/editing the professor's shapes — but that editor-wide flag
+  // doesn't distinguish "a user is blocked" from "our own drawing engine is
+  // calling the API," so every draw action fired during autoplay (exactly
+  // when applyStateAtStep needs to create shapes) was being silently
+  // swallowed by tldraw itself. Per-shape isLocked: true (already set on
+  // every created shape) is what actually keeps the student from editing —
+  // the editor-wide flag was redundant for that purpose and actively broke
+  // programmatic drawing. Confirmed via a live Playwright repro: before this
+  // fix, editorShapeCount (editor.getCurrentPageShapeIds().size, tldraw's
+  // own store) stayed 0 across every autoplay step despite
+  // shapeRecordsCreated climbing normally; after, they match exactly.
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: captures wasReadonly and lifts it to false BEFORE the delete/create/update mutations run", () => {
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const wasReadonlyIdx = src.indexOf("const wasReadonly = editor.getIsReadonly();", stepIdx);
+    expect(wasReadonlyIdx).toBeGreaterThan(stepIdx);
+    const liftIdx = src.indexOf("if (wasReadonly) editor.updateInstanceState({ isReadonly: false });", wasReadonlyIdx);
+    expect(liftIdx).toBeGreaterThan(wasReadonlyIdx);
+
+    const deleteIdx = src.indexOf("editor.deleteShapes([shapeIdOf(id)]);", stepIdx);
+    const createIdx = src.indexOf("for (const c of creates) editor.createShape(c as any);", stepIdx);
+    expect(deleteIdx).toBeGreaterThan(liftIdx);
+    expect(createIdx).toBeGreaterThan(liftIdx);
+  });
+
+  it("REQUIRED: restores isReadonly back to true AFTER the create/update mutations, before the step diagnostic log", () => {
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    const createIdx = src.indexOf("for (const c of creates) editor.createShape(c as any);", stepIdx);
+    const restoreIdx = src.indexOf("if (wasReadonly) editor.updateInstanceState({ isReadonly: true });", createIdx);
+    const diagnosticIdx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"', createIdx);
+    expect(restoreIdx).toBeGreaterThan(createIdx);
+    expect(diagnosticIdx).toBeGreaterThan(restoreIdx);
+  });
+
+  it("only touches isReadonly when it was actually true — never force-unlocks an editor that was already writable (e.g. editingEnabled)", () => {
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    const block = src.slice(stepIdx, stepIdx + 4700);
+    const liftCount = (block.match(/if \(wasReadonly\) editor\.updateInstanceState\(\{ isReadonly: (?:false|true) \}\);/g) ?? []).length;
+    expect(liftCount).toBe(2); // one lift, one restore — both gated on wasReadonly
   });
 });

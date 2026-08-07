@@ -135,6 +135,11 @@ interface PureReaderViewProps {
    * allHighlightTargets below — this only governs what draws ON the PDF.)
    */
   surgeonHighlightTargets?: import("@/lib/readerContracts").HighlightTarget[];
+  /** Total annotations SurgeonAnnotationPlan proposed for this page BEFORE quote
+   *  grounding/density-limiting — paired with surgeonHighlightTargets.length in
+   *  [HIGHLIGHT_PIPELINE_TRACE] to show how many proposed annotations survived
+   *  to become PDF-overlay targets. */
+  surgeonAnnotationCount?: number;
   /** Raw text of the current page — used to validate highlight anchors before rendering */
   pageText?: string;
   /** Uploaded filename or book title — fed to domain preset detection as the strongest signal
@@ -207,6 +212,7 @@ export default function PureReaderView({
   onPageTextExtracted,
   onPageImageCaptured,
   surgeonHighlightTargets,
+  surgeonAnnotationCount,
   pageText,
   synthStatus,
   pageTruthKey,
@@ -768,6 +774,8 @@ export default function PureReaderView({
               highlightNeighborhoods={undefined}
               highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${(surgeonHighlightTargets ?? []).map(t => t.text).join("|")}`}
               authorizedHighlightIds={(surgeonHighlightTargets ?? []).map(t => t.evidenceRefId)}
+              pageTextLength={pageText?.length ?? 0}
+              surgeonAnnotationCount={surgeonAnnotationCount ?? 0}
               focusedEvidenceId={focusedEvidenceId}
               onEvidenceFocus={handleThoughtUnitJump}
               isPageChanging={isPageChanging}

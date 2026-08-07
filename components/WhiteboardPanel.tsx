@@ -157,7 +157,13 @@ export default function WhiteboardPanel({
     window.setTimeout(() => setActionMessage(null), 2200);
   };
 
-  const effectiveTopic = (studyModel as any)?.pageThesis || pageTitle || lessonTitle;
+  // Surgeon's page-specific title wins over the legacy study-model pipeline's
+  // pageThesis — pageTitle is threaded through from SurgeonAnnotationPlan
+  // (see pages/index.tsx), which is the pipeline actually driving this page's
+  // Whiteboard content. Falling back to studyModel.pageThesis before pageTitle
+  // was the mechanism behind the Whiteboard showing an unrelated single
+  // sentence as its title instead of the page's real subject.
+  const effectiveTopic = pageTitle || (studyModel as any)?.pageThesis || lessonTitle;
 
   /** Save to NoteLab — reuses the existing ultraNoteStore save path, sourced
    *  from studyModel (the shared page-understanding object), never from a
@@ -264,7 +270,7 @@ export default function WhiteboardPanel({
               <div style={{ height: 520 }}>
                 <TldrawCanvas
                   noteCards={teachNoteCards}
-                  pageTitle={(studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  pageTitle={pageTitle ?? (studyModel as any)?.pageThesis ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
                   activeAnchorId={activeAnchorId}
                   whiteboardGrammar={effectiveGrammar}

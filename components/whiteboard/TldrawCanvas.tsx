@@ -29,6 +29,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tldraw, createShapeId, toRichText, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
+import { getAssetUrls } from "@tldraw/assets/selfHosted.js";
+
+// Self-hosted tldraw static assets (fonts/icons/translations), served from
+// this app's own /public/tldraw-assets instead of the default cdn.tldraw.com.
+// tldraw's default behavior fetches these from its own CDN at runtime — a
+// real, observed failure mode in any network environment that can't reach
+// that CDN (corporate firewalls, restrictive school/VPN networks, some
+// regions): fonts fail to decode and the editor's shape-creation pipeline can
+// end up in a state where createShape() calls never actually commit to the
+// visible canvas, producing exactly "the teaching transcript is correct but
+// the canvas stays blank." Self-hosting removes the runtime CDN dependency
+// entirely — see public/tldraw-assets/ (copied from the @tldraw/assets
+// package; re-copy after bumping the @tldraw/tldraw version).
+const TLDRAW_ASSET_URLS = getAssetUrls({ baseUrl: "/tldraw-assets" });
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import {
   computeVSGState, noteCardsToCanonicalEntries, type VisualSceneGraph,
@@ -274,6 +288,26 @@ export default function TldrawCanvas({
     );
     const wantedIds = new Set<string>([...wantedPrimaryIds, ...wantedEmphasisIds]);
 
+    // tldraw's own createShape(s)/updateShapes/deleteShapes each no-op
+    // (silent early-return, no error) when editor.getIsReadonly() is true —
+    // and this component intentionally keeps the editor readonly for most of
+    // its lifetime (while playing, and always until "Edit a copy" is
+    // clicked) to stop the STUDENT from dragging/editing the professor's
+    // shapes. That editor-wide flag doesn't distinguish "blocked because a
+    // user is interacting" from "blocked because our OWN drawing engine is
+    // calling the API" — so every draw action fired during autoplay was
+    // being silently swallowed by tldraw itself: our own createdShapeIdsRef
+    // bookkeeping advanced (it's local state, not a query of the editor),
+    // but the shapes never actually reached tldraw's store, leaving the
+    // canvas visibly blank despite a fully correct teaching plan. Per-shape
+    // isLocked: true (already set below) is what actually keeps the student
+    // from editing THESE shapes — the editor-wide flag was redundant for
+    // that purpose and actively broke programmatic drawing. Lift it only
+    // for the mutations this function itself performs, then restore
+    // whatever it was immediately after.
+    const wasReadonly = editor.getIsReadonly();
+    if (wasReadonly) editor.updateInstanceState({ isReadonly: false });
+
     // Remove anything that shouldn't exist yet (only fires on a backward jump).
     for (const id of Array.from(createdShapeIdsRef.current)) {
       if (!wantedIds.has(id)) {
@@ -321,6 +355,10 @@ export default function TldrawCanvas({
       editor.updateShapes(updates);
       editor.updateShapes(updates.map((u: any) => ({ id: u.id, type: u.type, isLocked: true })));
     }
+
+    // Restore the editor-wide readonly flag to whatever it was before this
+    // function's own mutations needed it lifted — see the comment above.
+    if (wasReadonly) editor.updateInstanceState({ isReadonly: true });
 
     // Privacy-safe per-step diagnostic — no narration/label/quote text, only
     // ids and counts. The one signal previously missing to answer "narration
@@ -406,59 +444,197 @@ export default function TldrawCanvas({
     if (editor) applyStateAtStep(editor, n);
   }, [applyStateAtStep]);
 
-  // ── Narration: real neural TTS (pages/api/tts.ts), falling back to browser
-  //    speech only when OpenAI is unavailable — the direct fix for "the voice
-  //    sounds like standard text-to-speech." ────────────────────────────────
-  const playSegment = useCallback(async (segment: NarrationSegment) => {
-    if (!narrationEnabled) return;
+  // ── Narration: single ordered queue, pre-buffered, advance-on-ended ──────
+  // Real neural TTS (pages/api/tts.ts), falling back to browser speech only
+  // when OpenAI is unavailable.
+  //
+  // CONFIRMED ROOT CAUSE of "speech cuts out mid-sentence between teaching
+  // points": the old design advanced every action — including "speak" — on a
+  // FIXED, pre-estimated durationMs timer, completely decoupled from how long
+  // the fetched TTS audio actually took to play. Real neural-TTS audio
+  // routinely runs longer than that estimate; when it did, the timer fired
+  // anyway, moved to the next step, and called claimSpeech() for the NEXT
+  // segment — which force-stops whatever audio is currently playing (by
+  // design, so two DIFFERENT speech-owning components never overlap) — even
+  // though it was the SAME component just moving itself along too fast.
+  //
+  // Fix: a "speak" action never advances on a timer. It resolves (fetches,
+  // cached) and plays its own audio/utterance, and the NEXT step is only
+  // triggered from that audio's own onended/onend event — advanceForPlayback
+  // calls itself once playback genuinely finishes. Every OTHER action type
+  // (draw/write/pause/camera/emphasize/erase) has no async completion signal
+  // of its own, so those keep a fixed-duration timer, unchanged from before.
+  // The upcoming segment's audio is pre-fetched in the background while the
+  // current one plays, so there's no dead-air fetch gap between them.
+  type ResolvedNarrationAudio =
+    | { kind: "audio-url"; url: string }
+    | { kind: "browser-speech"; script: string };
+
+  const narrationCacheRef   = useRef<Map<string, ResolvedNarrationAudio>>(new Map());
+  const narrationPendingRef = useRef<Map<string, Promise<ResolvedNarrationAudio | null>>>(new Map());
+  const activeAudioElRef    = useRef<HTMLAudioElement | null>(null);
+  const activeUtteranceRef  = useRef<SpeechSynthesisUtterance | null>(null);
+  const stepTimerRef        = useRef<number | null>(null);
+  const speedRef            = useRef<PlaybackSpeed>("normal");
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  const advanceForPlaybackRef = useRef<() => void>(() => {});
+
+  const resolveSegmentAudio = useCallback((segment: NarrationSegment): Promise<ResolvedNarrationAudio | null> => {
+    const cached = narrationCacheRef.current.get(segment.id);
+    if (cached) return Promise.resolve(cached);
+    const pending = narrationPendingRef.current.get(segment.id);
+    if (pending) return pending;
+
+    const promise = (async (): Promise<ResolvedNarrationAudio | null> => {
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3" }),
+        });
+        const data = await res.json();
+        let resolved: ResolvedNarrationAudio;
+        if (data?.useBrowserSpeech) {
+          resolved = { kind: "browser-speech", script: data.script || segment.text };
+        } else if (data?.audioBase64) {
+          const bin = atob(data.audioBase64);
+          const arr = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
+          resolved = { kind: "audio-url", url: URL.createObjectURL(blob) };
+        } else {
+          return null;
+        }
+        narrationCacheRef.current.set(segment.id, resolved);
+        return resolved;
+      } catch {
+        return null;
+      } finally {
+        narrationPendingRef.current.delete(segment.id);
+      }
+    })();
+    narrationPendingRef.current.set(segment.id, promise);
+    return promise;
+  }, []);
+
+  // Looks ahead from `fromIndex` (exclusive) for the next "speak" action's
+  // segment, if any — used to pre-buffer its audio while the CURRENT segment
+  // is still playing, so there's no fetch-latency gap between them.
+  const findNextSegment = useCallback((fromIndex: number): NarrationSegment | null => {
+    const plan = planRef.current;
+    if (!plan) return null;
+    for (let i = fromIndex + 1; i < plan.actions.length; i++) {
+      const action = plan.actions[i];
+      if (action.type === "speak") return plan.segments.find(s => s.id === action.segmentId) ?? null;
+    }
+    return null;
+  }, []);
+
+  // Plays `segment` (the action at `index`) to completion, THEN advances —
+  // never on a timer. This is the only place a "speak" step's own audio is
+  // created; every completion path (ended/error/stale) funnels through
+  // onFinished so the timeline always continues exactly once.
+  const playSegmentThenAdvance = useCallback(async (segment: NarrationSegment, index: number) => {
+    const stepId = segment.id;
+    if (!narrationEnabled) {
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "narration-disabled" });
+      advanceForPlaybackRef.current();
+      return;
+    }
+
+    const nextSegment = findNextSegment(index);
+    if (nextSegment) resolveSegmentAudio(nextSegment); // pre-buffer — fire-and-forget, cached by segment id
+
     const token = claimSpeech(SPEECH_OWNER);
     setIsSpeaking(true);
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3" }),
-      });
-      if (isSpeechStale(token)) return;
-      const data = await res.json();
-      if (isSpeechStale(token)) return;
+    console.log("[WHITEBOARD_NARRATION_TRACE]", {
+      stepId, chunkIndex: index,
+      queueLength: narrationPendingRef.current.size + narrationCacheRef.current.size,
+      audioStarted: false, audioEnded: false,
+    });
 
-      if (data?.useBrowserSpeech) {
-        if (typeof window === "undefined" || !("speechSynthesis" in window)) { setIsSpeaking(false); return; }
-        const utter = new SpeechSynthesisUtterance(data.script || segment.text);
-        utter.rate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
-        registerActiveUtterance(token, utter, () => setIsSpeaking(false));
-        utter.onstart = () => notifySpeechStart(token, SPEECH_OWNER);
-        utter.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); setIsSpeaking(false); };
-        utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); setIsSpeaking(false); };
-        window.speechSynthesis.speak(utter);
-        return;
-      }
-
-      if (data?.audioBase64) {
-        const bin = atob(data.audioBase64);
-        const arr = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-        const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.playbackRate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
-        registerActiveAudio(token, audio, () => { audio.pause(); setIsSpeaking(false); });
-        audio.onplay  = () => notifySpeechStart(token, SPEECH_OWNER);
-        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); setIsSpeaking(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-error"); setIsSpeaking(false); URL.revokeObjectURL(url); };
-        await audio.play().catch(() => setIsSpeaking(false));
-        return;
-      }
-      setIsSpeaking(false);
-    } catch {
-      if (!isSpeechStale(token)) setIsSpeaking(false);
+    const resolved = await resolveSegmentAudio(segment);
+    if (isSpeechStale(token)) {
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "superseded-by-newer-claim" });
+      return;
     }
-  }, [narrationEnabled]);
+    if (!resolved) {
+      setIsSpeaking(false);
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "resolve-failed" });
+      advanceForPlaybackRef.current();
+      return;
+    }
 
-  const stopNarration = useCallback(() => {
-    stopAllSpeech("whiteboard-step-change");
+    // Two distinct completion paths, deliberately NOT merged into one
+    // function gated by isSpeechStale — that was the exact bug that caused
+    // narration to silently stall after its first segment: notifySpeechEnd()
+    // releases this token BEFORE any later isSpeechStale(token) check can
+    // run, so a check placed after it always (wrongly) sees its own just-
+    // finished token as "stale" and skips advancing.
+    //   - onNaturalEnd: the audio/utterance's own ended/onend event — this
+    //     can ONLY fire from genuine playback completion (.pause(), which is
+    //     what Pause and a forced stop both call, never raises it) — so a
+    //     natural end always means "this segment truly finished," and always
+    //     advances the timeline, unconditionally.
+    //   - onForceStopCleanup: fired by the shared speech controller when a
+    //     LATER claim or an explicit stop pauses this audio out from under
+    //     it — purely visual/state cleanup, deliberately does NOT advance;
+    //     whatever caused the force-stop (Next/Previous/Restart/rebuild/
+    //     unmount) already decides what happens next on its own.
+    let settled = false;
+    const onNaturalEnd = (reason: "ended" | "error") => {
+      if (settled) return;
+      settled = true;
+      setIsSpeaking(false);
+      activeAudioElRef.current = null;
+      activeUtteranceRef.current = null;
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioEnded: true, reason });
+      advanceForPlaybackRef.current();
+    };
+    const onForceStopCleanup = () => {
+      if (settled) return;
+      settled = true;
+      setIsSpeaking(false);
+      activeAudioElRef.current = null;
+      activeUtteranceRef.current = null;
+    };
+
+    if (resolved.kind === "browser-speech") {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) { onNaturalEnd("error"); return; }
+      const utter = new SpeechSynthesisUtterance(resolved.script);
+      utter.rate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
+      activeUtteranceRef.current = utter;
+      registerActiveUtterance(token, utter, onForceStopCleanup);
+      utter.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
+      utter.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
+      utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); onNaturalEnd("error"); };
+      window.speechSynthesis.speak(utter);
+      return;
+    }
+
+    const audio = new Audio(resolved.url);
+    audio.playbackRate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
+    activeAudioElRef.current = audio;
+    registerActiveAudio(token, audio, onForceStopCleanup);
+    audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
+    audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
+    audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-error"); onNaturalEnd("error"); };
+    await audio.play().catch(() => onNaturalEnd("error"));
+  }, [narrationEnabled, findNextSegment, resolveSegmentAudio]);
+
+  // Full stop: releases speech ownership entirely (explicit navigation —
+  // Next/Previous/Restart/Show-complete/rebuild/unmount/narration-toggle-off
+  // — never called for a plain Pause, which preserves position instead; see
+  // handlePlayPause). Always carries an explicit reason so a cancellation is
+  // traceable to what caused it, per the diagnostic contract above.
+  const stopNarration = useCallback((cancelReason: string) => {
+    const stepId = planRef.current?.actions[stepIndexRef.current]?.actionId ?? null;
+    console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason });
+    stopAllSpeech(`whiteboard-${cancelReason}`);
     setIsSpeaking(false);
+    activeAudioElRef.current = null;
+    activeUtteranceRef.current = null;
+    if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
   }, []);
 
   // ── Anchor / One Brain sync map, rebuilt whenever the plan changes ──────
@@ -509,8 +685,7 @@ export default function TldrawCanvas({
     try {
       clearTeachingLayer(editor);
       setIsPlaying(false);
-      stopAllSpeech("whiteboard-rebuild");
-      setIsSpeaking(false);
+      stopNarration("rebuild");
       stepIndexRef.current = -1;
       setStepIndexState(-1);
       setCanvasInitFailure(null);
@@ -605,10 +780,15 @@ export default function TldrawCanvas({
 
   useEffect(() => () => {
     storeUnsubRef.current?.();
-    stopAllSpeech("whiteboard-unmount");
+    stopNarration("unmount");
   }, []);
 
   // ── Playback: the ONLY code that advances the timeline during Play ───────
+  // A "speak" step schedules NOTHING here — playSegmentThenAdvance calls this
+  // again itself once its own audio genuinely finishes (see above). Every
+  // other action type has no async completion of its own, so it keeps a
+  // fixed-duration dwell timer, tracked in stepTimerRef so Pause can cancel
+  // it outright instead of leaving it ticking in the background.
   const advanceForPlayback = useCallback(() => {
     const plan = planRef.current;
     if (!plan) return;
@@ -618,25 +798,18 @@ export default function TldrawCanvas({
     const action = plan.actions[next];
     if (action.type === "speak") {
       const segment = plan.segments.find(s => s.id === action.segmentId);
-      if (segment) playSegment(segment);
+      if (segment) { playSegmentThenAdvance(segment, next); return; }
     }
-  }, [setStepIndex, playSegment]);
+    const duration = Math.max(action.durationMs, 200) / SPEED_FACTOR[speedRef.current];
+    stepTimerRef.current = window.setTimeout(() => advanceForPlaybackRef.current(), duration);
+  }, [setStepIndex, playSegmentThenAdvance]);
 
-  useEffect(() => {
-    if (!isPlaying) return;
-    const plan = planRef.current;
-    if (!plan) return;
-    const next = stepIndexRef.current + 1;
-    if (next >= plan.actions.length) { setIsPlaying(false); return; }
-    const duration = Math.max(plan.actions[next].durationMs, 200) / SPEED_FACTOR[speed];
-    const t = window.setTimeout(advanceForPlayback, duration);
-    return () => clearTimeout(t);
-  }, [isPlaying, stepIndex, speed, advanceForPlayback]);
+  useEffect(() => { advanceForPlaybackRef.current = advanceForPlayback; }, [advanceForPlayback]);
 
   // ── Manual controls — always instant, exact-state jumps, never audio ────
   const handleNext = useCallback(() => {
     setIsPlaying(false);
-    stopNarration();
+    stopNarration("manual-next");
     const plan = planRef.current;
     if (!plan) return;
     setStepIndex(Math.min(stepIndexRef.current + 1, plan.actions.length - 1));
@@ -644,35 +817,65 @@ export default function TldrawCanvas({
 
   const handlePrev = useCallback(() => {
     setIsPlaying(false);
-    stopNarration();
+    stopNarration("manual-previous");
     setStepIndex(Math.max(stepIndexRef.current - 1, -1));
   }, [setStepIndex, stopNarration]);
 
   const handleRestart = useCallback(() => {
-    stopNarration();
+    stopNarration("manual-restart");
     setStepIndex(-1);
     setIsPlaying(true);
-  }, [setStepIndex, stopNarration]);
+    advanceForPlayback();
+  }, [setStepIndex, stopNarration, advanceForPlayback]);
 
   const handleShowComplete = useCallback(() => {
     setIsPlaying(false);
-    stopNarration();
+    stopNarration("manual-show-complete");
     const plan = planRef.current;
     if (!plan) return;
     setStepIndex(plan.actions.length - 1);
   }, [setStepIndex, stopNarration]);
 
+  // Pause preserves position — it pauses the active audio/utterance in place
+  // (never releases speech ownership, never resets currentTime) and cancels
+  // any pending non-speak dwell timer, but does NOT call stopNarration (that
+  // would abandon/reset the segment entirely). Resume continues the SAME
+  // audio/utterance from where it left off; if paused between steps (no
+  // active audio — e.g. a non-speak dwell), it simply continues the timeline
+  // from the current step via advanceForPlayback.
   const handlePlayPause = useCallback(() => {
-    if (isPlaying) { setIsPlaying(false); stopNarration(); return; }
+    if (isPlaying) {
+      setIsPlaying(false);
+      if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
+      const stepId = planRef.current?.actions[stepIndexRef.current]?.actionId ?? null;
+      if (activeAudioElRef.current) {
+        activeAudioElRef.current.pause();
+        console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason: "user-pause (audio position preserved)" });
+      } else if (activeUtteranceRef.current && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.pause();
+        console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason: "user-pause (utterance position preserved)" });
+      }
+      return;
+    }
     const plan = planRef.current;
     const atEnd = !!plan && plan.actions.length > 0 && stepIndexRef.current >= plan.actions.length - 1;
     if (atEnd) {
       // "Play after completion must replay the entire teaching performance."
-      stopNarration();
+      stopNarration("restart-after-completion");
       setStepIndex(-1);
+      setIsPlaying(true);
+      advanceForPlayback();
+      return;
     }
     setIsPlaying(true);
-  }, [isPlaying, setStepIndex, stopNarration]);
+    if (activeAudioElRef.current) {
+      activeAudioElRef.current.play().catch(() => {});
+    } else if (activeUtteranceRef.current && typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.resume();
+    } else {
+      advanceForPlayback();
+    }
+  }, [isPlaying, setStepIndex, stopNarration, advanceForPlayback]);
 
   // ── World -> canvas: external anchor focus selects + centers the shape ──
   useEffect(() => {
@@ -749,7 +952,7 @@ export default function TldrawCanvas({
           </select>
 
           <button
-            onClick={() => { const next = !narrationEnabled; setNarrationEnabled(next); if (!next) stopNarration(); }}
+            onClick={() => { const next = !narrationEnabled; setNarrationEnabled(next); if (!next) stopNarration("narration-muted"); }}
             title={narrationEnabled ? "Mute narration" : "Enable voice narration"}
             style={narrationEnabled ? BTN_ACTIVE : BTN_MUTED}
           >
@@ -783,7 +986,7 @@ export default function TldrawCanvas({
               <span>Whiteboard configuration is unavailable. Missing: tldraw license key.</span>
             </div>
           ) : (
-            <Tldraw licenseKey={licenseKey} persistenceKey={storageKey || undefined} onMount={handleMount} />
+            <Tldraw licenseKey={licenseKey} persistenceKey={storageKey || undefined} onMount={handleMount} assetUrls={TLDRAW_ASSET_URLS} />
           )}
 
           {!licenseMissingInProduction && canvasInitFailure && (

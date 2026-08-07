@@ -385,6 +385,12 @@ export interface SmartPDFViewerProps {
    *  Passed through to PdfEvidenceOverlay to relabel highlight margin badges per domain
    *  (e.g. CONCEPT/FORMULA/APPLY/ERROR/EXAMPLE for chemistry instead of CORE/STEP/APPLY/TRAP/PEARL). */
   packTierLabels?: Partial<Record<string, string>>;
+  /** Current page's raw extracted text length — [HIGHLIGHT_PIPELINE_TRACE]'s
+   *  pageTextLength boundary count only, never used for logic here. */
+  pageTextLength?: number;
+  /** Total annotations SurgeonAnnotationPlan proposed for this page BEFORE quote
+   *  grounding/density-limiting — [HIGHLIGHT_PIPELINE_TRACE]'s annotationCount. */
+  surgeonAnnotationCount?: number;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -614,6 +620,8 @@ export default function SmartPDFViewer({
   onLoadError,
   onRetry: onRetryProp,
   packTierLabels,
+  pageTextLength,
+  surgeonAnnotationCount,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -1295,6 +1303,25 @@ export default function SmartPDFViewer({
         geometryFailedCount:     canonicalTargetCount - geometryResolvedCount,
         renderedAnnotationCount: afterDedup.length,
         renderStage,
+      });
+      // Unified end-to-end trace, one boundary count per pipeline stage:
+      //   currentPageText -> page-annotation-plan -> annotations -> exactQuote
+      //   -> sentence expansion -> resolveAnchorGeometry -> PdfEvidenceOverlay.
+      // annotationCount is the AI's raw proposal count (pre-grounding); the gap
+      // between it and groundedQuoteCount is quotes that failed verbatim/
+      // normalized verification against the live page text. The gap between
+      // groundedQuoteCount and geometryRectCount is grounded quotes that
+      // resolveAnchorGeometry/DOM-fallback still couldn't locate in the
+      // rendered PDF text layer. The gap between geometryRectCount and
+      // renderedOverlayCount is rects the final dedup/orphan-filter pass
+      // dropped. Never logs annotation text — counts only.
+      console.log("[HIGHLIGHT_PIPELINE_TRACE]", {
+        pageTruthKey:       pageTruthKey ?? null,
+        pageTextLength:     pageTextLength ?? null,
+        annotationCount:    surgeonAnnotationCount ?? null,
+        groundedQuoteCount: canonicalTargetCount,
+        geometryRectCount:  geometryResolvedCount,
+        renderedOverlayCount: afterDedup.length,
       });
       if (staleBuildCancelled) return;
       setOverlayRects(afterDedup);
