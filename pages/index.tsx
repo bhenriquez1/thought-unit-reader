@@ -76,6 +76,7 @@ import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
+import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -2047,6 +2048,57 @@ export default function ThoughtUnitReader() {
     () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, currentPage),
     [surgeonAnnotations.wholePageAnnotations, currentPage],
   );
+
+  // ── Unified wiring trace — prints one page's full data-flow chain, for
+  //    diagnosing "where exactly does the chain break" without guessing.
+  //    NOT a single call: SURGEON is this app's real analog to "GPT PAGE
+  //    ANALYSIS" (there is no separate page-classification call — pageRole
+  //    IS the page type, decided by the SAME SurgeonAnnotationPlan pass that
+  //    proposes annotations). DRAWING/TLDRAW live inside WhiteboardPanel/
+  //    TldrawCanvas (a different component tree) and are reported by their
+  //    OWN [WHITEBOARD_STEP_DIAGNOSTIC]/[WHITEBOARD_MOUNT_DIAGNOSTIC] logs —
+  //    correlate by the SAME pageTruthKey printed here. Fires once per
+  //    Whiteboard open, not on every render. */
+  useEffect(() => {
+    if (!showWhiteboardPanel) return;
+    const plan = surgeonAnnotations.plan;
+    const relationshipCount = plan?.annotations.filter(a => !!a.relationship).length ?? 0;
+    console.log("[PIPELINE_WIRING_TRACE]", {
+      PAGE: {
+        pageTruthKey,
+        documentIdHash: bookId ? hashDocumentId(bookId) : null,
+        page: currentPage,
+      },
+      SURGEON_PAGE_ANALYSIS: {
+        // This app's real analog to "GPT page analysis" — pageRole is
+        // decided by the SAME pass that proposes annotations, not a
+        // separate classification call.
+        pageType: plan?.pageRole ?? null,
+        conceptCount: plan?.annotations.length ?? 0,
+        relationshipCount,
+      },
+      SURGEON_GROUNDING: {
+        anchorsGrounded: surgeonAnnotations.groundedAnnotations.length,
+        // Density-limited subset actually handed to the PDF overlay for
+        // geometry resolution — per-target geometry success/failure is only
+        // knowable from SmartPDFViewer's own [SURGEON_PIPELINE_DIAGNOSTIC]
+        // log (correlate by pageTruthKey above).
+        targetsHandedToOverlay: surgeonAnnotations.highlightTargets.length,
+        status: surgeonAnnotations.status,
+      },
+      WHITEBOARD_RECEIVED: {
+        receivedCanonicalUnits: whiteboardCanonicalEntries.length > 0,
+        // VSG construction happens inside WhiteboardPanel — see its own
+        // [WHITEBOARD_PANEL_RENDER] log's vsgStatus field for the outcome.
+        receivedHighlightPlan: !!plan?.pageRole,
+        // The exact mechanism behind a "one random sentence" Whiteboard
+        // title: two DIFFERENT candidate title sources exist, and
+        // WhiteboardPanel.tsx currently prefers the OLDER one.
+        surgeonPageThesis: plan?.pageThesis ?? null,
+        legacyStudyModelPageThesis: (currentPageStudyModel as any)?.pageThesis ?? null,
+      },
+    });
+  }, [showWhiteboardPanel, pageTruthKey, bookId, currentPage, surgeonAnnotations.plan, surgeonAnnotations.groundedAnnotations, surgeonAnnotations.highlightTargets, surgeonAnnotations.status, whiteboardCanonicalEntries, currentPageStudyModel]);
 
   // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
   // synthesis data without needing real API keys. Removed before any production build.

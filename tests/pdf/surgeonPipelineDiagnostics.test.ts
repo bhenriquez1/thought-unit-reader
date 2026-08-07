@@ -116,3 +116,60 @@ describe("pages/index.tsx — REQUIRED invariant: RightPanel and SmartPDFViewer 
     expect(occurrences).toBe(1);
   });
 });
+
+describe("pages/index.tsx — [PIPELINE_WIRING_TRACE], the unified data-flow trace for one page", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
+
+  it("REQUIRED: fires only when the Whiteboard is actually open, not on every render", () => {
+    const idx = src.indexOf('console.log("[PIPELINE_WIRING_TRACE]"');
+    expect(idx).toBeGreaterThan(-1);
+    const effectIdx = src.lastIndexOf("useEffect(() => {", idx);
+    const guardBlock = src.slice(effectIdx, idx);
+    expect(guardBlock).toMatch(/if \(!showWhiteboardPanel\) return;/);
+  });
+
+  it("REQUIRED: PAGE section carries pageTruthKey, a one-way documentIdHash (never the raw bookId), and the page number", () => {
+    const idx = src.indexOf('console.log("[PIPELINE_WIRING_TRACE]"');
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/pageTruthKey,/);
+    expect(block).toMatch(/documentIdHash:\s*bookId \? hashDocumentId\(bookId\) : null,/);
+    expect(block).toMatch(/page:\s*currentPage,/);
+  });
+
+  it("REQUIRED: SURGEON_PAGE_ANALYSIS documents that pageRole IS this app's page-type classification — there is no separate page-analysis call to report on", () => {
+    const idx = src.indexOf("SURGEON_PAGE_ANALYSIS:");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/pageType:\s*plan\?\.pageRole \?\? null,/);
+    expect(block).toMatch(/conceptCount:\s*plan\?\.annotations\.length \?\? 0,/);
+    expect(block).toMatch(/relationshipCount,/);
+  });
+
+  it("relationshipCount is a REAL computed count (annotations with .relationship set), never fabricated", () => {
+    const idx = src.indexOf("const relationshipCount = plan?.annotations.filter(a => !!a.relationship).length ?? 0;");
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("REQUIRED: exposes BOTH candidate Whiteboard title sources side by side — the exact mechanism behind a 'one random sentence' title", () => {
+    const idx = src.indexOf("WHITEBOARD_RECEIVED:");
+    const block = src.slice(idx, idx + 750);
+    expect(block).toMatch(/surgeonPageThesis:\s*plan\?\.pageThesis \?\? null,/);
+    expect(block).toMatch(/legacyStudyModelPageThesis:\s*\(currentPageStudyModel as any\)\?\.pageThesis \?\? null,/);
+  });
+
+  it("receivedCanonicalUnits reflects the REAL data actually available to WhiteboardPanel (whiteboardCanonicalEntries), not a guess", () => {
+    const idx = src.indexOf("WHITEBOARD_RECEIVED:");
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/receivedCanonicalUnits:\s*whiteboardCanonicalEntries\.length > 0,/);
+  });
+});
+
+describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] carries drawActionCount", () => {
+  it("REQUIRED: distinct from totalTeachingSteps — counts only draw-shape/draw-arrow actions, not speak/pause/write/camera/emphasize/erase", () => {
+    const src = fs.readFileSync(path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx"), "utf8");
+    const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
+    const block = src.slice(idx, idx + 800);
+    expect(block).toMatch(/drawActionCount:\s*plan\.actions\.filter\(a => a\.type === "draw-shape" \|\| a\.type === "draw-arrow"\)\.length,/);
+  });
+});

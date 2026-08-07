@@ -336,6 +336,10 @@ export default function TldrawCanvas({
       sceneGraphId:        vsgNow?.id ?? null,
       currentTeachingStep: index,
       totalTeachingSteps:  plan.actions.length,
+      // "draw" actions specifically (draw-shape/draw-arrow) — a subset of
+      // totalTeachingSteps, which also counts write/speak/pause/move-camera/
+      // emphasize/erase actions that never create a shape on their own.
+      drawActionCount:     plan.actions.filter(a => a.type === "draw-shape" || a.type === "draw-arrow").length,
       nodeCount:           vsgNow?.nodes.length ?? 0,
       edgeCount:           vsgNow?.edges.length ?? 0,
       shapeRecordsGenerated: wantedIds.size,

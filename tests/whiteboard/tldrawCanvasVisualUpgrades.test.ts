@@ -145,7 +145,7 @@ describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] per-step logging, pr
   it("REQUIRED: logs every field the diagnosis brief asked for — pageTruthKey, sceneGraphId, currentTeachingStep, totalTeachingSteps, nodeCount, edgeCount, shapeRecordsGenerated, shapeRecordsCreated, currentStepShapeIds, editorShapeCount, visibleShapeCount", () => {
     const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 900);
+    const block = src.slice(idx, idx + 1300);
     for (const field of [
       "pageTruthKey:", "sceneGraphId:", "currentTeachingStep:", "totalTeachingSteps:",
       "nodeCount:", "edgeCount:", "shapeRecordsGenerated:", "shapeRecordsCreated:",
@@ -157,13 +157,13 @@ describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] per-step logging, pr
 
   it("REQUIRED: editorShapeCount is queried directly from tldraw's own store (ground truth), not from this component's own bookkeeping — a real create/store discrepancy must be visible, not just inferred", () => {
     const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
-    const block = src.slice(idx, idx + 900);
+    const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/editorShapeCount:\s*editor\.getCurrentPageShapeIds\(\)\.size,/);
   });
 
   it("REQUIRED: never logs narration/label/quote text — only ids and counts", () => {
     const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
-    const block = src.slice(idx, idx + 900);
+    const block = src.slice(idx, idx + 1300);
     expect(block).not.toMatch(/text:/);
     expect(block).not.toMatch(/narration/i);
     expect(block).not.toMatch(/shortLabel/i);
