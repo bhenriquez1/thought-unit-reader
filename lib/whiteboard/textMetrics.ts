@@ -17,7 +17,9 @@ const MIN_LABEL_WIDTH = 140;
 // "boxes are too narrow, sentences wrap vertically" bug this module exists
 // to fix would still happen right at the top of the allowed label length.
 const MAX_LABEL_WIDTH = 700;
-const LABEL_HEIGHT = 56;
+const LINE_HEIGHT_PX = 26;
+const VERTICAL_PAD_PX = 30; // matches HORIZONTAL_PAD_PX's role, but for top+bottom inner padding
+const MIN_LABEL_HEIGHT = 56; // previous fixed LABEL_HEIGHT — floor for a single-line label
 
 /** Auto-computed box width from a short label's length — landscape-friendly,
  *  never so narrow that a short phrase wraps onto multiple lines. */
@@ -27,8 +29,18 @@ export function estimateLabelWidth(label: string): number {
   return Math.round(Math.min(MAX_LABEL_WIDTH, Math.max(MIN_LABEL_WIDTH, raw)));
 }
 
-export function estimateLabelHeight(): number {
-  return LABEL_HEIGHT;
+/** Height that actually accounts for wrapping — a label whose natural width
+ *  (len * CHAR_WIDTH_PX) exceeds MAX_LABEL_WIDTH gets clamped by
+ *  estimateLabelWidth() and wraps onto more than one line; the box must be
+ *  tall enough to hold every line, not just the previous fixed 56px. Passing
+ *  no label (or an empty one) still returns a sensible single-line floor. */
+export function estimateLabelHeight(label = ""): number {
+  const trimmed = label.trim();
+  if (!trimmed) return MIN_LABEL_HEIGHT;
+  const width = estimateLabelWidth(trimmed);
+  const charsPerLine = Math.max(1, Math.floor((width - HORIZONTAL_PAD_PX) / CHAR_WIDTH_PX));
+  const lines = Math.max(1, Math.ceil(trimmed.length / charsPerLine));
+  return Math.max(MIN_LABEL_HEIGHT, lines * LINE_HEIGHT_PX + VERTICAL_PAD_PX);
 }
 
 export function wordCount(text: string): number {

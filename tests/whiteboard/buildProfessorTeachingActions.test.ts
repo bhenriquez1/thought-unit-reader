@@ -27,6 +27,7 @@ function makeGrounded(overrides: Partial<GroundedProfessorLessonScript> = {}): G
       { targetId: "e1", shortLabel: "Leads to", narration: "This leads directly to stabilization.", tone: "connect", pace: "normal", emphasize: false },
       { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false },
     ],
+    groups: [],
     ...overrides,
   };
 }
@@ -126,6 +127,80 @@ describe("buildProfessorTeachingActions — a move-camera action precedes each n
   });
 });
 
+describe("buildProfessorTeachingActions — camera moves by teaching region, not per individual object", () => {
+  it("two nodes in the SAME semantic group share a single move-camera action", () => {
+    const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(1);
+  });
+
+  it("a node in a DIFFERENT group from the previous one triggers a new move-camera action", () => {
+    const grounded = makeGrounded({
+      groups: [
+        { id: "g1", type: "core", order: 1, nodeIds: ["n1"] },
+        { id: "g2", type: "sequence", order: 2, nodeIds: ["n2"] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(2);
+  });
+
+  it("a region's move-camera action targets every shapeId in that region, not just the one node currently being drawn", () => {
+    const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const cameraAction = plan.actions.find(a => a.type === "move-camera") as any;
+    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
+    const n2Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).shapeId;
+    expect(cameraAction.targetIds).toEqual(expect.arrayContaining([n1Shape, n2Shape]));
+  });
+});
+
+describe("buildProfessorTeachingActions — group-aware geometry: no overlap, real measured sizing", () => {
+  function makeFiveNodeVsg(): VisualSceneGraph {
+    return {
+      id: "vsg_groups", grammar: "flow", drawType: "flow",
+      nodes: Array.from({ length: 5 }, (_, i) => ({
+        id: `n${i}`, label: `n${i}`, body: "b", canonicalType: "core-concept",
+        importanceLevel: "high", tier: "step", role: "step",
+        position: { x: 0, y: i * 80 }, size: { w: 290, h: 52 }, sourceId: `src-n${i}`,
+      })),
+      edges: [], canvas: { width: 460, height: 500 }, builtAt: 0,
+    };
+  }
+  function groupedGrounded(): GroundedProfessorLessonScript {
+    return {
+      title: "T", visualGrammar: "concept-map", learningObjective: "L", synthesisQuestion: "Q",
+      nodeScripts: Array.from({ length: 5 }, (_, i) => ({
+        targetId: `n${i}`, shortLabel: `Point number ${i} with a somewhat longer descriptive phrase`,
+        narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false,
+      })),
+      groups: [
+        { id: "g1", type: "core", order: 1, nodeIds: ["n0"] },
+        { id: "g2", type: "mechanism", order: 2, nodeIds: ["n1", "n2"] },
+        { id: "g3", type: "sequence", order: 3, nodeIds: ["n3", "n4"] },
+      ],
+    };
+  }
+
+  it("no two drawn shapes' bounds overlap — the direct fix for 'shapes overlap, labels cross'", () => {
+    const plan = buildProfessorTeachingActions(makeFiveNodeVsg(), groupedGrounded(), SNAPSHOT);
+    const boxes = plan.actions.filter(a => a.type === "draw-shape").map(a => (a as any).bounds);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        const overlap = a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        expect(overlap).toBe(false);
+      }
+    }
+  });
+
+  it("regions are placed in group.order sequence — group 1's nodes are above group 3's nodes", () => {
+    const plan = buildProfessorTeachingActions(makeFiveNodeVsg(), groupedGrounded(), SNAPSHOT);
+    const boundsFor = (id: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === `src-${id}`) as any).bounds;
+    expect(boundsFor("n0").y).toBeLessThan(boundsFor("n3").y);
+  });
+});
+
 describe("buildProfessorTeachingActions — deterministic, non-AI treatments from VSG data (never model-chosen)", () => {
   function makeSequentialVsg(): VisualSceneGraph {
     return {
@@ -147,6 +222,7 @@ describe("buildProfessorTeachingActions — deterministic, non-AI treatments fro
         { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false },
         { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false },
       ],
+      groups: [],
     };
   }
 
@@ -219,6 +295,7 @@ describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/
         { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false },
         { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false },
       ],
+      groups: [],
     };
   }
 
@@ -304,6 +381,7 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
           { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false },
           { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false },
         ],
+        groups: [],
       };
       const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
       const arrow = plan.actions.find(a => a.type === "draw-arrow") as any;

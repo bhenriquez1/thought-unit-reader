@@ -100,6 +100,44 @@ export const ProfessorNodeScriptSchema = z.object({
 });
 export type ProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
 
+// ── ProfessorGroup — semantic organization, NOT geometry ────────────────────
+// The bridge between "AI decides meaning" and "deterministic code decides
+// pixels": the model assigns every node to ONE semantic region and gives the
+// regions a build order (the same order a professor would physically
+// construct that part of the board, top-to-bottom) — it still never touches
+// x/y/width/height. lib/whiteboard/groupLayout.ts consumes this to place
+// regions before placing nodes within them, and buildProfessorTeachingActions
+// .ts draws in (group.order, position within group) sequence so the spatial
+// layout and the spoken narrative order can never diverge (previously: VSG
+// layout used importance-sorted order while the teaching script used its own
+// narrative order — two different orderings driving one board).
+export const GroupTypeSchema = z.enum([
+  "core",       // the page's central idea/anchor — usually one group, drawn first
+  "mechanism",  // a causal chain / how-it-works explanation
+  "sequence",   // an ordered set of steps
+  "comparison", // two or more things being contrasted, side by side
+  "clinical",   // clinical significance / application / decision point
+  "warning",    // a trap, exception, or danger — reads as set apart from the main flow
+  "summary",    // a closing synthesis point, drawn last
+]);
+export type GroupType = z.infer<typeof GroupTypeSchema>;
+
+export const ProfessorGroupSchema = z.object({
+  id:   z.string().min(1),
+  type: GroupTypeSchema,
+  /** 1-based build order across ALL groups in this script — the order the
+   *  professor would physically move through the board, top-to-bottom.
+   *  Should match the order nodeScripts narrates its member nodes in. */
+  order: z.number().int().positive(),
+  /** Every VSG NODE id (never an edge id) this group contains. A node
+   *  omitted from every group, or double-assigned to more than one, is
+   *  resolved deterministically by groundProfessorLesson.ts (first group
+   *  wins; an unassigned node falls into a canonicalType-derived group) —
+   *  never a reason to drop the node from the lesson entirely. */
+  nodeIds: z.array(z.string().min(1)),
+});
+export type ProfessorGroup = z.infer<typeof ProfessorGroupSchema>;
+
 export const ProfessorLessonScriptSchema = z.object({
   pageTruthKey:      z.string().min(1),
   visualGrammar:     VisualGrammarChoiceSchema,
@@ -109,6 +147,12 @@ export const ProfessorLessonScriptSchema = z.object({
    *  Spoken as its own intro segment, right after the title. */
   learningObjective: z.string().min(1).max(300),
   nodeScripts:       z.array(ProfessorNodeScriptSchema).min(1).max(20),
+  /** Semantic organization of the SAME nodes nodeScripts narrates — see
+   *  ProfessorGroupSchema above. Required (Structured Outputs strict mode)
+   *  but MAY be an empty array; groundProfessorLesson.ts synthesizes a
+   *  deterministic fallback grouping in that case, so downstream layout
+   *  never has to special-case "no groups." */
+  groups:            z.array(ProfessorGroupSchema),
   /** The lesson's closing "one synthesis question." */
   synthesisQuestion: z.string().min(1).max(240),
 });
@@ -150,7 +194,13 @@ export interface ProfessorLessonPlan {
 // strict-mode compatibility), added "definition" visualGrammar, "line" draw-
 // shape variant, "highlight"/"number" emphasize treatments, and the "erase"
 // action type — a v1-cached plan predates all of these.
-export const PLANNER_VERSION = 2;
+// v3: added ProfessorGroupSchema (semantic regions) to the AI script, and
+// buildProfessorTeachingActions.ts now computes geometry via
+// lib/whiteboard/groupLayout.ts (measured, grouped, collision-resolved)
+// instead of the old fixed-slot VSG layout + neighbor-unaware resize — a
+// v1/v2-cached plan has the old, overlap-prone geometry baked in and must be
+// regenerated, not just re-read.
+export const PLANNER_VERSION = 3;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

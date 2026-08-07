@@ -13,7 +13,7 @@
 //     primary objects even if the underlying VSG has more nodes/edges.
 
 import type { VisualSceneGraph } from "./visualSceneGraph";
-import type { ProfessorLessonScript, ProfessorNodeScript } from "./professorLessonPlan";
+import type { ProfessorLessonScript, ProfessorNodeScript, GroupType } from "./professorLessonPlan";
 import { clampToShortLabel, isParagraphShaped } from "./textMetrics";
 
 /** Keeps the canvas readable — the VSG itself may carry up to 12 nodes plus
@@ -21,12 +21,98 @@ import { clampToShortLabel, isParagraphShaped } from "./textMetrics";
  *  objects" ceiling applied on top of that. */
 export const MAX_GROUNDED_TARGETS = 10;
 
+/** Same shape as ProfessorGroup, but nodeIds are guaranteed to be real,
+ *  surviving (post-density-cap) VSG node ids — never hallucinated, never
+ *  double-assigned, never pointing at a node that got dropped. */
+export interface GroundedProfessorGroup {
+  id: string;
+  type: GroupType;
+  order: number;
+  nodeIds: string[];
+}
+
 export interface GroundedProfessorLessonScript {
   title: string;
   visualGrammar: ProfessorLessonScript["visualGrammar"];
   learningObjective: string;
   synthesisQuestion: string;
   nodeScripts: ProfessorNodeScript[];
+  /** Every node in nodeScripts belongs to exactly one group here — see
+   *  resolveGroups() below for how AI-declared groups are validated and
+   *  leftover/ungrouped nodes get a deterministic canonicalType-derived
+   *  fallback group, so lib/whiteboard/groupLayout.ts never has to
+   *  special-case "no groups." */
+  groups: GroundedProfessorGroup[];
+}
+
+// A node's VSG canonicalType (bare-string taxonomy — see
+// SURGEON_CANONICAL_TYPE_TO_VSG_TYPE in visualSceneGraph.ts) mapped onto the
+// closest GroupType, used only when the AI script left a node ungrouped or
+// declared no groups at all.
+const NODE_CANONICAL_TYPE_TO_GROUP_TYPE: Record<string, GroupType> = {
+  definition:      "core",
+  "core-concept":  "core",
+  evidence:        "core",
+  mechanism:       "mechanism",
+  process:         "sequence",
+  "decision-point": "clinical",
+  comparison:      "comparison",
+  warning:         "warning",
+  "clinical-pearl": "clinical",
+};
+
+function fallbackGroupType(canonicalType: string | null): GroupType {
+  if (!canonicalType) return "core";
+  return NODE_CANONICAL_TYPE_TO_GROUP_TYPE[canonicalType] ?? "core";
+}
+
+/**
+ * Validate the AI-declared groups against the VSG + the nodeScripts that
+ * actually survived grounding (groundedNodeIds, in narration order — the
+ * same order the board gets drawn in). A node referenced by more than one
+ * declared group keeps only its first assignment; a node never mentioned by
+ * any group falls into a canonicalType-derived fallback group appended after
+ * the highest declared order, bucketed and ordered by first appearance in
+ * groundedNodeIds so the fallback still reads in narrative order.
+ */
+function resolveGroups(
+  declaredGroups: ProfessorLessonScript["groups"],
+  vsg: VisualSceneGraph,
+  groundedNodeIds: string[],
+): GroundedProfessorGroup[] {
+  const vsgNodeIds = new Set(vsg.nodes.map(n => n.id));
+  const groundedNodeIdSet = new Set(groundedNodeIds);
+  const assigned = new Set<string>();
+  const result: GroundedProfessorGroup[] = [];
+
+  for (const g of declaredGroups) {
+    const nodeIds = g.nodeIds.filter(id =>
+      vsgNodeIds.has(id) && groundedNodeIdSet.has(id) && !assigned.has(id),
+    );
+    if (nodeIds.length === 0) continue; // hallucinated/duplicate/dropped-node group — skip
+    nodeIds.forEach(id => assigned.add(id));
+    result.push({ id: g.id, type: g.type, order: g.order, nodeIds });
+  }
+
+  const leftover = groundedNodeIds.filter(id => !assigned.has(id));
+  if (leftover.length > 0) {
+    const buckets = new Map<GroupType, string[]>();
+    for (const id of leftover) {
+      const node = vsg.nodes.find(n => n.id === id);
+      const type = fallbackGroupType(node?.canonicalType ?? null);
+      const bucket = buckets.get(type) ?? [];
+      bucket.push(id);
+      buckets.set(type, bucket);
+    }
+    const maxOrder = result.reduce((m, g) => Math.max(m, g.order), 0);
+    let nextOrder = maxOrder + 1;
+    let fallbackIndex = 0;
+    for (const [type, nodeIds] of buckets) {
+      result.push({ id: `fallback-group-${fallbackIndex++}`, type, order: nextOrder++, nodeIds });
+    }
+  }
+
+  return result;
 }
 
 function sanitizeLabel(raw: string): string {
@@ -77,11 +163,16 @@ export function groundProfessorLesson(
     });
   }
 
+  const groundedNodeIds = grounded
+    .map(entry => entry.targetId)
+    .filter(id => vsg.nodes.some(n => n.id === id)); // groups are node-only, never edges
+
   return {
     title:              sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
     visualGrammar:      script.visualGrammar,
     learningObjective:  script.learningObjective.trim(),
     synthesisQuestion:  script.synthesisQuestion.trim(),
     nodeScripts:         grounded,
+    groups:              resolveGroups(script.groups, vsg, groundedNodeIds),
   };
 }

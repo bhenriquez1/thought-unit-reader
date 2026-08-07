@@ -63,7 +63,7 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
 
   it("does a lightweight plausibility check on quotes before returning ok:true", () => {
     expect(src).toMatch(/function quotesPlausible/);
-    expect(src).toMatch(/quotesPlausible\(result\.data, body\.pageText\)/);
+    expect(src).toMatch(/quotesPlausible\(result\.data, body\.pageText, validSentenceIds\)/);
   });
 
   it("parses the response through SurgeonAnnotationPlanSchema, not the old canonicalUnitIds-based schema", () => {
@@ -407,5 +407,40 @@ describe("pages/api/page-annotation-plan.ts — sentenceCount diagnostic (real p
     expect(countSentences("One. Two. Three?")).toBe(3);
     expect(countSentences("A single sentence with no terminal punctuation")).toBe(1);
     expect(countSentences("")).toBe(0);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — sentenceId (deterministic grounding, not verbatim-reproduction risk)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: the numbered pageSentences list is spliced into the user message the model receives", () => {
+    expect(src).toMatch(/formatSentenceList\(pageSentences\)/);
+    expect(src).toMatch(/pageSentencesBlock/);
+    const idx = src.indexOf("const userTextBlock =");
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/pageSentencesBlock/);
+  });
+
+  it("prompt instructs the model to prefer sentenceId over typing exactQuote perfectly, for fullSentence scope", () => {
+    expect(src).toMatch(/set sentenceId to the id of the sentence you are annotating/);
+    expect(src).toMatch(/PREFERRED for fullSentence scope/);
+  });
+
+  it("the JSON schema example includes sentenceId", () => {
+    const idx = src.indexOf('"annotations": [');
+    const block = src.slice(idx, idx + 900);
+    expect(block).toMatch(/"sentenceId":/);
+  });
+
+  it("REQUIRED: quotesPlausible treats a sentenceId that resolves against the real pageSentences list as automatically plausible, independent of exactQuote text matching", () => {
+    const idx = src.indexOf("function quotesPlausible(");
+    const block = src.slice(idx, idx + 800);
+    expect(block).toMatch(/a\.sentenceId && validSentenceIds\.has\(a\.sentenceId\)/);
+  });
+
+  it("validSentenceIds is built from the SAME pageSentences the model was shown, not re-derived some other way", () => {
+    const idx = src.indexOf("const validSentenceIds = new Set(pageSentences.map(s => s.id));");
+    expect(idx).toBeGreaterThan(-1);
   });
 });

@@ -28,6 +28,7 @@ function makeScript(overrides: Partial<ProfessorLessonScript> = {}): ProfessorLe
     nodeScripts: [
       { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false },
     ],
+    groups: [],
     synthesisQuestion: "What comes next?",
     ...overrides,
   };
@@ -156,5 +157,111 @@ describe("groundProfessorLesson — never throws, even on a fully-hallucinated s
     const script = makeScript({ nodeScripts: [{ targetId: "bogus", shortLabel: "x", narration: "x", tone: "explain", pace: "normal", emphasize: false }] });
     expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
     expect(groundProfessorLesson(script, vsg).nodeScripts).toEqual([]);
+  });
+});
+
+describe("groundProfessorLesson — groups", () => {
+  function twoNodeScripts() {
+    return [
+      { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce" as const, pace: "normal" as const, emphasize: false },
+      { targetId: "n2", shortLabel: "Second", narration: "y", tone: "explain" as const, pace: "normal" as const, emphasize: false },
+    ];
+  }
+
+  it("keeps a declared group whose nodeIds all reference surviving nodeScripts", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: twoNodeScripts(),
+      groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toEqual([{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }]);
+  });
+
+  it("drops a group id that isn't a real VSG node id — never rendered, never a reason to crash", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: twoNodeScripts(),
+      groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "made-up"] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    // n2 was narrated but never validly grouped (its only mention was the
+    // bogus "made-up" id, which isn't n2) — it still surfaces via the
+    // canonicalType-derived fallback rather than vanishing from every group.
+    expect(result.groups).toEqual([
+      { id: "g1", type: "core", order: 1, nodeIds: ["n1"] },
+      { id: "fallback-group-0", type: "core", order: 2, nodeIds: ["n2"] },
+    ]);
+  });
+
+  it("drops a group id whose node didn't survive grounding (e.g. density-capped)", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: [twoNodeScripts()[0]], // only n1 narrated
+      groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toEqual([{ id: "g1", type: "core", order: 1, nodeIds: ["n1"] }]);
+  });
+
+  it("a node double-assigned to two groups keeps only its first assignment", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: twoNodeScripts(),
+      groups: [
+        { id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] },
+        { id: "g2", type: "warning", order: 2, nodeIds: ["n2"] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toEqual([{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }]);
+  });
+
+  it("drops a declared group that ends up with zero surviving nodeIds, falling back to a canonicalType-derived group for the orphaned node", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [twoNodeScripts()[0]],
+      groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["made-up-only"] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toEqual([{ id: "fallback-group-0", type: "core", order: 1, nodeIds: ["n1"] }]);
+  });
+
+  it("an empty groups array (model declared none) synthesizes a canonicalType-derived fallback covering every surviving node", () => {
+    const vsg = makeVsg(["n1", "n2"]); // both default to canonicalType "core-concept" -> "core"
+    const script = makeScript({ nodeScripts: twoNodeScripts(), groups: [] });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].type).toBe("core");
+    expect(result.groups[0].nodeIds).toEqual(["n1", "n2"]);
+    expect(result.groups[0].order).toBe(1);
+  });
+
+  it("a node the AI left ungrouped falls into a fallback group appended after the highest declared order", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: twoNodeScripts(),
+      groups: [{ id: "g1", type: "core", order: 3, nodeIds: ["n1"] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups[0]).toEqual({ id: "g1", type: "core", order: 3, nodeIds: ["n1"] });
+    expect(result.groups[1].order).toBe(4);
+    expect(result.groups[1].nodeIds).toEqual(["n2"]);
+  });
+
+  it("group nodeIds never include an edge id — groups are node-only", () => {
+    const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false },
+      ],
+      groups: [],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    const allGroupedIds = result.groups.flatMap(g => g.nodeIds);
+    expect(allGroupedIds).not.toContain("e1");
+    expect(allGroupedIds).toEqual(["n1"]);
   });
 });

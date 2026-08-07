@@ -33,8 +33,21 @@ describe("estimateLabelWidth — responsive layout: width derives from label len
 });
 
 describe("estimateLabelHeight", () => {
-  it("returns a fixed, positive height", () => {
+  it("returns a sane single-line floor when called with no label", () => {
     expect(estimateLabelHeight()).toBeGreaterThan(0);
+  });
+
+  it("a short label that fits on one line stays at the single-line floor", () => {
+    expect(estimateLabelHeight("Aspirin")).toBe(estimateLabelHeight(""));
+  });
+
+  it("REQUIRED: a label long enough that estimateLabelWidth clamps it (so it wraps) gets a taller box, not the same fixed height", () => {
+    const veryLong = "A".repeat(200); // width-capped by MAX_LABEL_WIDTH, so this necessarily wraps onto multiple lines
+    expect(estimateLabelHeight(veryLong)).toBeGreaterThan(estimateLabelHeight("Aspirin"));
+  });
+
+  it("is deterministic — same label always produces the same height", () => {
+    expect(estimateLabelHeight("Rapid assessment protocol")).toBe(estimateLabelHeight("Rapid assessment protocol"));
   });
 });
 

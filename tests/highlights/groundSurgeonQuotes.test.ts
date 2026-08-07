@@ -300,6 +300,81 @@ describe("groundSurgeonQuotes — neighboring-page text is rejected", () => {
   });
 });
 
+describe("groundSurgeonQuotes — Stage 0: sentenceId lookup (guaranteed-exact, no string matching)", () => {
+  it("REQUIRED: resolves sentenceId directly against the map — no exactQuote matching involved, so a paraphrased exactQuote still succeeds", () => {
+    const sentenceMap = new Map([
+      ["S001", "Glycolysis converts glucose into pyruvate in the cytosol."],
+      ["S002", "This process yields a net gain of two ATP molecules per glucose."],
+    ]);
+    // exactQuote deliberately does NOT match verbatim (a contraction + reordering)
+    // — Stage 1/2 would reject this, but sentenceId bypasses string matching.
+    const annotation = makeAnnotation({
+      exactQuote: "This isn't verbatim at all and would fail Stage 1/2 matching.",
+      sentenceId: "S001",
+    });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentenceMap);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("sentenceId");
+    expect(result[0].confidence).toBe(1.0);
+    expect(result[0].groundedText).toBe("Glycolysis converts glucose into pyruvate in the cytosol.");
+  });
+
+  it("falls back to exact/normalized/reject when sentenceId is absent", () => {
+    const sentenceMap = new Map([["S001", "Glycolysis converts glucose into pyruvate in the cytosol."]]);
+    const annotation = makeAnnotation({ exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol." });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentenceMap);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("exact"); // Stage 1, not Stage 0
+  });
+
+  it("falls back to exact/normalized/reject when sentenceId doesn't resolve in the map (stale/typo'd id)", () => {
+    const sentenceMap = new Map([["S001", "Glycolysis converts glucose into pyruvate in the cytosol."]]);
+    const annotation = makeAnnotation({
+      exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol.",
+      sentenceId: "S999",
+    });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentenceMap);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("exact");
+  });
+
+  it("REQUIRED: never uses sentenceId for entity-scope annotations — those are sub-sentence spans, always exactQuote-based", () => {
+    const sentenceMap = new Map([["S001", "Glycolysis converts glucose into pyruvate in the cytosol."]]);
+    const annotation = makeAnnotation({
+      exactQuote: "Glycolysis",
+      spanScope: "entity",
+      sentenceId: "S001",
+    });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentenceMap);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).not.toBe("sentenceId");
+    expect(result[0].groundedText).toBe("Glycolysis"); // exact entity text, not the full sentence
+  });
+
+  it("REQUIRED: is backward compatible — omitting sentencesById entirely still grounds via exact/normalized/reject exactly as before", () => {
+    const annotation = makeAnnotation({ exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol." });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT); // no third arg
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("exact");
+  });
+
+  it("REQUIRED: multi-sentence span — sentenceId points to the FIRST sentence, exactQuote signals more should be included, and groundedText expands to cover it", () => {
+    const sentenceMap = new Map([
+      ["S001", "Glycolysis converts glucose into pyruvate in the cytosol."],
+      ["S002", "This process yields a net gain of two ATP molecules per glucose."],
+    ]);
+    const annotation = makeAnnotation({
+      exactQuote: "Glycolysis converts glucose into pyruvate in the cytosol. This process yields a net gain of two ATP molecules per glucose.",
+      sentenceId: "S001",
+    });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentenceMap);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("sentenceId");
+    expect(result[0].groundedText).toContain("Glycolysis converts glucose into pyruvate in the cytosol.");
+    expect(result[0].groundedText).toContain("This process yields a net gain of two ATP molecules per glucose.");
+  });
+});
+
 describe("buildSurgeonEvidenceId", () => {
   it("formats as surgeon-<pageNumber>-<index>", () => {
     expect(buildSurgeonEvidenceId(7, 3)).toBe("surgeon-7-3");

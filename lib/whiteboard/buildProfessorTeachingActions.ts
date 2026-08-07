@@ -1,27 +1,32 @@
 // lib/whiteboard/buildProfessorTeachingActions.ts
-// Pure converter: VisualSceneGraph (real, laid-out positions) + a
-// GroundedProfessorLessonScript (short labels + spoken narration, already
-// verified against the same VSG) -> a complete, replayable
-// ProfessorLessonPlan. No React, no tldraw Editor, no network — this is the
-// deterministic "geometry" half of the pipeline; OpenAI supplied only the
-// "meaning" half (lib/whiteboard/groundProfessorLesson.ts already stripped
-// anything it invented that isn't a real node/edge id).
+// Pure converter: VisualSceneGraph (node/edge identity + role/tier data) + a
+// GroundedProfessorLessonScript (short labels, spoken narration, and
+// validated semantic groups, already verified against the same VSG) -> a
+// complete, replayable ProfessorLessonPlan. No React, no tldraw Editor, no
+// network — this is the deterministic "geometry" half of the pipeline;
+// OpenAI supplied only the "meaning" half (lib/whiteboard/groundProfessorLesson.ts
+// already stripped anything it invented that isn't a real node/edge id, and
+// resolved every surviving node into exactly one group).
 //
-// Node boxes are resized around their existing CENTER using
-// estimateLabelWidth(shortLabel) instead of the VSG's original fixed-width
-// box — this is the direct fix for "boxes are too narrow, so sentences wrap
-// vertically": labels are now short by construction, and the box grows to
-// fit them instead of the reverse. Vertical position/height are left as the
-// layout engine computed them, so V_GAP spacing between rows never breaks.
+// Geometry itself is delegated entirely to lib/whiteboard/groupLayout.ts:
+// every node box is measured from its REAL final shortLabel (width AND
+// wrapped height), regions are placed group-by-group in the SAME order
+// nodeScripts narrates them (so the spatial build order and the spoken
+// narrative order can never diverge), and a deterministic collision pass
+// guarantees no two boxes overlap. This file no longer computes any x/y/w/h
+// itself — it only asks groupLayout.ts for bounds and turns those into a
+// timeline of write/draw-shape/draw-arrow/move-camera actions.
 
 import { createShapeId } from "@tldraw/tldraw";
 import type { VisualSceneGraph, VSGNode } from "./visualSceneGraph";
 import type { GroundedProfessorLessonScript } from "./groundProfessorLesson";
 import type {
   ProfessorLessonPlan, ProfessorTeachingAction, NarrationSegment,
-  ProfessorLessonSourceSnapshot, Bounds,
+  ProfessorLessonSourceSnapshot,
 } from "./professorLessonPlan";
-import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
+import { estimateLabelWidth, wordCount } from "./textMetrics";
+import { computeGroupLayout, anchorPoint } from "./groupLayout";
+import type { LayoutBox } from "./groupLayout";
 
 // ── Pacing ────────────────────────────────────────────────────────────────
 const STROKE_DURATION_MS = 550;   // drawing a box/circle outline
@@ -75,9 +80,8 @@ function speakDurationMs(text: string): number {
   return Math.max(SPEAK_MIN_MS, wordCount(text) * SPEAK_MS_PER_WORD);
 }
 
-interface ResolvedNodeBounds extends Bounds {
-  centerWriteX: number;
-  centerWriteY: number;
+function boxCenter(box: LayoutBox): { x: number; y: number } {
+  return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
 }
 
 // A professor's diagram uses different SHAPES for different kinds of ideas,
@@ -96,15 +100,6 @@ function shapeKindForNode(node: VSGNode): "circle" | "box" | "diamond" | "hexago
   return "box";
 }
 
-function resizeAroundCenter(node: VSGNode, label: string): ResolvedNodeBounds {
-  const centerX = node.position.x + node.size.w / 2;
-  const w = estimateLabelWidth(label);
-  const h = estimateLabelHeight();
-  const x = centerX - w / 2;
-  const y = node.position.y;
-  return { x, y, w, h, centerWriteX: x + w / 2, centerWriteY: y + h / 2 };
-}
-
 export function buildProfessorTeachingActions(
   vsg: VisualSceneGraph,
   grounded: GroundedProfessorLessonScript,
@@ -114,7 +109,6 @@ export function buildProfessorTeachingActions(
 
   const actions: ProfessorTeachingAction[] = [];
   const segments: NarrationSegment[] = [];
-  const nodeBoundsById = new Map<string, ResolvedNodeBounds>();
   let stepSequenceCounter = 0;
 
   // Pushes a narration segment's speak+pause actions IMMEDIATELY (not
@@ -141,16 +135,63 @@ export function buildProfessorTeachingActions(
     return seg;
   };
 
+  // ── Pre-pass: every drawn node's bounds via the group-aware layout engine,
+  //     computed BEFORE any actions are built. A real professor narrates
+  //     connections the moment they're relevant — "here's the trigger... and
+  //     that leads to..." — which naturally places an edge's nodeScript
+  //     entry BETWEEN its two endpoints, not strictly after both. That
+  //     conversational order is exactly what rule 3 of the AI prompt in
+  //     pages/api/professor-lesson-plan.ts asks for ("connect... explaining
+  //     why two points relate"). Computing bounds only when a node's OWN
+  //     script entry was reached (the previous approach) silently dropped
+  //     any edge whose "to" node hadn't been drawn yet. Bounds are pure
+  //     geometry — computeGroupLayout only needs every drawn node's real
+  //     shortLabel and its validated group — so there's no reason computing
+  //     them needs to wait for script-processing order at all; only the
+  //     DRAWING (the write/draw-shape actions) does. ─────────────────────────
+  const scriptByTargetId = new Map(grounded.nodeScripts.map(e => [e.targetId, e]));
+  const drawnNodeIds = new Set(vsg.nodes.map(n => n.id).filter(id => scriptByTargetId.has(id)));
+  const layoutNodes = Array.from(drawnNodeIds).map(id => ({ id, label: scriptByTargetId.get(id)!.shortLabel }));
+
+  // groundProfessorLesson.ts guarantees every surviving node lands in some
+  // group, but this converter takes GroundedProfessorLessonScript as its
+  // input type directly (useful for tests, and defensive against any future
+  // caller) — so any drawn node NOT covered by grounded.groups still gets
+  // placed, via one synthesized catch-all region appended after every
+  // declared group, rather than silently vanishing from the layout.
+  const groupedNodeIds = new Set(grounded.groups.flatMap(g => g.nodeIds));
+  const ungroupedIds = Array.from(drawnNodeIds).filter(id => !groupedNodeIds.has(id));
+  const effectiveGroups = ungroupedIds.length === 0
+    ? grounded.groups
+    : [
+        ...grounded.groups,
+        { id: "auto-fallback", type: "core" as const, order: Math.max(0, ...grounded.groups.map(g => g.order)) + 1, nodeIds: ungroupedIds },
+      ];
+
+  const { nodeBounds: nodeBoundsById } = computeGroupLayout(layoutNodes, effectiveGroups);
+
+  // Every drawn node's group id, for camera batching below.
+  const groupIdByNodeId = new Map<string, string>();
+  for (const g of effectiveGroups) {
+    for (const id of g.nodeIds) {
+      if (!groupIdByNodeId.has(id)) groupIdByNodeId.set(id, g.id);
+    }
+  }
+  const nodeShapeId = (nodeId: string) => String(createShapeId(`pn-${nodeId}`));
+  const shapeIdsByGroup = new Map<string, string[]>();
+  for (const g of effectiveGroups) {
+    shapeIdsByGroup.set(g.id, g.nodeIds.filter(id => drawnNodeIds.has(id)).map(nodeShapeId));
+  }
+
   // ── Step 1: short hand-written title ───────────────────────────────────
-  // Placed comfortably ABOVE the topmost node's own y — a fixed (24, 12)
-  // collided with node1's position (VSG layouts start near y=22), which
-  // made the title render directly on top of the first box.
+  // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
+  // collided with the first box's own position.
   if (grounded.title) {
-    const topNodeY = vsg.nodes.length > 0 ? Math.min(...vsg.nodes.map(n => n.position.y)) : 22;
+    const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 22;
     const titleActionId = nextActionId();
     actions.push({
       type: "write", actionId: titleActionId, shapeId: String(createShapeId("pl-title")),
-      text: grounded.title, x: 24, y: topNodeY - 60, durationMs: writeDurationMs(grounded.title),
+      text: grounded.title, x: 24, y: topLayoutY - 60, durationMs: writeDurationMs(grounded.title),
     });
     pushSegment(`${grounded.title}.`, "introduce", "normal", [titleActionId]);
   }
@@ -161,25 +202,12 @@ export function buildProfessorTeachingActions(
     pushSegment(grounded.learningObjective, "introduce", "normal", []);
   }
 
-  // ── Pre-pass: every node's bounds, computed BEFORE any actions are built ──
-  // A real professor narrates connections the moment they're relevant — "here's
-  // the trigger... and that leads to..." — which naturally places an edge's
-  // nodeScript entry BETWEEN its two endpoints, not strictly after both. That
-  // conversational order is exactly what rule 3 of the AI prompt in
-  // pages/api/professor-lesson-plan.ts asks for ("connect... explaining why
-  // two points relate"). Computing bounds only when a node's OWN script entry
-  // was reached (the previous approach) silently dropped any edge whose "to"
-  // node hadn't been drawn yet — arrows the AI correctly proposed just
-  // vanished, with no error, no log, nothing (a real, hard-to-notice cause of
-  // "the Whiteboard doesn't show relationships between ideas"). Bounds are
-  // pure geometry — the VSG already knows every node's position/size — so
-  // there's no reason computing them needs to wait for script-processing
-  // order at all; only the DRAWING (the write/draw-shape actions) does.
-  const scriptByTargetId = new Map(grounded.nodeScripts.map(e => [e.targetId, e]));
-  for (const node of vsg.nodes) {
-    const label = scriptByTargetId.get(node.id)?.shortLabel ?? node.label;
-    nodeBoundsById.set(node.id, resizeAroundCenter(node, label));
-  }
+  // Tracks the current teaching region so the camera moves once per region
+  // instead of once per object — "move by meaningful teaching region," not
+  // aggressively after every individual shape. Edges never trigger their own
+  // camera move: both endpoints already belong to a region the camera has
+  // already framed by the time an edge between them is drawn.
+  let currentGroupId: string | null = null;
 
   // ── Step 2..N: one draw-shape + write (+ optional emphasize) per node,
   //     one draw-arrow per edge — in the grounded script's own order, which
@@ -187,11 +215,15 @@ export function buildProfessorTeachingActions(
   for (const entry of grounded.nodeScripts) {
     const node = vsg.nodes.find(n => n.id === entry.targetId);
     if (node) {
-      const bounds = nodeBoundsById.get(node.id)!; // set for every vsg.node in the pre-pass above
-      const shapeId = String(createShapeId(`pn-${node.id}`));
+      const bounds = nodeBoundsById.get(node.id)!; // set for every drawn node in the pre-pass above
+      const shapeId = nodeShapeId(node.id);
 
-      const cameraActionId = nextActionId();
-      actions.push({ type: "move-camera", actionId: cameraActionId, targetIds: [shapeId], durationMs: CAMERA_DURATION_MS });
+      const groupId = groupIdByNodeId.get(node.id) ?? node.id;
+      if (groupId !== currentGroupId) {
+        currentGroupId = groupId;
+        const targets = shapeIdsByGroup.get(groupId) ?? [shapeId];
+        actions.push({ type: "move-camera", actionId: nextActionId(), targetIds: targets, durationMs: CAMERA_DURATION_MS });
+      }
 
       const drawActionId = nextActionId();
       actions.push({
@@ -245,26 +277,28 @@ export function buildProfessorTeachingActions(
 
     const edge = vsg.edges.find(e => e.id === entry.targetId);
     if (edge) {
-      // Bounds are now precomputed for every real VSG node regardless of
+      // Bounds are now precomputed for every drawn VSG node regardless of
       // script order (see the pre-pass above) — the guard that matters here
       // is different: does EACH endpoint actually get a visible draw-shape
       // action at some point in this timeline? An edge pointing at a node
       // the AI chose to skip narrating (rule 1 allows skipping "a couple of
       // nodes") would otherwise draw an arrow to/from an invisible box.
       if (!scriptByTargetId.has(edge.fromId) || !scriptByTargetId.has(edge.toId)) continue;
-      const fromBounds = nodeBoundsById.get(edge.fromId);
-      const toBounds   = nodeBoundsById.get(edge.toId);
-      if (!fromBounds || !toBounds) continue; // edge references a node id not in this VSG at all — skip, not a crash
+      const from = nodeBoundsById.get(edge.fromId);
+      const to   = nodeBoundsById.get(edge.toId);
+      if (!from || !to) continue; // edge references a node id not in this VSG at all — skip, not a crash
 
       const shapeId = String(createShapeId(`pe-${edge.id}`));
-      const from: ResolvedNodeBounds = fromBounds;
-      const to: ResolvedNodeBounds   = toBounds;
 
-      const cameraActionId = nextActionId();
-      actions.push({ type: "move-camera", actionId: cameraActionId, targetIds: [String(createShapeId(`pn-${edge.fromId}`)), String(createShapeId(`pn-${edge.toId}`))], durationMs: CAMERA_DURATION_MS });
-
-      const arrowFrom = { x: from.centerWriteX, y: from.y + from.h };
-      const arrowTo   = { x: to.centerWriteX,   y: to.y };
+      // Route from whichever edge of each box actually faces the other box,
+      // instead of always bottom-center -> top-center — the direct fix for
+      // "connectors don't respect shape geometry" once regions can be laid
+      // out side by side (comparison columns, a warning's side lane) rather
+      // than only ever stacked in one vertical column.
+      const fromCenter = boxCenter(from);
+      const toCenter = boxCenter(to);
+      const arrowFrom = anchorPoint(from, toCenter.x, toCenter.y);
+      const arrowTo   = anchorPoint(to, fromCenter.x, fromCenter.y);
 
       const arrowActionId = nextActionId();
       actions.push({
