@@ -159,19 +159,34 @@ describe("Explain It staleness — explainItContext closes on page navigation", 
 // still feeds the left panel / ThoughtUnitNavigator via its own pipeline.
 
 describe("canonicalLeftPanelUnits — stale currentPageStudyModel guard", () => {
-  it("the producing effect only trusts currentPageStudyModel when its .page matches currentPage", () => {
+  it("the producing effect only trusts currentPageStudyModel when its .page AND .bookId match the current ones", () => {
     const idx = src.indexOf("useEffect(() => {\n    const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || \"\";\n    // Guard against a stale currentPageStudyModel");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 3000);
+    const block = src.slice(idx, idx + 4000);
     expect(block).toMatch(/currentPageStudyModel\.page === currentPage/);
+    // REQUIRED: page-number equality alone is not enough — a document switch
+    // that happens to land on the same page number must not let the OLD
+    // document's study model through. This is the exact class of bug a
+    // nearby comment documents as a real prior incident (a chemistry page's
+    // Chief Resident request answering about cell signaling instead).
+    expect(block).toMatch(/currentPageStudyModel\.bookId === bookId/);
     expect(block).toMatch(/studyModel:\s*freshStudyModel/);
     expect(block).toMatch(/\}, \[bookId, currentPage, currentPageStudyModel, pageTextByPage, sharedPresetId\]\);/);
   });
 
-  it("a stale model falls back to null (buildCanonicalLeftPanelUnits' own page-text fallback), not the wrong subject's visualAnchors", () => {
-    const idx = src.indexOf("const freshStudyModel = (!currentPageStudyModel || currentPageStudyModel.page === currentPage)");
+  it("a stale model (wrong page OR wrong document) falls back to null (buildCanonicalLeftPanelUnits' own page-text fallback), not the wrong subject's visualAnchors", () => {
+    const idx = src.indexOf("const freshStudyModel = (!currentPageStudyModel || (currentPageStudyModel.page === currentPage && currentPageStudyModel.bookId === bookId))");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 200);
     expect(block).toMatch(/\?\s*currentPageStudyModel\s*\n\s*:\s*null;/);
+  });
+
+  it("REQUIRED: the clear-stale-synthesis-state effect resets on bookId change too, not just currentPage — a document switch landing on the same page number must still clear the previous document's units", () => {
+    const idx = src.indexOf("// Clear stale synthesis state immediately when the user navigates to a new");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 800);
+    expect(block).toMatch(/setCurrentPageStudyModel\(null\);/);
+    expect(block).toMatch(/setCanonicalLeftPanelUnits\(\[\]\);/);
+    expect(block).toMatch(/\}, \[bookId, currentPage\]\);/);
   });
 });

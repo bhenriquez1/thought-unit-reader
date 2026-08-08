@@ -104,7 +104,7 @@ function scoreText(text: string): number {
   return score;
 }
 
-function extractPageTextFallbackUnits(pageText: string, page: number, presetId: string): ExpertAnchor[] {
+function extractPageTextFallbackUnits(pageText: string, bookId: string, page: number, presetId: string): ExpertAnchor[] {
   const chunks = pageText
     .replace(/\s*\|\s*/g, " ")
     .split(/(?<=[.!?])\s+|\n+/)
@@ -119,7 +119,12 @@ function extractPageTextFallbackUnits(pageText: string, page: number, presetId: 
     .sort((a, b) => a.index - b.index)
     .map((x, i) => {
       const priorityTier = Math.max(3, Math.min(5, x.score));
-      const id = `clp-p${page}-text-${i + 1}`;
+      // bookId-qualified for the same reason VisualAnchor.id is — see that
+      // construction site's comment (Thought Unit Engine identity audit's
+      // RC2 finding: a positional-only id can collide across two different
+      // documents at the same page number). Empty bookId (a caller that
+      // doesn't have one) degrades to the old unqualified shape, not an error.
+      const id = bookId ? `clp-${bookId}-p${page}-text-${i + 1}` : `clp-p${page}-text-${i + 1}`;
       const label = importanceLabelForTier(priorityTier, x.category, presetId);
       return {
         id,
@@ -142,8 +147,12 @@ export function buildCanonicalLeftPanelUnits(args: {
   pageText: string;
   studyModel?: CurrentPageStudyModel | null;
   presetId?: string;
+  /** Threaded into the page-text fallback path's ids only — the
+   *  studyModel/VisualAnchor path already carries a document-qualified id
+   *  from where VisualAnchor.id itself is built. */
+  bookId?: string;
 }): { units: ExpertAnchor[]; diagnosticReason: string | null; fallbackUsed: boolean } {
-  const { page, pageText, studyModel, presetId = "universal" } = args;
+  const { page, pageText, studyModel, presetId = "universal", bookId = "" } = args;
   const visualAnchors = studyModel?.visualAnchors ?? [];
   if (visualAnchors.length > 0) {
     return {
@@ -157,7 +166,7 @@ export function buildCanonicalLeftPanelUnits(args: {
     return { units: [], diagnosticReason: "no extractable text", fallbackUsed: true };
   }
 
-  const fallbackUnits = extractPageTextFallbackUnits(pageText, page, presetId);
+  const fallbackUnits = extractPageTextFallbackUnits(pageText, bookId, page, presetId);
   return {
     units: fallbackUnits,
     diagnosticReason: fallbackUnits.length ? "model returned no anchors; using local page-text expert ranking" : "canonical unit build failed",

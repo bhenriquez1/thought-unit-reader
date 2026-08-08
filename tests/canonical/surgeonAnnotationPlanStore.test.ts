@@ -27,8 +27,9 @@ describe("lib/canonical/surgeonAnnotationPlanStore.ts — IDB persistence shape"
     expect(src).toMatch(/keyPath:\s*'cacheKey'/);
   });
 
-  it("has a byBookPage secondary index for page-scoped pruning", () => {
-    expect(src).toMatch(/createIndex\('byBookPage',\s*\['bookId',\s*'pageIndex'\]\)/);
+  it("REQUIRED: has a byBookPage secondary index keyed on pageNumber (1-based, matching pageTruthKey's own convention), not the old 0-based pageIndex", () => {
+    expect(src).toMatch(/createIndex\('byBookPage',\s*\['bookId',\s*'pageNumber'\]\)/);
+    expect(src).not.toMatch(/'pageIndex'/);
   });
 
   it("exports the full CRUD surface: save, get, list-by-page, delete-by-document", () => {

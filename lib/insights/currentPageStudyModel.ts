@@ -492,7 +492,11 @@ export function buildStudyModel(
       const n = (fieldCounters.get(s.sourceField) ?? 0) + 1;
       fieldCounters.set(s.sourceField, n);
       return {
-        id:          `va-p${page}-${s.sourceField}-${n}`,
+        // bookId-qualified — a positional-only id (va-p3-...) could collide
+        // across two different documents at "the same page number" (Thought
+        // Unit Engine identity audit's RC2 finding). bookId is already this
+        // function's own parameter, so this is purely additive.
+        id:          `va-${bookId}-p${page}-${s.sourceField}-${n}`,
         sourceField: s.sourceField,
         exactText:   s.text,
         role:        s.role,
@@ -519,7 +523,7 @@ export function buildStudyModel(
     const fallbackText = firstBlock.pattern || firstBlock.title;
     if (fallbackText && fallbackText.length >= 12) {
       visualAnchors.push({
-        id:                  `va-p${page}-pageThesis-fallback`,
+        id:                  `va-${bookId}-p${page}-pageThesis-fallback`,
         sourceField:         "pageThesis",
         exactText:           fallbackText,
         role:                "coreIdea",

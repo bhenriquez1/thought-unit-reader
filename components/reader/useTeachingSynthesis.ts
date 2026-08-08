@@ -293,7 +293,15 @@ export function useTeachingSynthesis({
       pageTruthKey,
     });
 
-    // Mark started and create the request controller (aborted only by Effect A).
+    // Mark started and create the request controller. Effect A aborts this
+    // on a real page-navigation (pageTruthKey change); this effect has no
+    // cleanup of its own (see the comment on Effect B below), so a same-page
+    // retry() — which clears startedKeyRef without changing pageTruthKey —
+    // would otherwise leave the PREVIOUS run's controller referenced by
+    // abortRef.current with nothing ever aborting it, letting a slow
+    // original response land after and overwrite the retry's fresher
+    // result. Abort it explicitly here before superseding it.
+    abortRef.current?.abort();
     startedKeyRef.current = pageTruthKey;
     const mainCtrl = new AbortController();
     abortRef.current = mainCtrl;

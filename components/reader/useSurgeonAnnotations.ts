@@ -135,8 +135,7 @@ export interface UseSurgeonAnnotationsResult {
 interface UseSurgeonAnnotationsArgs {
   pageTruthKey: string;
   bookId: string;
-  pageIndex: number;   // 0-based, for the cache key
-  pageNumber: number;  // 1-based, for the API + HighlightTarget.page
+  pageNumber: number;  // 1-based — for the API, HighlightTarget.page, AND the cache key (see annotationPlanCache.ts's RC7 note)
   pageText: string;
   pageImageDataUrl: string | null;
   previousPageText?: string | null;
@@ -183,10 +182,11 @@ function normalizeForTarget(s: string): string {
 // (full-fidelity), guaranteeing the two can never drift apart.
 function groundedAnnotationsToHighlightTargets(
   grounded: GroundedSurgeonAnnotation[],
+  documentId: string,
   pageNumber: number,
 ): HighlightTarget[] {
   return grounded.map((g, i) => {
-    const id = buildSurgeonEvidenceId(pageNumber, i);
+    const id = buildSurgeonEvidenceId(documentId, pageNumber, i);
     return {
       id,
       page:                  pageNumber,
@@ -240,7 +240,6 @@ export function resolveAnnotationTier(args: {
 export function useSurgeonAnnotations({
   pageTruthKey,
   bookId,
-  pageIndex,
   pageNumber,
   pageText,
   pageImageDataUrl,
@@ -285,7 +284,6 @@ export function useSurgeonAnnotations({
   const nextPageTextRef          = useRef(nextPageText);
   const existingCanonicalUnitsRef = useRef(existingCanonicalUnits);
   const bookIdRef                = useRef(bookId);
-  const pageIndexRef             = useRef(pageIndex);
   const pageNumberRef            = useRef(pageNumber);
   pageTextRef.current              = pageText;
   pageImageDataUrlRef.current      = pageImageDataUrl;
@@ -293,7 +291,6 @@ export function useSurgeonAnnotations({
   nextPageTextRef.current          = nextPageText;
   existingCanonicalUnitsRef.current = existingCanonicalUnits;
   bookIdRef.current                = bookId;
-  pageIndexRef.current             = pageIndex;
   pageNumberRef.current            = pageNumber;
 
   const reanalyze = useCallback(() => {
@@ -319,7 +316,7 @@ export function useSurgeonAnnotations({
     (async () => {
       const cacheKey = buildAnnotationCacheKey({
         bookId:         bookIdRef.current,
-        pageIndex:      pageIndexRef.current,
+        pageNumber:     pageNumberRef.current,
         semanticPackId: semanticPack.id,
       });
       try {
@@ -348,7 +345,7 @@ export function useSurgeonAnnotations({
           const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
           const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current, sentenceMap);
           const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRole);
-          const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
+          const targets = groundedAnnotationsToHighlightTargets(grounded, bookIdRef.current, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
           setGroundedAnnotations(grounded);
@@ -433,6 +430,15 @@ export function useSurgeonAnnotations({
     setStatus("loading");
     if (!wasForced) setAnnotationErrorMessage(null);
 
+    // Abort whatever this effect's OWN previous run may still have in
+    // flight before starting a new one — this is the case Effect A's
+    // pageTruthKey-keyed cleanup does NOT cover: a same-page reanalyze()
+    // replays this effect (via reanalyzeCount) without pageTruthKey
+    // changing, so nothing else ever cancels the original request. Without
+    // this, a slow original response arriving AFTER the retry's response
+    // can silently overwrite the retry's fresher result — both pass the
+    // pageTruthKey/content-hash checks below since the page never changed.
+    abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -523,7 +529,7 @@ export function useSurgeonAnnotations({
         const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
         const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current, sentenceMap);
         const grounded = limitAnnotationDensity(wholePage, data.plan.pageRole);
-        const targets = groundedAnnotationsToHighlightTargets(grounded, pageNumberRef.current);
+        const targets = groundedAnnotationsToHighlightTargets(grounded, bookIdRef.current, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed client-side sentence grounding —
           // degraded, not a hard error, but a distinct stage from the
@@ -547,10 +553,10 @@ export function useSurgeonAnnotations({
 
         const cacheKey = buildAnnotationCacheKey({
           bookId:         bookIdRef.current,
-          pageIndex:      pageIndexRef.current,
+          pageNumber:     pageNumberRef.current,
           semanticPackId: semanticPack.id,
         });
-        saveSurgeonAnnotationPlan(bookIdRef.current, pageIndexRef.current, cacheKey, data.plan).catch(() => {});
+        saveSurgeonAnnotationPlan(bookIdRef.current, pageNumberRef.current, cacheKey, data.plan).catch(() => {});
 
         if (DEV) console.log("[SURGEON_PLAN_OK]", { pageTruthKey, annotationCount: targets.length });
         console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {

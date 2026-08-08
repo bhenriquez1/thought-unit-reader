@@ -63,9 +63,13 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
   const pages: string[] = [];
   let totalCharsExtracted = 0;
 
-  // Clear any stale registry entries from a previous document extraction.
-  TextLayerRegistry.clear();
-  PageBridgeRegistry.clear();
+  // Clear any stale registry entries from a previous document extraction and
+  // start a new epoch — every set() call below is stamped with it, so a
+  // late write from an extraction a NEWER one has since superseded (e.g.
+  // rapid document switching) is dropped instead of contaminating this
+  // registry. See pageBridgeRegistry.ts's header comment for the race this closes.
+  const textEpoch = TextLayerRegistry.clear();
+  const bridgeEpoch = PageBridgeRegistry.clear();
 
   // ✅ Process pages with progress tracking and early text detection
   for (let i = 1; i <= doc.numPages; i++) {
@@ -93,6 +97,7 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
       const vp = page.getViewport({ scale: 1.0 });
       TextLayerRegistry.set(
         buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+        textEpoch,
       );
 
       // Reconstruct line/paragraph structure from item geometry rather than
@@ -108,7 +113,7 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
         itemIndex: idx,
       }));
       const { text: pageText, bridge } = buildStructuredPageTextFull(normalizedItems);
-      PageBridgeRegistry.set(i - 1, bridge);
+      PageBridgeRegistry.set(i - 1, bridge, bridgeEpoch);
 
       pages.push(pageText);
       totalCharsExtracted += pageText.length;
@@ -213,9 +218,11 @@ export async function extractPageTextsIncremental(
   const { batchSize = 10, onBatch, signal, onProgress, priorityPage, onPauseCheck } = options;
   const totalPages: number = doc.numPages;
 
-  // Clear stale registry entries from any previous document extraction.
-  TextLayerRegistry.clear();
-  PageBridgeRegistry.clear();
+  // Clear stale registry entries from any previous document extraction and
+  // start a new epoch — see the "Clear any stale registry entries" comment
+  // in extractPageTexts() above for the cross-document race this closes.
+  const textEpoch = TextLayerRegistry.clear();
+  const bridgeEpoch = PageBridgeRegistry.clear();
 
   async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
     try {
@@ -231,6 +238,7 @@ export async function extractPageTextsIncremental(
       const vp = page.getViewport({ scale: 1.0 });
       TextLayerRegistry.set(
         buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+        textEpoch,
       );
 
       const normalizedItems = (content.items as any[]).map((item: any, idx: number) => ({
@@ -242,7 +250,7 @@ export async function extractPageTextsIncremental(
         itemIndex: idx,
       }));
       const { text, bridge } = buildStructuredPageTextFull(normalizedItems);
-      PageBridgeRegistry.set(i - 1, bridge);
+      PageBridgeRegistry.set(i - 1, bridge, bridgeEpoch);
       return { pageIndex: i, text };
     } catch {
       return { pageIndex: i, text: '' };

@@ -522,15 +522,17 @@ const RELATIONSHIP_TYPE_LABEL: Record<Relationship["type"], string> = {
  * of the SurgeonAnnotationPlan pipeline) into CanonicalEntryInput[] for the
  * Scene Builder.
  *
- * Each entry's id is buildSurgeonEvidenceId(pageNumber, index) — the SAME id
- * format components/reader/useSurgeonAnnotations.ts uses for
+ * Each entry's id is buildSurgeonEvidenceId(documentId, pageNumber, index) —
+ * the SAME id format components/reader/useSurgeonAnnotations.ts uses for
  * HighlightTarget.evidenceRefId. That shared id is what makes a PDF highlight
  * and its corresponding whiteboard node cross-highlight with zero extra sync
  * code: both already write to the same global focusedEvidenceId/activeAnchorId
  * state via TldrawCanvas's existing sourceId-keyed click sync. Callers MUST
  * pass the array in the same order it was produced by groundSurgeonQuotes() —
  * index `i` here must match the index used to build the corresponding
- * HighlightTarget for a given annotation.
+ * HighlightTarget for a given annotation — AND must pass the exact same
+ * documentId useSurgeonAnnotations.ts used (both currently receive bookId),
+ * or the two halves of the cross-highlight will never match.
  *
  * An annotation's optional `relationship.targetIndex` refers to the OTHER
  * annotation's position in the ORIGINAL (pre-grounding, pre-filtering)
@@ -543,13 +545,14 @@ const RELATIONSHIP_TYPE_LABEL: Record<Relationship["type"], string> = {
  */
 export function surgeonAnnotationsToCanonicalEntries(
   grounded:   GroundedSurgeonAnnotation[],
+  documentId: string,
   pageNumber: number,
 ): CanonicalEntryInput[] {
   const idByOriginalIndex = new Map<number, string>();
-  grounded.forEach((g, i) => idByOriginalIndex.set(g.originalIndex, buildSurgeonEvidenceId(pageNumber, i)));
+  grounded.forEach((g, i) => idByOriginalIndex.set(g.originalIndex, buildSurgeonEvidenceId(documentId, pageNumber, i)));
 
   return grounded.map((g, i) => {
-    const id = buildSurgeonEvidenceId(pageNumber, i);
+    const id = buildSurgeonEvidenceId(documentId, pageNumber, i);
     let relatesTo: CanonicalEntryInput["relatesTo"];
     if (g.relationship) {
       const targetId = idByOriginalIndex.get(g.relationship.targetIndex);

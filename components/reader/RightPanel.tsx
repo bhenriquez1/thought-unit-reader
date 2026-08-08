@@ -6,7 +6,7 @@ import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
 import { compressToNote, isFieldRenderable } from "@/lib/insights/sentenceCleanup";
 import type { EvidenceAnchor, OperatorCard } from "@/lib/insights/types";
-import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
+import { buildPageTruthKey, type ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
 import type { PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import type { StoryBlockV2 } from "@/lib/insights/types";
@@ -2451,7 +2451,7 @@ function UltraViewBase({
           body: JSON.stringify({
             topic: thesis, domain: domain ?? null, mode: "both", pageText: "",
             // Diagnostic-only — logged server-side on failure, never used in prompting.
-            pageTruthKey: bookId && pageNumber != null ? `${bookId}:${pageNumber}` : undefined,
+            pageTruthKey: bookId && pageNumber != null ? buildPageTruthKey(bookId, pageNumber) : undefined,
           }),
           signal: controller.signal,
         })

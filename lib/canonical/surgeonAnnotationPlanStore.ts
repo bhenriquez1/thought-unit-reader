@@ -6,6 +6,16 @@
 //
 // Modeled directly on lib/canonical/store.ts's pattern: promise-wrapped openDB(),
 // single object store, keyPath, secondary index for page-scoped pruning.
+//
+// pageNumber below is 1-based, matching pageTruthKey's own convention and
+// buildAnnotationCacheKey's own pageNumber param — previously named
+// pageIndex and fed a 0-based value, the one 0-based page identity in an
+// app where everything else is 1-based (Thought Unit Engine identity
+// audit's RC7 finding). The byBookPage secondary index this field feeds has
+// no live caller today (getSurgeonAnnotationPlansByPage/
+// deleteSurgeonAnnotationPlansByDocument are exported but unused), so this
+// rename carries no migration risk — nothing queries by the old
+// pageIndex-keyed shape.
 
 import type { SurgeonAnnotationPlan } from '../insights/pageAnnotationPlan';
 
@@ -16,7 +26,7 @@ export interface StoredSurgeonAnnotationPlan {
   /** Primary key — the versioned cache key from buildAnnotationCacheKey(). */
   cacheKey: string;
   bookId: string;
-  pageIndex: number;
+  pageNumber: number;
   plan: SurgeonAnnotationPlan;
   createdAt: number;
 }
@@ -29,7 +39,7 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
-        store.createIndex('byBookPage', ['bookId', 'pageIndex']);
+        store.createIndex('byBookPage', ['bookId', 'pageNumber']);
       }
     };
     req.onsuccess  = () => resolve(req.result);
@@ -41,12 +51,12 @@ function openDB(): Promise<IDBDatabase> {
 /** Upsert a single plan under its versioned cache key. */
 export async function saveSurgeonAnnotationPlan(
   bookId: string,
-  pageIndex: number,
+  pageNumber: number,
   cacheKey: string,
   plan: SurgeonAnnotationPlan,
 ): Promise<void> {
   const db = await openDB();
-  const record: StoredSurgeonAnnotationPlan = { cacheKey, bookId, pageIndex, plan, createdAt: Date.now() };
+  const record: StoredSurgeonAnnotationPlan = { cacheKey, bookId, pageNumber, plan, createdAt: Date.now() };
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(record);
@@ -71,13 +81,13 @@ export async function getSurgeonAnnotationPlan(cacheKey: string): Promise<Stored
  *  entries once a fresh plan under the current version has been saved. */
 export async function getSurgeonAnnotationPlansByPage(
   bookId: string,
-  pageIndex: number,
+  pageNumber: number,
 ): Promise<StoredSurgeonAnnotationPlan[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(STORE_NAME, 'readonly');
     const idx = tx.objectStore(STORE_NAME).index('byBookPage');
-    const req = idx.getAll(IDBKeyRange.only([bookId, pageIndex]));
+    const req = idx.getAll(IDBKeyRange.only([bookId, pageNumber]));
     req.onsuccess = () => resolve((req.result as StoredSurgeonAnnotationPlan[]) ?? []);
     req.onerror   = () => reject(req.error);
   });

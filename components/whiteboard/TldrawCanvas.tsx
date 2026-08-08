@@ -54,6 +54,7 @@ import {
 } from "@/lib/whiteboard/professorTimelineEngine";
 import type { ProfessorTeachingAction, NarrationSegment, Bounds } from "@/lib/whiteboard/professorLessonPlan";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 import {
   claimSpeech, isSpeechStale, registerActiveAudio, registerActiveUtterance,
   notifySpeechStart, notifySpeechEnd, notifySpeechError, stopAllSpeech,
@@ -232,7 +233,15 @@ export default function TldrawCanvas({
   }, [vsg, noteCards, whiteboardGrammar]);
 
   const effectiveDocumentId = documentId ?? storageKey ?? "unknown-document";
-  const effectivePageTruthKey = pageTruthKey ?? derivedVsg?.id ?? "unknown-page";
+  // Fall back through the canonical format FIRST (when the VSG at least
+  // carries its own source page number), then the old VSG-content-hash
+  // strategy, then a literal sentinel — every one of these is still only a
+  // defensive branch for a caller that didn't pass pageTruthKey; the real
+  // call site (WhiteboardPanel -> TldrawCanvas) always does.
+  const effectivePageTruthKey = pageTruthKey
+    ?? (derivedVsg?.sourcePageNumber != null ? buildPageTruthKey(effectiveDocumentId, derivedVsg.sourcePageNumber) : undefined)
+    ?? derivedVsg?.id
+    ?? "unknown-page";
 
   const { lessonPlan, status: lessonStatus, errorMessage: lessonErrorMessage, errorCode: lessonErrorCode, reanalyze } = useProfessorLesson({
     vsg: derivedVsg,

@@ -77,6 +77,7 @@ import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
+import { resolveDocumentIdentity } from "@/lib/insights/resolveDocumentIdentity";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import { parseExplainStepConversation } from "@/lib/explainStep/parseAnswer";
@@ -843,12 +844,17 @@ export default function ThoughtUnitReader() {
     return () => { if (activeBlobUrlRef.current) URL.revokeObjectURL(activeBlobUrlRef.current); };
   }, []);
 
-  // Clear stale synthesis state immediately when the user navigates to a new page.
+  // Clear stale synthesis state immediately when the user navigates to a new
+  // page OR switches documents. Previously keyed on [currentPage] only — if a
+  // newly-opened document happened to land on the same page number as the
+  // previously-open one, React bails on the redundant setCurrentPage(N) call
+  // and this effect never re-fires, leaving the old document's units visible
+  // until a later effect (which does key on bookId) catches up.
   useEffect(() => {
     setCurrentPageStudyModel(null);
     setCanonicalLeftPanelUnits([]);
     setCanonicalLeftPanelDiagnostic("Still preparing thought units");
-  }, [currentPage]);
+  }, [bookId, currentPage]);
 
   // finalHighlightAnchors: grounded canonicalLeftPanelUnits — left panel source.
   // Pipeline: canonicalLeftPanelUnits → sanitize → ground → budget → render.
@@ -1489,6 +1495,7 @@ export default function ThoughtUnitReader() {
             new File([blob], restoredBookId + '.pdf', { type: 'application/pdf' }),
             restoredBookId,
             restored.currentPage || 1,
+            restored.currentLocalDocumentId,
           );
         } catch {
           // Non-fatal — reader starts empty, user can re-upload
@@ -1614,18 +1621,22 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     // Guard against a stale currentPageStudyModel racing this effect on page
-    // change: the effect that nulls currentPageStudyModel on navigation (see
-    // "Clear stale synthesis state" above) and this effect both fire in the
-    // same post-commit flush, so this effect can still see the PREVIOUS page's
-    // model here for one pass. Without this check, canonicalLeftPanelUnits gets
-    // built from that stale model's visualAnchors (a different subject's
-    // content) but stamped with the NEW currentPage — the same class of bug the
-    // "stale-page" guard below already handles for finalHighlightAnchors, just
-    // missing here at the point canonicalLeftPanelUnits is actually produced.
-    // Confirmed root cause of a report where a chemistry page's Chief Resident
-    // request (canonicalEntries sourced from this array) answered about cell
-    // signaling instead.
-    const freshStudyModel = (!currentPageStudyModel || currentPageStudyModel.page === currentPage)
+    // OR document change: the effect that nulls currentPageStudyModel on
+    // navigation (see "Clear stale synthesis state" above) and this effect
+    // both fire in the same post-commit flush, so this effect can still see
+    // the PREVIOUS page/document's model here for one pass. Without this
+    // check, canonicalLeftPanelUnits gets built from that stale model's
+    // visualAnchors (a different subject's content, possibly a different
+    // document entirely) but stamped with the NEW currentPage — the same
+    // class of bug the "stale-page" guard below already handles for
+    // finalHighlightAnchors, just missing here at the point
+    // canonicalLeftPanelUnits is actually produced. Confirmed root cause of a
+    // report where a chemistry page's Chief Resident request (canonicalEntries
+    // sourced from this array) answered about cell signaling instead — the
+    // original fix only checked page number, not document identity, so a
+    // document switch landing on the same page number could still leak a
+    // stale model through this guard.
+    const freshStudyModel = (!currentPageStudyModel || (currentPageStudyModel.page === currentPage && currentPageStudyModel.bookId === bookId))
       ? currentPageStudyModel
       : null;
     const built = buildCanonicalLeftPanelUnits({
@@ -1633,6 +1644,7 @@ export default function ThoughtUnitReader() {
       pageText,
       studyModel: freshStudyModel,
       presetId: sharedPresetId,
+      bookId,
     });
     // Content-equality guard: avoid cascading re-renders when unit IDs and text are unchanged.
     // Without this, every studyModel rebuild (e.g. from a preset change) re-creates the array,
@@ -1943,6 +1955,15 @@ export default function ThoughtUnitReader() {
   // True once PDF.js has delivered ≥50 chars of text for the current page via
   // onGetTextSuccess. Keyed by the same compound key as pageTextByPage so it
   // can never be satisfied by text from a different document or page.
+  // The real, collision-resistant identity folded into pageTruthKey — NOT
+  // bookId (the filename minus extension). Two different PDFs sharing a
+  // filename previously produced an IDENTICAL pageTruthKey and collided
+  // across every cache keyed on it (annotation plans, professor lesson
+  // plans, content hashes). See lib/insights/resolveDocumentIdentity.ts.
+  const resolvedDocumentId = useMemo(
+    () => resolveDocumentIdentity({ documentId: currentLocalDocumentId, fileUrl, bookId }),
+    [currentLocalDocumentId, fileUrl, bookId],
+  );
   const activePageTextKey = `${bookId}:${currentPage}`;
   const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
   DEV && console.log("[TRACE PAGE BINDING]", {
@@ -1977,7 +1998,7 @@ export default function ThoughtUnitReader() {
     confidence: currentConfidence,
     formulaSignals,
   } = useActivePageIntelligence({
-    documentId: bookId,
+    documentId: resolvedDocumentId,
     pageNumber: currentPage,
     ctx: activePageContextForInsights,
     pageTextReady,
@@ -2021,7 +2042,6 @@ export default function ThoughtUnitReader() {
   const surgeonAnnotations = useSurgeonAnnotations({
     pageTruthKey,
     bookId,
-    pageIndex:        currentPage - 1,
     pageNumber:        currentPage,
     pageText:          pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
     pageImageDataUrl:  pageImageByPage.get(`${bookId}:${currentPage}`) ?? null,
@@ -2045,8 +2065,8 @@ export default function ThoughtUnitReader() {
   // its own whenever this is empty (not yet loaded/cached, or degraded) — see
   // WhiteboardPanel.tsx's vsgState memo.
   const whiteboardCanonicalEntries = useMemo(
-    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, currentPage),
-    [surgeonAnnotations.wholePageAnnotations, currentPage],
+    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, bookId, currentPage),
+    [surgeonAnnotations.wholePageAnnotations, bookId, currentPage],
   );
 
   // ── Unified wiring trace — prints one page's full data-flow chain, for
@@ -3624,7 +3644,16 @@ export default function ThoughtUnitReader() {
      Parses text, builds thought units, and falls back TOC from chapters.
      Never clears fileUrl on failure — the viewer stays live regardless.
   ========================================================================= */
-  const startBookProcessing = useCallback(async (file: File, documentId: string, initialPage = 1) => {
+  // documentId here is the filename-derived bookId — kept as-is for TOC
+  // caching (content-scoped, must stay stable across re-uploads of the same
+  // file) and DAT subject-classification heuristics (classifyDATSubject
+  // pattern-matches against it, so it must stay human-readable, never a raw
+  // UUID). canonicalDocumentId is the SEPARATE, real per-instance identity
+  // (see lib/insights/resolveDocumentIdentity.ts) — used only for
+  // CanonicalThoughtUnit's own documentId field, so two documents sharing a
+  // filename don't collide in DAT Apex's canonical-unit store either.
+  // Optional and additive: omitting it preserves today's behavior exactly.
+  const startBookProcessing = useCallback(async (file: File, documentId: string, initialPage = 1, canonicalDocumentId?: string) => {
     processingAbortControllerRef.current?.abort();
     const ac = new AbortController();
     processingAbortControllerRef.current = ac;
@@ -3697,7 +3726,7 @@ export default function ThoughtUnitReader() {
             });
 
             const canonical = buildCanonicalUnits({
-              documentId,
+              documentId: canonicalDocumentId ?? documentId,
               bookId: documentId,
               bookTitle,
               pageIndex: p.pageIndex,
@@ -3998,7 +4027,15 @@ export default function ThoughtUnitReader() {
 
       // Phase 2: text extraction + thought-unit parsing.
       // Viewer already shows page 1 — never block or remove the PDF on parse failures.
-      startBookProcessing(file, documentId);
+      // libEntry.localDocumentId is the real crypto.randomUUID() when this
+      // upload got a local IDB copy (the two fallback branches above); a
+      // successful Firebase upload doesn't create one, so fall back to a
+      // hash of the upload URL — still real per-instance identity, just
+      // derived rather than random. Read directly off libEntry/url rather
+      // than the reactive currentLocalDocumentId store field, which would
+      // still read its PRE-upload (stale) value this synchronously after
+      // the setCurrentLocalDocumentId(...) calls above.
+      startBookProcessing(file, documentId, 1, resolveDocumentIdentity({ documentId: libEntry.localDocumentId, fileUrl: url, bookId: documentId }));
 
       setPdfParsingState({ isLoading: false, error: null, progress: '' });
 
@@ -4139,7 +4176,7 @@ export default function ThoughtUnitReader() {
         generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
         // Re-run background processing to rebuild thought units
         const docId = (name || '').replace(/\.[Pp][Dd][Ff]$/, '') || 'book';
-        startBookProcessing(new File([blob], name || 'document.pdf', { type: 'application/pdf' }), docId);
+        startBookProcessing(new File([blob], name || 'document.pdf', { type: 'application/pdf' }), docId, 1, localDocumentId);
       } catch (err) {
         console.error('Failed to load PDF from IndexedDB:', err);
         setMissingPDFEntry({ name: name || 'this book', documentId: localDocumentId });
@@ -5100,7 +5137,7 @@ export default function ThoughtUnitReader() {
                           setFileUrl(sessionUrl);
                           setMissingPDFEntry(null);
                           const docId = (missingPDFEntry.name || '').replace(/\.[Pp][Dd][Ff]$/, '') || 'book';
-                          startBookProcessing(new File([blob], missingPDFEntry.name || 'document.pdf', { type: 'application/pdf' }), docId);
+                          startBookProcessing(new File([blob], missingPDFEntry.name || 'document.pdf', { type: 'application/pdf' }), docId, 1, missingPDFEntry.documentId);
                         } catch (err) {
                           console.error('[storage] Re-upload failed:', err);
                         }

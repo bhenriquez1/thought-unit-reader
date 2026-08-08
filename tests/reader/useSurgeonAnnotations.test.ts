@@ -43,6 +43,32 @@ describe("useSurgeonAnnotations.ts — Effect A/B dependency shape", () => {
   });
 });
 
+describe("useSurgeonAnnotations.ts — cache key uses pageNumber (1-based), not a separate 0-based pageIndex", () => {
+  // Regression: buildAnnotationCacheKey used to take a SEPARATE pageIndex
+  // (0-based) from every other page-identity string in the app (all
+  // 1-based, matching pageTruthKey's own convention) — reconciled only by a
+  // secondary runtime check (isAnnotationPlanFresh), not by construction.
+  // The hook no longer accepts or computes a pageIndex at all.
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: no pageIndex field, ref, or param exists anywhere in this file", () => {
+    expect(src).not.toMatch(/pageIndex/);
+  });
+
+  it("both buildAnnotationCacheKey call sites pass pageNumber", () => {
+    const calls = [...src.matchAll(/buildAnnotationCacheKey\(\{[^}]*\}\)/gs)];
+    expect(calls.length).toBe(2);
+    for (const call of calls) {
+      expect(call[0]).toMatch(/pageNumber:\s*pageNumberRef\.current/);
+    }
+  });
+
+  it("saveSurgeonAnnotationPlan is called with pageNumberRef.current, not a separate index", () => {
+    expect(src).toMatch(/saveSurgeonAnnotationPlan\(bookIdRef\.current, pageNumberRef\.current, cacheKey, data\.plan\)/);
+  });
+});
+
 describe("useSurgeonAnnotations.ts — explicit reanalyze, distinct from generic retry", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
@@ -102,6 +128,26 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
     const fetchIdx = effectBody.indexOf("const res = await fetch(");
     const afterFetch = effectBody.slice(fetchIdx, fetchIdx + 400);
     expect(afterFetch).toMatch(/if \(ctrl\.signal\.aborted\) return;/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — reanalyze() on the SAME page aborts the superseded request", () => {
+  // Regression: Effect A's cleanup only aborts abortRef.current when
+  // pageTruthKey changes (real navigation). A same-page reanalyze() replays
+  // Effect B via reanalyzeCount without pageTruthKey changing, so nothing
+  // else ever cancelled the ORIGINAL request — a slow original response
+  // could land AFTER the retry's response and silently overwrite it, since
+  // both pass the pageTruthKey/content-hash checks (the page never changed).
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: Effect B aborts its own previous controller before creating a new one, ahead of every fetch it might start", () => {
+    const idx = src.indexOf("// ── Effect B:");
+    const effectBody = src.slice(idx, idx + 4000);
+    const newCtrlIdx = effectBody.indexOf("const ctrl = new AbortController();");
+    expect(newCtrlIdx).toBeGreaterThan(-1);
+    const before = effectBody.slice(Math.max(0, newCtrlIdx - 500), newCtrlIdx);
+    expect(before).toMatch(/abortRef\.current\?\.abort\(\);/);
   });
 });
 

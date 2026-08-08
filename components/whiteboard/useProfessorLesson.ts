@@ -135,6 +135,13 @@ export function useProfessorLesson({
     setErrorMessage(null);
     setErrorCode(null);
 
+    // Abort whatever this effect's OWN previous run may still have in
+    // flight before starting a new one — Effect A's identityKey-keyed
+    // cleanup doesn't cover a same-identity reanalyze() replay (via
+    // reanalyzeCount), so without this a slow original response can land
+    // AFTER the retry's response and silently overwrite it — both pass the
+    // pageTruthKey check below since the page/unit never changed.
+    abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const startedAt = Date.now();

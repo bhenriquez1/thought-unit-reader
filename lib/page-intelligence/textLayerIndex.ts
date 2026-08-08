@@ -193,11 +193,19 @@ export function getSpeechCursorBbox(
 // Multi-page registry
 // ============================================================================
 
-/** Cache of built indices keyed by pageIndex */
+/** Cache of built indices keyed by pageIndex — no documentId component, same
+ *  cross-document race exposure PageBridgeRegistry documents (see that
+ *  file's header). Guarded the same way: an epoch counter bumped on every
+ *  clear(), and set() drops a write stamped with a since-superseded epoch. */
 const indexRegistry = new Map<number, PageTextIndex>();
+let epoch = 0;
 
 export const TextLayerRegistry = {
-  set(index: PageTextIndex): void {
+  /** forEpoch, when passed, must match the CURRENT epoch or this write is
+   *  silently dropped — see PageBridgeRegistry.set()'s doc comment for the
+   *  race this closes. Omitting it skips the check. */
+  set(index: PageTextIndex, forEpoch?: number): void {
+    if (forEpoch !== undefined && forEpoch !== epoch) return;
     indexRegistry.set(index.pageIndex, index);
   },
 
@@ -205,8 +213,16 @@ export const TextLayerRegistry = {
     return indexRegistry.get(pageIndex);
   },
 
-  clear(): void {
+  /** Clears all entries and starts a new epoch — see set()'s doc comment.
+   *  Returns the new epoch for the caller to stamp its own set() calls with. */
+  clear(): number {
     indexRegistry.clear();
+    epoch += 1;
+    return epoch;
+  },
+
+  currentEpoch(): number {
+    return epoch;
   },
 
   /** Resolve a SourceRef across the registry */
