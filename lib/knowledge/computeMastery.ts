@@ -37,14 +37,20 @@ export const MASTERY_COLORS: Record<MasteryLevel, string> = {
 };
 
 /**
- * Update recallScore + correctCount/missCount from a card-difficulty rating.
- * Returns a patch object suitable for merging into KnowledgeNodeProgress.
+ * @deprecated Use applyLearningEvent(progress, { kind: "recall-graded", ... })
+ * from lib/knowledge/learningStateEvents.ts instead — it covers the same
+ * recallScore/memoryStrength math plus exposureCount, successfulRecallCount/
+ * failedRecallCount, and an evidence-log entry, and (unlike this function)
+ * takes its timestamp from the caller rather than calling `new Date()`
+ * internally, which is what makes it deterministic/testable. Kept only for
+ * any caller outside this codebase's Phase A migration; do not add new
+ * call sites.
  */
 export function recallDifficultyPatch(
   current: KnowledgeNodeProgress,
   difficulty: "easy" | "medium" | "hard",
+  now: string = new Date().toISOString(),
 ): Partial<KnowledgeNodeProgress> {
-  const now = new Date().toISOString();
   if (difficulty === "easy") {
     return {
       recallScore:    Math.min(100, (current.recallScore  ?? 0) + 10),

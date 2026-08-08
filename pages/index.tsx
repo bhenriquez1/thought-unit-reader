@@ -1583,41 +1583,6 @@ export default function ThoughtUnitReader() {
     }
   }, [selectedKgNodeId, kgNodes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Knowledge Graph: resolve/create nodes when study model is ready ────────
-  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
-  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
-  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
-  // chapterCandidateId is read from adaptiveSyllabusStore — null when no syllabus
-  // exists for this book yet (safe; KnowledgeNode.chapterCandidateId is nullable).
-  useEffect(() => {
-    if (!currentPageStudyModel || !bookId) return;
-    const { visualAnchors } = currentPageStudyModel;
-    if (!visualAnchors.length) return;
-
-    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
-    const chapterCandidateId = syllabus?.structureCandidates?.find(
-      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
-    )?.id ?? null;
-    const profileId = syllabus?.selectedProfileId ?? "general";
-
-    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
-    pageKgNodeIdRef.current = null;
-
-    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
-
-    for (const anchor of visualAnchors) {
-      if (!anchor.id) continue;
-      resolveOrCreateNode(anchor, bookId, currentPage, chapterCandidateId, profileId)
-        .then(node => {
-          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
-          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
-            pageKgNodeIdRef.current = node.id;
-          }
-        })
-        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
-    }
-  }, [currentPageStudyModel, bookId, currentPage]);
-
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     // Guard against a stale currentPageStudyModel racing this effect on page
@@ -1964,6 +1929,54 @@ export default function ThoughtUnitReader() {
     () => resolveDocumentIdentity({ documentId: currentLocalDocumentId, fileUrl, bookId }),
     [currentLocalDocumentId, fileUrl, bookId],
   );
+
+  // Knowledge Graph: resolve/create nodes when study model is ready.
+  // Fire-and-forget: no UI waits on this. For each VisualAnchor the pipeline
+  // selected, run the deduplication resolver (tier 1: anchor, tier 2: fuzzy,
+  // tier 3: new) and persist to avrrio_knowledgegraph_v1.
+  //
+  // Keyed on resolvedDocumentId, not bookId — a KnowledgeNode's persisted
+  // identity (KnowledgeNode.documentId, stableNodeId's hash input) must be
+  // collision-resistant the same way pageTruthKey already is: two different
+  // PDFs sharing a filename must never resolve to (or silently overwrite)
+  // the same node. bookId is still passed through and stored on the node —
+  // it's a legitimate human-readable grouping key for "all nodes in this
+  // book" UI, just never the identity the dedup resolver keys on. This
+  // effect must run after resolvedDocumentId is computed above (moved from
+  // its original position, which predated resolvedDocumentId in this file).
+  //
+  // chapterCandidateId is read from adaptiveSyllabusStore — null when no
+  // syllabus exists for this book yet (safe; KnowledgeNode.chapterCandidateId
+  // is nullable).
+  useEffect(() => {
+    if (!currentPageStudyModel || !bookId) return;
+    const { visualAnchors } = currentPageStudyModel;
+    if (!visualAnchors.length) return;
+
+    const syllabus = useAdaptiveSyllabusStore.getState().getSyllabus(bookId);
+    const chapterCandidateId = syllabus?.structureCandidates?.find(
+      c => currentPage >= c.startPage && (c.endPage == null || currentPage <= c.endPage)
+    )?.id ?? null;
+    const profileId = syllabus?.selectedProfileId ?? "general";
+
+    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
+    pageKgNodeIdRef.current = null;
+
+    const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
+
+    for (const anchor of visualAnchors) {
+      if (!anchor.id) continue;
+      resolveOrCreateNode(anchor, resolvedDocumentId, bookId, currentPage, chapterCandidateId, profileId)
+        .then(node => {
+          // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
+          if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
+            pageKgNodeIdRef.current = node.id;
+          }
+        })
+        .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
+    }
+  }, [currentPageStudyModel, bookId, resolvedDocumentId, currentPage]);
+
   const activePageTextKey = `${bookId}:${currentPage}`;
   const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
   DEV && console.log("[TRACE PAGE BINDING]", {
@@ -2412,6 +2425,8 @@ export default function ThoughtUnitReader() {
       bookTitle: uploadedFile?.name,
       sourceLabel: "right-panel",
       studyModel: sm,
+      documentId: resolvedDocumentId,
+      knowledgeNodeId: pageKgNodeIdRef.current,
     });
     try {
       await saveRecallSet(set);
@@ -2428,7 +2443,7 @@ export default function ThoughtUnitReader() {
     setLastRecallSetId(set.id);
     setSessionCardsCount((n) => n + 1);
     setRecallLabRefreshKey((k) => k + 1);
-  }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
+  }, [currentPageStudyModel, currentPage, bookId, uploadedFile, resolvedDocumentId]);
 
 
   // 🧠 Chapter Absorption Pipeline State
@@ -5440,6 +5455,7 @@ export default function ThoughtUnitReader() {
                 key={`${pageTruthKey}-${rightPanelResetKey}`}
                 ctx={activePageContext}
                 resolvedDocumentId={resolvedDocumentId}
+                knowledgeNodeId={pageKgNodeIdRef.current}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
                 intelligence={intelligenceSnapshot}

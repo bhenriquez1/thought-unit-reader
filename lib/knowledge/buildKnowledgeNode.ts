@@ -17,11 +17,14 @@ function djb2(s: string): number {
   return h;
 }
 
-function stableNodeId(bookId: string, canonicalAnchorId: string): string {
-  const hash = djb2(`${bookId}::${canonicalAnchorId}`).toString(16).padStart(8, "0");
-  // bookId can contain path separators — normalize to slug
-  const safeBook = bookId.replace(/[^a-z0-9]/gi, "_").slice(0, 40);
-  return `kn_${safeBook}_${hash}`;
+// Hashes on documentId (the resolved, collision-resistant identity), NOT
+// bookId — two different books sharing a filename must never produce the
+// same node id. See knowledgeGraphSchema.ts's header comment.
+function stableNodeId(documentId: string, canonicalAnchorId: string): string {
+  const hash = djb2(`${documentId}::${canonicalAnchorId}`).toString(16).padStart(8, "0");
+  // documentId can contain path separators/UUID punctuation — normalize to slug
+  const safeDoc = documentId.replace(/[^a-z0-9]/gi, "_").slice(0, 40);
+  return `kn_${safeDoc}_${hash}`;
 }
 
 // ── Token overlap ─────────────────────────────────────────────────────────────
@@ -75,6 +78,7 @@ function importanceFromAnchor(anchor: VisualAnchor): number {
 
 export function buildNewNode(
   anchor: VisualAnchor,
+  documentId: string,
   bookId: string,
   pageNumber: number,
   chapterCandidateId: string | null,
@@ -89,7 +93,8 @@ export function buildNewNode(
   };
 
   return {
-    id:                stableNodeId(bookId, anchor.id),
+    id:                stableNodeId(documentId, anchor.id),
+    documentId,
     bookId,
     chapterCandidateId,
     canonicalAnchorId: anchor.id,
