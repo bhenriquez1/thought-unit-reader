@@ -23,9 +23,9 @@ function makeGrounded(overrides: Partial<GroundedProfessorLessonScript> = {}): G
     learningObjective: "Explain how to stabilize the patient before diagnosis.",
     synthesisQuestion: "How would you explain this back?",
     nodeScripts: [
-      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start with the central problem.", tone: "introduce", pace: "normal", emphasize: true, explain: [] },
-      { targetId: "e1", shortLabel: "Leads to", narration: "This leads directly to stabilization.", tone: "connect", pace: "normal", emphasize: false, explain: [] },
-      { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start with the central problem.", tone: "introduce", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "circle", relationships: [], explain: [] },
+      { targetId: "e1", shortLabel: "Leads to", narration: "This leads directly to stabilization.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
     ],
     groups: [],
     ...overrides,
@@ -87,8 +87,8 @@ describe("buildProfessorTeachingActions — visuals synchronized with narration"
 
 describe("buildProfessorTeachingActions — geometry is deterministic, never AI-proposed", () => {
   it("node box width grows to fit the short label instead of a fixed constant", () => {
-    const shortGrounded = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "n", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
-    const longGrounded  = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "A somewhat longer phrase here", narration: "n", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
+    const shortGrounded = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "n", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] }] });
+    const longGrounded  = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "A somewhat longer phrase here", narration: "n", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] }] });
     const shortPlan = buildProfessorTeachingActions(makeVsg(), shortGrounded, SNAPSHOT);
     const longPlan  = buildProfessorTeachingActions(makeVsg(), longGrounded, SNAPSHOT);
     const shortBounds = (shortPlan.actions.find(a => a.type === "draw-shape") as any).bounds;
@@ -104,7 +104,7 @@ describe("buildProfessorTeachingActions — geometry is deterministic, never AI-
 
   it("skips an edge whose endpoint was never drawn (density-capped) rather than crashing", () => {
     const vsg = makeVsg();
-    const grounded = makeGrounded({ nodeScripts: [{ targetId: "e1", shortLabel: "Leads to", narration: "n", tone: "connect", pace: "normal", emphasize: false, explain: [] }] });
+    const grounded = makeGrounded({ nodeScripts: [{ targetId: "e1", shortLabel: "Leads to", narration: "n", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] }] });
     expect(() => buildProfessorTeachingActions(vsg, grounded, SNAPSHOT)).not.toThrow();
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
     expect(plan.actions.some(a => a.type === "draw-arrow")).toBe(false);
@@ -184,7 +184,7 @@ describe("buildProfessorTeachingActions — group-aware geometry: no overlap, re
       title: "T", visualGrammar: "concept-map", learningObjective: "L", synthesisQuestion: "Q",
       nodeScripts: Array.from({ length: 5 }, (_, i) => ({
         targetId: `n${i}`, shortLabel: `Point number ${i} with a somewhat longer descriptive phrase`,
-        narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [],
+        narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
       })),
       groups: [
         { id: "g1", type: "core", order: 1, nodeIds: ["n0"] },
@@ -230,9 +230,9 @@ describe("buildProfessorTeachingActions — deterministic, non-AI treatments fro
       title: "Test", visualGrammar: "procedure", learningObjective: "Learn the steps.",
       synthesisQuestion: "Explain the steps back.",
       nodeScripts: [
-        { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
       groups: [],
     };
@@ -301,11 +301,11 @@ describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/
     return {
       title: "Test", visualGrammar: "procedure", learningObjective: "Learn.", synthesisQuestion: "Explain back.",
       nodeScripts: [
-        { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false, explain: [] },
-        { targetId: "trap",     shortLabel: "Trap",     narration: "Careful.",  tone: "warn",       pace: "normal", emphasize: false, explain: [] },
-        { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false, explain: [] },
-        { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false, explain: [] },
+        { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "trap",     shortLabel: "Trap",     narration: "Careful.",  tone: "warn",       pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
       groups: [],
     };
@@ -389,9 +389,9 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
       const grounded: GroundedProfessorLessonScript = {
         title: "T", visualGrammar: "procedure", learningObjective: "L", synthesisQuestion: "Q",
         nodeScripts: [
-          { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-          { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false, explain: [] },
-          { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+          { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+          { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+          { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
         ],
         groups: [],
       };
@@ -408,8 +408,8 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   function groundedWithExplain(explain: ReturnType<typeof explainAction>[]) {
     return makeGrounded({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "Hypothermia", narration: "Cold slows things down.", tone: "explain", pace: "normal", emphasize: false, explain },
-        { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "Hypothermia", narration: "Cold slows things down.", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain },
+        { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
     });
   }
@@ -527,5 +527,197 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
     const a = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     const b = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     expect(a).toEqual(b);
+  });
+});
+
+describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive onto the final action, never discarded", () => {
+  it("REQUIRED: spatialIntent and teachingRole are carried onto that node's draw-shape action", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Rapid assessment", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "mechanism", spatialIntent: "warning-aside", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(drawAction.teachingRole).toBe("mechanism");
+    expect(drawAction.spatialIntent).toBe("warning-aside");
+  });
+
+  it("REQUIRED: drawingIntent influences shape choice for a plain (non-tier-locked) node — 'contrast' draws a diamond", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "contrast", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(drawAction.shape).toBe("diamond");
+  });
+
+  it("tier/role-derived shape rules still win over drawingIntent — a danger-tier node stays a hexagon even with drawingIntent:'contrast'", () => {
+    const vsg = makeVsg();
+    (vsg.nodes[0] as any).tier = "danger";
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "n", tone: "warn", pace: "slow", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "contrast", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(drawAction.shape).toBe("hexagon");
+  });
+
+  it("REQUIRED: emphasisTreatment 'crossOut' is used instead of the old hardcoded 'circle' for the winning emphasized point", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "n", tone: "warn", pace: "slow", emphasize: true,
+        teachingRole: "consequence", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "crossOut", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const emphasizeAction = plan.actions.find(a => a.type === "emphasize") as any;
+    expect(emphasizeAction.treatment).toBe("crossOut");
+  });
+});
+
+describe("buildProfessorTeachingActions — Phase B1: AI-authored relationships become real, deterministic arrows", () => {
+  it("REQUIRED: a relationship between two narrated nodes produces a draw-arrow plus a labeled write", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        {
+          targetId: "n1", shortLabel: "First", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+          teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none",
+          relationships: [{ targetId: "n2", kind: "warns-about", label: "check this first" }], explain: [],
+        },
+        { targetId: "n2", shortLabel: "Second", narration: "n2", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+      groups: [],
+    });
+    // makeVsg()'s only edge is n1->n2 sequence — use a VSG with NO edges so
+    // the relationship isn't deduped against a pre-existing structural one.
+    const vsg = makeVsg();
+    vsg.edges = [];
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const relArrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).shapeId === "shape:pr-n1-n2") as any;
+    expect(relArrow).toBeDefined();
+    const relLabel = plan.actions.find(a => a.type === "write" && (a as any).text === "check this first") as any;
+    expect(relLabel).toBeDefined();
+  });
+
+  it("REQUIRED: a relationship duplicating an already-existing VSG edge between the same two nodes is skipped — no redundant second arrow", () => {
+    // makeVsg()'s VSG already has edge n1->n2 (kind:'sequence') — include an
+    // "e1" nodeScript entry too, since (like everywhere else in this file)
+    // an edge is only drawn when the script explicitly narrates it.
+    const grounded = makeGrounded({
+      nodeScripts: [
+        {
+          targetId: "n1", shortLabel: "First", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+          teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none",
+          relationships: [{ targetId: "n2", kind: "leads-to", label: null }], explain: [],
+        },
+        { targetId: "e1", shortLabel: "Leads to", narration: "e", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Second", narration: "n2", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+      groups: [],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const relArrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).shapeId === "shape:pr-n1-n2");
+    expect(relArrow).toBeUndefined();
+    // The structural edge's own arrow (from the "e1" entry) still exists —
+    // this isn't "no arrow at all," just no REDUNDANT second one.
+    expect(plan.actions.some(a => a.type === "draw-arrow" && (a as any).targetId === "e1")).toBe(true);
+  });
+
+  it("a relationship targeting a node that was never drawn (density-capped) is simply skipped, never crashes", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "First", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none",
+        relationships: [{ targetId: "never-drawn", kind: "supports", label: null }], explain: [],
+      }],
+      groups: [],
+    });
+    const vsg = makeVsg();
+    vsg.edges = [];
+    expect(() => buildProfessorTeachingActions(vsg, grounded, SNAPSHOT)).not.toThrow();
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "draw-arrow")).toBe(false);
+  });
+
+  it("is deterministic — the same relationships input always produces an equal plan", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        {
+          targetId: "n1", shortLabel: "First", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+          teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none",
+          relationships: [{ targetId: "n2", kind: "supports", label: null }], explain: [],
+        },
+        { targetId: "n2", shortLabel: "Second", narration: "n2", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+      groups: [],
+    });
+    const vsg = makeVsg();
+    vsg.edges = [];
+    const a = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const b = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    expect(a).toEqual(b);
+  });
+});
+
+describe("buildProfessorTeachingActions — Phase B1: comparison-group divider bracket", () => {
+  function makeFourNodeVsg(): VisualSceneGraph {
+    return {
+      id: "vsg_cmp", grammar: "flow", drawType: "flow",
+      nodes: Array.from({ length: 4 }, (_, i) => ({
+        id: `n${i}`, label: `n${i}`, body: "b", canonicalType: "comparison",
+        importanceLevel: "high", tier: "step", role: "spoke",
+        position: { x: 0, y: i * 80 }, size: { w: 200, h: 52 }, sourceId: `src-n${i}`,
+      })),
+      edges: [], canvas: { width: 460, height: 400 }, builtAt: 0,
+    };
+  }
+  function comparisonGrounded(): GroundedProfessorLessonScript {
+    return {
+      title: "T", visualGrammar: "comparison", learningObjective: "L", synthesisQuestion: "Q",
+      nodeScripts: Array.from({ length: 4 }, (_, i) => ({
+        targetId: `n${i}`, shortLabel: `Point ${i}`, narration: `N${i}.`, tone: "explain" as const, pace: "normal" as const,
+        emphasize: false, teachingRole: "context" as const, spatialIntent: "comparison-column" as const, drawingIntent: "contrast" as const,
+        emphasisTreatment: "none" as const, relationships: [], explain: [],
+      })),
+      groups: [{ id: "cmp1", type: "comparison", order: 1, nodeIds: ["n0", "n1", "n2", "n3"] }],
+    };
+  }
+
+  it("REQUIRED: a comparison group with >=2 drawn nodes gets a 'brace' divider shape", () => {
+    const plan = buildProfessorTeachingActions(makeFourNodeVsg(), comparisonGrounded(), SNAPSHOT);
+    const divider = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "brace");
+    expect(divider).toBeDefined();
+  });
+
+  it("the divider sits between the two comparison columns, not on top of either", () => {
+    const plan = buildProfessorTeachingActions(makeFourNodeVsg(), comparisonGrounded(), SNAPSHOT);
+    const divider = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "brace") as any;
+    const nodeBoxes = plan.actions.filter(a => a.type === "draw-shape" && (a as any).shape !== "brace").map(a => (a as any).bounds);
+    for (const box of nodeBoxes) {
+      const overlap = divider.bounds.x < box.x + box.w && divider.bounds.x + divider.bounds.w > box.x
+        && divider.bounds.y < box.y + box.h && divider.bounds.y + divider.bounds.h > box.y;
+      expect(overlap).toBe(false);
+    }
+  });
+
+  it("a comparison group with only 1 drawn node does NOT get a divider — groupLayout.ts never split it into two columns", () => {
+    const grounded = comparisonGrounded();
+    grounded.nodeScripts = [grounded.nodeScripts[0]];
+    grounded.groups = [{ id: "cmp1", type: "comparison", order: 1, nodeIds: ["n0"] }];
+    const plan = buildProfessorTeachingActions(makeFourNodeVsg(), grounded, SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "draw-shape" && (a as any).shape === "brace")).toBe(false);
+  });
+
+  it("a non-comparison group never gets a divider", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "draw-shape" && (a as any).shape === "brace")).toBe(false);
   });
 });

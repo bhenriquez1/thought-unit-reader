@@ -1,11 +1,16 @@
 // tests/whiteboard/professorLessonPlan.test.ts
 import {
-  ProfessorLessonScriptSchema, ProfessorNodeScriptSchema,
+  ProfessorLessonScriptSchema, ProfessorNodeScriptSchema, ExplainIconSchema,
   buildProfessorLessonCacheKey, PLANNER_VERSION,
 } from "../../lib/whiteboard/professorLessonPlan";
 
 function validNodeScript() {
-  return { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, explain: [] };
+  return {
+    targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal",
+    emphasize: false, explain: [],
+    teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain",
+    emphasisTreatment: "none", relationships: [],
+  };
 }
 
 function validScript() {
@@ -41,6 +46,51 @@ describe("ProfessorNodeScriptSchema", () => {
 
   it("rejects an empty shortLabel", () => {
     expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), shortLabel: "" })).toThrow();
+  });
+
+  it("REQUIRED (Phase B1): teachingRole/spatialIntent/drawingIntent/emphasisTreatment/relationships must all be explicitly present — same Structured-Outputs strict-mode discipline as emphasize", () => {
+    for (const key of ["teachingRole", "spatialIntent", "drawingIntent", "emphasisTreatment", "relationships"]) {
+      const script = validNodeScript() as Record<string, unknown>;
+      delete script[key];
+      expect(() => ProfessorNodeScriptSchema.parse(script)).toThrow();
+    }
+  });
+
+  it("rejects an unknown teachingRole/spatialIntent/drawingIntent/emphasisTreatment", () => {
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), teachingRole: "bogus" })).toThrow();
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), spatialIntent: "bogus" })).toThrow();
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), drawingIntent: "bogus" })).toThrow();
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), emphasisTreatment: "bogus" })).toThrow();
+  });
+
+  it("accepts all documented spatialIntent values, including the exact composition vocabulary from the brief", () => {
+    const values = ["left-branch", "right-branch", "central-mechanism", "warning-aside", "comparison-column", "final-summary"];
+    for (const v of values) {
+      expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), spatialIntent: v })).not.toThrow();
+    }
+  });
+
+  it("accepts up to 3 relationships, each naming another node id, a bounded kind, and an optional label", () => {
+    const relationships = [
+      { targetId: "n2", kind: "causes", label: "leads to shock" },
+      { targetId: "n3", kind: "contrasts", label: null },
+      { targetId: "n4", kind: "warns-about", label: "common trap" },
+    ];
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), relationships })).not.toThrow();
+  });
+
+  it("rejects a 4th relationship entry and an unknown relationship kind", () => {
+    const fourRelationships = Array.from({ length: 4 }, (_, i) => ({ targetId: `n${i}`, kind: "supports", label: null }));
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), relationships: fourRelationships })).toThrow();
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), relationships: [{ targetId: "n2", kind: "bogus", label: null }] })).toThrow();
+  });
+});
+
+describe("ExplainIconSchema — Phase B1 additions", () => {
+  it("accepts the 4 domain-general icons added alongside the original 11", () => {
+    for (const v of ["lightbulb", "flag", "scale", "link"]) {
+      expect(() => ExplainIconSchema.parse(v)).not.toThrow();
+    }
   });
 });
 

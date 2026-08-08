@@ -22,7 +22,7 @@ import type { VisualSceneGraph, VSGNode } from "./visualSceneGraph";
 import type { GroundedProfessorLessonScript } from "./groundProfessorLesson";
 import type {
   ProfessorLessonPlan, ProfessorTeachingAction, NarrationSegment,
-  ProfessorLessonSourceSnapshot, ExplainIcon,
+  ProfessorLessonSourceSnapshot, ExplainIcon, DrawingIntent,
 } from "./professorLessonPlan";
 import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
 import { computeGroupLayout, anchorPoint, pushClearOf } from "./groupLayout";
@@ -68,6 +68,21 @@ const EXPLAIN_ICON_GLYPH: Record<ExplainIcon, string> = {
   thermometer: "🌡️", heart: "❤️", brain: "🧠", lungs: "🫁", warning: "⚠️",
   arrowDown: "⬇️", arrowUp: "⬆️", clock: "⏱️", snowflake: "❄️",
   checkmark: "✅", xmark: "❌",
+  lightbulb: "💡", flag: "🚩", scale: "⚖️", link: "🔗",
+};
+
+// Deterministic label for an AI-declared relationship — same "never blank,
+// never hallucinated" discipline as EDGE_KIND_LABEL, applied to
+// ProfessorRelationship.kind instead of VSGEdge.kind. The AI's own optional
+// `label` (already clamped to <=4 words by groundProfessorLesson.ts) is
+// preferred when present; this is only the fallback.
+const RELATIONSHIP_KIND_LABEL: Record<string, string> = {
+  supports:     "supports",
+  causes:       "causes",
+  contrasts:    "vs.",
+  "leads-to":   "leads to",
+  "part-of":    "part of",
+  "warns-about": "⚠ watch for",
 };
 
 // A professor's-aside mini-diagram is drawn beside the point it explains,
@@ -108,11 +123,24 @@ function boxCenter(box: LayoutBox): { x: number; y: number } {
 // checked before role: a "danger" or "pearl" idea keeps that shape even if
 // it also happens to be the page's hub node, since the warning/insight
 // reading matters more than "this is the central concept" once both are true.
-function shapeKindForNode(node: VSGNode): "circle" | "box" | "diamond" | "hexagon" | "cloud" {
+// drawingIntent is a SECOND-PRIORITY signal — the AI's stated intent for
+// what kind of mark best represents this point. Tier/role-derived rules
+// above (danger/pearl/decision/hub) still win when they apply, since those
+// encode real, deterministic product knowledge (e.g. a danger point must
+// always read as a hexagon, regardless of what the AI thought this point's
+// "drawing intent" was). drawingIntent only breaks the tie for the ordinary
+// case that would otherwise always fall through to a plain box.
+const SHAPE_FOR_DRAWING_INTENT: Partial<Record<DrawingIntent, "circle" | "box" | "diamond" | "hexagon" | "cloud">> = {
+  contrast: "diamond",
+  callout:  "cloud",
+};
+
+function shapeKindForNode(node: VSGNode, drawingIntent?: DrawingIntent): "circle" | "box" | "diamond" | "hexagon" | "cloud" {
   if (node.tier === "danger") return "hexagon";
   if (node.tier === "pearl")  return "cloud";
   if (node.tier === "decision" || node.canonicalType === "decision" || node.canonicalType === "comparison") return "diamond";
   if (node.role === "hub") return "circle";
+  if (drawingIntent && SHAPE_FOR_DRAWING_INTENT[drawingIntent]) return SHAPE_FOR_DRAWING_INTENT[drawingIntent]!;
   return "box";
 }
 
@@ -184,7 +212,7 @@ export function buildProfessorTeachingActions(
         { id: "auto-fallback", type: "core" as const, order: Math.max(0, ...grounded.groups.map(g => g.order)) + 1, nodeIds: ungroupedIds },
       ];
 
-  const { nodeBounds: nodeBoundsById } = computeGroupLayout(layoutNodes, effectiveGroups);
+  const { nodeBounds: nodeBoundsById, groupBounds: groupBoundsById } = computeGroupLayout(layoutNodes, effectiveGroups);
 
   // Every drawn node's group id, for camera batching below.
   const groupIdByNodeId = new Map<string, string>();
@@ -213,6 +241,16 @@ export function buildProfessorTeachingActions(
   // primary node box (fixed, never moved) and grown as each nodeScript
   // entry's explain chain is placed, so later chains avoid earlier ones too.
   const obstacleBoxes: LayoutBox[] = Array.from(nodeBoundsById.values());
+
+  // Every (fromId, toId) pair the VSG already connects with a real,
+  // deterministic edge — an AI-declared relationship duplicating one of
+  // these is skipped (see the relationships loop below) so the board never
+  // shows two arrows between the same two boxes.
+  const existingEdgePairs = new Set<string>();
+  for (const e of vsg.edges) {
+    existingEdgePairs.add(`${e.fromId}|${e.toId}`);
+    existingEdgePairs.add(`${e.toId}|${e.fromId}`);
+  }
 
   // ── Step 1: short hand-written title ───────────────────────────────────
   // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
@@ -259,7 +297,11 @@ export function buildProfessorTeachingActions(
       const drawActionId = nextActionId();
       actions.push({
         type: "draw-shape", actionId: drawActionId, shapeId, targetId: node.sourceId,
-        shape: shapeKindForNode(node), bounds, durationMs: STROKE_DURATION_MS,
+        shape: shapeKindForNode(node, entry.drawingIntent), bounds, durationMs: STROKE_DURATION_MS,
+        // Pass-through metadata only (see the ProfessorTeachingAction comment
+        // in professorLessonPlan.ts) — proves these AI-authored fields
+        // survive to the final timeline instead of being silently dropped.
+        spatialIntent: entry.spatialIntent, teachingRole: entry.teachingRole,
       });
 
       const writeActionId = nextActionId();
@@ -274,7 +316,11 @@ export function buildProfessorTeachingActions(
         const emphasizeActionId = nextActionId();
         actions.push({
           type: "emphasize", actionId: emphasizeActionId, targetId: shapeId,
-          treatment: "circle", durationMs: EMPHASIZE_DURATION_MS,
+          // groundProfessorLesson.ts already guarantees emphasisTreatment is
+          // never "none" when emphasize is true (falls back to "circle"
+          // there) — the "circle" fallback here is defense-in-depth only.
+          treatment: entry.emphasisTreatment === "none" ? "circle" : entry.emphasisTreatment,
+          durationMs: EMPHASIZE_DURATION_MS,
         });
         linked.push(emphasizeActionId);
       }
@@ -373,6 +419,47 @@ export function buildProfessorTeachingActions(
         }
       }
 
+      // ── relationships: AI-authored semantic links to OTHER nodes this
+      //     script narrates, additional to (never replacing) the VSG's own
+      //     deterministic edges. groundProfessorLesson.ts already validated
+      //     every target as a real, surviving node id — bounds for every
+      //     drawn node are known from the pre-pass above regardless of
+      //     narration order, so these can be drawn safely from either node's
+      //     turn. Skipped when a VSG edge already connects the exact same
+      //     pair, so a relationship never produces a visibly redundant
+      //     second arrow on top of a structural one. ─────────────────────
+      for (const rel of entry.relationships) {
+        const toBounds = nodeBoundsById.get(rel.targetId);
+        if (!toBounds) continue; // defensive — grounding guarantees this holds
+        const pairKey = `${node.id}|${rel.targetId}`;
+        const reversePairKey = `${rel.targetId}|${node.id}`;
+        if (existingEdgePairs.has(pairKey) || existingEdgePairs.has(reversePairKey)) continue;
+
+        const relFromCenter = boxCenter(bounds);
+        const relToCenter = boxCenter(toBounds);
+        const relFrom = anchorPoint(bounds, relToCenter.x, relToCenter.y);
+        const relTo = anchorPoint(toBounds, relFromCenter.x, relFromCenter.y);
+        const relShapeId = String(createShapeId(`pr-${node.id}-${rel.targetId}`));
+
+        const relArrowId = nextActionId();
+        actions.push({
+          type: "draw-arrow", actionId: relArrowId, shapeId: relShapeId,
+          from: relFrom, to: relTo, durationMs: ARROW_DURATION_MS,
+        });
+        linked.push(relArrowId);
+
+        const relLabelText = rel.label ?? RELATIONSHIP_KIND_LABEL[rel.kind] ?? rel.kind;
+        const relLabelId = nextActionId();
+        actions.push({
+          type: "write", actionId: relLabelId, shapeId: String(createShapeId(`pr-label-${node.id}-${rel.targetId}`)),
+          text: relLabelText,
+          x: (relFrom.x + relTo.x) / 2 - estimateLabelWidth(relLabelText) / 2,
+          y: (relFrom.y + relTo.y) / 2 - 8,
+          durationMs: writeDurationMs(relLabelText),
+        });
+        linked.push(relLabelId);
+      }
+
       pushSegment(entry.narration, entry.tone, entry.pace, linked);
       continue;
     }
@@ -427,6 +514,45 @@ export function buildProfessorTeachingActions(
 
       pushSegment(entry.narration, entry.tone, entry.pace, linkedArrowActions);
     }
+  }
+
+  // ── Comparison-group divider: a real bracket between the two columns a
+  //     "comparison" group's nodes were already split into (groupLayout.ts
+  //     unchanged — this only draws on top of geometry it already computed),
+  //     so a contrast reads as a genuine visual structure instead of two
+  //     unrelated columns that happen to sit side by side. Uses the "brace"
+  //     shape kind — previously declared in the schema but never emitted by
+  //     anything, silently falling back to a plain rectangle; see
+  //     toTldrawShapeSpec in TldrawCanvas.tsx for the real bracket render. ──
+  for (const group of effectiveGroups) {
+    if (group.type !== "comparison") continue;
+    const region = groupBoundsById.get(group.id);
+    if (!region || region.h <= 0) continue;
+
+    // Mirror groupLayout.ts's own comparison split EXACTLY (same nodeIds
+    // order, same Math.ceil(length/2) midpoint) so the bracket lands in the
+    // real gap between the two columns it actually laid out — not a guess
+    // from the group's overall bounding box, which can be off-center when
+    // the two columns have different widths. If fewer than 2 of this
+    // group's nodes actually got drawn, groupLayout.ts never split it into
+    // two columns in the first place (falls through to its plain
+    // single-column case) — skip the divider in that case too.
+    const drawnMemberIds = group.nodeIds.filter(id => nodeBoundsById.has(id));
+    if (drawnMemberIds.length < 2) continue;
+    const mid = Math.ceil(drawnMemberIds.length / 2);
+    const colABoxes = drawnMemberIds.slice(0, mid).map(id => nodeBoundsById.get(id)!);
+    const colBBoxes = drawnMemberIds.slice(mid).map(id => nodeBoundsById.get(id)!);
+    const colARight = Math.max(...colABoxes.map(b => b.x + b.w));
+    const colBLeft  = Math.min(...colBBoxes.map(b => b.x));
+    const dividerX  = (colARight + colBLeft) / 2;
+
+    const dividerId = nextActionId();
+    actions.push({
+      type: "draw-shape", actionId: dividerId, shapeId: String(createShapeId(`pg-divider-${group.id}`)),
+      shape: "brace",
+      bounds: { x: dividerX - 5, y: region.y, w: 10, h: region.h },
+      durationMs: STROKE_DURATION_MS,
+    });
   }
 
   // ── Final: one synthesis question, spoken only — no new visual object,

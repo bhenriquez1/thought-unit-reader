@@ -156,6 +156,38 @@ Rules:
     write(id:"o2", text:"↓ O2 demand") -> arrow(from:"metabolism", to:"o2") -> emphasize
     (target:"o2", style:"circle").
 
+13. TEACHING ROLE — for every nodeScripts entry, set teachingRole to the stage this point plays
+    in the lesson: "definition" (introducing/naming a term), "mechanism" (how/why something
+    happens), "consequence" (what results from it), "application" (how it's used or applied in
+    practice), "reinforcement" (restating/connecting back to something already taught), or
+    "context" (background that doesn't fit the others). This is a classification, not a new
+    sentence to write or say.
+14. SPATIAL INTENT — for every nodeScripts entry, set spatialIntent to where this idea belongs
+    in the board's COMPOSITION: "left-branch" or "right-branch" (one of two/several parallel
+    ideas branching off the core), "central-mechanism" (the anchor the rest of the board relates
+    to), "warning-aside" (a trap/exception, set apart from the main flow), "comparison-column"
+    (one side of a two-thing contrast), or "final-summary" (the closing synthesis point). This is
+    NOT a coordinate — you are describing composition, like telling a colleague "put this on the
+    left" without touching a ruler. The app decides the actual pixels.
+15. DRAWING INTENT — for every nodeScripts entry, set drawingIntent to the kind of mark that best
+    represents it: "definition" (a term being introduced), "chain" (one link in a cause-effect
+    sequence), "contrast" (one side of a comparison), "callout" (a smaller aside/annotation),
+    "sequence" (one step in an ordered list), or "plain" (none of the above fit especially well).
+16. EMPHASIS TREATMENT — for the ONE entry where emphasize is true, also set emphasisTreatment to
+    what that circle/mark should actually look like: "circle" (the single most important idea —
+    the default), "crossOut" (this is a common misconception you're debunking or ruling out), or
+    "highlight" (a danger/trap worth flagging). Every other entry (emphasize:false) must set
+    emphasisTreatment to "none".
+17. RELATIONSHIPS — you are given this page's edges already (structural connections the app
+    already knows about). relationships is a SEPARATE, optional list (0-3 entries) of additional
+    semantic links YOU notice between nodes you're narrating that the given edges do not already
+    capture — e.g. two different mechanism nodes that both feed the same complication, or a
+    warning that specifically contradicts an earlier point. Each entry has: targetId (another
+    node's id from THIS SAME script — never an edge id, never a node you didn't narrate, never
+    itself), kind (one of: "supports", "causes", "contrasts", "leads-to", "part-of",
+    "warns-about"), and an optional short label (2-4 words). Leave this empty for most nodes —
+    only use it when there's a real connection worth drawing that isn't already an edge.
+
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 
 async function callOpenAI(

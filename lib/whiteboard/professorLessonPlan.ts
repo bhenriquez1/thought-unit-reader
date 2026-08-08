@@ -38,7 +38,13 @@ export type ProfessorTeachingAction =
   // warnings, and clinical pearls now get their OWN distinct shape, not just
   // a different fill color on an identical rectangle. See
   // shapeKindForNode() in buildProfessorTeachingActions.ts for the mapping.
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number }
+  // spatialIntent/teachingRole: optional pass-through metadata from the AI
+  // script (see SpatialIntentSchema/TeachingRoleSchema below) — carried onto
+  // the final action so it's provably NOT discarded between "AI proposes
+  // meaning" and "this is what got drawn." Phase B1 does not use either to
+  // decide bounds; a real lane-aware layout that positions by spatialIntent
+  // is Phase B2's job.
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: string; teachingRole?: string }
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number }
   | { type: "pause"; actionId: string; durationMs: number }
@@ -108,6 +114,9 @@ export type ExplainActionType = z.infer<typeof ExplainActionTypeSchema>;
 export const ExplainIconSchema = z.enum([
   "thermometer", "heart", "brain", "lungs", "warning",
   "arrowDown", "arrowUp", "clock", "snowflake", "checkmark", "xmark",
+  // Phase B1 additions — a few domain-general symbols (this app teaches more
+  // than one subject), still a closed, deterministic-glyph vocabulary.
+  "lightbulb", "flag", "scale", "link",
 ]);
 export type ExplainIcon = z.infer<typeof ExplainIconSchema>;
 
@@ -147,6 +156,68 @@ export const ExplanationActionSchema = z.object({
 });
 export type ExplanationAction = z.infer<typeof ExplanationActionSchema>;
 
+// ── Teaching-arc role — closes the gap between a loose group type (below)
+// and a real per-point pedagogical stage. Purely descriptive/semantic;
+// consumed today only as pass-through metadata (see
+// buildProfessorTeachingActions.ts) plus regression tests proving it
+// survives the pipeline — a future layout pass (Phase B2) may use it to
+// influence composition.
+export const TeachingRoleSchema = z.enum([
+  "definition", "mechanism", "consequence", "application", "reinforcement", "context",
+]);
+export type TeachingRole = z.infer<typeof TeachingRoleSchema>;
+
+// ── Spatial intent — where this idea belongs in the board's COMPOSITION,
+// never a coordinate. The model may say "this is a left branch" or "this is
+// the warning aside," never "put this at x=400." Phase B1 threads this
+// through to the final action as metadata only — lib/whiteboard/groupLayout.ts
+// still lays out purely by group.order/group.type (unchanged); a real
+// lane-aware layout engine that actually POSITIONS by spatialIntent is
+// Phase B2's job.
+export const SpatialIntentSchema = z.enum([
+  "left-branch", "right-branch", "central-mechanism", "warning-aside", "comparison-column", "final-summary",
+]);
+export type SpatialIntent = z.infer<typeof SpatialIntentSchema>;
+
+// ── Drawing intent — a semantic hint for WHICH kind of mark best represents
+// this point, consumed by shapeKindForNode() in buildProfessorTeachingActions.ts
+// as a fallback once tier/role-derived rules (danger/pearl/decision/hub) have
+// already had first say — those still win; drawingIntent only decides shape
+// for the ordinary case that would otherwise always default to a plain box.
+export const DrawingIntentSchema = z.enum(["definition", "chain", "contrast", "callout", "sequence", "plain"]);
+export type DrawingIntent = z.infer<typeof DrawingIntentSchema>;
+
+// ── Emphasis treatment — what the ONE emphasized point (see `emphasize`
+// below) should actually look like. Previously hardcoded to always "circle"
+// regardless of context; a misconception being debunked reads better as
+// crossOut, a danger as highlight. Only meaningful when emphasize is true —
+// groundProfessorLesson.ts forces "none" on every non-winning entry.
+export const EmphasisTreatmentChoiceSchema = z.enum(["circle", "crossOut", "highlight", "none"]);
+export type EmphasisTreatmentChoice = z.infer<typeof EmphasisTreatmentChoiceSchema>;
+
+// ── RelationshipKind — an AI-authored semantic link to ANOTHER node in this
+// SAME script, distinct from the deterministic VSGEdge network VisualSceneGraph
+// already carries. The AI proposes meaning (which two ideas connect, and
+// how); buildProfessorTeachingActions.ts resolves the actual arrow geometry
+// via the already-computed node bounds — never a coordinate the model
+// invented, never a raw tldraw shape id.
+export const RelationshipKindSchema = z.enum([
+  "supports", "causes", "contrasts", "leads-to", "part-of", "warns-about",
+]);
+export type RelationshipKind = z.infer<typeof RelationshipKindSchema>;
+
+export const ProfessorRelationshipSchema = z.object({
+  /** Must name another node's targetId already present in nodeScripts —
+   *  anything else (a hallucinated id, an edge id, a self-reference) is
+   *  dropped by groundProfessorLesson.ts, never rendered. */
+  targetId: z.string().min(1),
+  kind:     RelationshipKindSchema,
+  /** Optional short caption drawn at the connector's midpoint — falls back
+   *  to a deterministic label derived from `kind` when null. */
+  label:    z.string().max(24).nullable(),
+});
+export type ProfessorRelationship = z.infer<typeof ProfessorRelationshipSchema>;
+
 export const ProfessorNodeScriptSchema = z.object({
   /** Must reference a real VisualSceneGraph node.id or edge.id — anything
    *  else is dropped by groundProfessorLesson.ts, never rendered. */
@@ -172,6 +243,22 @@ export const ProfessorNodeScriptSchema = z.object({
    *  edge-target nodeScript entry with a non-empty explain[] is dropped by
    *  groundProfessorLesson.ts (a connector doesn't get its own aside). */
   explain:    z.array(ExplanationActionSchema).max(6),
+  /** This point's stage in the teaching arc — see TeachingRoleSchema. */
+  teachingRole:  TeachingRoleSchema,
+  /** Where this idea belongs in the board's composition — see
+   *  SpatialIntentSchema. Meaning only, never a coordinate. */
+  spatialIntent: SpatialIntentSchema,
+  /** A hint for which kind of mark best represents this point — see
+   *  DrawingIntentSchema. */
+  drawingIntent: DrawingIntentSchema,
+  /** What the emphasize:true treatment should look like for this point —
+   *  see EmphasisTreatmentChoiceSchema. Ignored when emphasize is false. */
+  emphasisTreatment: EmphasisTreatmentChoiceSchema,
+  /** Up to 3 explicit semantic links to OTHER nodes this script narrates,
+   *  additional to (never replacing) the VisualSceneGraph's own deterministic
+   *  edges — see ProfessorRelationshipSchema. Required (may be empty) for the
+   *  same Structured-Outputs-strict-mode reason as `explain`/`groups`. */
+  relationships: z.array(ProfessorRelationshipSchema).max(3),
 });
 export type ProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
 
@@ -280,7 +367,16 @@ export interface ProfessorLessonPlan {
 // point while narrating it, so the board depicts the MECHANISM the professor
 // is explaining, not only a labeled box per idea. A v1-v3 cached plan has no
 // explain actions baked in and must be regenerated.
-export const PLANNER_VERSION = 4;
+// v5 (Phase B1): added teachingRole, spatialIntent, drawingIntent,
+// emphasisTreatment, and relationships to ProfessorNodeScript — richer
+// semantic authority for the AI (which kind of point this is, where it
+// belongs in the board's composition, what a mark should look like, and
+// explicit links to other nodes) without ever letting it touch a coordinate.
+// buildProfessorTeachingActions.ts now also actually emits relationship
+// arrows, a comparison-group divider bracket, and an AI-chosen emphasis
+// treatment instead of a hardcoded circle. A v1-v4 cached plan predates all
+// of this and must be regenerated, not just re-read.
+export const PLANNER_VERSION = 5;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

@@ -1190,12 +1190,35 @@ export default function TldrawCanvas({
 }
 
 // ── Pure state -> tldraw shape props ─────────────────────────────────────────
-function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | "arrow" | "text"; x: number; y: number; props: Record<string, unknown> } | null {
+function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | "arrow" | "text" | "line"; x: number; y: number; props: Record<string, unknown> } | null {
   if (s.kind === "arrow") {
     if (!s.from || !s.to) return null;
     return {
       type: "arrow", x: s.from.x, y: s.from.y,
       props: { kind: "arc", start: { x: 0, y: 0 }, end: { x: s.to.x - s.from.x, y: s.to.y - s.from.y }, richText: toRichText(s.text ?? ""), size: "s", color },
+    };
+  }
+  if (s.kind === "brace") {
+    // A genuine bracket — a squared "]" (stem + two short ticks) drawn as a
+    // real multi-point tldraw line shape, not a rectangle standing in for
+    // one. Used today for a comparison group's column divider (see
+    // buildProfessorTeachingActions.ts) — the "brace" shape kind existed in
+    // the schema since v2 but nothing ever emitted it, so it always fell
+    // back to a plain rectangle. Points are relative to the shape's own x/y
+    // origin, per tldraw's TLLineShapeProps.
+    if (!s.bounds) return null;
+    const { w, h } = s.bounds;
+    return {
+      type: "line", x: s.bounds.x, y: s.bounds.y,
+      props: {
+        color, dash: "dashed", size: "s", spline: "line", scale: 1,
+        points: {
+          p1: { id: "p1", index: "a1", x: 0, y: 0 },
+          p2: { id: "p2", index: "a2", x: w, y: 0 },
+          p3: { id: "p3", index: "a3", x: w, y: h },
+          p4: { id: "p4", index: "a4", x: 0, y: h },
+        },
+      },
     };
   }
   if (s.kind === "line") {
@@ -1207,15 +1230,14 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
       props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: "solid", dash: "draw", size: "s", color },
     };
   }
-  if (s.kind === "box" || s.kind === "circle" || s.kind === "brace" || s.kind === "diamond" || s.kind === "hexagon" || s.kind === "cloud") {
+  if (s.kind === "box" || s.kind === "circle" || s.kind === "diamond" || s.kind === "hexagon" || s.kind === "cloud") {
     if (!s.bounds) return null;
     // dash:"draw" gives tldraw's sketchy hand-drawn stroke; fill:"none" so the
     // performance reads as strokes being drawn, not solid cards being placed.
     // "diamond"/"hexagon"/"cloud" map 1:1 to tldraw's own built-in geo shapes
     // (decision points, warnings, and clinical pearls each get a real,
     // distinct SHAPE — not just a different color on an identical
-    // rectangle). "brace" has no true tldraw equivalent and falls back to
-    // rectangle, same as before this change.
+    // rectangle). "brace" is handled separately above as a real line shape.
     const GEO_FOR_KIND: Record<string, string> = {
       circle: "ellipse", diamond: "diamond", hexagon: "hexagon", cloud: "cloud",
     };
