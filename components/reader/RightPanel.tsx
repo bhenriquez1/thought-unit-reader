@@ -580,6 +580,11 @@ interface RightPanelProps {
    *  StudySpeechPanel so its audio cache is scoped to the real document, not
    *  just its filename (Speech Engine audit RC2). */
   resolvedDocumentId?: string;
+  /** The current page's primary KnowledgeNode id, when already resolved
+   *  (pages/index.tsx's pageKgNodeIdRef.current) — threaded into the
+   *  "Save to Recall Lab" button so recall grading on this page's cards
+   *  actually reaches Learning State (Learning State Engine Phase A). */
+  knowledgeNodeId?: string | null;
   state: RightPanelState;
   payload?: ResolvedPanelPayload;
   intelligence: ActivePageIntelligenceSnapshot;
@@ -868,6 +873,7 @@ function kindMeta(kind: string, shortLabel?: string): { label: string; color: st
 export function RightPanel({
   ctx,
   resolvedDocumentId,
+  knowledgeNodeId,
   state,
   intelligence,
   guidedPath,
@@ -1945,6 +1951,8 @@ export function RightPanel({
               <GenerateStudySetButton
                 view={displayView!}
                 bookId={ctx.documentId}
+                documentId={resolvedDocumentId}
+                knowledgeNodeId={knowledgeNodeId}
                 bookTitle={ctx.documentTitle}
                 pageNumber={ctx.pageNumber}
                 onStudySetGenerated={onStudySetGenerated}
@@ -4402,6 +4410,8 @@ function GenerateNoteButton({
 function GenerateStudySetButton({
   view,
   bookId,
+  documentId,
+  knowledgeNodeId,
   bookTitle,
   pageNumber,
   onStudySetGenerated,
@@ -4409,6 +4419,8 @@ function GenerateStudySetButton({
 }: {
   view: UltraPageView;
   bookId: string;
+  documentId?: string;
+  knowledgeNodeId?: string | null;
   bookTitle?: string;
   pageNumber: number;
   onStudySetGenerated?: (setId: string) => void;
@@ -4430,6 +4442,8 @@ function GenerateStudySetButton({
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
+        documentId,
+        knowledgeNodeId,
       });
 
       await saveRecallSet(set);

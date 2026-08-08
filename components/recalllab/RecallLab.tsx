@@ -7,6 +7,7 @@ import {
   getAllRecallSets,
   getAllRecallSetsAsync,
   deleteRecallSet,
+  saveRecallSet,
   updateCardDifficulty,
   buildRecallSetFromThoughtUnit,
   buildRecallSetFromTeachingSequence,
@@ -233,7 +234,20 @@ export default function RecallLab({
       <ThoughtUnitDetailView
         detail={view.detail}
         onBack={() => setView({ kind: "dashboard" })}
-        onQuizMe={(detail) => setView({ kind: "session", set: buildRecallSetFromThoughtUnit(detail) })}
+        onQuizMe={async (detail) => {
+          // Persist before opening the session — updateCardDifficulty() looks
+          // the set up by id, and an in-memory-only set silently drops every
+          // rating (RC "Quiz Me grading is lost", Learning State Engine
+          // Phase A). Awaiting the save closes that race: no rating is
+          // possible until the set genuinely exists in storage.
+          const set = buildRecallSetFromThoughtUnit(detail);
+          try {
+            await saveRecallSet(set);
+          } catch (err) {
+            console.error("[RECALL_QUIZ_ME_SAVE_FAILED]", { setId: set.id, error: String(err) });
+          }
+          setView({ kind: "session", set });
+        }}
         onVisualize={onVisualize}
         onOpenInWhiteboard={onOpenInWhiteboard}
         onOpenExplainStep={onOpenExplainStep}
@@ -373,12 +387,19 @@ export default function RecallLab({
             </div>
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
+                // Same fix as "Quiz Me" above — persist before opening the
+                // session so grading has a real set to write ratings into.
                 const set = buildRecallSetFromTeachingSequence(currentPageNoteCards, {
                   bookId: bookId ?? "default-book",
                   pageNumber: currentPage ?? 0,
                   pageTitle: currentPageTitle ?? undefined,
                 });
+                try {
+                  await saveRecallSet(set);
+                } catch (err) {
+                  console.error("[RECALL_QUICK_RECALL_SAVE_FAILED]", { setId: set.id, error: String(err) });
+                }
                 setView({ kind: "session", set });
               }}
               style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: "#c4b5fd", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.35)", borderRadius: 7, padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}

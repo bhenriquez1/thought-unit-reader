@@ -3,10 +3,6 @@ const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!, // server-only
-});
-
 type Body = {
   script?: string;
   voice?: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
@@ -151,6 +147,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       outputChars: ttsInput.length,
       provider: "openai",
     });
+
+    // Constructed here, not at module scope — the OpenAI SDK throws
+    // synchronously in its constructor when apiKey is empty, which used to
+    // crash this whole module (and every /api/tts request, a 500 instead of
+    // the graceful useBrowserSpeech fallback below) on any deployment where
+    // OPENAI_API_KEY is entirely unset. hasValidOpenAIKey above already
+    // guarantees a real key by the time this line runs.
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
     // Generate audio with OpenAI (Node SDK v5)
     const speech = await openai.audio.speech.create({

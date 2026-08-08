@@ -17,7 +17,14 @@ import { buildNewNode, tokenOverlap } from "./buildKnowledgeNode";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const IDB_NAME        = "avrrio_knowledgegraph_v1";
-const IDB_VERSION     = 1;
+// v2: added the "documentId" index — nodes now dedupe/query on the resolved
+// document identity (lib/insights/resolveDocumentIdentity.ts), not raw
+// bookId. KnowledgeNode is explicitly documented as rebuildable from source
+// ("Survives user progress resets. Can be rebuilt from source"), so v1
+// records simply age out rather than needing a backfill migration — they
+// keep working for canonicalAnchorId-keyed (Tier-1) lookups, and any node
+// re-resolved after this version bump gets a real documentId going forward.
+const IDB_VERSION     = 2;
 const NODES_STORE     = "nodes";
 const PROGRESS_STORE  = "progress";
 const FUZZY_THRESHOLD = 0.85;
@@ -31,11 +38,12 @@ function openKnowledgeGraphIDB(): Promise<IDBDatabase> {
 
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(NODES_STORE)) {
-        const store = db.createObjectStore(NODES_STORE, { keyPath: "id" });
-        store.createIndex("bookId",            "bookId",            { unique: false });
-        store.createIndex("canonicalAnchorId", "canonicalAnchorId", { unique: false });
-      }
+      const store = db.objectStoreNames.contains(NODES_STORE)
+        ? req.transaction!.objectStore(NODES_STORE)
+        : db.createObjectStore(NODES_STORE, { keyPath: "id" });
+      if (!store.indexNames.contains("bookId")) store.createIndex("bookId", "bookId", { unique: false });
+      if (!store.indexNames.contains("canonicalAnchorId")) store.createIndex("canonicalAnchorId", "canonicalAnchorId", { unique: false });
+      if (!store.indexNames.contains("documentId")) store.createIndex("documentId", "documentId", { unique: false });
       if (!db.objectStoreNames.contains(PROGRESS_STORE)) {
         db.createObjectStore(PROGRESS_STORE, { keyPath: "nodeId" });
       }
@@ -91,6 +99,24 @@ export async function getNodesByBookAndPage(
   pageNumber: number,
 ): Promise<KnowledgeNode[]> {
   const all = await getNodesByBook(bookId);
+  return all.filter(n => n.sourcePages.includes(pageNumber));
+}
+
+// Document-identity-scoped equivalents of the two functions above — used by
+// the dedup resolver below, where collision-resistance actually matters.
+// getNodesByBook/getNodesByBookAndPage stay bookId-scoped for UI-facing "all
+// nodes in this book" grouping (useKnowledgeGraph), which is a legitimate
+// use of the human-readable bookId per lib/insights/resolveDocumentIdentity.ts.
+
+export async function getNodesByDocument(documentId: string): Promise<KnowledgeNode[]> {
+  return idbGetByIndex<KnowledgeNode>(NODES_STORE, "documentId", documentId);
+}
+
+export async function getNodesByDocumentAndPage(
+  documentId: string,
+  pageNumber: number,
+): Promise<KnowledgeNode[]> {
+  const all = await getNodesByDocument(documentId);
   return all.filter(n => n.sourcePages.includes(pageNumber));
 }
 
@@ -154,12 +180,23 @@ async function addAnchorToCitations(
 
 export async function resolveOrCreateNode(
   anchor: VisualAnchor,
+  documentId: string,
   bookId: string,
   pageNumber: number,
   chapterCandidateId: string | null,
   profileId: string,
 ): Promise<KnowledgeNode> {
-  // Tier 1 — exact anchor match (free, deterministic)
+  // Tier 1 — exact anchor match (free, deterministic). NOTE: anchor.id
+  // (VisualAnchor.id) is itself bookId-qualified, not documentId-qualified,
+  // by a deliberate prior tradeoff (lib/insights/currentPageStudyModel.ts —
+  // avoids new prop-threading through the Surgeon/Whiteboard cross-highlight
+  // sync path). So Tier 1 can theoretically still match across two
+  // same-filename documents at the anchor-id level; that pre-existing
+  // limitation is unchanged by this PR. What this PR guarantees is that the
+  // node CREATED here (Tier 3) and the citations MERGED into an existing
+  // node (Tier 2) are always scoped to the real resolved document identity,
+  // so the Knowledge Graph itself never collides two different documents'
+  // concepts under one id.
   const byAnchor = await getNodeByAnchor(anchor.id);
   if (byAnchor) {
     if (!byAnchor.sourcePages.includes(pageNumber)) {
@@ -168,8 +205,8 @@ export async function resolveOrCreateNode(
     return byAnchor;
   }
 
-  // Tier 2 — fuzzy match on same page
-  const pageNodes = await getNodesByBookAndPage(bookId, pageNumber);
+  // Tier 2 — fuzzy match on same page, scoped to this document only
+  const pageNodes = await getNodesByDocumentAndPage(documentId, pageNumber);
   const fuzzy = pageNodes.find(
     n =>
       tokenOverlap(n.title, anchor.role) >= FUZZY_THRESHOLD ||
@@ -182,7 +219,7 @@ export async function resolveOrCreateNode(
   }
 
   // Tier 3 — new concept
-  const node = buildNewNode(anchor, bookId, pageNumber, chapterCandidateId, profileId);
+  const node = buildNewNode(anchor, documentId, bookId, pageNumber, chapterCandidateId, profileId);
   await idbPutNode(node);
   console.log("[KG] tier-3 create", { nodeId: node.id, role: anchor.role, page: pageNumber });
   return node;
