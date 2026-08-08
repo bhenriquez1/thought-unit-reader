@@ -39,6 +39,8 @@ import {
   notifySpeechError,
   logBlockedDuplicate,
 } from "@/lib/speech/speechController";
+import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
+import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 
 const SPEECH_OWNER = "study-speech" as const;
 
@@ -235,6 +237,13 @@ interface Props {
   studyModel: CurrentPageStudyModel | null;
   pageNumber: number;
   bookId?: string;
+  /** The real resolved per-upload document identity (see
+   *  lib/insights/resolveDocumentIdentity.ts) — distinct from bookId, which
+   *  is only the filename-derived key and can collide across two different
+   *  PDFs that happen to share a filename. Falls back to bookId when a
+   *  caller hasn't been updated to pass it, so this cache-identity fix never
+   *  breaks an existing call site — but every live call site should pass it. */
+  documentId?: string;
   activePageText?: string;
   /** Effective domain preset id — same value LeftPanel (PureReaderView) is grouping/ordering
    *  its thought units by, so Guided mode's groupThoughtUnits() call agrees with it exactly. */
@@ -278,13 +287,27 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
+  { studyModel, pageNumber, bookId, documentId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
   ref,
 ) {
   // Render counter — diagnostic for React render-loop investigation.
   const spRenderCountRef = useRef(0);
   spRenderCountRef.current++;
   if (DEV) console.log("[SPEECH_RENDER]", spRenderCountRef.current);
+
+  // The real resolved document identity (falls back to bookId only if a
+  // caller hasn't been updated yet — see the documentId prop doc comment).
+  // Every audio-cache key below is qualified by this, not by bookId alone —
+  // fixes the Speech Engine audit's RC2: two different PDFs sharing a
+  // filename share the same bookId, so a bookId-only cache reset wouldn't
+  // flush stale audio when switching between them.
+  const resolvedDocId = documentId || bookId || "";
+  const speechIdentity: SpeechSessionIdentity = {
+    documentId: resolvedDocId,
+    pageNumber,
+    pageTruthKey: buildPageTruthKey(resolvedDocId, pageNumber),
+    owner: SPEECH_OWNER,
+  };
 
   // Rapid-fire detection for onPlayStateChange — fires [PARENT_WRITE:RAPID] if called
   // more than once within a single 16ms frame (sign of a state-update loop).
@@ -597,7 +620,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // segment's audio start fetching while the current segment is still playing.
   const audioCacheRef = useRef<Map<string, Promise<{ blob: Blob; mimeType: string } | "browser">>>(new Map());
 
-  // Reset on book change — new book means new context entirely.
+  // Reset on document change — new document means new context entirely.
+  // Depends on resolvedDocId (not bare bookId) so two different PDFs that
+  // happen to share a filename — same bookId, different real documentId —
+  // still flush the cache on switch (RC2 from the Speech Engine audit).
   useEffect(() => {
     setSegIdx(0);
     setEyeText(null);
@@ -608,11 +634,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeAnchorIdRef.current = null;
     useReadingFocusStore.getState().clearWord();
     stopAudio();
-    // Flush blob URL cache so previous book's audio doesn't linger in memory (M4 fix).
+    // Flush blob URL cache so previous document's audio doesn't linger in memory (M4 fix).
     audioCacheRef.current.clear();
-    if (DEV) console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
+    if (DEV) console.log("[EYE_GUIDE_RESET]", { bookId, documentId: resolvedDocId, reason: "document-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId]);
+  }, [resolvedDocId]);
 
   // Reset on page navigation — stops audio and clears eye guide.
   useEffect(() => {
@@ -983,7 +1009,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // calls with the same text + voice reuse the in-flight/completed request, so
   // prefetching the next segment ahead of time is just a fire-and-forget call.
   function fetchTTS(text: string): Promise<{ blob: Blob; mimeType: string } | "browser"> {
-    const cacheKey = `${voice}::${text}`;
+    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
     const cached = audioCacheRef.current.get(cacheKey);
     if (cached) return cached;
 
@@ -1040,7 +1066,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   }
 
   async function fetchAndPlayAudio(text: string, session: number): Promise<"done" | "browser"> {
-    const cacheKey = `${voice}::${text}`;
+    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
     const result = await fetchTTS(text);
     audioCacheRef.current.delete(cacheKey); // one-shot — don't replay stale audio on reuse
 

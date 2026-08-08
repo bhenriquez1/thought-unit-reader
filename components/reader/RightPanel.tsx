@@ -574,6 +574,12 @@ function structuralPageLabel(role: string): string {
 
 interface RightPanelProps {
   ctx: ActivePageContext;
+  /** The real resolved per-upload document identity (see
+   *  lib/insights/resolveDocumentIdentity.ts) — distinct from ctx.documentId,
+   *  which is actually the filename-derived bookId. Forwarded to the inline
+   *  StudySpeechPanel so its audio cache is scoped to the real document, not
+   *  just its filename (Speech Engine audit RC2). */
+  resolvedDocumentId?: string;
   state: RightPanelState;
   payload?: ResolvedPanelPayload;
   intelligence: ActivePageIntelligenceSnapshot;
@@ -861,6 +867,7 @@ function kindMeta(kind: string, shortLabel?: string): { label: string; color: st
 
 export function RightPanel({
   ctx,
+  resolvedDocumentId,
   state,
   intelligence,
   guidedPath,
@@ -1724,6 +1731,7 @@ export function RightPanel({
             studyModel={studyModel}
             pageNumber={ctx?.pageNumber ?? 0}
             bookId={ctx?.documentId}
+            documentId={resolvedDocumentId}
             activePageText={activePageText ?? ctx?.pageText ?? ""}
             presetId={effectivePresetId}
             onSnippetFocus={onSpeechSnippetFocus}

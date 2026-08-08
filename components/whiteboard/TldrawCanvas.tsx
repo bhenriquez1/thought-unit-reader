@@ -59,6 +59,7 @@ import {
   claimSpeech, isSpeechStale, registerActiveAudio, registerActiveUtterance,
   notifySpeechStart, notifySpeechEnd, notifySpeechError, stopAllSpeech,
 } from "@/lib/speech/speechController";
+import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
@@ -251,6 +252,22 @@ export default function TldrawCanvas({
     pageTeachingType: pageTeachingType ?? null,
     enabled: !!derivedVsg,
   });
+
+  // Every narration cache entry/in-flight fetch below is scoped to this
+  // identity (see lib/speech/speechSessionIdentity.ts) — lessonId is the
+  // lesson plan's own VSG content hash, so a reanalyze() that regenerates a
+  // new lesson for the SAME page also gets a fresh cache namespace, and two
+  // different pages/documents whose narration segments happen to reuse the
+  // same local id ("seg0") can never collide.
+  const speechIdentity: SpeechSessionIdentity = useMemo(() => ({
+    documentId: effectiveDocumentId,
+    pageNumber: derivedVsg?.sourcePageNumber ?? 0,
+    pageTruthKey: effectivePageTruthKey,
+    owner: SPEECH_OWNER,
+    lessonId: lessonPlan?.sourceSnapshot.vsgId,
+  }), [effectiveDocumentId, derivedVsg?.sourcePageNumber, effectivePageTruthKey, lessonPlan?.sourceSnapshot.vsgId]);
+  const speechIdentityRef = useRef(speechIdentity);
+  speechIdentityRef.current = speechIdentity;
 
   // ── Playback state ─────────────────────────────────────────────────────
   const [totalSteps, setTotalSteps] = useState(0);
@@ -502,10 +519,27 @@ export default function TldrawCanvas({
   useEffect(() => { speedRef.current = speed; }, [speed]);
   const advanceForPlaybackRef = useRef<() => void>(() => {});
 
+  // Revokes every cached blob URL and empties both maps — called whenever
+  // the lesson identity changes (rebuild effect) and on unmount, so a stale
+  // entry from a PRIOR page/lesson can never be read by a NEW one even if a
+  // future caller ever built the cache key wrong, and so blob URLs never
+  // leak for the life of the component instance (RC1 from the Speech Engine
+  // audit — this cache used to grow unbounded and was never cleared at all).
+  const clearNarrationCache = useCallback(() => {
+    for (const resolved of narrationCacheRef.current.values()) {
+      if (resolved.kind === "audio-url") {
+        try { URL.revokeObjectURL(resolved.url); } catch { /* already revoked/detached */ }
+      }
+    }
+    narrationCacheRef.current.clear();
+    narrationPendingRef.current.clear();
+  }, []);
+
   const resolveSegmentAudio = useCallback((segment: NarrationSegment): Promise<ResolvedNarrationAudio | null> => {
-    const cached = narrationCacheRef.current.get(segment.id);
+    const cacheKey = buildSpeechCacheKey(speechIdentityRef.current, segment.id);
+    const cached = narrationCacheRef.current.get(cacheKey);
     if (cached) return Promise.resolve(cached);
-    const pending = narrationPendingRef.current.get(segment.id);
+    const pending = narrationPendingRef.current.get(cacheKey);
     if (pending) return pending;
 
     const promise = (async (): Promise<ResolvedNarrationAudio | null> => {
@@ -528,15 +562,15 @@ export default function TldrawCanvas({
         } else {
           return null;
         }
-        narrationCacheRef.current.set(segment.id, resolved);
+        narrationCacheRef.current.set(cacheKey, resolved);
         return resolved;
       } catch {
         return null;
       } finally {
-        narrationPendingRef.current.delete(segment.id);
+        narrationPendingRef.current.delete(cacheKey);
       }
     })();
-    narrationPendingRef.current.set(segment.id, promise);
+    narrationPendingRef.current.set(cacheKey, promise);
     return promise;
   }, []);
 
@@ -709,6 +743,7 @@ export default function TldrawCanvas({
       clearTeachingLayer(editor);
       setIsPlaying(false);
       stopNarration("rebuild");
+      clearNarrationCache();
       stepIndexRef.current = -1;
       setStepIndexState(-1);
       setCanvasInitFailure(null);
@@ -804,6 +839,7 @@ export default function TldrawCanvas({
   useEffect(() => () => {
     storeUnsubRef.current?.();
     stopNarration("unmount");
+    clearNarrationCache();
   }, []);
 
   // ── Playback: the ONLY code that advances the timeline during Play ───────

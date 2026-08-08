@@ -5439,6 +5439,7 @@ export default function ThoughtUnitReader() {
               <RightPanel
                 key={`${pageTruthKey}-${rightPanelResetKey}`}
                 ctx={activePageContext}
+                resolvedDocumentId={resolvedDocumentId}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
                 intelligence={intelligenceSnapshot}
