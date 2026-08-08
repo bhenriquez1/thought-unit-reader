@@ -108,15 +108,18 @@ interface KindConfig {
 //   DECISION = blue    (choose / diagnose / compare / apply)
 //   DANGER   = red     (trap / complication / common mistake)
 //   PEARL    = cyan    (expert insight / clinical pearl / memory anchor)
-// Highlight opacity targets (per user spec):
-//   bgNormal  (permanent, at-rest):  0.18 – 0.26  — visible but translucent
-//   bgFocused (focused/active):      0.28 – 0.36  — distinctly stronger border+fill
+// Highlight opacity targets (per user spec — the at-rest fill read as "a
+// little washed out" against a white PDF page; bumped ~30% stronger, fill
+// only, never the underlying PDF text color, so the black source text stays
+// exactly as readable as before):
+//   bgNormal  (permanent, at-rest):  0.23 – 0.29  — visible but translucent
+//   bgFocused (focused/active):      0.39 – 0.47  — distinctly stronger border+fill
 //   Active-word box (SmartPDFViewer): 0.85          — clear moving indicator
 const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   master: {
     label:      "CORE",
-    bgNormal:   "rgba(253,224,71,0.20)",
-    bgFocused:  "rgba(253,224,71,0.34)",
+    bgNormal:   "rgba(253,224,71,0.26)",
+    bgFocused:  "rgba(253,224,71,0.44)",
     restGlow:   "0 0 2px rgba(253,224,71,0.18)",
     ringClass:  "ring-1 ring-yellow-300/60",
     badgeBg:    "rgba(113,63,18,0.92)",
@@ -125,8 +128,8 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   },
   step: {
     label:      "STEP",
-    bgNormal:   "rgba(134,239,172,0.20)",
-    bgFocused:  "rgba(134,239,172,0.34)",
+    bgNormal:   "rgba(134,239,172,0.26)",
+    bgFocused:  "rgba(134,239,172,0.44)",
     restGlow:   "0 0 2px rgba(134,239,172,0.16)",
     ringClass:  "ring-1 ring-emerald-300/60",
     badgeBg:    "rgba(20,83,45,0.92)",
@@ -135,8 +138,8 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   },
   decision: {
     label:      "APPLY",
-    bgNormal:   "rgba(147,197,253,0.18)",
-    bgFocused:  "rgba(147,197,253,0.30)",
+    bgNormal:   "rgba(147,197,253,0.23)",
+    bgFocused:  "rgba(147,197,253,0.39)",
     restGlow:   "0 0 2px rgba(147,197,253,0.16)",
     ringClass:  "ring-1 ring-sky-300/60",
     badgeBg:    "rgba(29,78,216,0.92)",
@@ -145,8 +148,8 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   },
   danger: {
     label:      "TRAP",
-    bgNormal:   "rgba(252,165,165,0.22)",
-    bgFocused:  "rgba(252,165,165,0.36)",
+    bgNormal:   "rgba(252,165,165,0.29)",
+    bgFocused:  "rgba(252,165,165,0.47)",
     restGlow:   "0 0 2px rgba(252,165,165,0.20)",
     ringClass:  "ring-1 ring-red-300/60",
     badgeBg:    "rgba(127,29,29,0.92)",
@@ -155,8 +158,8 @@ const TIER_CONFIG: Record<HighlightTier, KindConfig> = {
   },
   pearl: {
     label:      "PEARL",
-    bgNormal:   "rgba(103,232,249,0.18)",
-    bgFocused:  "rgba(103,232,249,0.30)",
+    bgNormal:   "rgba(103,232,249,0.23)",
+    bgFocused:  "rgba(103,232,249,0.39)",
     restGlow:   "0 0 2px rgba(103,232,249,0.14)",
     ringClass:  "ring-1 ring-cyan-300/60",
     badgeBg:    "rgba(8,51,68,0.92)",

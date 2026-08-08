@@ -5,7 +5,7 @@ import {
 } from "../../lib/whiteboard/professorLessonPlan";
 
 function validNodeScript() {
-  return { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false };
+  return { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, explain: [] };
 }
 
 function validScript() {

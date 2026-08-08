@@ -39,7 +39,7 @@ export type ProfessorTeachingAction =
   // a different fill color on an identical rectangle. See
   // shapeKindForNode() in buildProfessorTeachingActions.ts for the mapping.
   | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number }
-  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number"; sequenceNumber?: number; durationMs: number }
+  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number }
   | { type: "pause"; actionId: string; durationMs: number }
   | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number }
@@ -79,6 +79,74 @@ export const VisualGrammarChoiceSchema = z.enum([
 ]);
 export type VisualGrammarChoice = z.infer<typeof VisualGrammarChoiceSchema>;
 
+// ── ExplanationAction — a small "professor's aside" mini-diagram drawn while
+// narrating ONE nodeScript point, e.g. while explaining WHY hypothermia can
+// buy the brain time: "↓ metabolism" -> "↓ O2 demand" written and arrowed in
+// beside the main box, not just a bigger flowchart node. This is the bridge
+// from "draws labels of the explanation" to "draws the explanation" the user
+// asked for — the AI proposes a short SEQUENCE of pedagogical micro-actions
+// (write a fragment, drop in an icon, arrow between two of them, circle one),
+// never pixels; lib/whiteboard/buildProfessorTeachingActions.ts places this
+// chain deterministically beside the node it belongs to.
+//
+// One flat, fully-nullable shape (not a discriminated union) — every field
+// is present on every action regardless of `type`, with `null` where a field
+// doesn't apply to that type. This is the same "always present" discipline
+// `emphasize` above documents, applied to a variant shape: OpenAI Structured
+// Outputs strict mode requires a schema's `required` list to name literally
+// every property with no omissions, and (unlike TypeScript) does not narrow
+// per-branch of a union the way `emphasize: false` elsewhere in this file
+// wouldn't need touching — a nullable flat object sidesteps needing strict
+// mode's less-common anyOf/discriminated-union support entirely.
+export const ExplainActionTypeSchema = z.enum(["write", "icon", "arrow", "emphasize"]);
+export type ExplainActionType = z.infer<typeof ExplainActionTypeSchema>;
+
+// Closed, deterministic-glyph vocabulary — the model picks a KEY (meaning),
+// buildProfessorTeachingActions.ts picks the actual unicode glyph rendered
+// (an EXPLAIN_ICON_GLYPH lookup), matching "AI proposes meaning, code
+// proposes the visual" everywhere else in this pipeline.
+export const ExplainIconSchema = z.enum([
+  "thermometer", "heart", "brain", "lungs", "warning",
+  "arrowDown", "arrowUp", "clock", "snowflake", "checkmark", "xmark",
+]);
+export type ExplainIcon = z.infer<typeof ExplainIconSchema>;
+
+// Deliberately a SUBSET of professorLessonPlan's full emphasize-treatment
+// vocabulary — "pulse"/"number" stay reserved for the deterministic,
+// non-AI-chosen treatments buildProfessorTeachingActions.ts already applies
+// from VSG role/tier data (step numbering, danger highlighting); the model
+// only ever gets to ask for the four treatments a professor would actually
+// gesture with mid-explanation.
+export const ExplainEmphasisStyleSchema = z.enum(["circle", "underline", "crossOut", "highlight"]);
+export type ExplainEmphasisStyle = z.infer<typeof ExplainEmphasisStyleSchema>;
+
+export const ExplanationActionSchema = z.object({
+  type: ExplainActionTypeSchema,
+  /** write/icon only — a short LOCAL id (unique within this ONE nodeScript
+   *  entry's explain[] array, never global) that a LATER arrow/emphasize
+   *  action in the SAME array can reference via from/to/target. null on
+   *  arrow/emphasize actions, which never introduce their own id. */
+  id:     z.string().max(20).nullable(),
+  /** write only — a short fragment, e.g. "↓ metabolism", NOT a sentence. */
+  text:   z.string().max(40).nullable(),
+  /** icon only. */
+  icon:   ExplainIconSchema.nullable(),
+  /** icon only — a short caption drawn beside the glyph. */
+  label:  z.string().max(24).nullable(),
+  /** arrow only — "self" (this nodeScript's own point) or an id declared by
+   *  an EARLIER write/icon action in this SAME explain[] array. Grounding
+   *  drops any arrow whose from/to isn't already-declared at that point —
+   *  forward references and cross-step references are never honored. */
+  from:   z.string().max(20).nullable(),
+  /** arrow only — see `from`. */
+  to:     z.string().max(20).nullable(),
+  /** emphasize only — "self" or an earlier explain[] id, same rule as `from`. */
+  target: z.string().max(20).nullable(),
+  /** emphasize only. */
+  style:  ExplainEmphasisStyleSchema.nullable(),
+});
+export type ExplanationAction = z.infer<typeof ExplanationActionSchema>;
+
 export const ProfessorNodeScriptSchema = z.object({
   /** Must reference a real VisualSceneGraph node.id or edge.id — anything
    *  else is dropped by groundProfessorLesson.ts, never rendered. */
@@ -97,6 +165,13 @@ export const ProfessorNodeScriptSchema = z.object({
    *  mode requires every property to always be present; the prompt already
    *  instructs the model to explicitly set this false everywhere else. */
   emphasize:  z.boolean(),
+  /** Optional mini-diagram narrated alongside THIS point — see
+   *  ExplanationActionSchema above. Required key (may be an empty array) for
+   *  the same Structured-Outputs-strict-mode reason as `groups` on
+   *  ProfessorLessonScriptSchema below; node-target entries only — an
+   *  edge-target nodeScript entry with a non-empty explain[] is dropped by
+   *  groundProfessorLesson.ts (a connector doesn't get its own aside). */
+  explain:    z.array(ExplanationActionSchema).max(6),
 });
 export type ProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
 
@@ -200,7 +275,12 @@ export interface ProfessorLessonPlan {
 // instead of the old fixed-slot VSG layout + neighbor-unaware resize — a
 // v1/v2-cached plan has the old, overlap-prone geometry baked in and must be
 // regenerated, not just re-read.
-export const PLANNER_VERSION = 3;
+// v4: added ExplanationActionSchema (`explain` on each nodeScript) — a
+// professor's-aside mini-diagram (write/icon/arrow/emphasize) drawn beside a
+// point while narrating it, so the board depicts the MECHANISM the professor
+// is explaining, not only a labeled box per idea. A v1-v3 cached plan has no
+// explain actions baked in and must be regenerated.
+export const PLANNER_VERSION = 4;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

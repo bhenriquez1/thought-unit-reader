@@ -129,6 +129,28 @@ function resolveCollisions(nodeBounds: Map<string, LayoutBox>): Map<string, Layo
   return result;
 }
 
+/** Pushes `box` straight down, repeatedly, until it no longer overlaps any
+ *  box in `obstacles` — obstacles never move. Used to place a per-step
+ *  "explain" mini-diagram (lib/whiteboard/buildProfessorTeachingActions.ts)
+ *  beside an already-finalized primary node box without disturbing the
+ *  primary group layout resolveCollisions() above already settled. */
+export function pushClearOf(box: LayoutBox, obstacles: LayoutBox[]): LayoutBox {
+  let result = { ...box };
+  let moved = true;
+  let guard = 0;
+  while (moved && guard < obstacles.length + 1) {
+    moved = false;
+    for (const obstacle of obstacles) {
+      if (overlaps(result, obstacle)) {
+        result = { ...result, y: obstacle.y + obstacle.h + NODE_GAP_Y };
+        moved = true;
+      }
+    }
+    guard++;
+  }
+  return result;
+}
+
 /**
  * Place every group (in group.order sequence), then every node within each
  * group, then run the collision backstop. Pure function — no randomness, no

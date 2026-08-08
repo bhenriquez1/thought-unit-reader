@@ -13,13 +13,54 @@
 //     primary objects even if the underlying VSG has more nodes/edges.
 
 import type { VisualSceneGraph } from "./visualSceneGraph";
-import type { ProfessorLessonScript, ProfessorNodeScript, GroupType } from "./professorLessonPlan";
+import type { ProfessorLessonScript, ProfessorNodeScript, GroupType, ExplanationAction } from "./professorLessonPlan";
 import { clampToShortLabel, isParagraphShaped } from "./textMetrics";
 
 /** Keeps the canvas readable — the VSG itself may carry up to 12 nodes plus
  *  edges; this is the whiteboard-specific "fewer than 10 main visual
  *  objects" ceiling applied on top of that. */
 export const MAX_GROUNDED_TARGETS = 10;
+
+/** Mirrors ProfessorNodeScriptSchema.explain's own .max(6) — re-enforced
+ *  here as a hard backstop for anything sanitizeExplain() itself grows. */
+const MAX_EXPLAIN_ACTIONS = 6;
+
+/**
+ * Validate one nodeScript entry's explain[] mini-diagram: a write/icon
+ * action must declare a non-empty local id before anything else in the SAME
+ * array can reference it (plus the always-available "self"); an arrow or
+ * emphasize action referencing an undeclared/forward/duplicate id is simply
+ * dropped, never rendered — the same "no highlight is better than a wrong
+ * highlight" philosophy applied to this mini-diagram. Never throws.
+ */
+function sanitizeExplain(raw: ExplanationAction[]): ExplanationAction[] {
+  const declared = new Set<string>(["self"]);
+  const result: ExplanationAction[] = [];
+
+  for (const action of raw) {
+    if (result.length >= MAX_EXPLAIN_ACTIONS) break;
+
+    if (action.type === "write") {
+      if (!action.id || declared.has(action.id) || !action.text?.trim()) continue;
+      declared.add(action.id);
+      result.push({ ...action, text: clampToShortLabel(action.text, 5) });
+    } else if (action.type === "icon") {
+      if (!action.id || declared.has(action.id) || !action.icon) continue;
+      declared.add(action.id);
+      result.push(action);
+    } else if (action.type === "arrow") {
+      if (!action.from || !action.to) continue;
+      if (!declared.has(action.from) || !declared.has(action.to)) continue;
+      result.push(action);
+    } else if (action.type === "emphasize") {
+      if (!action.target || !action.style) continue;
+      if (!declared.has(action.target)) continue;
+      result.push(action);
+    }
+  }
+
+  return result;
+}
 
 /** Same shape as ProfessorGroup, but nodeIds are guaranteed to be real,
  *  surviving (post-density-cap) VSG node ids — never hallucinated, never
@@ -138,10 +179,8 @@ export function groundProfessorLesson(
   script: ProfessorLessonScript,
   vsg: VisualSceneGraph,
 ): GroundedProfessorLessonScript {
-  const validIds = new Set<string>([
-    ...vsg.nodes.map(n => n.id),
-    ...vsg.edges.map(e => e.id),
-  ]);
+  const nodeIds = new Set(vsg.nodes.map(n => n.id));
+  const validIds = new Set<string>([...nodeIds, ...vsg.edges.map(e => e.id)]);
 
   const seenTargets = new Set<string>();
   let emphasizeUsed = false;
@@ -155,11 +194,16 @@ export function groundProfessorLesson(
     seenTargets.add(entry.targetId);
     const emphasize = Boolean(entry.emphasize) && !emphasizeUsed;
     if (emphasize) emphasizeUsed = true;
+    // Explain asides belong to a POINT, not a connector — an edge-target
+    // entry with a non-empty explain[] gets none (a connector doesn't get
+    // its own mini-diagram).
+    const explain = nodeIds.has(entry.targetId) ? sanitizeExplain(entry.explain) : [];
 
     grounded.push({
       ...entry,
       shortLabel: sanitizeLabel(entry.shortLabel),
       emphasize,
+      explain,
     });
   }
 

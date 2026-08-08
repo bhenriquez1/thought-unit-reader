@@ -22,10 +22,10 @@ import type { VisualSceneGraph, VSGNode } from "./visualSceneGraph";
 import type { GroundedProfessorLessonScript } from "./groundProfessorLesson";
 import type {
   ProfessorLessonPlan, ProfessorTeachingAction, NarrationSegment,
-  ProfessorLessonSourceSnapshot,
+  ProfessorLessonSourceSnapshot, ExplainIcon,
 } from "./professorLessonPlan";
-import { estimateLabelWidth, wordCount } from "./textMetrics";
-import { computeGroupLayout, anchorPoint } from "./groupLayout";
+import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
+import { computeGroupLayout, anchorPoint, pushClearOf } from "./groupLayout";
 import type { LayoutBox } from "./groupLayout";
 
 // ── Pacing ────────────────────────────────────────────────────────────────
@@ -59,6 +59,22 @@ const EDGE_KIND_LABEL: Record<string, string> = {
   sequence:    "then",
   reference:   "relates to",
 };
+
+// The AI picks an icon KEY (meaning); this map is what actually decides the
+// rendered glyph — "AI proposes meaning, code proposes the visual," same
+// split as shapeKindForNode() below. tldraw geo-shape labels render plain
+// unicode fine, so no image asset pipeline is needed.
+const EXPLAIN_ICON_GLYPH: Record<ExplainIcon, string> = {
+  thermometer: "🌡️", heart: "❤️", brain: "🧠", lungs: "🫁", warning: "⚠️",
+  arrowDown: "⬇️", arrowUp: "⬆️", clock: "⏱️", snowflake: "❄️",
+  checkmark: "✅", xmark: "❌",
+};
+
+// A professor's-aside mini-diagram is drawn beside the point it explains,
+// never overlapping the already-placed groups (lib/whiteboard/groupLayout.ts's
+// pushClearOf handles the "never overlapping" half).
+const EXPLAIN_GAP_X = 24;
+const EXPLAIN_GAP_Y = 16;
 
 let actionCounter = 0;
 let segmentCounter = 0;
@@ -178,10 +194,25 @@ export function buildProfessorTeachingActions(
     }
   }
   const nodeShapeId = (nodeId: string) => String(createShapeId(`pn-${nodeId}`));
+  const explainShapeId = (nodeId: string, localId: string) => String(createShapeId(`pn-explain-${nodeId}-${localId}`));
   const shapeIdsByGroup = new Map<string, string[]>();
   for (const g of effectiveGroups) {
-    shapeIdsByGroup.set(g.id, g.nodeIds.filter(id => drawnNodeIds.has(id)).map(nodeShapeId));
+    const primaryIds = g.nodeIds.filter(id => drawnNodeIds.has(id));
+    // Fold each node's explain sub-shape ids in too, so the region's camera
+    // move frames the WHOLE mini-diagram, not just the primary boxes — local
+    // ids come straight from the AI script, known before layout even runs.
+    const explainIds = primaryIds.flatMap(id =>
+      (scriptByTargetId.get(id)?.explain ?? [])
+        .filter(a => (a.type === "write" || a.type === "icon") && a.id)
+        .map(a => explainShapeId(id, a.id!)),
+    );
+    shapeIdsByGroup.set(g.id, [...primaryIds.map(nodeShapeId), ...explainIds]);
   }
+
+  // Running obstacle list for explain mini-diagrams — seeded with every
+  // primary node box (fixed, never moved) and grown as each nodeScript
+  // entry's explain chain is placed, so later chains avoid earlier ones too.
+  const obstacleBoxes: LayoutBox[] = Array.from(nodeBoundsById.values());
 
   // ── Step 1: short hand-written title ───────────────────────────────────
   // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
@@ -269,6 +300,77 @@ export function buildProfessorTeachingActions(
           treatment: "highlight", durationMs: EMPHASIZE_DURATION_MS,
         });
         linked.push(warnActionId);
+      }
+
+      // ── explain[]: the professor's-aside mini-diagram — a short write/
+      //     icon/arrow/emphasize chain drawn beside this point while
+      //     narrating it, so the board depicts the MECHANISM being taught
+      //     instead of just a labeled box per idea. "self" always resolves
+      //     to this node's own already-drawn shape; every other reference
+      //     resolves to a sub-box placed earlier in THIS SAME chain —
+      //     groundProfessorLesson.ts already guarantees both hold before
+      //     this ever runs, so no reference here can be dangling. ─────────
+      if (entry.explain.length > 0) {
+        const localBoxById = new Map<string, LayoutBox>([["self", bounds]]);
+        const localShapeIdById = new Map<string, string>([["self", shapeId]]);
+        let stackY = bounds.y;
+
+        for (const action of entry.explain) {
+          if (action.type === "write" || action.type === "icon") {
+            const text = action.type === "write"
+              ? (action.text ?? "")
+              : `${EXPLAIN_ICON_GLYPH[action.icon!] ?? "•"}${action.label ? ` ${action.label}` : ""}`;
+            const w = estimateLabelWidth(text);
+            const h = estimateLabelHeight(text);
+            const placed = pushClearOf(
+              { x: bounds.x + bounds.w + EXPLAIN_GAP_X, y: stackY, w, h },
+              obstacleBoxes,
+            );
+            obstacleBoxes.push(placed);
+            stackY = placed.y + placed.h + EXPLAIN_GAP_Y;
+
+            const subShapeId = explainShapeId(node.id, action.id!);
+            localBoxById.set(action.id!, placed);
+            localShapeIdById.set(action.id!, subShapeId);
+
+            const subDrawId = nextActionId();
+            actions.push({
+              type: "draw-shape", actionId: subDrawId, shapeId: subShapeId,
+              shape: action.type === "icon" ? "circle" : "box", bounds: placed, durationMs: STROKE_DURATION_MS,
+            });
+            linked.push(subDrawId);
+
+            const subWriteId = nextActionId();
+            actions.push({
+              type: "write", actionId: subWriteId, shapeId: subShapeId,
+              text, x: placed.x + 6, y: placed.y + placed.h / 2 - 8, durationMs: writeDurationMs(text),
+            });
+            linked.push(subWriteId);
+          } else if (action.type === "arrow") {
+            const fromBox = localBoxById.get(action.from!);
+            const toBox = localBoxById.get(action.to!);
+            if (!fromBox || !toBox) continue; // grounding guarantees this holds; stay defensive, never crash
+            const fromCenter = boxCenter(fromBox);
+            const toCenter = boxCenter(toBox);
+            const subArrowShapeId = String(createShapeId(`pe-explain-${node.id}-${linked.length}`));
+            const subArrowId = nextActionId();
+            actions.push({
+              type: "draw-arrow", actionId: subArrowId, shapeId: subArrowShapeId,
+              from: anchorPoint(fromBox, toCenter.x, toCenter.y), to: anchorPoint(toBox, fromCenter.x, fromCenter.y),
+              durationMs: ARROW_DURATION_MS,
+            });
+            linked.push(subArrowId);
+          } else if (action.type === "emphasize") {
+            const targetShapeId = localShapeIdById.get(action.target!);
+            if (!targetShapeId) continue; // grounding guarantees this holds; stay defensive, never crash
+            const subEmphasizeId = nextActionId();
+            actions.push({
+              type: "emphasize", actionId: subEmphasizeId, targetId: targetShapeId,
+              treatment: action.style!, durationMs: EMPHASIZE_DURATION_MS,
+            });
+            linked.push(subEmphasizeId);
+          }
+        }
       }
 
       pushSegment(entry.narration, entry.tone, entry.pace, linked);

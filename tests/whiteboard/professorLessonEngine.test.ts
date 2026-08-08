@@ -401,11 +401,19 @@ describe("Expanded action vocabulary: erase, line shapes, and multiple simultane
   it("emphasisOverlaySpec renders a distinct visual per treatment: underline, highlight, number, and circle/pulse", () => {
     const idx = src.indexOf("function emphasisOverlaySpec(");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 1800);
+    const body = src.slice(idx, idx + 2400);
     expect(body).toMatch(/case "underline":/);
     expect(body).toMatch(/case "highlight":/);
     expect(body).toMatch(/case "number":/);
     expect(body).toMatch(/case "pulse":/);
+  });
+
+  it("emphasisOverlaySpec renders 'crossOut' as a diagonal line with both arrowheads suppressed, not a directional connector", () => {
+    const idx = src.indexOf("function emphasisOverlaySpec(");
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, idx + 2400);
+    expect(body).toMatch(/case "crossOut":/);
+    expect(body).toMatch(/arrowheadStart: "none", arrowheadEnd: "none"/);
   });
 
   it("the 'highlight' treatment renders as a translucent wash (opacity < 1), not an opaque block obscuring the shape", () => {
