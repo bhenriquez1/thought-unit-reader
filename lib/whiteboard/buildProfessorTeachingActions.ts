@@ -25,7 +25,7 @@ import type {
   ProfessorLessonSourceSnapshot, ExplainIcon, DrawingIntent,
 } from "./professorLessonPlan";
 import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
-import { computeGroupLayout, anchorPoint, pushClearOf } from "./groupLayout";
+import { computeGroupLayout, anchorPoint, pushClearOf, computeAvoidanceBend } from "./groupLayout";
 import type { LayoutBox } from "./groupLayout";
 
 // ── Pacing ────────────────────────────────────────────────────────────────
@@ -155,6 +155,25 @@ export function buildProfessorTeachingActions(
   const segments: NarrationSegment[] = [];
   let stepSequenceCounter = 0;
 
+  // Phase B2: every action pushed via `push()` is auto-stamped with the
+  // CURRENT teaching step id — incremented once per narrated point (see the
+  // main loop below), so a step boundary is exactly "everything pushed
+  // between two increments," matching how pushSegment already interleaves
+  // that point's visuals with its own speak+pause.
+  let currentStepId = 0;
+  // Plain Omit<Union, K> collapses to only the properties common to every
+  // member of the union (it computes over the union's keyof, which is an
+  // INTERSECTION, not per-member) — losing shapeId/targetIds/segmentId/etc.
+  // A conditionally-distributed Omit preserves each variant's own shape
+  // minus stepId, so callers can still pass e.g. a draw-shape action with
+  // its bounds/shape fields intact.
+  type ActionWithoutStepId = ProfessorTeachingAction extends infer T
+    ? T extends ProfessorTeachingAction ? Omit<T, "stepId"> : never
+    : never;
+  function push(action: ActionWithoutStepId): void {
+    actions.push({ ...action, stepId: currentStepId } as ProfessorTeachingAction);
+  }
+
   // Pushes a narration segment's speak+pause actions IMMEDIATELY (not
   // batched at the end) so drawing and narration stay interleaved — this is
   // the fix for "the drawing and narration are not tightly synchronized":
@@ -172,9 +191,9 @@ export function buildProfessorTeachingActions(
     segments.push(seg);
 
     const speakActionId = nextActionId();
-    actions.push({ type: "speak", actionId: speakActionId, segmentId: seg.id, text: seg.text, durationMs: speakDurationMs(seg.text) });
+    push({ type: "speak", actionId: speakActionId, segmentId: seg.id, text: seg.text, durationMs: speakDurationMs(seg.text) });
     if (seg.pauseAfterMs > 0) {
-      actions.push({ type: "pause", actionId: nextActionId(), durationMs: seg.pauseAfterMs });
+      push({ type: "pause", actionId: nextActionId(), durationMs: seg.pauseAfterMs });
     }
     return seg;
   };
@@ -195,7 +214,9 @@ export function buildProfessorTeachingActions(
   //     DRAWING (the write/draw-shape actions) does. ─────────────────────────
   const scriptByTargetId = new Map(grounded.nodeScripts.map(e => [e.targetId, e]));
   const drawnNodeIds = new Set(vsg.nodes.map(n => n.id).filter(id => scriptByTargetId.has(id)));
-  const layoutNodes = Array.from(drawnNodeIds).map(id => ({ id, label: scriptByTargetId.get(id)!.shortLabel }));
+  const layoutNodes = Array.from(drawnNodeIds).map(id => ({
+    id, label: scriptByTargetId.get(id)!.shortLabel, spatialIntent: scriptByTargetId.get(id)!.spatialIntent,
+  }));
 
   // groundProfessorLesson.ts guarantees every surviving node lands in some
   // group, but this converter takes GroundedProfessorLessonScript as its
@@ -252,13 +273,21 @@ export function buildProfessorTeachingActions(
     existingEdgePairs.add(`${e.toId}|${e.fromId}`);
   }
 
+  // Obstacles for a connector between fromId/toId — every OTHER drawn
+  // node's box (never the connection's own two endpoints, which the
+  // straight/curved line is SUPPOSED to touch).
+  const connectorObstacles = (fromId: string, toId: string): LayoutBox[] =>
+    Array.from(nodeBoundsById.entries())
+      .filter(([id]) => id !== fromId && id !== toId)
+      .map(([, box]) => box);
+
   // ── Step 1: short hand-written title ───────────────────────────────────
   // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
   // collided with the first box's own position.
   if (grounded.title) {
     const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 22;
     const titleActionId = nextActionId();
-    actions.push({
+    push({
       type: "write", actionId: titleActionId, shapeId: String(createShapeId("pl-title")),
       text: grounded.title, x: 24, y: topLayoutY - 60, durationMs: writeDurationMs(grounded.title),
     });
@@ -280,8 +309,13 @@ export function buildProfessorTeachingActions(
 
   // ── Step 2..N: one draw-shape + write (+ optional emphasize) per node,
   //     one draw-arrow per edge — in the grounded script's own order, which
-  //     IS the teaching sequence the professor performs. ───────────────────
+  //     IS the teaching sequence the professor performs. Each iteration is
+  //     its OWN teaching step (Phase B2) — every action pushed for this
+  //     entry, including its explain[] chain and relationships, shares one
+  //     stepId, so Previous/Next and the draw-while-teaching scheduler both
+  //     treat "this narrated point" as one pedagogical unit. ───────────────
   for (const entry of grounded.nodeScripts) {
+    currentStepId += 1;
     const node = vsg.nodes.find(n => n.id === entry.targetId);
     if (node) {
       const bounds = nodeBoundsById.get(node.id)!; // set for every drawn node in the pre-pass above
@@ -291,11 +325,11 @@ export function buildProfessorTeachingActions(
       if (groupId !== currentGroupId) {
         currentGroupId = groupId;
         const targets = shapeIdsByGroup.get(groupId) ?? [shapeId];
-        actions.push({ type: "move-camera", actionId: nextActionId(), targetIds: targets, durationMs: CAMERA_DURATION_MS });
+        push({ type: "move-camera", actionId: nextActionId(), targetIds: targets, durationMs: CAMERA_DURATION_MS });
       }
 
       const drawActionId = nextActionId();
-      actions.push({
+      push({
         type: "draw-shape", actionId: drawActionId, shapeId, targetId: node.sourceId,
         shape: shapeKindForNode(node, entry.drawingIntent), bounds, durationMs: STROKE_DURATION_MS,
         // Pass-through metadata only (see the ProfessorTeachingAction comment
@@ -305,7 +339,7 @@ export function buildProfessorTeachingActions(
       });
 
       const writeActionId = nextActionId();
-      actions.push({
+      push({
         type: "write", actionId: writeActionId, shapeId, targetId: node.sourceId,
         text: entry.shortLabel, x: bounds.x + 8, y: bounds.y + bounds.h / 2 - 8,
         durationMs: writeDurationMs(entry.shortLabel),
@@ -314,7 +348,7 @@ export function buildProfessorTeachingActions(
       const linked = [drawActionId, writeActionId];
       if (entry.emphasize) {
         const emphasizeActionId = nextActionId();
-        actions.push({
+        push({
           type: "emphasize", actionId: emphasizeActionId, targetId: shapeId,
           // groundProfessorLesson.ts already guarantees emphasisTreatment is
           // never "none" when emphasize is true (falls back to "circle"
@@ -333,7 +367,7 @@ export function buildProfessorTeachingActions(
       if (node.role === "step") {
         stepSequenceCounter += 1;
         const numberActionId = nextActionId();
-        actions.push({
+        push({
           type: "emphasize", actionId: numberActionId, targetId: shapeId,
           treatment: "number", sequenceNumber: stepSequenceCounter, durationMs: EMPHASIZE_DURATION_MS,
         });
@@ -341,7 +375,7 @@ export function buildProfessorTeachingActions(
       }
       if (node.tier === "danger") {
         const warnActionId = nextActionId();
-        actions.push({
+        push({
           type: "emphasize", actionId: warnActionId, targetId: shapeId,
           treatment: "highlight", durationMs: EMPHASIZE_DURATION_MS,
         });
@@ -380,14 +414,14 @@ export function buildProfessorTeachingActions(
             localShapeIdById.set(action.id!, subShapeId);
 
             const subDrawId = nextActionId();
-            actions.push({
+            push({
               type: "draw-shape", actionId: subDrawId, shapeId: subShapeId,
               shape: action.type === "icon" ? "circle" : "box", bounds: placed, durationMs: STROKE_DURATION_MS,
             });
             linked.push(subDrawId);
 
             const subWriteId = nextActionId();
-            actions.push({
+            push({
               type: "write", actionId: subWriteId, shapeId: subShapeId,
               text, x: placed.x + 6, y: placed.y + placed.h / 2 - 8, durationMs: writeDurationMs(text),
             });
@@ -400,7 +434,7 @@ export function buildProfessorTeachingActions(
             const toCenter = boxCenter(toBox);
             const subArrowShapeId = String(createShapeId(`pe-explain-${node.id}-${linked.length}`));
             const subArrowId = nextActionId();
-            actions.push({
+            push({
               type: "draw-arrow", actionId: subArrowId, shapeId: subArrowShapeId,
               from: anchorPoint(fromBox, toCenter.x, toCenter.y), to: anchorPoint(toBox, fromCenter.x, fromCenter.y),
               durationMs: ARROW_DURATION_MS,
@@ -410,7 +444,7 @@ export function buildProfessorTeachingActions(
             const targetShapeId = localShapeIdById.get(action.target!);
             if (!targetShapeId) continue; // grounding guarantees this holds; stay defensive, never crash
             const subEmphasizeId = nextActionId();
-            actions.push({
+            push({
               type: "emphasize", actionId: subEmphasizeId, targetId: targetShapeId,
               treatment: action.style!, durationMs: EMPHASIZE_DURATION_MS,
             });
@@ -440,21 +474,27 @@ export function buildProfessorTeachingActions(
         const relFrom = anchorPoint(bounds, relToCenter.x, relToCenter.y);
         const relTo = anchorPoint(toBounds, relFromCenter.x, relFromCenter.y);
         const relShapeId = String(createShapeId(`pr-${node.id}-${rel.targetId}`));
+        const relBend = computeAvoidanceBend(relFrom, relTo, connectorObstacles(node.id, rel.targetId));
 
         const relArrowId = nextActionId();
-        actions.push({
+        push({
           type: "draw-arrow", actionId: relArrowId, shapeId: relShapeId,
-          from: relFrom, to: relTo, durationMs: ARROW_DURATION_MS,
+          from: relFrom, to: relTo, bend: relBend, durationMs: ARROW_DURATION_MS,
         });
         linked.push(relArrowId);
 
         const relLabelText = rel.label ?? RELATIONSHIP_KIND_LABEL[rel.kind] ?? rel.kind;
-        const relLabelId = nextActionId();
-        actions.push({
-          type: "write", actionId: relLabelId, shapeId: String(createShapeId(`pr-label-${node.id}-${rel.targetId}`)),
-          text: relLabelText,
+        const relLabelRaw = {
           x: (relFrom.x + relTo.x) / 2 - estimateLabelWidth(relLabelText) / 2,
           y: (relFrom.y + relTo.y) / 2 - 8,
+          w: estimateLabelWidth(relLabelText), h: estimateLabelHeight(relLabelText),
+        };
+        const relLabelPlaced = pushClearOf(relLabelRaw, obstacleBoxes.filter(b => b !== bounds && b !== toBounds));
+        obstacleBoxes.push(relLabelPlaced);
+        const relLabelId = nextActionId();
+        push({
+          type: "write", actionId: relLabelId, shapeId: String(createShapeId(`pr-label-${node.id}-${rel.targetId}`)),
+          text: relLabelText, x: relLabelPlaced.x, y: relLabelPlaced.y,
           durationMs: writeDurationMs(relLabelText),
         });
         linked.push(relLabelId);
@@ -488,25 +528,38 @@ export function buildProfessorTeachingActions(
       const toCenter = boxCenter(to);
       const arrowFrom = anchorPoint(from, toCenter.x, toCenter.y);
       const arrowTo   = anchorPoint(to, fromCenter.x, fromCenter.y);
+      // Phase B2: curve around a third node's box the straight line would
+      // otherwise cross — real 2D regions (branches/comparison/warning) can
+      // now sit between two connected nodes in a way a single vertical
+      // column never could.
+      const arrowBend = computeAvoidanceBend(arrowFrom, arrowTo, connectorObstacles(edge.fromId, edge.toId));
 
       const arrowActionId = nextActionId();
-      actions.push({
+      push({
         type: "draw-arrow", actionId: arrowActionId, shapeId, targetId: edge.id,
-        from: arrowFrom, to: arrowTo, durationMs: ARROW_DURATION_MS,
+        from: arrowFrom, to: arrowTo, bend: arrowBend, durationMs: ARROW_DURATION_MS,
       });
       const linkedArrowActions = [arrowActionId];
 
       // A short, deterministic label at the arrow's midpoint — "leads to",
       // "vs.", "then" — so the relationship reads visually, not only through
       // the (previously never-applied) arrow color. See EDGE_KIND_LABEL.
+      // Nudged clear of any node box it would otherwise sit on top of (same
+      // obstacle list explain[] sub-diagrams already avoid).
       const edgeLabel = EDGE_KIND_LABEL[edge.kind];
       if (edgeLabel) {
-        const labelActionId = nextActionId();
-        actions.push({
-          type: "write", actionId: labelActionId, shapeId: String(createShapeId(`pe-label-${edge.id}`)),
-          text: edgeLabel,
+        const edgeLabelPlaced = pushClearOf({
           x: (arrowFrom.x + arrowTo.x) / 2 - estimateLabelWidth(edgeLabel) / 2,
           y: (arrowFrom.y + arrowTo.y) / 2 - 8,
+          w: estimateLabelWidth(edgeLabel), h: estimateLabelHeight(edgeLabel),
+        }, obstacleBoxes.filter(b => b !== from && b !== to)); // never pushed away from its OWN two endpoints
+        obstacleBoxes.push(edgeLabelPlaced);
+        const labelActionId = nextActionId();
+        push({
+          type: "write", actionId: labelActionId, shapeId: String(createShapeId(`pe-label-${edge.id}`)),
+          text: edgeLabel,
+          x: edgeLabelPlaced.x,
+          y: edgeLabelPlaced.y,
           durationMs: writeDurationMs(edgeLabel),
         });
         linkedArrowActions.push(labelActionId);
@@ -547,7 +600,7 @@ export function buildProfessorTeachingActions(
     const dividerX  = (colARight + colBLeft) / 2;
 
     const dividerId = nextActionId();
-    actions.push({
+    push({
       type: "draw-shape", actionId: dividerId, shapeId: String(createShapeId(`pg-divider-${group.id}`)),
       shape: "brace",
       bounds: { x: dividerX - 5, y: region.y, w: 10, h: region.h },
@@ -556,8 +609,9 @@ export function buildProfessorTeachingActions(
   }
 
   // ── Final: one synthesis question, spoken only — no new visual object,
-  //     keeps the canvas under the primary-object ceiling. ────────────────
+  //     keeps the canvas under the primary-object ceiling. Its own step. ───
   if (grounded.synthesisQuestion) {
+    currentStepId += 1;
     pushSegment(grounded.synthesisQuestion, "question", "slow", []);
   }
 

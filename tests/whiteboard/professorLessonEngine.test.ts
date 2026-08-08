@@ -114,16 +114,18 @@ describe("Playback controls funnel through ONE deterministic path", () => {
     expect(body).toMatch(/window\.speechSynthesis\.resume\(\)/);
   });
 
-  it("REQUIRED: a 'speak' step never schedules the fixed-duration dwell timer — it advances only from playSegmentThenAdvance's own onended/onend callback, never a blind timeout", () => {
+  it("REQUIRED: a 'speak' step never schedules the fixed-duration dwell timer — it advances only from playSegmentThenAdvance's own onended/onend callback (or an already-early-started result), never a blind timeout", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const body = src.slice(idx, idx + 700);
+    const body = src.slice(idx, idx + 2300);
     const speakBranchIdx = body.indexOf('if (action.type === "speak") {');
-    const speakBranchEnd = body.indexOf("}", body.indexOf("return;", speakBranchIdx));
+    // The speak branch now has 3 sub-cases (done/pending/not-yet-started);
+    // its closing brace is the one right before the dwell-timer line below.
+    const timerIdx = body.indexOf("window.setTimeout(() => advanceForPlaybackRef.current(), duration)");
+    const speakBranchEnd = body.lastIndexOf("}", timerIdx);
     const speakBranch = body.slice(speakBranchIdx, speakBranchEnd);
     expect(speakBranch).toMatch(/playSegmentThenAdvance\(segment, next\)/);
     expect(speakBranch).toMatch(/return;/);
     // The dwell-timer line must be OUTSIDE (after) the speak branch's return.
-    const timerIdx = body.indexOf("window.setTimeout(() => advanceForPlaybackRef.current(), duration)");
     expect(timerIdx).toBeGreaterThan(speakBranchEnd);
   });
 });
@@ -161,7 +163,7 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
       expect(body).not.toMatch(/playSegmentThenAdvance\(/);
     }
     const advIdx = src.indexOf("const advanceForPlayback = useCallback");
-    const advBody = src.slice(advIdx, advIdx + 700);
+    const advBody = src.slice(advIdx, advIdx + 2300);
     expect(advBody).toMatch(/playSegmentThenAdvance\(segment, next\)/);
   });
 

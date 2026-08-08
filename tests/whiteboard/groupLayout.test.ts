@@ -1,9 +1,10 @@
 // tests/whiteboard/groupLayout.test.ts
-import { computeGroupLayout, anchorPoint } from "../../lib/whiteboard/groupLayout";
+import { computeGroupLayout, anchorPoint, lineIntersectsBox, computeAvoidanceBend } from "../../lib/whiteboard/groupLayout";
 import type { GroupLayoutNodeInput, GroupLayoutGroupInput } from "../../lib/whiteboard/groupLayout";
+import type { SpatialIntent } from "../../lib/whiteboard/professorLessonPlan";
 
-function node(id: string, label = `Label ${id}`): GroupLayoutNodeInput {
-  return { id, label };
+function node(id: string, label = `Label ${id}`, spatialIntent?: SpatialIntent): GroupLayoutNodeInput {
+  return { id, label, spatialIntent };
 }
 
 function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
@@ -69,9 +70,12 @@ describe("computeGroupLayout — regions are placed in group.order sequence, nev
   });
 });
 
-describe("computeGroupLayout — comparison groups split into two columns", () => {
-  it("comparison-group nodes land in (at least) two distinct x positions", () => {
-    const nodes = [node("a1"), node("a2"), node("b1"), node("b2")];
+describe("computeGroupLayout — Phase B2: comparison-column nodes split into two columns", () => {
+  it("comparison-column nodes land in (at least) two distinct x positions", () => {
+    const nodes = [
+      node("a1", "Label a1", "comparison-column"), node("a2", "Label a2", "comparison-column"),
+      node("b1", "Label b1", "comparison-column"), node("b2", "Label b2", "comparison-column"),
+    ];
     const groups: GroupLayoutGroupInput[] = [
       { id: "cmp", type: "comparison", order: 1, nodeIds: ["a1", "a2", "b1", "b2"] },
     ];
@@ -79,17 +83,109 @@ describe("computeGroupLayout — comparison groups split into two columns", () =
     const xs = new Set(Array.from(nodeBounds.values()).map(b => b.x));
     expect(xs.size).toBeGreaterThanOrEqual(2);
   });
+
+  it("REQUIRED: corresponding comparison pairs (colA[i] vs colB[i]) share the same row y, even when their labels wrap to different heights", () => {
+    const nodes = [
+      node("a1", "Short", "comparison-column"),
+      node("a2", "A considerably longer descriptive phrase that wraps to more lines", "comparison-column"),
+      node("b1", "Also short", "comparison-column"),
+      node("b2", "Brief", "comparison-column"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [{ id: "cmp", type: "comparison", order: 1, nodeIds: ["a1", "a2", "b1", "b2"] }];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    expect(nodeBounds.get("a1")!.y).toBe(nodeBounds.get("b1")!.y);
+    expect(nodeBounds.get("a2")!.y).toBe(nodeBounds.get("b2")!.y);
+    // a2's row is taller than a1's — b2 (the shorter item) still starts the
+    // NEXT row at the SAME y as a2, i.e. its row height was widened to match.
+    expect(nodeBounds.get("a2")!.y).toBeGreaterThan(nodeBounds.get("a1")!.y);
+  });
+
+  it("a single surviving comparison-column node is a plain single column, not a degenerate split", () => {
+    const nodes = [node("a1", "Label a1", "comparison-column")];
+    const groups: GroupLayoutGroupInput[] = [{ id: "cmp", type: "comparison", order: 1, nodeIds: ["a1"] }];
+    expect(() => computeGroupLayout(nodes, groups)).not.toThrow();
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    expect(nodeBounds.has("a1")).toBe(true);
+  });
 });
 
-describe("computeGroupLayout — a warning group reads as set apart from the main flow", () => {
-  it("a warning group's nodes sit at a distinct x from the group immediately before it, not stacked below it", () => {
-    const nodes = [node("core1"), node("warn1")];
+describe("computeGroupLayout — Phase B2: warning-aside nodes read as set apart from the main flow", () => {
+  it("a warning-aside node sits well below the central-mechanism region, with extra separation", () => {
+    const nodes = [node("core1", "Label core1", "central-mechanism"), node("warn1", "Label warn1", "warning-aside")];
     const groups: GroupLayoutGroupInput[] = [
       { id: "g1", type: "core", order: 1, nodeIds: ["core1"] },
       { id: "g2", type: "warning", order: 2, nodeIds: ["warn1"] },
     ];
     const { nodeBounds } = computeGroupLayout(nodes, groups);
-    expect(nodeBounds.get("warn1")!.x).toBeGreaterThan(nodeBounds.get("core1")!.x);
+    const core = nodeBounds.get("core1")!;
+    const warn = nodeBounds.get("warn1")!;
+    expect(warn.y).toBeGreaterThan(core.y + core.h);
+  });
+});
+
+describe("computeGroupLayout — Phase B2: left/right branches flank the central-mechanism column", () => {
+  it("REQUIRED: left-branch and right-branch nodes land at distinct x positions on either side of a central-mechanism node, top-aligned with it (not stacked below)", () => {
+    const nodes = [
+      node("center1", "Central idea", "central-mechanism"),
+      node("left1", "Left branch", "left-branch"),
+      node("right1", "Right branch", "right-branch"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [{ id: "g1", type: "core", order: 1, nodeIds: ["center1", "left1", "right1"] }];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const center = nodeBounds.get("center1")!;
+    const left = nodeBounds.get("left1")!;
+    const right = nodeBounds.get("right1")!;
+    expect(left.x + left.w).toBeLessThanOrEqual(center.x);
+    expect(right.x).toBeGreaterThanOrEqual(center.x + center.w);
+    expect(left.y).toBe(center.y);
+    expect(right.y).toBe(center.y);
+  });
+
+  it("branch layouts do not degenerate into a single tall vertical strip — left/right/center produce at least 3 distinct x positions", () => {
+    const nodes = [
+      node("c1", "Center one", "central-mechanism"), node("c2", "Center two", "central-mechanism"),
+      node("l1", "Left one", "left-branch"), node("l2", "Left two", "left-branch"),
+      node("r1", "Right one", "right-branch"), node("r2", "Right two", "right-branch"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [{ id: "g1", type: "core", order: 1, nodeIds: ["c1", "c2", "l1", "l2", "r1", "r2"] }];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const xs = new Set(Array.from(nodeBounds.values()).map(b => b.x));
+    expect(xs.size).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("computeGroupLayout — Phase B2: final-summary always lands last, regardless of narrative group.order", () => {
+  it("REQUIRED: a final-summary node sits below every other region even when its group.order is NOT the highest", () => {
+    const nodes = [
+      node("summary1", "The takeaway", "final-summary"),
+      node("core1", "Core idea", "central-mechanism"),
+      node("warn1", "A trap", "warning-aside"),
+    ];
+    // Deliberately give the summary group.order 1 (first) — final-summary
+    // must still be placed LAST spatially.
+    const groups: GroupLayoutGroupInput[] = [
+      { id: "gS", type: "summary", order: 1, nodeIds: ["summary1"] },
+      { id: "gC", type: "core", order: 2, nodeIds: ["core1"] },
+      { id: "gW", type: "warning", order: 3, nodeIds: ["warn1"] },
+    ];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const summary = nodeBounds.get("summary1")!;
+    const core = nodeBounds.get("core1")!;
+    const warn = nodeBounds.get("warn1")!;
+    expect(summary.y).toBeGreaterThan(core.y);
+    expect(summary.y).toBeGreaterThanOrEqual(warn.y);
+  });
+});
+
+describe("computeGroupLayout — Phase B2: a page with only central-mechanism nodes collapses to the simple single-column case", () => {
+  it("the smallest visual grammar falls out for free — no branch/comparison/warning regions means one plain column", () => {
+    const nodes = [node("n1", "First", "central-mechanism"), node("n2", "Second", "central-mechanism")];
+    const groups: GroupLayoutGroupInput[] = [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const n1 = nodeBounds.get("n1")!;
+    const n2 = nodeBounds.get("n2")!;
+    expect(n1.x).toBe(n2.x); // same column
+    expect(n2.y).toBeGreaterThan(n1.y); // stacked, not side by side
   });
 });
 
@@ -116,6 +212,56 @@ describe("computeGroupLayout — deterministic", () => {
     const b = computeGroupLayout(nodes, groups);
     expect(Array.from(a.nodeBounds.entries())).toEqual(Array.from(b.nodeBounds.entries()));
     expect(a.canvas).toEqual(b.canvas);
+  });
+});
+
+describe("Phase B2: lineIntersectsBox — straight-line vs obstacle detection", () => {
+  const box = { x: 100, y: 100, w: 100, h: 100 }; // spans (100,100)-(200,200)
+
+  it("REQUIRED: a line straight through the box's middle intersects", () => {
+    expect(lineIntersectsBox({ x: 50, y: 150 }, { x: 250, y: 150 }, box)).toBe(true);
+  });
+
+  it("a line that passes well above the box does not intersect", () => {
+    expect(lineIntersectsBox({ x: 50, y: 20 }, { x: 250, y: 20 }, box)).toBe(false);
+  });
+
+  it("a line ending inside the box counts as intersecting", () => {
+    expect(lineIntersectsBox({ x: 50, y: 150 }, { x: 150, y: 150 }, box)).toBe(true);
+  });
+});
+
+describe("Phase B2: computeAvoidanceBend — connectors curve around a third node's box", () => {
+  it("REQUIRED: returns 0 (straight line) when no obstacle sits between from and to", () => {
+    const bend = computeAvoidanceBend({ x: 0, y: 0 }, { x: 300, y: 0 }, [{ x: 0, y: 200, w: 50, h: 50 }]);
+    expect(bend).toBe(0);
+  });
+
+  it("REQUIRED: returns a nonzero bend when a third node's box sits directly on the straight line", () => {
+    const obstacle = { x: 130, y: 90, w: 40, h: 20 }; // straddles the line y=100 at x~130-170
+    const bend = computeAvoidanceBend({ x: 0, y: 100 }, { x: 300, y: 100 }, [obstacle]);
+    expect(bend).not.toBe(0);
+  });
+
+  it("the curved arc's approximate midpoint (straight-line midpoint offset perpendicular by `bend`) clears the obstacle it was routed around", () => {
+    const from = { x: 0, y: 100 };
+    const to = { x: 300, y: 100 };
+    const obstacle = { x: 130, y: 90, w: 40, h: 20 };
+    const bend = computeAvoidanceBend(from, to, [obstacle]);
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.hypot(dx, dy);
+    const perp = { x: -dy / len, y: dx / len };
+    const arcMid = { x: midX + perp.x * bend, y: midY + perp.y * bend };
+    const clearsObstacle = arcMid.x < obstacle.x || arcMid.x > obstacle.x + obstacle.w
+      || arcMid.y < obstacle.y || arcMid.y > obstacle.y + obstacle.h;
+    expect(clearsObstacle).toBe(true);
+  });
+
+  it("ignores obstacles the line doesn't actually reach — a box off to the side never triggers a bend", () => {
+    const bend = computeAvoidanceBend({ x: 0, y: 0 }, { x: 100, y: 0 }, [{ x: 500, y: 500, w: 50, h: 50 }]);
+    expect(bend).toBe(0);
   });
 });
 

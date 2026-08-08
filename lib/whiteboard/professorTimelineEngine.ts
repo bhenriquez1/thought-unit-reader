@@ -26,6 +26,10 @@ export interface ShapeVisualState {
   bounds?: Bounds;
   from?: Point;
   to?: Point;
+  /** Phase B2 connector-obstacle-avoidance — see ProfessorTeachingAction's
+   *  draw-arrow.bend comment in professorLessonPlan.ts. Only meaningful
+   *  when kind === "arrow". */
+  bend?: number;
   /** Text-only anchor (used when a shape has no draw-shape backing it, e.g.
    *  the title, which is a bare `write` with no enclosing box). */
   x?: number;
@@ -75,6 +79,7 @@ export function computeCanvasStateAtStep(
         kind: "arrow",
         from: action.from,
         to: action.to,
+        bend: action.bend,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
         emphasisTreatments: prior?.emphasisTreatments ?? [],
@@ -152,4 +157,68 @@ export function resolveActiveSegmentIdAtStep(
 
 export function actionDurationMs(action: ProfessorTeachingAction): number {
   return action.durationMs;
+}
+
+// ── Phase B2: teaching-step boundaries ──────────────────────────────────────
+// A "teaching step" (see ProfessorTeachingAction.stepId's comment in
+// professorLessonPlan.ts) is a pedagogical unit — one narrated point, with
+// all of its speak/write/draw/connect/emphasize actions sharing one stepId.
+// These helpers let Previous/Next navigate by STEP instead of by raw action
+// index, without changing computeCanvasStateAtStep's own index-based
+// contract (Previous/Next just pick a different index to jump to).
+
+/** The stepId active at stepIndex, or -1 before the first action. */
+export function resolveStepIdAtStep(actions: ProfessorTeachingAction[], stepIndex: number): number {
+  if (stepIndex < 0 || actions.length === 0) return -1;
+  const i = Math.min(stepIndex, actions.length - 1);
+  return actions[i].stepId;
+}
+
+/** The number of distinct teaching steps in this plan. */
+export function totalTeachingSteps(actions: ProfessorTeachingAction[]): number {
+  return new Set(actions.map(a => a.stepId)).size;
+}
+
+/** The action index of the FIRST action belonging to stepId, or -1 if no
+ *  action carries that stepId. */
+export function stepStartIndex(actions: ProfessorTeachingAction[], stepId: number): number {
+  return actions.findIndex(a => a.stepId === stepId);
+}
+
+/** The action index of the LAST action belonging to stepId, or -1 if no
+ *  action carries that stepId. */
+export function stepEndIndex(actions: ProfessorTeachingAction[], stepId: number): number {
+  for (let i = actions.length - 1; i >= 0; i--) {
+    if (actions[i].stepId === stepId) return i;
+  }
+  return -1;
+}
+
+/** The action index Next should jump TO — the start of the step whose id is
+ *  one greater than the step active at stepIndex, or actions.length - 1
+ *  (the very end) if already in the last step. Never throws on an
+ *  empty/out-of-range plan. */
+export function nextStepIndex(actions: ProfessorTeachingAction[], stepIndex: number): number {
+  if (actions.length === 0) return stepIndex;
+  const currentStepId = resolveStepIdAtStep(actions, stepIndex);
+  const start = stepStartIndex(actions, currentStepId + 1);
+  return start >= 0 ? start : actions.length - 1;
+}
+
+/** The action index Previous should jump TO — the start of the PREVIOUS
+ *  distinct step (not just stepIndex - 1), or -1 (blank canvas) if already
+ *  at or before the first step. */
+export function previousStepIndex(actions: ProfessorTeachingAction[], stepIndex: number): number {
+  if (actions.length === 0) return -1;
+  const currentStepId = resolveStepIdAtStep(actions, stepIndex);
+  if (currentStepId <= 0) return -1;
+  // If stepIndex is already partway INTO currentStepId (not at its very
+  // start), "Previous" first returns to the start of the CURRENT step —
+  // exactly like a real Previous button doesn't skip two steps back when
+  // you're mid-step. Only jump back an additional step if already sitting
+  // at the current step's own start index.
+  const currentStart = stepStartIndex(actions, currentStepId);
+  if (stepIndex > currentStart) return currentStart;
+  const prevStart = stepStartIndex(actions, currentStepId - 1);
+  return prevStart >= 0 ? prevStart : -1;
 }

@@ -50,6 +50,8 @@ import {
 import { useProfessorLesson } from "@/components/whiteboard/useProfessorLesson";
 import {
   computeCanvasStateAtStep, resolveCameraTargetAtStep, resolveActiveSegmentIdAtStep,
+  nextStepIndex, previousStepIndex, resolveStepIdAtStep, totalTeachingSteps,
+  stepStartIndex, stepEndIndex,
   type ShapeVisualState,
 } from "@/lib/whiteboard/professorTimelineEngine";
 import type { ProfessorTeachingAction, NarrationSegment, Bounds } from "@/lib/whiteboard/professorLessonPlan";
@@ -108,6 +110,15 @@ interface Props {
    *  passed straight through to the Professor Lesson Planner so it teaches
    *  in a style that matches what kind of page this actually is. */
   pageTeachingType?:       string | null;
+  /** Phase B2 — stable extension points for Phase B3's Learning State
+   *  wiring. Fired at the obvious moments (a teaching step begins/ends
+   *  during autoplay, the lesson reaches its end) but INTENTIONALLY do
+   *  nothing on their own — this component never writes to the Knowledge
+   *  Graph or persists a snapshot itself. That is deliberately B3's job:
+   *  merely watching a lesson play should not silently grant mastery. */
+  onTeachingStepStarted?:   (stepId: number) => void;
+  onTeachingStepCompleted?: (stepId: number) => void;
+  onLessonCompleted?:       () => void;
 }
 
 function mergeBounds(list: Bounds[]): Bounds | null {
@@ -198,6 +209,7 @@ export default function TldrawCanvas({
   noteCards, pageTitle, whiteboardGrammar = "flow",
   onAnchorClick, vsg, activeAnchorId, storageKey,
   documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType,
+  onTeachingStepStarted, onTeachingStepCompleted, onLessonCompleted,
 }: Props) {
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
   const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
@@ -532,6 +544,16 @@ export default function TldrawCanvas({
   useEffect(() => { speedRef.current = speed; }, [speed]);
   const advanceForPlaybackRef = useRef<() => void>(() => {});
 
+  // Phase B2 — refs (not deps) for the optional Learning-State extension
+  // hooks, same "avoid re-creating advanceForPlayback's useCallback on every
+  // parent re-render" pattern as speedRef/advanceForPlaybackRef above.
+  const onTeachingStepStartedRef   = useRef(onTeachingStepStarted);
+  const onTeachingStepCompletedRef = useRef(onTeachingStepCompleted);
+  const onLessonCompletedRef       = useRef(onLessonCompleted);
+  useEffect(() => { onTeachingStepStartedRef.current = onTeachingStepStarted; }, [onTeachingStepStarted]);
+  useEffect(() => { onTeachingStepCompletedRef.current = onTeachingStepCompleted; }, [onTeachingStepCompleted]);
+  useEffect(() => { onLessonCompletedRef.current = onLessonCompleted; }, [onLessonCompleted]);
+
   // Revokes every cached blob URL and empties both maps — called whenever
   // the lesson identity changes (rebuild effect) and on unmount, so a stale
   // entry from a PRIOR page/lesson can never be read by a NEW one even if a
@@ -600,11 +622,32 @@ export default function TldrawCanvas({
     return null;
   }, []);
 
+  // Phase B2: which teaching steps' narration has already been started (see
+  // maybeEarlyStartStepNarration below) — "pending" while playing, "done"
+  // once it naturally finishes. Cleared in stopNarration, the single choke
+  // point every navigation action (Next/Previous/Restart/rebuild/unmount)
+  // already funnels through, so a stale entry from a step the student
+  // navigated away from mid-narration never lingers into a later visit.
+  const stepNarrationRef = useRef<Map<number, "pending" | "done">>(new Map());
+
   // Plays `segment` (the action at `index`) to completion, THEN advances —
   // never on a timer. This is the only place a "speak" step's own audio is
   // created; every completion path (ended/error/stale) funnels through
   // onFinished so the timeline always continues exactly once.
-  const playSegmentThenAdvance = useCallback(async (segment: NarrationSegment, index: number) => {
+  //
+  // Phase B2 draw-while-teaching: `earlyStart` lets this be called BEFORE
+  // the timeline's pointer has reached `index` — see
+  // maybeEarlyStartStepNarration, which calls this the moment a step BEGINS
+  // rather than waiting for its visual actions to finish first, so
+  // narration and drawing genuinely overlap. When earlyStart is set, this
+  // does NOT advance the pointer itself on completion — it only records
+  // "done" and advances if the pointer has ALREADY caught up to `index` by
+  // then (i.e. the narration outlasted the drawing); otherwise the visual
+  // timer chain's own arrival at `index` (in advanceForPlayback) notices
+  // "done" and continues immediately, with nothing left to wait for.
+  const playSegmentThenAdvance = useCallback(async (
+    segment: NarrationSegment, index: number, opts?: { earlyStart?: boolean; stepId?: number },
+  ) => {
     const stepId = segment.id;
     if (!narrationEnabled) {
       console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "narration-disabled" });
@@ -665,7 +708,18 @@ export default function TldrawCanvas({
       setSpeechState(reason === "error" ? "error" : "idle");
       activeAudioElRef.current = null;
       activeUtteranceRef.current = null;
-      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioEnded: true, reason });
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioEnded: true, reason, earlyStart: !!opts?.earlyStart });
+      if (opts?.earlyStart) {
+        stepNarrationRef.current.set(opts.stepId!, "done");
+        // Narration outlasted the drawing — the pointer already caught up
+        // to this speak action's own index and is waiting on us; continue.
+        // If the pointer HASN'T arrived yet (drawing still revealing),
+        // leave it be — its own arrival (advanceForPlayback) will see
+        // "done" in stepNarrationRef and continue immediately on its own,
+        // with nothing left to wait for.
+        if (stepIndexRef.current >= index) advanceForPlaybackRef.current();
+        return;
+      }
       advanceForPlaybackRef.current();
     };
     const onForceStopCleanup = () => {
@@ -730,6 +784,35 @@ export default function TldrawCanvas({
     await audio.play().catch(() => onNaturalEnd("error"));
   }, [narrationEnabled, findNextSegment, resolveSegmentAudio]);
 
+  // Phase B2 draw-while-teaching: called the moment advanceForPlayback
+  // enters a NEW teaching step (before its visual actions have revealed
+  // anything), so this step's narration starts playing WHILE the drawing
+  // happens, not after. Only engages when the step has exactly one speak
+  // action AND at least one visual action precedes it — a step with zero or
+  // multiple speak actions (e.g. the intro step, which speaks both the
+  // title and the learning objective) falls back untouched to the original
+  // on-arrival behavior in advanceForPlayback, since "which one of two
+  // narrations overlaps the drawing" has no single right answer.
+  const maybeEarlyStartStepNarration = useCallback((stepId: number) => {
+    const plan = planRef.current;
+    if (!plan || !narrationEnabled) return;
+    if (stepNarrationRef.current.has(stepId)) return;
+    const start = stepStartIndex(plan.actions, stepId);
+    const end = stepEndIndex(plan.actions, stepId);
+    if (start < 0) return;
+    const speakIndices: number[] = [];
+    for (let i = start; i <= end; i++) if (plan.actions[i].type === "speak") speakIndices.push(i);
+    if (speakIndices.length !== 1 || speakIndices[0] <= start) return;
+    const speakIndex = speakIndices[0];
+    const action = plan.actions[speakIndex];
+    if (action.type !== "speak") return;
+    const segment = plan.segments.find(s => s.id === action.segmentId);
+    if (!segment) return;
+
+    stepNarrationRef.current.set(stepId, "pending");
+    playSegmentThenAdvance(segment, speakIndex, { earlyStart: true, stepId });
+  }, [narrationEnabled, playSegmentThenAdvance]);
+
   // Full stop: releases speech ownership entirely (explicit navigation —
   // Next/Previous/Restart/Show-complete/rebuild/unmount/narration-toggle-off
   // — never called for a plain Pause, which preserves position instead; see
@@ -744,6 +827,12 @@ export default function TldrawCanvas({
     activeAudioElRef.current = null;
     activeUtteranceRef.current = null;
     if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
+    // Phase B2: every navigation action (Next/Previous/Restart/rebuild/
+    // unmount) funnels through here — the single correct point to drop any
+    // in-flight early-started narration bookkeeping, so re-visiting a step
+    // later always restarts its narration fresh rather than inheriting a
+    // stale "pending"/"done" entry from a run that was abandoned mid-flight.
+    stepNarrationRef.current.clear();
   }, []);
 
   // ── Anchor / One Brain sync map, rebuilt whenever the plan changes ──────
@@ -809,7 +898,7 @@ export default function TldrawCanvas({
       }
 
       registerAnchors(lessonPlan.actions);
-      setTotalSteps(lessonPlan.actions.length);
+      setTotalSteps(totalTeachingSteps(lessonPlan.actions));
       applyStateAtStep(editor, -1);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -863,7 +952,7 @@ export default function TldrawCanvas({
       editor.updateInstanceState({ isReadonly: true });
       if (lessonPlan) {
         registerAnchors(lessonPlan.actions);
-        setTotalSteps(lessonPlan.actions.length);
+        setTotalSteps(totalTeachingSteps(lessonPlan.actions));
         applyStateAtStep(editor, -1);
       } else {
         setTotalSteps(0);
@@ -907,29 +996,70 @@ export default function TldrawCanvas({
     if (next >= plan.actions.length) { setIsPlaying(false); return; }
     setStepIndex(next);
     const action = plan.actions[next];
+
+    // Phase B2 draw-while-teaching: the moment we enter a NEW step, try to
+    // start its narration right away — the step's own visual actions (about
+    // to reveal on their normal timers below/in subsequent calls) then
+    // overlap real playing audio instead of racing to catch up to it later.
+    if (stepStartIndex(plan.actions, action.stepId) === next) {
+      if (next > 0) {
+        const previousStepId = plan.actions[next - 1].stepId;
+        if (previousStepId !== action.stepId) onTeachingStepCompletedRef.current?.(previousStepId);
+      }
+      onTeachingStepStartedRef.current?.(action.stepId);
+      maybeEarlyStartStepNarration(action.stepId);
+    }
+
     if (action.type === "speak") {
       const segment = plan.segments.find(s => s.id === action.segmentId);
-      if (segment) { playSegmentThenAdvance(segment, next); return; }
+      if (segment) {
+        const narrationState = stepNarrationRef.current.get(action.stepId);
+        if (narrationState === "done") {
+          // Already finished early — the drawing simply took longer than
+          // the narration this time. Nothing left to wait for.
+          advanceForPlaybackRef.current();
+          return;
+        }
+        if (narrationState === "pending") {
+          // Already playing (started early) — do NOT create a second Audio
+          // element for the same segment. Its own onNaturalEnd (the
+          // earlyStart branch in playSegmentThenAdvance) will notice the
+          // pointer has now caught up here and advance when it finishes.
+          return;
+        }
+        // Not early-started (multi-speak step, or narration was disabled
+        // when this step began) — original on-arrival behavior, unchanged.
+        playSegmentThenAdvance(segment, next);
+        return;
+      }
     }
     const duration = Math.max(action.durationMs, 200) / SPEED_FACTOR[speedRef.current];
     stepTimerRef.current = window.setTimeout(() => advanceForPlaybackRef.current(), duration);
-  }, [setStepIndex, playSegmentThenAdvance]);
+  }, [setStepIndex, playSegmentThenAdvance, maybeEarlyStartStepNarration]);
 
   useEffect(() => { advanceForPlaybackRef.current = advanceForPlayback; }, [advanceForPlayback]);
 
   // ── Manual controls — always instant, exact-state jumps, never audio ────
+  // Phase B2: Next/Previous move by TEACHING STEP (one narrated point's
+  // full speak+write+draw+connect+emphasize set), not by raw micro-action —
+  // see lib/whiteboard/professorTimelineEngine.ts's step-boundary helpers.
+  // The underlying jump is still an exact-state applyStateAtStep(editor, n)
+  // call at a single action index, same mechanism as before; only WHICH
+  // index gets picked changed.
   const handleNext = useCallback(() => {
     setIsPlaying(false);
     stopNarration("manual-next");
     const plan = planRef.current;
     if (!plan) return;
-    setStepIndex(Math.min(stepIndexRef.current + 1, plan.actions.length - 1));
+    setStepIndex(nextStepIndex(plan.actions, stepIndexRef.current));
   }, [setStepIndex, stopNarration]);
 
   const handlePrev = useCallback(() => {
     setIsPlaying(false);
     stopNarration("manual-previous");
-    setStepIndex(Math.max(stepIndexRef.current - 1, -1));
+    const plan = planRef.current;
+    if (!plan) return;
+    setStepIndex(previousStepIndex(plan.actions, stepIndexRef.current));
   }, [setStepIndex, stopNarration]);
 
   const handleRestart = useCallback(() => {
@@ -1042,8 +1172,28 @@ export default function TldrawCanvas({
   }, [storageKey]);
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // Phase B2: totalSteps now counts TEACHING STEPS (see totalTeachingSteps),
+  // not raw actions — atEnd/the "N / total" readout must track the current
+  // STEP's ordinal (stepId + 1, since stepId is assigned 0..N-1 contiguously
+  // by buildProfessorTeachingActions.ts), not the raw action index.
   const atStart = stepIndex < 0;
-  const atEnd = totalSteps > 0 && stepIndex >= totalSteps - 1;
+  const currentStepId = lessonPlan ? resolveStepIdAtStep(lessonPlan.actions, stepIndex) : -1;
+  const atEnd = totalSteps > 0 && currentStepId >= totalSteps - 1;
+
+  // Phase B2: fires once per "newly reached the end" transition, however it
+  // was reached (autoplay finishing, Next clicked to the end, "Show
+  // complete diagram" clicked) — a single choke point rather than
+  // instrumenting every one of those call sites separately. The final
+  // step's own onTeachingStepCompleted never fires from the step-transition
+  // logic in advanceForPlayback (there is no NEXT step to trigger that
+  // comparison), so it fires here instead, immediately before
+  // onLessonCompleted.
+  useEffect(() => {
+    if (!atEnd) return;
+    if (currentStepId >= 0) onTeachingStepCompletedRef.current?.(currentStepId);
+    onLessonCompletedRef.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atEnd]);
   const segments = lessonPlan?.segments ?? [];
 
   return (
@@ -1065,7 +1215,7 @@ export default function TldrawCanvas({
         <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
           {totalSteps > 0 && (
             <span style={{ fontSize: 10, color: "#475569", fontVariantNumeric: "tabular-nums", marginRight: 2 }}>
-              {Math.max(stepIndex + 1, 0)} / {totalSteps}
+              {Math.max(currentStepId + 1, 0)} / {totalSteps}
             </span>
           )}
 
@@ -1195,7 +1345,14 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
     if (!s.from || !s.to) return null;
     return {
       type: "arrow", x: s.from.x, y: s.from.y,
-      props: { kind: "arc", start: { x: 0, y: 0 }, end: { x: s.to.x - s.from.x, y: s.to.y - s.from.y }, richText: toRichText(s.text ?? ""), size: "s", color },
+      props: {
+        kind: "arc", start: { x: 0, y: 0 }, end: { x: s.to.x - s.from.x, y: s.to.y - s.from.y },
+        // Phase B2 connector-obstacle-avoidance — tldraw's own native curve,
+        // 0 (straight line) unless computeAvoidanceBend found a third
+        // node's box in the way (see buildProfessorTeachingActions.ts).
+        bend: s.bend ?? 0,
+        richText: toRichText(s.text ?? ""), size: "s", color,
+      },
     };
   }
   if (s.kind === "brace") {

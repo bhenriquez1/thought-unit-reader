@@ -530,6 +530,37 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   });
 });
 
+describe("buildProfessorTeachingActions — Phase B2: every action carries a teaching-step id", () => {
+  it("REQUIRED: title/learningObjective actions share stepId 0; each nodeScript/edge entry gets its own incrementing stepId", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const titleWrite = plan.actions.find(a => a.type === "write" && (a as any).text === "Test Lesson") as any;
+    expect(titleWrite.stepId).toBe(0);
+
+    const n1Draw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const e1Arrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).targetId === "e1") as any;
+    const n2Draw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any;
+    expect(n1Draw.stepId).toBe(1);
+    expect(e1Arrow.stepId).toBe(2);
+    expect(n2Draw.stepId).toBe(3);
+  });
+
+  it("every action belonging to ONE nodeScript entry (draw + write + emphasize + its speak/pause) shares the same stepId", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const n1StepId = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).stepId;
+    const n1Write = plan.actions.find(a => a.type === "write" && (a as any).targetId === "src-n1") as any;
+    const n1Emphasize = plan.actions.find(a => a.type === "emphasize" && (a as any).targetId === (plan.actions.find(x => x.type === "draw-shape" && (x as any).targetId === "src-n1") as any).shapeId) as any;
+    expect(n1Write.stepId).toBe(n1StepId);
+    expect(n1Emphasize.stepId).toBe(n1StepId);
+  });
+
+  it("the synthesis question's speak action gets the FINAL stepId, one past the last narrated point", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const lastNodeStepId = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).stepId;
+    const synthesisSpeak = plan.actions.find(a => a.type === "speak" && (a as any).text === "How would you explain this back?") as any;
+    expect(synthesisSpeak.stepId).toBe(lastNodeStepId + 1);
+  });
+});
+
 describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive onto the final action, never discarded", () => {
   it("REQUIRED: spatialIntent and teachingRole are carried onto that node's draw-shape action", () => {
     const grounded = makeGrounded({

@@ -30,6 +30,113 @@ describe("TldrawCanvas.tsx — EDGE_COLOR is actually applied (was dead code)", 
   });
 });
 
+describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is early-started at step entry", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: advanceForPlayback calls maybeEarlyStartStepNarration exactly when entering a NEW step (stepStartIndex(...) === next)", () => {
+    const idx = src.indexOf("const advanceForPlayback = useCallback");
+    const block = src.slice(idx, idx + 1200);
+    expect(block).toMatch(/if \(stepStartIndex\(plan\.actions, action\.stepId\) === next\) \{/);
+    expect(block).toMatch(/maybeEarlyStartStepNarration\(action\.stepId\);/);
+  });
+
+  it("REQUIRED: maybeEarlyStartStepNarration only engages for a step with EXACTLY ONE speak action, preceded by at least one other action", () => {
+    const idx = src.indexOf("const maybeEarlyStartStepNarration = useCallback");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 1100);
+    expect(block).toMatch(/speakIndices\.length !== 1 \|\| speakIndices\[0\] <= start/);
+    expect(block).toMatch(/playSegmentThenAdvance\(segment, speakIndex, \{ earlyStart: true, stepId \}\);/);
+  });
+
+  it("REQUIRED: maybeEarlyStartStepNarration never double-starts a step already recorded in stepNarrationRef", () => {
+    const idx = src.indexOf("const maybeEarlyStartStepNarration = useCallback");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/if \(stepNarrationRef\.current\.has\(stepId\)\) return;/);
+  });
+
+  it("REQUIRED: when the pointer's own arrival reaches the speak action, it consults stepNarrationRef instead of blindly calling playSegmentThenAdvance — 'done' advances immediately, 'pending' waits without starting a second Audio element", () => {
+    const idx = src.indexOf("const advanceForPlayback = useCallback");
+    const block = src.slice(idx, idx + 2300);
+    const speakIdx = block.indexOf('if (action.type === "speak") {');
+    const speakBlock = block.slice(speakIdx, speakIdx + 900);
+    expect(speakBlock).toMatch(/narrationState === "done"/);
+    expect(speakBlock).toMatch(/narrationState === "pending"/);
+    // The "pending" branch must NOT call playSegmentThenAdvance again.
+    const pendingIdx = speakBlock.indexOf('narrationState === "pending"');
+    const pendingBlock = speakBlock.slice(pendingIdx, pendingIdx + 300);
+    expect(pendingBlock).not.toMatch(/playSegmentThenAdvance\(/);
+  });
+
+  it("REQUIRED: the earlyStart completion path in playSegmentThenAdvance records 'done' and only advances if the pointer has already caught up (stepIndexRef.current >= index)", () => {
+    const idx = src.indexOf("if (opts?.earlyStart) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/stepNarrationRef\.current\.set\(opts\.stepId!, "done"\);/);
+    expect(block).toMatch(/if \(stepIndexRef\.current >= index\) advanceForPlaybackRef\.current\(\);/);
+  });
+
+  it("REQUIRED: stopNarration (the single choke point for every navigation action) clears stepNarrationRef — no stale early-start bookkeeping survives a Next/Previous/Restart/rebuild", () => {
+    const idx = src.indexOf("const stopNarration = useCallback");
+    const block = src.slice(idx, idx + 1100);
+    expect(block).toMatch(/stepNarrationRef\.current\.clear\(\);/);
+  });
+
+  it("Pause/Resume mechanics are untouched by the early-start change — they still operate on activeAudioElRef/activeUtteranceRef regardless of when playback began, so an early-started segment pauses/resumes exactly like an on-time one", () => {
+    const idx = src.indexOf("const handlePlayPause = useCallback");
+    const block = src.slice(idx, idx + 2100);
+    expect(block).toMatch(/activeAudioElRef\.current\.pause\(\)/);
+    expect(block).toMatch(/activeAudioElRef\.current\.play\(\)\.catch/);
+  });
+
+  it("REQUIRED: onForceStopCleanup is untouched by earlyStart — it never consults or writes stepNarrationRef, preserving 'whatever caused the force-stop already decides what happens next' for early-started segments too", () => {
+    const idx = src.indexOf("const onForceStopCleanup = () => {");
+    expect(idx).toBeGreaterThan(-1);
+    const endIdx = src.indexOf("if (resolved.kind ===", idx);
+    const block = src.slice(idx, endIdx);
+    expect(block).not.toMatch(/stepNarrationRef/);
+    expect(block).not.toMatch(/advanceForPlaybackRef/);
+  });
+});
+
+describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable, no persistence)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: Props accepts onTeachingStepStarted/onTeachingStepCompleted/onLessonCompleted, all optional", () => {
+    const idx = src.indexOf("interface Props {");
+    const block = src.slice(idx, idx + 2000);
+    expect(block).toMatch(/onTeachingStepStarted\?:\s*\(stepId: number\) => void;/);
+    expect(block).toMatch(/onTeachingStepCompleted\?:\s*\(stepId: number\) => void;/);
+    expect(block).toMatch(/onLessonCompleted\?:\s*\(\) => void;/);
+  });
+
+  it("REQUIRED: onTeachingStepStarted fires exactly when a NEW step begins in advanceForPlayback, alongside the early-start check", () => {
+    const idx = src.indexOf("const advanceForPlayback = useCallback");
+    const block = src.slice(idx, idx + 1200);
+    expect(block).toMatch(/onTeachingStepStartedRef\.current\?\.\(action\.stepId\);/);
+  });
+
+  it("REQUIRED: onTeachingStepCompleted fires for the PREVIOUS step when a new one begins", () => {
+    const idx = src.indexOf("const advanceForPlayback = useCallback");
+    const block = src.slice(idx, idx + 1200);
+    expect(block).toMatch(/onTeachingStepCompletedRef\.current\?\.\(previousStepId\);/);
+  });
+
+  it("REQUIRED: onLessonCompleted fires from a single atEnd-transition effect, not scattered across every navigation handler", () => {
+    const idx = src.indexOf("const atEnd = totalSteps");
+    const block = src.slice(idx, idx + 1000);
+    expect(block).toMatch(/useEffect\(\(\) => \{/);
+    expect(block).toMatch(/if \(!atEnd\) return;/);
+    expect(block).toMatch(/onLessonCompletedRef\.current\?\.\(\);/);
+    expect(block).toMatch(/\}, \[atEnd\]\);/);
+  });
+
+  it("this component never itself calls into Knowledge Graph / Learning State persistence — B3's job, not B2's", () => {
+    expect(src).not.toMatch(/resolveOrCreateNode|applyLearningEvent|knowledgeGraphStore/);
+  });
+});
+
 describe("TldrawCanvas.tsx — Phase B1: 'brace' renders as a real bracket, not a rectangle fallback", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
@@ -70,7 +177,7 @@ describe("TldrawCanvas.tsx — richer geo shape vocabulary (diamond/hexagon/clou
 
   it("REQUIRED: toTldrawShapeSpec's geo branch now accepts diamond/hexagon/cloud shape kinds", () => {
     const idx = src.indexOf("function toTldrawShapeSpec(");
-    const block = src.slice(idx, idx + 2100);
+    const block = src.slice(idx, idx + 2700);
     expect(block).toMatch(/s\.kind === "diamond" \|\| s\.kind === "hexagon" \|\| s\.kind === "cloud"/);
   });
 
