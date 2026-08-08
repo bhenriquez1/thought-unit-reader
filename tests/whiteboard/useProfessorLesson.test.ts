@@ -144,3 +144,23 @@ describe("useProfessorLesson.ts — reanalyze bypasses the cache-hit guard witho
     expect(body).toMatch(/forceRefetchRef\.current = true/);
   });
 });
+
+describe("useProfessorLesson.ts — reanalyze() on the SAME identity aborts the superseded request", () => {
+  // Regression: Effect A's cleanup only aborts abortRef.current when the
+  // identity key changes (real page/unit navigation). A same-identity
+  // reanalyze() replays Effect B via reanalyzeCount without the key
+  // changing, so nothing else ever cancelled the ORIGINAL request — a slow
+  // original response could land AFTER the retry's and silently overwrite
+  // it (wired to TldrawCanvas's "Retry" button).
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: Effect B aborts its own previous controller before creating a new one, ahead of every fetch it might start", () => {
+    const idx = src.indexOf("// ── Effect B:");
+    const effectBody = src.slice(idx, idx + 2000);
+    const newCtrlIdx = effectBody.indexOf("const ctrl = new AbortController();");
+    expect(newCtrlIdx).toBeGreaterThan(-1);
+    const before = effectBody.slice(Math.max(0, newCtrlIdx - 300), newCtrlIdx);
+    expect(before).toMatch(/abortRef\.current\?\.abort\(\);/);
+  });
+});

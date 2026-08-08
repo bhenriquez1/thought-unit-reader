@@ -105,6 +105,26 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
   });
 });
 
+describe("useSurgeonAnnotations.ts — reanalyze() on the SAME page aborts the superseded request", () => {
+  // Regression: Effect A's cleanup only aborts abortRef.current when
+  // pageTruthKey changes (real navigation). A same-page reanalyze() replays
+  // Effect B via reanalyzeCount without pageTruthKey changing, so nothing
+  // else ever cancelled the ORIGINAL request — a slow original response
+  // could land AFTER the retry's response and silently overwrite it, since
+  // both pass the pageTruthKey/content-hash checks (the page never changed).
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: Effect B aborts its own previous controller before creating a new one, ahead of every fetch it might start", () => {
+    const idx = src.indexOf("// ── Effect B:");
+    const effectBody = src.slice(idx, idx + 4000);
+    const newCtrlIdx = effectBody.indexOf("const ctrl = new AbortController();");
+    expect(newCtrlIdx).toBeGreaterThan(-1);
+    const before = effectBody.slice(Math.max(0, newCtrlIdx - 500), newCtrlIdx);
+    expect(before).toMatch(/abortRef\.current\?\.abort\(\);/);
+  });
+});
+
 describe("useSurgeonAnnotations.ts — cache-first, then fetch", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });

@@ -433,6 +433,15 @@ export function useSurgeonAnnotations({
     setStatus("loading");
     if (!wasForced) setAnnotationErrorMessage(null);
 
+    // Abort whatever this effect's OWN previous run may still have in
+    // flight before starting a new one — this is the case Effect A's
+    // pageTruthKey-keyed cleanup does NOT cover: a same-page reanalyze()
+    // replays this effect (via reanalyzeCount) without pageTruthKey
+    // changing, so nothing else ever cancels the original request. Without
+    // this, a slow original response arriving AFTER the retry's response
+    // can silently overwrite the retry's fresher result — both pass the
+    // pageTruthKey/content-hash checks below since the page never changed.
+    abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
