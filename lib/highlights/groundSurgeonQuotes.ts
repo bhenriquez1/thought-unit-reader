@@ -67,10 +67,14 @@ export type GroundedSurgeonAnnotation = SurgeonAnnotationPlan["annotations"][num
  * corresponding whiteboard node cross-highlight with no extra sync code —
  * both already write to the same global focusedEvidenceId/activeAnchorId state.
  * Both callers MUST index into the same GroundedSurgeonAnnotation[] (same
- * order) for the ids to line up.
+ * order) for the ids to line up, AND must pass the exact same documentId —
+ * both currently do (both receive bookId), which is what keeps the two
+ * halves of the cross-highlight matched. documentId-qualified (not just
+ * pageNumber+index) so two different documents never collide on the same
+ * page number (Thought Unit Engine identity audit's RC2 finding).
  */
-export function buildSurgeonEvidenceId(pageNumber: number, index: number): string {
-  return `surgeon-${pageNumber}-${index}`;
+export function buildSurgeonEvidenceId(documentId: string, pageNumber: number, index: number): string {
+  return `surgeon-${documentId}-${pageNumber}-${index}`;
 }
 
 // ── Sentence-boundary expansion ─────────────────────────────────────────────────

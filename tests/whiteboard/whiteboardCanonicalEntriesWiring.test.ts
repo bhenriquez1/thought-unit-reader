@@ -25,7 +25,7 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
     const idx = src.indexOf("const whiteboardCanonicalEntries = useMemo(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, currentPage\)/);
+    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, bookId, currentPage\)/);
     expect(block).not.toMatch(/surgeonAnnotations\.groundedAnnotations/);
   });
 
@@ -69,13 +69,17 @@ describe("WhiteboardPanel.tsx — canvas persistence key includes pageTruthKey, 
     expect(idx).toBeGreaterThan(-1);
     expect(src).toMatch(/pageTruthKey=\{effectivePageTruthKey\}/);
     // The old duplicated inline fallback expression must not still exist elsewhere.
-    const occurrences = (src.match(/pageTruthKey \?\? \(bookId && currentPage != null \? `\$\{bookId\}::\$\{currentPage\}` : undefined\)/g) ?? []).length;
+    const occurrences = (src.match(/pageTruthKey \?\? \(bookId && currentPage != null \? buildPageTruthKey\(bookId, currentPage\) : undefined\)/g) ?? []).length;
     expect(occurrences).toBe(1); // exactly the one definition of effectivePageTruthKey itself
   });
 
-  it("falls back to the same bookId::pageNumber synthetic key as before when no real pageTruthKey is passed", () => {
+  it("REQUIRED: falls back through the ONE canonical pageTruthKey builder, not a locally-reimplemented format, when no real pageTruthKey is passed", () => {
     const idx = src.indexOf("const effectivePageTruthKey =");
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/pageTruthKey \?\? \(bookId && currentPage != null \? `\$\{bookId\}::\$\{currentPage\}` : undefined\)/);
+    expect(block).toMatch(/pageTruthKey \?\? \(bookId && currentPage != null \? buildPageTruthKey\(bookId, currentPage\) : undefined\)/);
+  });
+
+  it("imports the shared builder from lib/useActivePageIntelligence.ts rather than reimplementing the format inline", () => {
+    expect(src).toMatch(/import \{ buildPageTruthKey \} from "@\/lib\/useActivePageIntelligence"/);
   });
 });

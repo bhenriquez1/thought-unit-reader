@@ -43,6 +43,32 @@ describe("useSurgeonAnnotations.ts — Effect A/B dependency shape", () => {
   });
 });
 
+describe("useSurgeonAnnotations.ts — cache key uses pageNumber (1-based), not a separate 0-based pageIndex", () => {
+  // Regression: buildAnnotationCacheKey used to take a SEPARATE pageIndex
+  // (0-based) from every other page-identity string in the app (all
+  // 1-based, matching pageTruthKey's own convention) — reconciled only by a
+  // secondary runtime check (isAnnotationPlanFresh), not by construction.
+  // The hook no longer accepts or computes a pageIndex at all.
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: no pageIndex field, ref, or param exists anywhere in this file", () => {
+    expect(src).not.toMatch(/pageIndex/);
+  });
+
+  it("both buildAnnotationCacheKey call sites pass pageNumber", () => {
+    const calls = [...src.matchAll(/buildAnnotationCacheKey\(\{[^}]*\}\)/gs)];
+    expect(calls.length).toBe(2);
+    for (const call of calls) {
+      expect(call[0]).toMatch(/pageNumber:\s*pageNumberRef\.current/);
+    }
+  });
+
+  it("saveSurgeonAnnotationPlan is called with pageNumberRef.current, not a separate index", () => {
+    expect(src).toMatch(/saveSurgeonAnnotationPlan\(bookIdRef\.current, pageNumberRef\.current, cacheKey, data\.plan\)/);
+  });
+});
+
 describe("useSurgeonAnnotations.ts — explicit reanalyze, distinct from generic retry", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });

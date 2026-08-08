@@ -129,7 +129,7 @@ describe("Scene Builder — end-to-end smoke: grounded page content produces a r
       makeGrounded({ canonicalType: "mechanism",   importance: "high",     exactQuote: "m1", groundedText: "m1" }),
       makeGrounded({ canonicalType: "trap",        importance: "supporting", exactQuote: "t1", groundedText: "t1" }),
     ];
-    const entries = surgeonAnnotationsToCanonicalEntries(grounded, 4);
+    const entries = surgeonAnnotationsToCanonicalEntries(grounded, "doc-1", 4);
     expect(entries.length).toBe(3);
 
     const vsg = buildVSG(entries, "flow", { pageNumber: 4 });
@@ -138,7 +138,7 @@ describe("Scene Builder — end-to-end smoke: grounded page content produces a r
   });
 
   it("empty grounded annotations (e.g. degraded analysis) produce empty entries — WhiteboardPanel's fallback to noteCardsToCanonicalEntries handles this, not a silent crash", () => {
-    const entries = surgeonAnnotationsToCanonicalEntries([], 4);
+    const entries = surgeonAnnotationsToCanonicalEntries([], "doc-1", 4);
     expect(entries).toEqual([]);
   });
 });

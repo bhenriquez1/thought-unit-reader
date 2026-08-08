@@ -31,6 +31,7 @@ import {
   getAnchorCacheEntry, setAnchorCacheEntry,
   computePageConfidence, cacheStats,
 } from "@/lib/insights/studyModelCache";
+import { fnv1a } from "@/lib/insights/requestDiagnostics";
 
 export type ActivePageIntelligenceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -66,13 +67,20 @@ interface UseActivePageIntelligenceArgs {
   depth: DepthMode;
 }
 
-function hashText(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) | 0;
-  return String(hash);
-}
-
-function buildPageTruthKey(documentId: string, pageNumber: number, textReady: boolean): string {
+// The ONE canonical pageTruthKey format — exported so every fallback
+// construction elsewhere in the app (previously reimplemented ad hoc, with
+// three DIFFERENT shapes: WhiteboardPanel.tsx's 2-segment "::" version,
+// RightPanel.tsx's 2-segment single-":" version, TldrawCanvas.tsx's
+// VSG-id/literal-sentinel fallback) builds through this instead. None of
+// those fallback shapes ever equalled a real canonical key, so a cache
+// lookup or equality check against one would silently MISS rather than
+// error — see the Thought Unit Engine identity audit's RC6 finding.
+// textReady defaults to true: a caller reconstructing a key from whatever
+// identity it has on hand (a defensive fallback, not the primary path,
+// which always has the real live boolean) has no better guess than "assume
+// ready" — the "f" state exists specifically to force the PRIMARY effect to
+// re-fire once text arrives, which a fallback caller isn't driving anyway.
+export function buildPageTruthKey(documentId: string, pageNumber: number, textReady: boolean = true): string {
   // Include text-readiness so the primary effect re-fires when text arrives for an
   // already-navigated page. Without this, the effect runs once with empty text
   // (classifies as chapter_title), then never re-runs when the PDF text layer delivers
@@ -230,7 +238,7 @@ export function useActivePageIntelligence({
 
       // ── Cache check ────────────────────────────────────────────────────────
       const textForHash = (snapshot.pageText || "").slice(0, 4000);
-      const textHash = hashText(textForHash);
+      const textHash = fnv1a(textForHash);
       const modelKey = makeModelCacheKey(documentId, pageNumber, textHash);
       const cached = getModelCacheEntry(modelKey);
       if (cached) {

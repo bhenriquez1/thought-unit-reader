@@ -16,6 +16,7 @@ import { buildSurgeonEvidenceId } from "../../lib/highlights/groundSurgeonQuotes
 import type { SurgeonAnnotationPlan } from "../../lib/insights/pageAnnotationPlan";
 
 const PAGE_TRUTH_KEY = "diagnosis-book::42::t";
+const DOCUMENT_ID = "diagnosis-book";
 const PAGE_NUMBER = 42;
 
 const PAGE_TEXT =
@@ -114,7 +115,7 @@ describe("Shared page understanding: one page read -> Highlights + VisualSceneGr
   });
 
   it("the VisualSceneGraph built from the whole-page view contains the full teaching structure — definition, mechanism, procedure, example, and trap all present as nodes", () => {
-    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, PAGE_NUMBER);
+    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, DOCUMENT_ID, PAGE_NUMBER);
     const grammar = pageRoleToWhiteboardGrammar(PLAN.pageRole);
     const vsg = buildVSG(entries, grammar, { pageNumber: PAGE_NUMBER });
 
@@ -124,7 +125,7 @@ describe("Shared page understanding: one page read -> Highlights + VisualSceneGr
   });
 
   it("the Whiteboard has meaningful nodes and connectors, not two generic text boxes — every node carries its `reason`, and there is at least one real edge", () => {
-    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, PAGE_NUMBER);
+    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, DOCUMENT_ID, PAGE_NUMBER);
     const vsg = buildVSG(entries, pageRoleToWhiteboardGrammar(PLAN.pageRole), { pageNumber: PAGE_NUMBER });
 
     expect(vsg.nodes.length).toBeGreaterThan(2);
@@ -136,17 +137,17 @@ describe("Shared page understanding: one page read -> Highlights + VisualSceneGr
   });
 
   it("both the highlight plan and the VisualSceneGraph are built from the SAME pageTruthKey/pageNumber-scoped ids — no independent second read, no drift", () => {
-    const highlightIds = highlightPlan.map((_, i) => buildSurgeonEvidenceId(PAGE_NUMBER, i));
-    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, PAGE_NUMBER);
+    const highlightIds = highlightPlan.map((_, i) => buildSurgeonEvidenceId(DOCUMENT_ID, PAGE_NUMBER, i));
+    const entries = surgeonAnnotationsToCanonicalEntries(wholePage, DOCUMENT_ID, PAGE_NUMBER);
     // Same id-builder, same page slot — both consumers are keyed off the one
     // page read's pageNumber, never a second independently-scoped read.
-    expect(entries[0].id).toBe(buildSurgeonEvidenceId(PAGE_NUMBER, 0));
+    expect(entries[0].id).toBe(buildSurgeonEvidenceId(DOCUMENT_ID, PAGE_NUMBER, 0));
     expect(highlightIds.every(id => id.includes(String(PAGE_NUMBER)))).toBe(true);
     expect(PLAN.pageTruthKey).toBe(PAGE_TRUTH_KEY);
   });
 
   it("no stale or fallback scene is rendered — an empty grounded set produces an empty entries array, never a substituted generic diagram", () => {
-    const entries = surgeonAnnotationsToCanonicalEntries([], PAGE_NUMBER);
+    const entries = surgeonAnnotationsToCanonicalEntries([], DOCUMENT_ID, PAGE_NUMBER);
     expect(entries).toEqual([]);
   });
 });

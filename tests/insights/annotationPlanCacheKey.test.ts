@@ -13,14 +13,14 @@ import {
 // ── buildAnnotationCacheKey ───────────────────────────────────────────────────
 
 describe("buildAnnotationCacheKey", () => {
-  it("includes the book id and page index", () => {
-    const key = buildAnnotationCacheKey({ bookId: "book-xyz", pageIndex: 5 });
+  it("includes the book id and page number", () => {
+    const key = buildAnnotationCacheKey({ bookId: "book-xyz", pageNumber: 5 });
     expect(key).toContain("book-xyz");
     expect(key).toContain("p5");
   });
 
   it("includes all four version numbers", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
+    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
     expect(key).toContain(`${STRUCTURE_VERSION}`);
     expect(key).toContain(`${PARAGRAPH_ALGORITHM_VERSION}`);
     expect(key).toContain(`${SEMANTIC_PACK_VERSION}`);
@@ -32,36 +32,36 @@ describe("buildAnnotationCacheKey", () => {
     // built under a bumped MODEL_VERSION never matches an old cached key/plan —
     // simulate this by asserting the current key embeds the current MODEL_VERSION
     // in a position that would differ from a hypothetical older value.
-    const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
+    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
     const versionSegment = key.split(":")[1]; // "v<sv>-<pv>-<spv>-<mv>"
     expect(versionSegment.endsWith(`-${MODEL_VERSION}`)).toBe(true);
   });
 
   it("includes semantic pack id when provided", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1, semanticPackId: "dentistry" });
+    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1, semanticPackId: "dentistry" });
     expect(key).toContain("dentistry");
   });
 
   it("omits pack suffix when no semanticPackId provided", () => {
-    const keyWithout = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
-    const keyWith    = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1, semanticPackId: "dentistry" });
+    const keyWithout = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
+    const keyWith    = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1, semanticPackId: "dentistry" });
     expect(keyWith).not.toBe(keyWithout);
   });
 
   it("produces different keys for different pages", () => {
-    const k1 = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
-    const k2 = buildAnnotationCacheKey({ bookId: "b", pageIndex: 2 });
+    const k1 = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
+    const k2 = buildAnnotationCacheKey({ bookId: "b", pageNumber: 2 });
     expect(k1).not.toBe(k2);
   });
 
   it("produces different keys for different books", () => {
-    const k1 = buildAnnotationCacheKey({ bookId: "book-a", pageIndex: 1 });
-    const k2 = buildAnnotationCacheKey({ bookId: "book-b", pageIndex: 1 });
+    const k1 = buildAnnotationCacheKey({ bookId: "book-a", pageNumber: 1 });
+    const k2 = buildAnnotationCacheKey({ bookId: "book-b", pageNumber: 1 });
     expect(k1).not.toBe(k2);
   });
 
   it("key starts with aplan: prefix", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageIndex: 1 });
+    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
     expect(key).toMatch(/^aplan:/);
   });
 });

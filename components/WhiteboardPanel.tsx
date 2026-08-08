@@ -17,6 +17,7 @@ import {
   type VSGState,
 } from "@/lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
+import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 
 // SOLE Whiteboard rendering pipeline: Current Page -> Professor Lesson
 // Planner (TldrawCanvas + useProfessorLesson) -> tldraw Lesson -> Render.
@@ -145,7 +146,7 @@ export default function WhiteboardPanel({
   // the gap at the storage-key level too, not just the render level.)
   // Falls back to the same bookId::pageNumber synthetic key already used
   // for the pageTruthKey prop below when a real pageTruthKey isn't passed.
-  const effectivePageTruthKey = pageTruthKey ?? (bookId && currentPage != null ? `${bookId}::${currentPage}` : undefined);
+  const effectivePageTruthKey = pageTruthKey ?? (bookId && currentPage != null ? buildPageTruthKey(bookId, currentPage) : undefined);
   const canvasStorageKey = bookId && effectivePageTruthKey
     ? `${bookId}_${effectivePageTruthKey}`
     : undefined;

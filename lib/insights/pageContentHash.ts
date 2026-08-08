@@ -19,16 +19,10 @@
 // No crypto dependency (must run identically in the browser and on the
 // server) — a plain, deterministic, non-cryptographic hash is sufficient
 // here since this is an integrity check against accidental staleness, not a
-// security boundary.
+// security boundary. fnv1a itself lives in requestDiagnostics.ts — the ONE
+// shared implementation, not a local copy (see that file's doc comment).
 
-function fnv1a(str: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = (hash * 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-}
+import { fnv1a } from "./requestDiagnostics";
 
 /** Case/whitespace-insensitive so a purely cosmetic re-extraction (different
  *  line wrapping, extra spaces) doesn't spuriously invalidate a matching page. */

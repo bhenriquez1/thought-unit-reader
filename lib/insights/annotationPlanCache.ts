@@ -2,7 +2,11 @@
 // Version-keyed cache for SurgeonAnnotationPlan.
 //
 // The cache key includes all factors that change the interpretation of a page:
-//   - bookId + pageIndex (which page)
+//   - bookId + pageNumber (which page — 1-based, matching pageTruthKey's own
+//     convention; see the Thought Unit Engine identity audit's RC7 finding
+//     that this was previously the ONE 0-based pageIndex in an app where
+//     every other page-identity string is 1-based, reconciled only by a
+//     secondary runtime check rather than by construction)
 //   - structureVersion (bump when paragraph grouping algorithm changes)
 //   - paragraphAlgorithmVersion (bump when text-extraction / chunking logic changes)
 //   - semanticPackVersion (bump when semantic pack type mappings change)
@@ -57,23 +61,24 @@ export const MODEL_VERSION = 5;
 
 export interface AnnotationCacheKeyParams {
   bookId: string;
-  pageIndex: number;
+  /** 1-based, matching pageTruthKey's own convention — NOT a 0-based index. */
+  pageNumber: number;
   semanticPackId?: string;
 }
 
 /**
  * Build a stable cache key for a SurgeonAnnotationPlan.
  *
- * Format: `aplan:v<sv>-<pv>-<spv>-<mv>:<bookId>:p<pageIndex>[:<packId>]`
+ * Format: `aplan:v<sv>-<pv>-<spv>-<mv>:<bookId>:p<pageNumber>[:<packId>]`
  *
  * sv = STRUCTURE_VERSION, pv = PARAGRAPH_ALGORITHM_VERSION,
  * spv = SEMANTIC_PACK_VERSION, mv = MODEL_VERSION
  */
 export function buildAnnotationCacheKey(params: AnnotationCacheKeyParams): string {
-  const { bookId, pageIndex, semanticPackId } = params;
+  const { bookId, pageNumber, semanticPackId } = params;
   const versionTag = `v${STRUCTURE_VERSION}-${PARAGRAPH_ALGORITHM_VERSION}-${SEMANTIC_PACK_VERSION}-${MODEL_VERSION}`;
   const packSuffix = semanticPackId ? `:${semanticPackId}` : "";
-  return `aplan:${versionTag}:${bookId}:p${pageIndex}${packSuffix}`;
+  return `aplan:${versionTag}:${bookId}:p${pageNumber}${packSuffix}`;
 }
 
 /**

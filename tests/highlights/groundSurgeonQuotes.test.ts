@@ -376,15 +376,19 @@ describe("groundSurgeonQuotes — Stage 0: sentenceId lookup (guaranteed-exact, 
 });
 
 describe("buildSurgeonEvidenceId", () => {
-  it("formats as surgeon-<pageNumber>-<index>", () => {
-    expect(buildSurgeonEvidenceId(7, 3)).toBe("surgeon-7-3");
+  it("formats as surgeon-<documentId>-<pageNumber>-<index>", () => {
+    expect(buildSurgeonEvidenceId("doc-a", 7, 3)).toBe("surgeon-doc-a-7-3");
   });
 
   it("handles page 1 index 0", () => {
-    expect(buildSurgeonEvidenceId(1, 0)).toBe("surgeon-1-0");
+    expect(buildSurgeonEvidenceId("doc-a", 1, 0)).toBe("surgeon-doc-a-1-0");
   });
 
   it("produces distinct ids for different indices on the same page", () => {
-    expect(buildSurgeonEvidenceId(5, 0)).not.toBe(buildSurgeonEvidenceId(5, 1));
+    expect(buildSurgeonEvidenceId("doc-a", 5, 0)).not.toBe(buildSurgeonEvidenceId("doc-a", 5, 1));
+  });
+
+  it("REQUIRED: produces distinct ids for different documents at the same page+index — the RC2 fix", () => {
+    expect(buildSurgeonEvidenceId("doc-a", 5, 0)).not.toBe(buildSurgeonEvidenceId("doc-b", 5, 0));
   });
 });

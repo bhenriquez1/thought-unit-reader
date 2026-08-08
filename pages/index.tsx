@@ -1644,6 +1644,7 @@ export default function ThoughtUnitReader() {
       pageText,
       studyModel: freshStudyModel,
       presetId: sharedPresetId,
+      bookId,
     });
     // Content-equality guard: avoid cascading re-renders when unit IDs and text are unchanged.
     // Without this, every studyModel rebuild (e.g. from a preset change) re-creates the array,
@@ -2041,7 +2042,6 @@ export default function ThoughtUnitReader() {
   const surgeonAnnotations = useSurgeonAnnotations({
     pageTruthKey,
     bookId,
-    pageIndex:        currentPage - 1,
     pageNumber:        currentPage,
     pageText:          pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
     pageImageDataUrl:  pageImageByPage.get(`${bookId}:${currentPage}`) ?? null,
@@ -2065,8 +2065,8 @@ export default function ThoughtUnitReader() {
   // its own whenever this is empty (not yet loaded/cached, or degraded) — see
   // WhiteboardPanel.tsx's vsgState memo.
   const whiteboardCanonicalEntries = useMemo(
-    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, currentPage),
-    [surgeonAnnotations.wholePageAnnotations, currentPage],
+    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, bookId, currentPage),
+    [surgeonAnnotations.wholePageAnnotations, bookId, currentPage],
   );
 
   // ── Unified wiring trace — prints one page's full data-flow chain, for

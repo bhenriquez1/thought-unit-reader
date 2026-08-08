@@ -555,26 +555,33 @@ function makeGrounded(overrides: Partial<GroundedSurgeonAnnotation> = {}): Groun
 
 describe("surgeonAnnotationsToCanonicalEntries", () => {
   it("returns an empty array for empty input", () => {
-    expect(surgeonAnnotationsToCanonicalEntries([], 3)).toEqual([]);
+    expect(surgeonAnnotationsToCanonicalEntries([], "doc-1", 3)).toEqual([]);
   });
 
   it("uses groundedText, not exactQuote, as the entry text", () => {
     const g = makeGrounded({ exactQuote: "fragment", groundedText: "The full expanded sentence." });
-    const [entry] = surgeonAnnotationsToCanonicalEntries([g], 3);
+    const [entry] = surgeonAnnotationsToCanonicalEntries([g], "doc-1", 3);
     expect(entry.text).toBe("The full expanded sentence.");
   });
 
   it("sets page to the passed pageNumber on every entry", () => {
-    const entries = surgeonAnnotationsToCanonicalEntries([makeGrounded(), makeGrounded()], 9);
+    const entries = surgeonAnnotationsToCanonicalEntries([makeGrounded(), makeGrounded()], "doc-1", 9);
     expect(entries.every((e) => e.page === 9)).toBe(true);
   });
 
-  it("id matches buildSurgeonEvidenceId(pageNumber, index) in original order", () => {
+  it("id matches buildSurgeonEvidenceId(documentId, pageNumber, index) in original order", () => {
     const entries = surgeonAnnotationsToCanonicalEntries(
       [makeGrounded(), makeGrounded(), makeGrounded()],
+      "doc-1",
       5,
     );
-    expect(entries.map((e) => e.id)).toEqual(["surgeon-5-0", "surgeon-5-1", "surgeon-5-2"]);
+    expect(entries.map((e) => e.id)).toEqual(["surgeon-doc-1-5-0", "surgeon-doc-1-5-1", "surgeon-doc-1-5-2"]);
+  });
+
+  it("REQUIRED: two different documents produce non-colliding ids at the same page+index", () => {
+    const a = surgeonAnnotationsToCanonicalEntries([makeGrounded()], "doc-a", 5);
+    const b = surgeonAnnotationsToCanonicalEntries([makeGrounded()], "doc-b", 5);
+    expect(a[0].id).not.toBe(b[0].id);
   });
 
   describe("canonicalType mapping — every one of the 8 SurgeonAnnotationPlan values", () => {
@@ -590,7 +597,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
     ];
 
     it.each(CASES)("%s → %s", (canonicalType, expected) => {
-      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ canonicalType })], 1);
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ canonicalType })], "doc-1", 1);
       expect(entry.canonicalType).toBe(expected);
     });
   });
@@ -603,7 +610,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
     ];
 
     it.each(CASES)("%s → priorityTier %i", (importance, expectedTier) => {
-      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ importance })], 1);
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ importance })], "doc-1", 1);
       expect(entry.priorityTier).toBe(expectedTier);
     });
   });
@@ -611,6 +618,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
   it("end-to-end: adapter output builds a ready VSG via computeVSGState", () => {
     const entries = surgeonAnnotationsToCanonicalEntries(
       [makeGrounded({ canonicalType: "definition", importance: "critical" })],
+      "doc-1",
       2,
     );
     const state = computeVSGState(entries, "flow", { pageNumber: 2 });
@@ -623,6 +631,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
   it("end-to-end: a trap-typed entry resolves to VSGNode.tier 'danger' — matches the PDF's red trapNotch treatment", () => {
     const entries = surgeonAnnotationsToCanonicalEntries(
       [makeGrounded({ canonicalType: "trap", importance: "supporting" })],
+      "doc-1",
       2,
     );
     const state = computeVSGState(entries, "flow", { pageNumber: 2 });
@@ -635,6 +644,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
   it("end-to-end: a clinicalPearl-typed entry resolves to VSGNode.tier 'pearl' — matches the PDF's cyan pearlMarker treatment", () => {
     const entries = surgeonAnnotationsToCanonicalEntries(
       [makeGrounded({ canonicalType: "clinicalPearl", importance: "high" })],
+      "doc-1",
       2,
     );
     const state = computeVSGState(entries, "flow", { pageNumber: 2 });
@@ -652,7 +662,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
         originalIndex: 1,
         relationship: { type: "cause-effect", targetIndex: 0 },
       });
-      const [e0, e1] = surgeonAnnotationsToCanonicalEntries([first, second], 4);
+      const [e0, e1] = surgeonAnnotationsToCanonicalEntries([first, second], "doc-1", 4);
       expect(e1.relatesTo).toBeDefined();
       expect(e1.relatesTo!.targetId).toBe(e0.id);
       expect(e1.relatesTo!.type).toBe("leads_to"); // RelationshipEdgeType for "cause-effect"
@@ -668,7 +678,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
       ];
       for (const [relType, expectedEdgeType] of CASES) {
         const source = makeGrounded({ originalIndex: 1, relationship: { type: relType, targetIndex: 0 } });
-        const entries = surgeonAnnotationsToCanonicalEntries([target, source], 4);
+        const entries = surgeonAnnotationsToCanonicalEntries([target, source], "doc-1", 4);
         expect(entries[1].relatesTo?.type).toBe(expectedEdgeType);
       }
     });
@@ -678,18 +688,18 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
       // relationship to originalIndex 0, which was dropped upstream (e.g.
       // failed quote verification) and never reaches this adapter at all.
       const survivor = makeGrounded({ originalIndex: 1, relationship: { type: "sequence", targetIndex: 0 } });
-      const [entry] = surgeonAnnotationsToCanonicalEntries([survivor], 4);
+      const [entry] = surgeonAnnotationsToCanonicalEntries([survivor], "doc-1", 4);
       expect(entry.relatesTo).toBeUndefined();
     });
 
     it("omits relatesTo when an annotation without a relationship field is converted", () => {
-      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ originalIndex: 0 })], 4);
+      const [entry] = surgeonAnnotationsToCanonicalEntries([makeGrounded({ originalIndex: 0 })], "doc-1", 4);
       expect(entry.relatesTo).toBeUndefined();
     });
 
     it("omits relatesTo for a self-referencing relationship (targetIndex points at its own originalIndex)", () => {
       const g = makeGrounded({ originalIndex: 2, relationship: { type: "sequence", targetIndex: 2 } });
-      const [entry] = surgeonAnnotationsToCanonicalEntries([g], 4);
+      const [entry] = surgeonAnnotationsToCanonicalEntries([g], "doc-1", 4);
       expect(entry.relatesTo).toBeUndefined();
     });
 
@@ -701,7 +711,7 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
         originalIndex: 1,
         relationship:  { type: "cause-effect", targetIndex: 0 },
       });
-      const entries = surgeonAnnotationsToCanonicalEntries([first, second], 6);
+      const entries = surgeonAnnotationsToCanonicalEntries([first, second], "doc-1", 6);
       const vsg = buildVSG(entries, "flow", { pageNumber: 6 });
       const edge = vsg.edges.find((e) => e.fromId === entries[1].id && e.toId === entries[0].id);
       expect(edge).toBeDefined();
