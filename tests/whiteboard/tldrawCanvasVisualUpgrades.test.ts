@@ -108,7 +108,7 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
     const block = src.slice(idx, idx + 2600);
     expect(block).toMatch(/onTeachingStepStarted\?:\s*\(stepId: number\) => void;/);
     expect(block).toMatch(/onTeachingStepCompleted\?:\s*\(stepId: number, info\?: \{ misconceptionLabel\?: string \}\) => void;/);
-    expect(block).toMatch(/onLessonCompleted\?:\s*\(snapshotId: string\) => void;/);
+    expect(block).toMatch(/onLessonCompleted\?:\s*\(snapshotId: string, plan: ProfessorLessonPlan\) => void;/);
   });
 
   it("REQUIRED: onTeachingStepStarted fires exactly when a NEW step begins in advanceForPlayback, alongside the early-start check", () => {
@@ -129,7 +129,7 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
     const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/useEffect\(\(\) => \{/);
     expect(block).toMatch(/if \(!atEnd \|\| !lessonPlan\) return;/);
-    expect(block).toMatch(/onLessonCompletedRef\.current\?\.\(buildProfessorLessonCacheKey\(lessonPlan\.sourceSnapshot\)\);/);
+    expect(block).toMatch(/onLessonCompletedRef\.current\?\.\(buildProfessorLessonCacheKey\(lessonPlan\.sourceSnapshot\), lessonPlan\);/);
     expect(block).toMatch(/\}, \[atEnd\]\);/);
   });
 

@@ -55,7 +55,7 @@ import {
   type ShapeVisualState,
 } from "@/lib/whiteboard/professorTimelineEngine";
 import { buildProfessorLessonCacheKey } from "@/lib/whiteboard/professorLessonPlan";
-import type { ProfessorTeachingAction, NarrationSegment, Bounds } from "@/lib/whiteboard/professorLessonPlan";
+import type { ProfessorTeachingAction, NarrationSegment, Bounds, ProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlan";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 import {
@@ -127,8 +127,13 @@ interface Props {
    *  computes for this lesson (documentId/pageTruthKey/activeCanonicalUnitId)
    *  — a stable, reusable reference a consumer can persist onto
    *  KnowledgeNodeProgress.whiteboardSnapshotIds without re-deriving or
-   *  guessing the cache-key formula itself. */
-  onLessonCompleted?:       (snapshotId: string) => void;
+   *  guessing the cache-key formula itself.
+   *  plan: the full ProfessorLessonPlan that just finished playing — Phase
+   *  B3-3's snapshot-persistence consumer needs the real visualGrammar/
+   *  plannerVersion/vsgId/teaching-step content to build a reusable semantic
+   *  lesson record, not just an opaque id. This component still never
+   *  persists anything itself. */
+  onLessonCompleted?:       (snapshotId: string, plan: ProfessorLessonPlan) => void;
 }
 
 function mergeBounds(list: Bounds[]): Bounds | null {
@@ -1229,7 +1234,7 @@ export default function TldrawCanvas({
       const misconceptionLabel = stepMisconceptionLabel(lessonPlan.actions, currentStepId);
       onTeachingStepCompletedRef.current?.(currentStepId, misconceptionLabel ? { misconceptionLabel } : undefined);
     }
-    onLessonCompletedRef.current?.(buildProfessorLessonCacheKey(lessonPlan.sourceSnapshot));
+    onLessonCompletedRef.current?.(buildProfessorLessonCacheKey(lessonPlan.sourceSnapshot), lessonPlan);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atEnd]);
   const segments = lessonPlan?.segments ?? [];
