@@ -60,6 +60,7 @@ import {
   notifySpeechStart, notifySpeechEnd, notifySpeechError, stopAllSpeech,
 } from "@/lib/speech/speechController";
 import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
+import type { SpeechState } from "@/lib/speech/speechState";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
@@ -283,6 +284,12 @@ export default function TldrawCanvas({
   const [speed, setSpeed] = useState<PlaybackSpeed>("normal");
   const [narrationEnabled, setNarrationEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  // Explicit lifecycle state, alongside (not replacing) isPlaying/isSpeaking
+  // above — those two booleans plus ref-existence checks couldn't
+  // distinguish "fetch in flight" from "was forcibly stopped by another
+  // owner," which is exactly the ambiguity RC4/RC5 (Speech Engine audit)
+  // exploited. See lib/speech/speechState.ts.
+  const [speechState, setSpeechState] = useState<SpeechState>("idle");
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
 
   const planRef = useRef(lessonPlan);
@@ -514,6 +521,12 @@ export default function TldrawCanvas({
   const narrationPendingRef = useRef<Map<string, Promise<ResolvedNarrationAudio | null>>>(new Map());
   const activeAudioElRef    = useRef<HTMLAudioElement | null>(null);
   const activeUtteranceRef  = useRef<SpeechSynthesisUtterance | null>(null);
+  // Set by handlePlayPause's pause branch when neither ref above is populated
+  // yet (this segment's TTS is still fetching). Checked by
+  // playSegmentThenAdvance right before it would otherwise start audible
+  // playback, so the response is loaded/registered but never auto-played
+  // until Play is pressed again (RC5, Speech Engine audit).
+  const pauseRequestedRef   = useRef(false);
   const stepTimerRef        = useRef<number | null>(null);
   const speedRef            = useRef<PlaybackSpeed>("normal");
   useEffect(() => { speedRef.current = speed; }, [speed]);
@@ -604,22 +617,28 @@ export default function TldrawCanvas({
 
     const token = claimSpeech(SPEECH_OWNER);
     setIsSpeaking(true);
+    setSpeechState("loading");
     console.log("[WHITEBOARD_NARRATION_TRACE]", {
       stepId, chunkIndex: index,
       queueLength: narrationPendingRef.current.size + narrationCacheRef.current.size,
       audioStarted: false, audioEnded: false,
     });
 
-    const resolved = await resolveSegmentAudio(segment);
+    let resolved = await resolveSegmentAudio(segment);
     if (isSpeechStale(token)) {
       console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "superseded-by-newer-claim" });
       return;
     }
     if (!resolved) {
-      setIsSpeaking(false);
-      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "resolve-failed" });
-      advanceForPlaybackRef.current();
-      return;
+      // /api/tts failed outright (network error, malformed response) rather
+      // than explicitly signaling useBrowserSpeech. StudySpeechPanel already
+      // treats any failure the same as an explicit signal and falls back to
+      // browser speech; this surface used to silently skip the segment
+      // instead, leaving a mid-lesson gap with no audio and no fallback
+      // (RC3, Speech Engine audit). Fall through into the same browser-speech
+      // handling below, using the segment's own text.
+      console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, cancelReason: "resolve-failed", fallback: "browser-speech" });
+      resolved = { kind: "browser-speech", script: segment.text };
     }
 
     // Two distinct completion paths, deliberately NOT merged into one
@@ -643,6 +662,7 @@ export default function TldrawCanvas({
       if (settled) return;
       settled = true;
       setIsSpeaking(false);
+      setSpeechState(reason === "error" ? "error" : "idle");
       activeAudioElRef.current = null;
       activeUtteranceRef.current = null;
       console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioEnded: true, reason });
@@ -652,6 +672,15 @@ export default function TldrawCanvas({
       if (settled) return;
       settled = true;
       setIsSpeaking(false);
+      // "stopping", not "idle" — a LATER claim from a different owner
+      // (StudySpeechPanel, or a tab-hidden stop) force-stopped this audio out
+      // from under us, distinct from a deliberate rest state.
+      setSpeechState("stopping");
+      // Without this, isPlaying stayed stuck true — the UI kept showing "⏸
+      // Pause" with nothing actually playing and no forward progress — until
+      // the user manually toggled Pause/Play, which then skipped this
+      // segment entirely rather than replaying it (RC4, Speech Engine audit).
+      setIsPlaying(false);
       activeAudioElRef.current = null;
       activeUtteranceRef.current = null;
     };
@@ -662,10 +691,21 @@ export default function TldrawCanvas({
       utter.rate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
       activeUtteranceRef.current = utter;
       registerActiveUtterance(token, utter, onForceStopCleanup);
-      utter.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
+      utter.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); setSpeechState("playing"); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
       utter.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
       utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); onNaturalEnd("error"); };
       window.speechSynthesis.speak(utter);
+      if (pauseRequestedRef.current) {
+        // Pause was pressed while this segment's TTS fetch (which decided
+        // we're falling back to browser speech) was still in flight.
+        // speechSynthesis has no "prepare paused" primitive — speak() then
+        // an immediate synchronous pause() is the standard workaround, and
+        // it reliably beats the async onstart event in practice (RC5,
+        // Speech Engine audit).
+        pauseRequestedRef.current = false;
+        window.speechSynthesis.pause();
+        setSpeechState("paused");
+      }
       return;
     }
 
@@ -673,9 +713,20 @@ export default function TldrawCanvas({
     audio.playbackRate = PACE_TO_TTS_SPEED[segment.pace] ?? 1;
     activeAudioElRef.current = audio;
     registerActiveAudio(token, audio, onForceStopCleanup);
-    audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
+    audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); setSpeechState("playing"); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
     audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
     audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-error"); onNaturalEnd("error"); };
+    if (pauseRequestedRef.current) {
+      // Same reasoning as the browser-speech branch above — the audio is now
+      // loaded/registered (activeAudioElRef + the shared controller both
+      // already hold it) but must not start until the user presses Play
+      // again. A fresh Audio element is already .paused by default, so
+      // handlePlayPause's resume branch picks this up naturally by calling
+      // .play() on the same element (RC5, Speech Engine audit).
+      pauseRequestedRef.current = false;
+      setSpeechState("paused");
+      return;
+    }
     await audio.play().catch(() => onNaturalEnd("error"));
   }, [narrationEnabled, findNextSegment, resolveSegmentAudio]);
 
@@ -689,6 +740,7 @@ export default function TldrawCanvas({
     console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason });
     stopAllSpeech(`whiteboard-${cancelReason}`);
     setIsSpeaking(false);
+    setSpeechState("idle");
     activeAudioElRef.current = null;
     activeUtteranceRef.current = null;
     if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
@@ -905,6 +957,7 @@ export default function TldrawCanvas({
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
       setIsPlaying(false);
+      setSpeechState("paused");
       if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
       const stepId = planRef.current?.actions[stepIndexRef.current]?.actionId ?? null;
       if (activeAudioElRef.current) {
@@ -913,6 +966,15 @@ export default function TldrawCanvas({
       } else if (activeUtteranceRef.current && typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.pause();
         console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason: "user-pause (utterance position preserved)" });
+      } else {
+        // Neither ref is populated yet — this segment's TTS is still
+        // fetching. Without this, pause() was a silent no-op here and
+        // playback began unconditionally the moment the fetch resolved,
+        // contradicting the just-pressed Pause action (RC5, Speech Engine
+        // audit). playSegmentThenAdvance checks this flag right before it
+        // would otherwise start playback.
+        pauseRequestedRef.current = true;
+        console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, cancelReason: "user-pause (still fetching — deferred)" });
       }
       return;
     }
@@ -929,8 +991,17 @@ export default function TldrawCanvas({
     setIsPlaying(true);
     if (activeAudioElRef.current) {
       activeAudioElRef.current.play().catch(() => {});
+      setSpeechState("playing");
     } else if (activeUtteranceRef.current && typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.resume();
+      setSpeechState("playing");
+    } else if (pauseRequestedRef.current) {
+      // Play was pressed again before the current segment's TTS fetch
+      // finished — just clear the deferred-pause flag so
+      // playSegmentThenAdvance plays normally the instant its response
+      // arrives, instead of skipping ahead to the next segment.
+      pauseRequestedRef.current = false;
+      setSpeechState("loading");
     } else {
       advanceForPlayback();
     }

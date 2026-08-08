@@ -92,7 +92,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
 
   it('"Play after completion must replay the entire performance" — handlePlayPause resets to -1 when already at the end', () => {
     const idx = src.indexOf("const handlePlayPause = useCallback");
-    const body = src.slice(idx, idx + 1200);
+    const body = src.slice(idx, idx + 1950);
     expect(body).toMatch(/atEnd/);
     expect(body).toMatch(/setStepIndex\(-1\)/);
   });
@@ -109,7 +109,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
 
   it("REQUIRED: Resume continues the SAME audio/utterance (play()/speechSynthesis.resume()) rather than restarting the segment from a fresh fetch", () => {
     const idx = src.indexOf("const handlePlayPause = useCallback");
-    const body = src.slice(idx, idx + 1600);
+    const body = src.slice(idx, idx + 2100);
     expect(body).toMatch(/activeAudioElRef\.current\.play\(\)\.catch/);
     expect(body).toMatch(/window\.speechSynthesis\.resume\(\)/);
   });
