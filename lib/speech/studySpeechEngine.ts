@@ -8,6 +8,7 @@ import { groupThoughtUnits } from "@/lib/insights/domainPresets";
 import type { ParagraphKind } from "@/lib/readerContracts";
 import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { getExpertProfile } from "@/lib/insights/expertProfiles/registry";
+import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -32,9 +33,22 @@ export type SpeechSegmentRole =
    *  after the Master and Trap stages, not a verbatim source anchor. */
   | "checkpoint";
 
+/** Phase B3 — the ONE place SpeechSegmentRole maps onto the explicit
+ *  SOURCE_VERBATIM/PROFESSOR_EXPLANATION distinction. "checkpoint" is the
+ *  only role whose text is AI-authored (Study's "Why It Matters" line,
+ *  Guided's "Quick check" question) rather than the anchor's own exact
+ *  wording — see the "checkpoint" role's own doc comment above. */
+export function contentRoleForSegmentRole(role: SpeechSegmentRole): SpeechContentRole {
+  return role === "checkpoint" ? "PROFESSOR_EXPLANATION" : "SOURCE_VERBATIM";
+}
+
 export interface SpeechSegment {
   id: string;
   role: SpeechSegmentRole;
+  /** Phase B3 — explicit tag so the UI/speech pipeline never has to
+   *  re-derive "is this segment verbatim source text or the AI's own
+   *  teaching language" from `role` — always contentRoleForSegmentRole(role). */
+  contentRole: SpeechContentRole;
   /** Short label shown in panel UI */
   label: string;
   /** Formula-converted text actually spoken */
@@ -150,6 +164,7 @@ export function buildSpeechTimeline({
     segments.push({
       id: role === "checkpoint" ? `${unit.id}-${label.toLowerCase().replace(/\W+/g, "-")}` : unit.id,
       role,
+      contentRole: contentRoleForSegmentRole(role),
       label,
       rawText: sourceText,                // PDF text-layer search: exact anchor text, no prefix
       text: formulaToSpeech(spokenText),  // TTS: includes narration prefix when present
@@ -193,6 +208,7 @@ export function buildSpeechTimeline({
       segments.push({
         id: `guided-question-${checkpointTarget.id}`,
         role: "checkpoint",
+        contentRole: contentRoleForSegmentRole("checkpoint"),
         label: "Check Your Understanding",
         rawText: `Quick check: why does this matter — ${checkpointTarget.title}?`,
         text: formulaToSpeech(`Quick check: why does this matter — ${checkpointTarget.title}?`),
@@ -465,6 +481,7 @@ export function buildSpeechScript(
     segments.push({
       id,
       role,
+      contentRole: contentRoleForSegmentRole(role),
       label,
       rawText: trimmed,
       text: formulaToSpeech(trimmed),

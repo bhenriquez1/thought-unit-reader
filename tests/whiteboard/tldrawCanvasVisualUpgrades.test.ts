@@ -105,10 +105,10 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
 
   it("REQUIRED: Props accepts onTeachingStepStarted/onTeachingStepCompleted/onLessonCompleted, all optional", () => {
     const idx = src.indexOf("interface Props {");
-    const block = src.slice(idx, idx + 2000);
+    const block = src.slice(idx, idx + 2600);
     expect(block).toMatch(/onTeachingStepStarted\?:\s*\(stepId: number\) => void;/);
-    expect(block).toMatch(/onTeachingStepCompleted\?:\s*\(stepId: number\) => void;/);
-    expect(block).toMatch(/onLessonCompleted\?:\s*\(\) => void;/);
+    expect(block).toMatch(/onTeachingStepCompleted\?:\s*\(stepId: number, info\?: \{ misconceptionLabel\?: string \}\) => void;/);
+    expect(block).toMatch(/onLessonCompleted\?:\s*\(snapshotId: string\) => void;/);
   });
 
   it("REQUIRED: onTeachingStepStarted fires exactly when a NEW step begins in advanceForPlayback, alongside the early-start check", () => {
@@ -117,18 +117,19 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
     expect(block).toMatch(/onTeachingStepStartedRef\.current\?\.\(action\.stepId\);/);
   });
 
-  it("REQUIRED: onTeachingStepCompleted fires for the PREVIOUS step when a new one begins", () => {
+  it("REQUIRED: onTeachingStepCompleted fires for the PREVIOUS step when a new one begins, carrying a misconception label when the step's own crossOut emphasis flags one", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
     const block = src.slice(idx, idx + 1200);
-    expect(block).toMatch(/onTeachingStepCompletedRef\.current\?\.\(previousStepId\);/);
+    expect(block).toMatch(/const previousStepId = plan\.actions\[next - 1\]\.stepId;/);
+    expect(block).toMatch(/onTeachingStepCompletedRef\.current\?\.\(previousStepId, misconceptionLabel \? \{ misconceptionLabel \} : undefined\);/);
   });
 
   it("REQUIRED: onLessonCompleted fires from a single atEnd-transition effect, not scattered across every navigation handler", () => {
     const idx = src.indexOf("const atEnd = totalSteps");
-    const block = src.slice(idx, idx + 1000);
+    const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/useEffect\(\(\) => \{/);
-    expect(block).toMatch(/if \(!atEnd\) return;/);
-    expect(block).toMatch(/onLessonCompletedRef\.current\?\.\(\);/);
+    expect(block).toMatch(/if \(!atEnd \|\| !lessonPlan\) return;/);
+    expect(block).toMatch(/onLessonCompletedRef\.current\?\.\(buildProfessorLessonCacheKey\(lessonPlan\.sourceSnapshot\)\);/);
     expect(block).toMatch(/\}, \[atEnd\]\);/);
   });
 

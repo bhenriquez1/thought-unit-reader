@@ -33,7 +33,14 @@ export type LearningStateEvent =
   | { kind: "confidence-reported"; confidence: number; occurredAt: string; sourceId: string }
   // A specific misconception was observed (e.g. a wrong-answer explanation
   // matched a known misconception category).
-  | { kind: "misconception-observed"; misconception: string; occurredAt: string; sourceId?: string };
+  | { kind: "misconception-observed"; misconception: string; occurredAt: string; sourceId?: string }
+  // Phase B3 — a single Whiteboard teaching step (one narrated point) played
+  // to completion. Deliberately evidence-only: no score field changes here.
+  // The coarser "watched the whole lesson" signal (whiteboard-lesson-completed
+  // above) is what earns the modest understandingScore credit — per-step
+  // completion is a finer-grained activity trail, not additional credit for
+  // simply continuing to watch.
+  | { kind: "teaching-step-completed"; stepId: number; occurredAt: string; sourceId: string };
 
 export function emptyProgress(nodeId: string, documentId: string): KnowledgeNodeProgress {
   return {
@@ -168,6 +175,13 @@ export function applyLearningEvent(
         ...(event.sourceId
           ? { evidence: pushEvidence(progress, "recall", event.sourceId, event.occurredAt, `misconception: ${event.misconception}`) }
           : {}),
+      };
+    }
+
+    case "teaching-step-completed": {
+      return {
+        ...progress,
+        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, `step ${event.stepId} completed`),
       };
     }
   }

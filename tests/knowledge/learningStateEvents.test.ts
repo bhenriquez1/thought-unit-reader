@@ -139,3 +139,29 @@ describe("applyLearningEvent — confidence-reported and misconception-observed"
     expect(p.observedMisconceptions).toEqual(["confuses X with Y", "thinks Z is reversible"]);
   });
 });
+
+describe("applyLearningEvent — teaching-step-completed (Phase B3)", () => {
+  it("REQUIRED: is evidence-only — no score field changes at all", () => {
+    const base = emptyProgress("n1", "doc-1");
+    const next = applyLearningEvent(base, { kind: "teaching-step-completed", stepId: 3, occurredAt: T1, sourceId: "step-3" });
+    expect(next.understandingScore).toBe(base.understandingScore);
+    expect(next.recallScore).toBe(base.recallScore);
+    expect(next.memoryStrength).toBe(base.memoryStrength);
+    expect(next.masteryScore).toBe(base.masteryScore);
+    expect(next.confidenceScore).toBe(base.confidenceScore);
+    expect(next.exposureCount).toBe(base.exposureCount);
+  });
+
+  it("appends a whiteboard evidence entry citing the step id", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "teaching-step-completed", stepId: 2, occurredAt: T1, sourceId: "step-2" });
+    expect(next.evidence).toHaveLength(1);
+    expect(next.evidence[0]).toMatchObject({ sourceType: "whiteboard", sourceId: "step-2", occurredAt: T1, detail: "step 2 completed" });
+  });
+
+  it("multiple step-completed events accumulate distinct evidence entries", () => {
+    let p = emptyProgress("n1", "doc-1");
+    p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 1, occurredAt: T1, sourceId: "step-1" });
+    p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 2, occurredAt: T2, sourceId: "step-2" });
+    expect(p.evidence).toHaveLength(2);
+  });
+});

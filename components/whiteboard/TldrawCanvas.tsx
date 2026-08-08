@@ -51,9 +51,10 @@ import { useProfessorLesson } from "@/components/whiteboard/useProfessorLesson";
 import {
   computeCanvasStateAtStep, resolveCameraTargetAtStep, resolveActiveSegmentIdAtStep,
   nextStepIndex, previousStepIndex, resolveStepIdAtStep, totalTeachingSteps,
-  stepStartIndex, stepEndIndex,
+  stepStartIndex, stepEndIndex, stepMisconceptionLabel,
   type ShapeVisualState,
 } from "@/lib/whiteboard/professorTimelineEngine";
+import { buildProfessorLessonCacheKey } from "@/lib/whiteboard/professorLessonPlan";
 import type { ProfessorTeachingAction, NarrationSegment, Bounds } from "@/lib/whiteboard/professorLessonPlan";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
@@ -117,8 +118,17 @@ interface Props {
    *  Graph or persists a snapshot itself. That is deliberately B3's job:
    *  merely watching a lesson play should not silently grant mastery. */
   onTeachingStepStarted?:   (stepId: number) => void;
-  onTeachingStepCompleted?: (stepId: number) => void;
-  onLessonCompleted?:       () => void;
+  /** misconceptionLabel: best-effort, present only when this step's
+   *  emphasisTreatment was "crossOut" — see stepMisconceptionLabel in
+   *  professorTimelineEngine.ts. Phase B1's own "debunk this" signal, reused
+   *  here rather than requiring new interactive checkpoint UI. */
+  onTeachingStepCompleted?: (stepId: number, info?: { misconceptionLabel?: string }) => void;
+  /** snapshotId: the SAME identity buildProfessorLessonCacheKey() already
+   *  computes for this lesson (documentId/pageTruthKey/activeCanonicalUnitId)
+   *  — a stable, reusable reference a consumer can persist onto
+   *  KnowledgeNodeProgress.whiteboardSnapshotIds without re-deriving or
+   *  guessing the cache-key formula itself. */
+  onLessonCompleted?:       (snapshotId: string) => void;
 }
 
 function mergeBounds(list: Bounds[]): Bounds | null {
@@ -1004,7 +1014,10 @@ export default function TldrawCanvas({
     if (stepStartIndex(plan.actions, action.stepId) === next) {
       if (next > 0) {
         const previousStepId = plan.actions[next - 1].stepId;
-        if (previousStepId !== action.stepId) onTeachingStepCompletedRef.current?.(previousStepId);
+        if (previousStepId !== action.stepId) {
+          const misconceptionLabel = stepMisconceptionLabel(plan.actions, previousStepId);
+          onTeachingStepCompletedRef.current?.(previousStepId, misconceptionLabel ? { misconceptionLabel } : undefined);
+        }
       }
       onTeachingStepStartedRef.current?.(action.stepId);
       maybeEarlyStartStepNarration(action.stepId);
@@ -1046,21 +1059,43 @@ export default function TldrawCanvas({
   // The underlying jump is still an exact-state applyStateAtStep(editor, n)
   // call at a single action index, same mechanism as before; only WHICH
   // index gets picked changed.
+  // Phase B3: manual Next/Previous also fire the teaching-step notification
+  // hooks (pure, no side effect on narration/timers) — a student who never
+  // presses Play should still generate step-started/step-completed signals.
+  // Deliberately does NOT call maybeEarlyStartStepNarration — manual jumps
+  // stay exactly as instant/silent as before this change.
+  const notifyManualStepTransition = useCallback((plan: NonNullable<typeof planRef.current>, fromIndex: number, toIndex: number) => {
+    const fromStepId = fromIndex >= 0 ? resolveStepIdAtStep(plan.actions, fromIndex) : -1;
+    const toStepId = resolveStepIdAtStep(plan.actions, toIndex);
+    if (fromStepId === toStepId) return;
+    if (fromStepId >= 0) {
+      const misconceptionLabel = stepMisconceptionLabel(plan.actions, fromStepId);
+      onTeachingStepCompletedRef.current?.(fromStepId, misconceptionLabel ? { misconceptionLabel } : undefined);
+    }
+    if (toStepId >= 0) onTeachingStepStartedRef.current?.(toStepId);
+  }, []);
+
   const handleNext = useCallback(() => {
     setIsPlaying(false);
     stopNarration("manual-next");
     const plan = planRef.current;
     if (!plan) return;
-    setStepIndex(nextStepIndex(plan.actions, stepIndexRef.current));
-  }, [setStepIndex, stopNarration]);
+    const fromIndex = stepIndexRef.current;
+    const toIndex = nextStepIndex(plan.actions, fromIndex);
+    setStepIndex(toIndex);
+    notifyManualStepTransition(plan, fromIndex, toIndex);
+  }, [setStepIndex, stopNarration, notifyManualStepTransition]);
 
   const handlePrev = useCallback(() => {
     setIsPlaying(false);
     stopNarration("manual-previous");
     const plan = planRef.current;
     if (!plan) return;
-    setStepIndex(previousStepIndex(plan.actions, stepIndexRef.current));
-  }, [setStepIndex, stopNarration]);
+    const fromIndex = stepIndexRef.current;
+    const toIndex = previousStepIndex(plan.actions, fromIndex);
+    setStepIndex(toIndex);
+    notifyManualStepTransition(plan, fromIndex, toIndex);
+  }, [setStepIndex, stopNarration, notifyManualStepTransition]);
 
   const handleRestart = useCallback(() => {
     stopNarration("manual-restart");
@@ -1189,9 +1224,12 @@ export default function TldrawCanvas({
   // comparison), so it fires here instead, immediately before
   // onLessonCompleted.
   useEffect(() => {
-    if (!atEnd) return;
-    if (currentStepId >= 0) onTeachingStepCompletedRef.current?.(currentStepId);
-    onLessonCompletedRef.current?.();
+    if (!atEnd || !lessonPlan) return;
+    if (currentStepId >= 0) {
+      const misconceptionLabel = stepMisconceptionLabel(lessonPlan.actions, currentStepId);
+      onTeachingStepCompletedRef.current?.(currentStepId, misconceptionLabel ? { misconceptionLabel } : undefined);
+    }
+    onLessonCompletedRef.current?.(buildProfessorLessonCacheKey(lessonPlan.sourceSnapshot));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atEnd]);
   const segments = lessonPlan?.segments ?? [];

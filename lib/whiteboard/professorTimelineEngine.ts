@@ -205,6 +205,27 @@ export function nextStepIndex(actions: ProfessorTeachingAction[], stepIndex: num
   return start >= 0 ? start : actions.length - 1;
 }
 
+/** Phase B3 — best-effort: does this step contain a "crossOut" emphasis
+ *  (the AI's own "this is a common misconception, debunk it" signal — see
+ *  ProfessorNodeScript.emphasisTreatment in professorLessonPlan.ts), and if
+ *  so, what's the associated shape's own handwritten text? Reused to fire a
+ *  misconception-observed Learning State event without any new interactive
+ *  UI — the signal already exists in the plan's own data (Phase B1). Returns
+ *  null when the step has no crossOut emphasis, or defensively if the
+ *  emphasized shape's write action can't be found. */
+export function stepMisconceptionLabel(actions: ProfessorTeachingAction[], stepId: number): string | null {
+  const start = stepStartIndex(actions, stepId);
+  const end = stepEndIndex(actions, stepId);
+  if (start < 0) return null;
+  const stepActions = actions.slice(start, end + 1);
+  for (const action of stepActions) {
+    if (action.type !== "emphasize" || action.treatment !== "crossOut") continue;
+    const writeAction = stepActions.find(a => a.type === "write" && a.shapeId === action.targetId);
+    if (writeAction && writeAction.type === "write") return writeAction.text;
+  }
+  return null;
+}
+
 /** The action index Previous should jump TO — the start of the PREVIOUS
  *  distinct step (not just stepIndex - 1), or -1 (blank canvas) if already
  *  at or before the first step. */

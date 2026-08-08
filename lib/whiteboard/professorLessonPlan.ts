@@ -15,6 +15,7 @@
 // ProfessorTeachingAction[] timeline tldraw executes.
 
 import { z } from "zod";
+import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 
 // ── Geometry primitives ─────────────────────────────────────────────────────
 
@@ -82,6 +83,14 @@ export interface NarrationSegment {
   pace: NarrationPace;
   pauseAfterMs: number;
   linkedActionIds: string[];
+  /** Phase B3 — always "PROFESSOR_EXPLANATION": every Professor/Whiteboard
+   *  narration segment is AI-authored teaching language (see the SYSTEM_PROMPT
+   *  in pages/api/professor-lesson-plan.ts: "teach it, don't read it"), never
+   *  verbatim source text. Explicit rather than implicit so a consumer never
+   *  has to assume "this surface is always non-verbatim" — the same field
+   *  name lib/speech/studySpeechEngine.ts's SpeechSegment carries, where the
+   *  value genuinely varies per segment. */
+  contentRole: SpeechContentRole;
 }
 
 // ── ProfessorLessonScript — the AI-authored, VSG-grounded input ─────────────

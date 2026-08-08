@@ -116,7 +116,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
 
   it("REQUIRED: a 'speak' step never schedules the fixed-duration dwell timer — it advances only from playSegmentThenAdvance's own onended/onend callback (or an already-early-started result), never a blind timeout", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const body = src.slice(idx, idx + 2300);
+    const body = src.slice(idx, idx + 2900);
     const speakBranchIdx = body.indexOf('if (action.type === "speak") {');
     // The speak branch now has 3 sub-cases (done/pending/not-yet-started);
     // its closing brace is the one right before the dwell-timer line below.
