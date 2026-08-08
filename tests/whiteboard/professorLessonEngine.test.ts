@@ -176,9 +176,15 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
     const idx = src.indexOf("const resolveSegmentAudio = useCallback");
     expect(idx).toBeGreaterThan(-1);
     const body = src.slice(idx, idx + 1500);
-    expect(body).toMatch(/narrationCacheRef\.current\.get\(segment\.id\)/);
-    expect(body).toMatch(/narrationPendingRef\.current\.get\(segment\.id\)/);
-    expect(body).toMatch(/narrationCacheRef\.current\.set\(segment\.id, resolved\)/);
+    // Keyed by a SpeechSessionIdentity-qualified cacheKey (built from
+    // segment.id, not the bare id) — see lib/speech/speechSessionIdentity.ts
+    // and tests/whiteboard/narrationCacheIdentity.test.ts. A revisited
+    // segment within the SAME lesson still hits the cache, since the
+    // identity — and therefore the key — doesn't change between steps.
+    expect(body).toMatch(/const cacheKey = buildSpeechCacheKey\(speechIdentityRef\.current, segment\.id\);/);
+    expect(body).toMatch(/narrationCacheRef\.current\.get\(cacheKey\)/);
+    expect(body).toMatch(/narrationPendingRef\.current\.get\(cacheKey\)/);
+    expect(body).toMatch(/narrationCacheRef\.current\.set\(cacheKey, resolved\)/);
   });
 
   it("REQUIRED: every narration trace log carries the requested diagnostic fields — stepId, chunkIndex, and (where applicable) queueLength/audioStarted/audioEnded/cancelReason", () => {
