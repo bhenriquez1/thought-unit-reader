@@ -39,7 +39,7 @@ export interface ShapeVisualState {
    *  actions fired — a shape can legitimately be both "the decisive stage"
    *  (circled) AND "step 3 of 5" (numbered) at once, so this accumulates
    *  rather than the later action overwriting the earlier one. */
-  emphasisTreatments: Array<{ treatment: "circle" | "underline" | "pulse" | "highlight" | "number"; sequenceNumber?: number }>;
+  emphasisTreatments: Array<{ treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number }>;
 }
 
 /**

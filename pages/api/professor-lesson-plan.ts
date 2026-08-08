@@ -131,6 +131,30 @@ Rules:
     concern; group "mechanism" (order 2) = the physical/psychological/social context nodes;
     group "sequence" (order 3) = interview -> complete picture -> diagnosis; group "warning"
     (order 4) = the "exam alone isn't enough" caution.
+12. EXPLAIN — for a node where you're teaching a MECHANISM (why/how something happens, not
+    just what it is), add a short "explain" mini-diagram instead of relying on shortLabel and
+    narration alone. This is what turns a box into an actual explanation while you talk through
+    it — a small aside drawn beside the point, the way a real professor jots "-> less O2 demand"
+    next to "hypothermia" while explaining why a cold drowning victim can sometimes still be
+    revived. Do NOT add explain to every node — most nodes need none at all (empty array). Use
+    it only where there's a real mechanism, cause-effect chain, or contrast worth sketching.
+    Each entry in explain is one of four types, and every entry needs EVERY field below present
+    (use null for whichever don't apply to that type):
+      - "write": id (a short local id you invent, e.g. "metabolism"), text (a SHORT fragment,
+        3-5 words, e.g. "less metabolic demand" or "less O2 demand" — never a sentence).
+      - "icon": id, icon (one of: thermometer, heart, brain, lungs, warning, arrowDown, arrowUp,
+        clock, snowflake, checkmark, xmark), label (an optional short caption).
+      - "arrow": from and to, each either "self" (this node's own point) or the id of a write/
+        icon entry EARLIER in this SAME explain array — never a forward reference, never an id
+        from a different node's explain array.
+      - "emphasize": target (same rule as from/to above), style (circle, underline, crossOut,
+        or highlight).
+    Order matters: declare a write/icon BEFORE any arrow/emphasize that references its id. Keep
+    an explain chain SHORT — 2 to 4 entries is typical, 6 is the hard maximum. For the
+    hypothermia-drowning example above, a good explain for the "severe hypothermia" node would
+    be: write(id:"metabolism", text:"↓ metabolism") -> arrow(from:"self", to:"metabolism") ->
+    write(id:"o2", text:"↓ O2 demand") -> arrow(from:"metabolism", to:"o2") -> emphasize
+    (target:"o2", style:"circle").
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 

@@ -131,12 +131,26 @@ function emphasisShapeId(primaryShapeId: string, treatment: string): string {
   return String(createShapeId(`emphasis-${treatment}-${primaryShapeId.replace(/^shape:/, "")}`));
 }
 
-type EmphasisTreatment = "circle" | "underline" | "pulse" | "highlight" | "number";
+type EmphasisTreatment = "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut";
 
 /** One overlay shape spec per emphasis treatment. Pure — bounds in, tldraw
  *  shape spec out, no editor access. */
-function emphasisOverlaySpec(treatment: EmphasisTreatment, bounds: Bounds, sequenceNumber: number | undefined): { type: "geo"; x: number; y: number; props: Record<string, unknown>; opacity: number } {
+function emphasisOverlaySpec(treatment: EmphasisTreatment, bounds: Bounds, sequenceNumber: number | undefined): { type: "geo" | "arrow"; x: number; y: number; props: Record<string, unknown>; opacity: number } {
   switch (treatment) {
+    case "crossOut":
+      // A single diagonal strike corner-to-corner — "this doesn't apply /
+      // rule this out," the professor's-aside counterpart to circling
+      // something worth keeping. A plain arrow shape with both arrowheads
+      // suppressed reads as a drawn line, not a directional connector.
+      return {
+        type: "arrow", x: bounds.x, y: bounds.y,
+        props: {
+          kind: "arc", start: { x: 0, y: 0 }, end: { x: bounds.w, y: bounds.h },
+          arrowheadStart: "none", arrowheadEnd: "none",
+          size: "m", color: "red", dash: "draw",
+        },
+        opacity: 0.85,
+      };
     case "underline":
       // A thin bar just under the box — reads as "underline this", not a
       // full second outline.

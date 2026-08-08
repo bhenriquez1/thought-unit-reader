@@ -133,3 +133,32 @@ describe("PdfEvidenceOverlay.tsx — all 8 treatments have render code", () => {
     expect(block).toMatch(/strokeDasharray="3 3"/);
   });
 });
+
+describe("PdfEvidenceOverlay.tsx — TIER_CONFIG fill opacity, darkened per user feedback ('a little washed out')", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(FILE, "utf8"); });
+
+  it("REQUIRED: every tier's bgNormal fill is 25-35% stronger than the prior 0.18-0.22 range — roughly 0.225-0.297", () => {
+    const bgNormals = [...src.matchAll(/bgNormal:\s*"rgba\([^)]+,([0-9.]+)\)"/g)].map(m => parseFloat(m[1]));
+    expect(bgNormals.length).toBe(5); // master/step/decision/danger/pearl
+    for (const alpha of bgNormals) {
+      expect(alpha).toBeGreaterThanOrEqual(0.225);
+      expect(alpha).toBeLessThanOrEqual(0.30);
+    }
+  });
+
+  it("bgFocused stays distinctly stronger than bgNormal for every tier — the fill got darker, not flatter", () => {
+    const normals = [...src.matchAll(/bgNormal:\s*"rgba\([^)]+,([0-9.]+)\)"/g)].map(m => parseFloat(m[1]));
+    const focused = [...src.matchAll(/bgFocused:\s*"rgba\([^)]+,([0-9.]+)\)"/g)].map(m => parseFloat(m[1]));
+    expect(focused.length).toBe(normals.length);
+    for (let i = 0; i < normals.length; i++) {
+      expect(focused[i]).toBeGreaterThan(normals[i]);
+    }
+  });
+
+  it("the fill darkening never touches badgeColor/badgeBg — label text stays exactly as readable as before", () => {
+    expect(src).toMatch(/badgeColor: "#fde047"/);
+    expect(src).toMatch(/badgeColor: "#86efac"/);
+    expect(src).toMatch(/badgeBg:\s*"rgba\(113,63,18,0\.92\)"/);
+  });
+});

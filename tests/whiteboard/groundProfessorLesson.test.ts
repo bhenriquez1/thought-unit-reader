@@ -26,7 +26,7 @@ function makeScript(overrides: Partial<ProfessorLessonScript> = {}): ProfessorLe
     title: "Test Title",
     learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [
-      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false },
+      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
     ],
     groups: [],
     synthesisQuestion: "What comes next?",
@@ -46,8 +46,8 @@ describe("groundProfessorLesson — drops hallucinated ids", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "Real", narration: "x", tone: "explain", pace: "normal", emphasize: false },
-        { targetId: "made-up-id", shortLabel: "Fake", narration: "x", tone: "explain", pace: "normal", emphasize: false },
+        { targetId: "n1", shortLabel: "Real", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "made-up-id", shortLabel: "Fake", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -59,8 +59,8 @@ describe("groundProfessorLesson — drops hallucinated ids", () => {
     const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false },
-        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -73,8 +73,8 @@ describe("groundProfessorLesson — at most one emphasized point", () => {
     const vsg = makeVsg(["n1", "n2"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: true },
-        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: true },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: true, explain: [] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: true, explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -89,7 +89,7 @@ describe("groundProfessorLesson — density cap", () => {
     const ids = Array.from({ length: MAX_GROUNDED_TARGETS + 5 }, (_, i) => `n${i}`);
     const vsg = makeVsg(ids);
     const script = makeScript({
-      nodeScripts: ids.map(id => ({ targetId: id, shortLabel: "Label", narration: "x", tone: "explain" as const, pace: "normal" as const, emphasize: false })),
+      nodeScripts: ids.map(id => ({ targetId: id, shortLabel: "Label", narration: "x", tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [] })),
     });
     const result = groundProfessorLesson(script, vsg);
     expect(result.nodeScripts.length).toBeLessThanOrEqual(MAX_GROUNDED_TARGETS);
@@ -101,8 +101,8 @@ describe("groundProfessorLesson — duplicate targetId collapse", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First version", narration: "x", tone: "introduce", pace: "normal", emphasize: false },
-        { targetId: "n1", shortLabel: "Second version", narration: "y", tone: "explain", pace: "normal", emphasize: false },
+        { targetId: "n1", shortLabel: "First version", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "Second version", narration: "y", tone: "explain", pace: "normal", emphasize: false, explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -118,7 +118,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
       nodeScripts: [{
         targetId: "n1",
         shortLabel: "The clinician should perform a rapid initial assessment of the patient before doing anything else at all",
-        narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [],
       }],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -133,7 +133,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
     const script = makeScript({
       nodeScripts: [{
         targetId: "n1", shortLabel: "X. Y. Z. W. Phase two is Y and Z happens too eventually.",
-        narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [],
       }],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -154,7 +154,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
 describe("groundProfessorLesson — never throws, even on a fully-hallucinated script", () => {
   it("returns an empty nodeScripts array rather than crashing", () => {
     const vsg = makeVsg(["n1"]);
-    const script = makeScript({ nodeScripts: [{ targetId: "bogus", shortLabel: "x", narration: "x", tone: "explain", pace: "normal", emphasize: false }] });
+    const script = makeScript({ nodeScripts: [{ targetId: "bogus", shortLabel: "x", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
     expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
     expect(groundProfessorLesson(script, vsg).nodeScripts).toEqual([]);
   });
@@ -163,8 +163,8 @@ describe("groundProfessorLesson — never throws, even on a fully-hallucinated s
 describe("groundProfessorLesson — groups", () => {
   function twoNodeScripts() {
     return [
-      { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce" as const, pace: "normal" as const, emphasize: false },
-      { targetId: "n2", shortLabel: "Second", narration: "y", tone: "explain" as const, pace: "normal" as const, emphasize: false },
+      { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce" as const, pace: "normal" as const, emphasize: false, explain: [] },
+      { targetId: "n2", shortLabel: "Second", narration: "y", tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [] },
     ];
   }
 
@@ -254,8 +254,8 @@ describe("groundProfessorLesson — groups", () => {
     const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false },
-        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, explain: [] },
       ],
       groups: [],
     });
@@ -263,5 +263,143 @@ describe("groundProfessorLesson — groups", () => {
     const allGroupedIds = result.groups.flatMap(g => g.nodeIds);
     expect(allGroupedIds).not.toContain("e1");
     expect(allGroupedIds).toEqual(["n1"]);
+  });
+});
+
+describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
+  function explainAction(overrides: Partial<{
+    type: "write" | "icon" | "arrow" | "emphasize";
+    id: string | null; text: string | null; icon: any; label: string | null;
+    from: string | null; to: string | null; target: string | null; style: any;
+  }>) {
+    return {
+      type: "write" as const, id: null, text: null, icon: null, label: null,
+      from: null, to: null, target: null, style: null,
+      ...overrides,
+    };
+  }
+
+  it("keeps a well-formed write -> arrow -> emphasize chain, in order", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Hypothermia", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [
+          explainAction({ type: "write", id: "metabolism", text: "less metabolic demand" }),
+          explainAction({ type: "arrow", from: "self", to: "metabolism" }),
+          explainAction({ type: "emphasize", target: "metabolism", style: "circle" }),
+        ],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain.map(a => a.type)).toEqual(["write", "arrow", "emphasize"]);
+  });
+
+  it("drops an arrow that references an id not yet declared (forward reference)", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [
+          explainAction({ type: "arrow", from: "self", to: "notYetDeclared" }),
+          explainAction({ type: "write", id: "notYetDeclared", text: "later" }),
+        ],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain.map(a => a.type)).toEqual(["write"]);
+  });
+
+  it("drops an emphasize whose target was never declared and never 'self'", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [explainAction({ type: "emphasize", target: "ghost", style: "circle" })],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain).toEqual([]);
+  });
+
+  it("'self' is always a valid arrow/emphasize reference, with no write/icon declaring it", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [explainAction({ type: "emphasize", target: "self", style: "highlight" })],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain).toHaveLength(1);
+  });
+
+  it("drops a duplicate local id — the second write with the same id is dropped, not overwritten", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [
+          explainAction({ type: "write", id: "a", text: "first" }),
+          explainAction({ type: "write", id: "a", text: "second" }),
+        ],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain).toHaveLength(1);
+    expect((result.nodeScripts[0].explain[0] as any).text).toBe("first");
+  });
+
+  it("clamps an over-long write text to a short fragment", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [explainAction({ type: "write", id: "a", text: "this fragment has way more words than a hand-drawn aside should ever have" })],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect((result.nodeScripts[0].explain[0] as any).text.split(" ").length).toBeLessThanOrEqual(5);
+  });
+
+  it("caps the total surviving explain actions at 6", () => {
+    const vsg = makeVsg(["n1"]);
+    const many = Array.from({ length: 10 }, (_, i) => explainAction({ type: "write", id: `w${i}`, text: `frag ${i}` }));
+    const script = makeScript({
+      nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: many }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].explain.length).toBeLessThanOrEqual(6);
+  });
+
+  it("an edge-target nodeScript entry never gets an explain mini-diagram, even if the AI provided one", () => {
+    const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        {
+          targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false,
+          explain: [explainAction({ type: "write", id: "a", text: "should never appear" })],
+        },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "e1")!.explain).toEqual([]);
+  });
+
+  it("never throws on a malformed explain array", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        explain: [
+          explainAction({ type: "write", id: null, text: "no id" }),
+          explainAction({ type: "icon", id: "i1", icon: null }),
+          explainAction({ type: "arrow", from: null, to: "self" }),
+        ],
+      }],
+    });
+    expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
+    expect(groundProfessorLesson(script, vsg).nodeScripts[0].explain).toEqual([]);
   });
 });

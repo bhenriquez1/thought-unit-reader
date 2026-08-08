@@ -23,9 +23,9 @@ function makeGrounded(overrides: Partial<GroundedProfessorLessonScript> = {}): G
     learningObjective: "Explain how to stabilize the patient before diagnosis.",
     synthesisQuestion: "How would you explain this back?",
     nodeScripts: [
-      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start with the central problem.", tone: "introduce", pace: "normal", emphasize: true },
-      { targetId: "e1", shortLabel: "Leads to", narration: "This leads directly to stabilization.", tone: "connect", pace: "normal", emphasize: false },
-      { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false },
+      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start with the central problem.", tone: "introduce", pace: "normal", emphasize: true, explain: [] },
+      { targetId: "e1", shortLabel: "Leads to", narration: "This leads directly to stabilization.", tone: "connect", pace: "normal", emphasize: false, explain: [] },
+      { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
     ],
     groups: [],
     ...overrides,
@@ -36,6 +36,18 @@ const SNAPSHOT: ProfessorLessonSourceSnapshot = {
   documentId: "doc-1", pageNumber: 4, pageTruthKey: "doc-1::4::t",
   activeCanonicalUnitId: null, vsgId: "vsg_test", plannerVersion: 1,
 };
+
+function explainAction(overrides: Partial<{
+  type: "write" | "icon" | "arrow" | "emphasize";
+  id: string | null; text: string | null; icon: any; label: string | null;
+  from: string | null; to: string | null; target: string | null; style: any;
+}>) {
+  return {
+    type: "write" as const, id: null, text: null, icon: null, label: null,
+    from: null, to: null, target: null, style: null,
+    ...overrides,
+  };
+}
 
 describe("buildProfessorTeachingActions — visuals synchronized with narration", () => {
   it("every node/edge produces a speak action immediately after its own visual actions, not batched at the end", () => {
@@ -75,8 +87,8 @@ describe("buildProfessorTeachingActions — visuals synchronized with narration"
 
 describe("buildProfessorTeachingActions — geometry is deterministic, never AI-proposed", () => {
   it("node box width grows to fit the short label instead of a fixed constant", () => {
-    const shortGrounded = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "n", tone: "explain", pace: "normal", emphasize: false }] });
-    const longGrounded  = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "A somewhat longer phrase here", narration: "n", tone: "explain", pace: "normal", emphasize: false }] });
+    const shortGrounded = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "n", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
+    const longGrounded  = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "A somewhat longer phrase here", narration: "n", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
     const shortPlan = buildProfessorTeachingActions(makeVsg(), shortGrounded, SNAPSHOT);
     const longPlan  = buildProfessorTeachingActions(makeVsg(), longGrounded, SNAPSHOT);
     const shortBounds = (shortPlan.actions.find(a => a.type === "draw-shape") as any).bounds;
@@ -92,7 +104,7 @@ describe("buildProfessorTeachingActions — geometry is deterministic, never AI-
 
   it("skips an edge whose endpoint was never drawn (density-capped) rather than crashing", () => {
     const vsg = makeVsg();
-    const grounded = makeGrounded({ nodeScripts: [{ targetId: "e1", shortLabel: "Leads to", narration: "n", tone: "connect", pace: "normal", emphasize: false }] });
+    const grounded = makeGrounded({ nodeScripts: [{ targetId: "e1", shortLabel: "Leads to", narration: "n", tone: "connect", pace: "normal", emphasize: false, explain: [] }] });
     expect(() => buildProfessorTeachingActions(vsg, grounded, SNAPSHOT)).not.toThrow();
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
     expect(plan.actions.some(a => a.type === "draw-arrow")).toBe(false);
@@ -172,7 +184,7 @@ describe("buildProfessorTeachingActions — group-aware geometry: no overlap, re
       title: "T", visualGrammar: "concept-map", learningObjective: "L", synthesisQuestion: "Q",
       nodeScripts: Array.from({ length: 5 }, (_, i) => ({
         targetId: `n${i}`, shortLabel: `Point number ${i} with a somewhat longer descriptive phrase`,
-        narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false,
+        narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [],
       })),
       groups: [
         { id: "g1", type: "core", order: 1, nodeIds: ["n0"] },
@@ -218,9 +230,9 @@ describe("buildProfessorTeachingActions — deterministic, non-AI treatments fro
       title: "Test", visualGrammar: "procedure", learningObjective: "Learn the steps.",
       synthesisQuestion: "Explain the steps back.",
       nodeScripts: [
-        { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false },
-        { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false },
-        { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false },
+        { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n2", shortLabel: "Step two", narration: "Second.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n3", shortLabel: "Watch out", narration: "Common mistake here.", tone: "warn", pace: "slow", emphasize: false, explain: [] },
       ],
       groups: [],
     };
@@ -289,11 +301,11 @@ describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/
     return {
       title: "Test", visualGrammar: "procedure", learningObjective: "Learn.", synthesisQuestion: "Explain back.",
       nodeScripts: [
-        { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false },
-        { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false },
-        { targetId: "trap",     shortLabel: "Trap",     narration: "Careful.",  tone: "warn",       pace: "normal", emphasize: false },
-        { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false },
-        { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false },
+        { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false, explain: [] },
+        { targetId: "trap",     shortLabel: "Trap",     narration: "Careful.",  tone: "warn",       pace: "normal", emphasize: false, explain: [] },
+        { targetId: "pearl",    shortLabel: "Pearl",    narration: "Insight.",  tone: "connect",    pace: "normal", emphasize: false, explain: [] },
+        { targetId: "step",     shortLabel: "Step",     narration: "Do this.",  tone: "explain",    pace: "normal", emphasize: false, explain: [] },
       ],
       groups: [],
     };
@@ -377,9 +389,9 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
       const grounded: GroundedProfessorLessonScript = {
         title: "T", visualGrammar: "procedure", learningObjective: "L", synthesisQuestion: "Q",
         nodeScripts: [
-          { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false },
-          { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false },
-          { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false },
+          { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+          { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false, explain: [] },
+          { targetId: "n2", shortLabel: "C", narration: "C.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
         ],
         groups: [],
       };
@@ -389,5 +401,131 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
       expect(label).toBeDefined();
       expect(label.text.split(/\s+/).length).toBeLessThanOrEqual(3);
     }
+  });
+});
+
+describe("buildProfessorTeachingActions — explain[]: the professor's-aside mini-diagram", () => {
+  function groundedWithExplain(explain: ReturnType<typeof explainAction>[]) {
+    return makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Hypothermia", narration: "Cold slows things down.", tone: "explain", pace: "normal", emphasize: false, explain },
+        { targetId: "n2", shortLabel: "Stabilize first", narration: "Stabilization comes before diagnosis.", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+      ],
+    });
+  }
+
+  it("a write action produces its own draw-shape + write pair, distinct from the primary node's shapes", () => {
+    const grounded = groundedWithExplain([explainAction({ type: "write", id: "metabolism", text: "less metabolism" })]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const explainWrite = plan.actions.find(a => a.type === "write" && (a as any).text === "less metabolism");
+    expect(explainWrite).toBeDefined();
+    const explainDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shapeId === (explainWrite as any).shapeId);
+    expect(explainDraw).toBeDefined();
+    expect((explainDraw as any).shapeId).not.toBe((plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId);
+  });
+
+  it("an icon action renders as a circle carrying the mapped glyph as its write text", () => {
+    const grounded = groundedWithExplain([explainAction({ type: "icon", id: "temp", icon: "thermometer" })]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const iconDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "circle" && (a as any).targetId === undefined);
+    expect(iconDraw).toBeDefined();
+    const iconWrite = plan.actions.find(a => a.type === "write" && (a as any).shapeId === (iconDraw as any).shapeId);
+    expect((iconWrite as any).text).toContain("🌡️");
+  });
+
+  it("an arrow from 'self' connects the primary node's own shape to a declared local id", () => {
+    const grounded = groundedWithExplain([
+      explainAction({ type: "write", id: "metabolism", text: "less metabolism" }),
+      explainAction({ type: "arrow", from: "self", to: "metabolism" }),
+    ]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const subDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "box" && (a as any).targetId === undefined) as any;
+    const arrows = plan.actions.filter(a => a.type === "draw-arrow") as any[];
+    // One arrow anchored near the primary box, one anchored near the sub-box.
+    const explainArrow = arrows.find(a => a.targetId === undefined);
+    expect(explainArrow).toBeDefined();
+    const nearPrimary = (p: { x: number; y: number }) => Math.abs(p.x - (primaryDraw.bounds.x + primaryDraw.bounds.w / 2)) < primaryDraw.bounds.w;
+    const nearSub = (p: { x: number; y: number }) => Math.abs(p.x - (subDraw.bounds.x + subDraw.bounds.w / 2)) < subDraw.bounds.w;
+    expect(nearPrimary(explainArrow.from) || nearSub(explainArrow.from)).toBe(true);
+    expect(nearPrimary(explainArrow.to) || nearSub(explainArrow.to)).toBe(true);
+  });
+
+  it("an emphasize action targeting a local id emphasizes that sub-shape's own shapeId, not the primary node", () => {
+    const grounded = groundedWithExplain([
+      explainAction({ type: "write", id: "metabolism", text: "less metabolism" }),
+      explainAction({ type: "emphasize", target: "metabolism", style: "circle" }),
+    ]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const subDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "box" && (a as any).targetId === undefined) as any;
+    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const emphasizeActions = plan.actions.filter(a => a.type === "emphasize") as any[];
+    expect(emphasizeActions.some(e => e.targetId === subDraw.shapeId && e.treatment === "circle")).toBe(true);
+    // n1 is role:"step", so it DOES get its own deterministic "number"
+    // emphasize — the assertion that matters is that the explain-declared
+    // "circle" specifically landed on the sub-shape, not the primary node.
+    expect(emphasizeActions.some(e => e.targetId === primaryDraw.shapeId && e.treatment === "circle")).toBe(false);
+  });
+
+  it("an emphasize action targeting 'self' emphasizes the primary node's own shape", () => {
+    const grounded = groundedWithExplain([explainAction({ type: "emphasize", target: "self", style: "highlight" })]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const emphasizeActions = plan.actions.filter(a => a.type === "emphasize") as any[];
+    expect(emphasizeActions.some(e => e.targetId === primaryDraw.shapeId && e.treatment === "highlight")).toBe(true);
+  });
+
+  it("explain sub-shape bounds never overlap ANY primary node's bounds", () => {
+    const grounded = groundedWithExplain([
+      explainAction({ type: "write", id: "a", text: "less metabolism" }),
+      explainAction({ type: "write", id: "b", text: "less oxygen demand" }),
+    ]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const primaryBoxes = plan.actions
+      .filter(a => a.type === "draw-shape" && (a as any).targetId !== undefined)
+      .map(a => (a as any).bounds);
+    const subBoxes = plan.actions
+      .filter(a => a.type === "draw-shape" && (a as any).targetId === undefined)
+      .map(a => (a as any).bounds);
+    for (const sub of subBoxes) {
+      for (const primary of primaryBoxes) {
+        const overlap = sub.x < primary.x + primary.w && sub.x + sub.w > primary.x && sub.y < primary.y + primary.h && sub.y + sub.h > primary.y;
+        expect(overlap).toBe(false);
+      }
+    }
+  });
+
+  it("every explain-generated action is linked into the SAME narration segment as its parent node's point", () => {
+    const grounded = groundedWithExplain([
+      explainAction({ type: "write", id: "metabolism", text: "less metabolism" }),
+      explainAction({ type: "arrow", from: "self", to: "metabolism" }),
+      explainAction({ type: "emphasize", target: "metabolism", style: "circle" }),
+    ]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const segment = plan.segments.find(s => s.text === "Cold slows things down.")!;
+    const explainWrite = plan.actions.find(a => a.type === "write" && (a as any).text === "less metabolism") as any;
+    const explainArrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).targetId === undefined) as any;
+    const explainEmphasize = plan.actions.find(a => a.type === "emphasize" && (a as any).treatment === "circle") as any;
+    expect(segment.linkedActionIds).toContain(explainWrite.actionId);
+    expect(segment.linkedActionIds).toContain(explainArrow.actionId);
+    expect(segment.linkedActionIds).toContain(explainEmphasize.actionId);
+  });
+
+  it("a node with an empty explain[] produces no extra draw-shape/write actions beyond its own", () => {
+    const grounded = groundedWithExplain([]);
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const drawShapes = plan.actions.filter(a => a.type === "draw-shape");
+    // Exactly one draw-shape per primary node (n1, n2) — no explain extras.
+    expect(drawShapes).toHaveLength(2);
+  });
+
+  it("is deterministic — the same explain[] input always produces an equal plan", () => {
+    const grounded = groundedWithExplain([
+      explainAction({ type: "write", id: "metabolism", text: "less metabolism" }),
+      explainAction({ type: "arrow", from: "self", to: "metabolism" }),
+    ]);
+    const a = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const b = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    expect(a).toEqual(b);
   });
 });
