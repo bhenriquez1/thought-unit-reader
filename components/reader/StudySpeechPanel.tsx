@@ -40,6 +40,7 @@ import {
   logBlockedDuplicate,
 } from "@/lib/speech/speechController";
 import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
+import type { SpeechState } from "@/lib/speech/speechState";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 
 const SPEECH_OWNER = "study-speech" as const;
@@ -339,7 +340,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const segmentsRef = useRef<SpeechSegment[]>([]);
   const [segIdx, setSegIdx]   = useState(0);
 
-  type PlayState = "idle" | "loading" | "playing" | "paused" | "error";
+  // Reuses the shared SpeechState vocabulary (lib/speech/speechState.ts)
+  // instead of a locally-duplicated union — "one shared lifecycle state
+  // instead of each surface inventing its own" per the Speech Engine audit.
+  type PlayState = SpeechState;
   const [playState, setPlayState] = useState<PlayState>("idle");
   // Ref mirror of playState for async callbacks and effects that need to read
   // the current playing state without stale closures. True when speech is
@@ -584,6 +588,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const providerRef = useRef<"openai" | "browser" | null>(null);
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
+  // Set by pause() when the user pauses while a segment's TTS is still
+  // in-flight (no audio/utterance exists yet to actually pause). Checked by
+  // fetchAndPlayAudio/playBrowserSpeech right before they would otherwise
+  // start audible playback, so the response is loaded/cached but never
+  // auto-played until resume() (RC5, Speech Engine audit).
+  const pauseRequestedRef = useRef(false);
   // Monotonic session id — bumped every play() call so stale async loops from a
   // superseded call can detect they've been overtaken and stop producing audio,
   // even though abortRef gets reset to false by the new call.
@@ -618,7 +628,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // TTS prefetch cache — keyed by the exact text sent to /api/tts. Lets the next
   // segment's audio start fetching while the current segment is still playing.
-  const audioCacheRef = useRef<Map<string, Promise<{ blob: Blob; mimeType: string } | "browser">>>(new Map());
+  // The browser-fallback branch carries its script INSIDE the cached value
+  // (not a side-channel ref) so a concurrent prefetch for a different segment
+  // can never clobber the script a different in-flight caller is about to
+  // read (RC7, Speech Engine audit).
+  const audioCacheRef = useRef<Map<string, Promise<{ blob: Blob; mimeType: string } | { browser: true; script: string }>>>(new Map());
 
   // Reset on document change — new document means new context entirely.
   // Depends on resolvedDocId (not bare bookId) so two different PDFs that
@@ -820,6 +834,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       if (corruptionScore > 0.08 && mode === "fullPage") {
         const textToRepair = quickSents.join(" ").slice(0, 3000);
+        // Abort our own previous in-flight repair request before starting a
+        // new one. This effect re-runs on activePageText refining for the
+        // SAME page, not just on page/book change — stopAudio()'s abort
+        // (fired from the page-change reset effect) doesn't cover that
+        // same-page re-fire, so without this an older repair response
+        // resolving after a newer one could silently overwrite fpSentences
+        // with stale content (RC6, Speech Engine audit).
+        repairAbortRef.current?.abort();
         // AbortController so a page turn cancels the in-flight repair and prevents
         // stale sentences from overwriting the new page's content (H2 fix).
         const ocrRepairController = new AbortController();
@@ -1003,17 +1025,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   useEffect(() => () => stopAudio(), []);
 
-  // ── TTS fetch helper — returns Promise<"done" | "browser"> ─────────────────
+  // ── TTS fetch helper — returns Promise<{blob,mimeType} | {browser,script}> ──
 
   // Fetches (and caches) the TTS audio for `text` without playing it. Repeated
   // calls with the same text + voice reuse the in-flight/completed request, so
   // prefetching the next segment ahead of time is just a fire-and-forget call.
-  function fetchTTS(text: string): Promise<{ blob: Blob; mimeType: string } | "browser"> {
+  function fetchTTS(text: string): Promise<{ blob: Blob; mimeType: string } | { browser: true; script: string }> {
     const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
     const cached = audioCacheRef.current.get(cacheKey);
     if (cached) return cached;
 
-    const promise = (async (): Promise<{ blob: Blob; mimeType: string } | "browser"> => {
+    const promise = (async (): Promise<{ blob: Blob; mimeType: string } | { browser: true; script: string }> => {
       // Hard timeout — a hung /api/tts request must never leave playback stuck
       // on "Loading…" forever. Abort and let the caller fall back to browser speech.
       const controller = new AbortController();
@@ -1047,7 +1069,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       if (data.useBrowserSpeech) {
         if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
-        return "browser";
+        // The server already ran this text through preprocessForBrowserTTS
+        // (OCR/ligature/abbreviation cleanup + pause-softening) specifically
+        // for browser speechSynthesis — use it instead of re-speaking our own
+        // un-preprocessed text (RC7, Speech Engine audit). Falls back to the
+        // original text only if the server didn't include one.
+        const script = typeof data.script === "string" && data.script.length > 0 ? data.script : text;
+        return { browser: true, script };
       }
 
       throw new Error("Unexpected TTS response");
@@ -1065,7 +1093,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     fetchTTS(text).catch(() => {}); // errors surface (again) when actually played
   }
 
-  async function fetchAndPlayAudio(text: string, session: number): Promise<"done" | "browser"> {
+  async function fetchAndPlayAudio(text: string, session: number): Promise<"done" | { browser: true; script: string }> {
     const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
     const result = await fetchTTS(text);
     audioCacheRef.current.delete(cacheKey); // one-shot — don't replay stale audio on reuse
@@ -1078,7 +1106,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // have claimed speech while this fetch was in flight).
     if (isStale(session) || isSpeechStale(globalTokenRef.current)) return "done";
 
-    if (result === "browser") return "browser";
+    if ("browser" in result) return result;
 
     const { blob, mimeType } = result;
     const url = URL.createObjectURL(blob);
@@ -1113,6 +1141,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
         reject(new Error("Audio playback failed"));
       };
+      if (pauseRequestedRef.current) {
+        // The user pressed Pause while this segment's TTS was still
+        // fetching. The audio is now loaded and ready (via the onplay/
+        // onended/onerror handlers just registered above) but must not
+        // start until resume() explicitly calls audio.play() — a fresh
+        // Audio element is already .paused by default, so resume()'s
+        // existing `audioRef.current.paused` check picks this up naturally
+        // (RC5, Speech Engine audit).
+        pauseRequestedRef.current = false;
+        updatePlayState("paused");
+        return;
+      }
       audio.play().catch((e) => { if (abortRef.current || isStale(session) || isSpeechStale(token)) resolve("done"); else reject(e); });
     });
   }
@@ -1186,6 +1226,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // case this call came from a path that didn't go through claimSpeech.
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utt);
+    if (pauseRequestedRef.current) {
+      // Pause was requested while this segment's TTS fetch (which is what
+      // decided we're falling back to browser speech) was still in flight.
+      // speechSynthesis has no "prepare paused" primitive — speak() then an
+      // immediate synchronous pause() is the standard workaround, and it
+      // reliably beats the async onstart event in practice (RC5, Speech
+      // Engine audit).
+      pauseRequestedRef.current = false;
+      window.speechSynthesis.pause();
+      updatePlayState("paused");
+    }
   }
 
   // ── Full Page: sentence-by-sentence playback ──────────────────────────────
@@ -1314,8 +1365,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       try {
         const result = await fetchAndPlayAudio(ttsText, session);
         if (isStale(session)) break;
-        if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(ttsText, resolve, session));
+        if (result !== "done") {
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
         }
         if (!isStale(session) && i < sentences.length - 1) {
           await new Promise((r) => setTimeout(r, 150));
@@ -1413,8 +1464,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       try {
         const result = await fetchAndPlayAudio(ttsHText, session);
         if (isStale(session)) break; // user stopped, or a newer play() superseded this loop
-        if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session));
+        if (result !== "done") {
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
         }
         // Small pause between segments
         if (!isStale(session) && i < segs.length - 1) {
@@ -1634,8 +1685,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       try {
         const result = await fetchAndPlayAudio(ttsSegText, session);
         if (isStale(session)) break;
-        if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session));
+        if (result !== "done") {
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
           if (mode === "guided" && seg.requiresConfirm) {
@@ -1675,6 +1726,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
       updatePlayState("paused");
+    } else if (playState === "loading") {
+      // No audio/utterance exists yet — this segment's TTS fetch is still in
+      // flight. Without this branch, pause() was a silent no-op here and
+      // playback began unconditionally the moment the fetch resolved,
+      // contradicting the just-pressed Pause action (RC5, Speech Engine audit).
+      pauseRequestedRef.current = true;
+      updatePlayState("paused");
     }
   }
 
@@ -1686,6 +1744,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.resume();
       updatePlayState("playing");
+    } else if (pauseRequestedRef.current) {
+      // Pause was requested while still loading and the response hasn't
+      // arrived yet — clear the flag so fetchAndPlayAudio/playBrowserSpeech
+      // play normally the instant it does, instead of staying silently
+      // paused forever.
+      pauseRequestedRef.current = false;
+      updatePlayState("loading");
     }
   }
 
