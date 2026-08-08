@@ -5,19 +5,23 @@
 
 import {
   computeCanvasStateAtStep, resolveCameraTargetAtStep, resolveActiveSegmentIdAtStep, actionDurationMs,
+  resolveStepIdAtStep, totalTeachingSteps, stepStartIndex, stepEndIndex, nextStepIndex, previousStepIndex,
 } from "../../lib/whiteboard/professorTimelineEngine";
 import type { ProfessorTeachingAction } from "../../lib/whiteboard/professorLessonPlan";
 
+// stepId: a0-a5 belong to teaching step 1 (the first node), a6-a8 to step 2
+// (the edge/second point) — a realistic two-step fixture, reused by the
+// step-boundary tests below.
 const ACTIONS: ProfessorTeachingAction[] = [
-  { type: "move-camera", actionId: "a0", targetIds: ["shape:n1"], durationMs: 400 },
-  { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550 },
-  { type: "write", actionId: "a2", shapeId: "shape:n1", targetId: "src1", text: "Rapid assessment", x: 8, y: 20, durationMs: 700 },
-  { type: "emphasize", actionId: "a3", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
-  { type: "speak", actionId: "a4", segmentId: "seg0", text: "Start with the central problem.", durationMs: 900 },
-  { type: "pause", actionId: "a5", durationMs: 400 },
-  { type: "move-camera", actionId: "a6", targetIds: ["shape:n1", "shape:n2"], durationMs: 400 },
-  { type: "draw-arrow", actionId: "a7", shapeId: "shape:e1", from: { x: 100, y: 56 }, to: { x: 100, y: 120 }, durationMs: 500 },
-  { type: "speak", actionId: "a8", segmentId: "seg1", text: "This leads to the next step.", durationMs: 700 },
+  { type: "move-camera", actionId: "a0", targetIds: ["shape:n1"], durationMs: 400, stepId: 1 },
+  { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550, stepId: 1 },
+  { type: "write", actionId: "a2", shapeId: "shape:n1", targetId: "src1", text: "Rapid assessment", x: 8, y: 20, durationMs: 700, stepId: 1 },
+  { type: "emphasize", actionId: "a3", targetId: "shape:n1", treatment: "circle", durationMs: 550, stepId: 1 },
+  { type: "speak", actionId: "a4", segmentId: "seg0", text: "Start with the central problem.", durationMs: 900, stepId: 1 },
+  { type: "pause", actionId: "a5", durationMs: 400, stepId: 1 },
+  { type: "move-camera", actionId: "a6", targetIds: ["shape:n1", "shape:n2"], durationMs: 400, stepId: 2 },
+  { type: "draw-arrow", actionId: "a7", shapeId: "shape:e1", from: { x: 100, y: 56 }, to: { x: 100, y: 120 }, durationMs: 500, stepId: 2 },
+  { type: "speak", actionId: "a8", segmentId: "seg1", text: "This leads to the next step.", durationMs: 700, stepId: 2 },
 ];
 
 describe("computeCanvasStateAtStep — reconstructs from scratch every call", () => {
@@ -114,9 +118,9 @@ describe("actionDurationMs", () => {
 
 describe("computeCanvasStateAtStep — emphasisTreatments accumulate rather than overwrite", () => {
   const MULTI_EMPHASIS_ACTIONS: ProfessorTeachingAction[] = [
-    { type: "draw-shape", actionId: "b0", shapeId: "shape:n1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550 },
-    { type: "emphasize", actionId: "b1", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
-    { type: "emphasize", actionId: "b2", targetId: "shape:n1", treatment: "number", sequenceNumber: 3, durationMs: 550 },
+    { type: "draw-shape", actionId: "b0", shapeId: "shape:n1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550, stepId: 0 },
+    { type: "emphasize", actionId: "b1", targetId: "shape:n1", treatment: "circle", durationMs: 550, stepId: 0 },
+    { type: "emphasize", actionId: "b2", targetId: "shape:n1", treatment: "number", sequenceNumber: 3, durationMs: 550, stepId: 0 },
   ];
 
   it("a shape can carry more than one simultaneous treatment — circled AND numbered", () => {
@@ -136,7 +140,7 @@ describe("computeCanvasStateAtStep — emphasisTreatments accumulate rather than
   it("re-applying the SAME treatment doesn't duplicate it (idempotent)", () => {
     const repeated: ProfessorTeachingAction[] = [
       ...MULTI_EMPHASIS_ACTIONS,
-      { type: "emphasize", actionId: "b3", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
+      { type: "emphasize", actionId: "b3", targetId: "shape:n1", treatment: "circle", durationMs: 550, stepId: 0 },
     ];
     const state = computeCanvasStateAtStep(repeated, 3);
     const s = state.get("shape:n1")!;
@@ -145,18 +149,71 @@ describe("computeCanvasStateAtStep — emphasisTreatments accumulate rather than
 
   it("an emphasize action targeting a shape that doesn't exist yet is a no-op, not a crash", () => {
     const actions: ProfessorTeachingAction[] = [
-      { type: "emphasize", actionId: "c0", targetId: "shape:ghost", treatment: "circle", durationMs: 550 },
+      { type: "emphasize", actionId: "c0", targetId: "shape:ghost", treatment: "circle", durationMs: 550, stepId: 0 },
     ];
     expect(() => computeCanvasStateAtStep(actions, 0)).not.toThrow();
     expect(computeCanvasStateAtStep(actions, 0).has("shape:ghost")).toBe(false);
   });
 });
 
+describe("Phase B2: teaching-step boundary helpers — ACTIONS is 2 steps (a0-a5 = step 1, a6-a8 = step 2)", () => {
+  it("resolveStepIdAtStep returns -1 before the first action, then the active action's stepId", () => {
+    expect(resolveStepIdAtStep(ACTIONS, -1)).toBe(-1);
+    expect(resolveStepIdAtStep(ACTIONS, 0)).toBe(1);
+    expect(resolveStepIdAtStep(ACTIONS, 5)).toBe(1);
+    expect(resolveStepIdAtStep(ACTIONS, 6)).toBe(2);
+    expect(resolveStepIdAtStep(ACTIONS, 8)).toBe(2);
+  });
+
+  it("totalTeachingSteps counts distinct stepIds", () => {
+    expect(totalTeachingSteps(ACTIONS)).toBe(2);
+  });
+
+  it("stepStartIndex/stepEndIndex bound each step correctly", () => {
+    expect(stepStartIndex(ACTIONS, 1)).toBe(0);
+    expect(stepEndIndex(ACTIONS, 1)).toBe(5);
+    expect(stepStartIndex(ACTIONS, 2)).toBe(6);
+    expect(stepEndIndex(ACTIONS, 2)).toBe(8);
+    expect(stepStartIndex(ACTIONS, 99)).toBe(-1);
+  });
+
+  it("REQUIRED: nextStepIndex jumps to the START of the NEXT step, not stepIndex+1", () => {
+    // From partway into step 1 (index 2), Next should land on step 2's
+    // start (index 6) — a single click skips the rest of step 1's
+    // micro-actions, not just one action forward.
+    expect(nextStepIndex(ACTIONS, 2)).toBe(6);
+  });
+
+  it("nextStepIndex at the last step stays at the end of the plan", () => {
+    expect(nextStepIndex(ACTIONS, 6)).toBe(ACTIONS.length - 1);
+    expect(nextStepIndex(ACTIONS, 8)).toBe(ACTIONS.length - 1);
+  });
+
+  it("REQUIRED: previousStepIndex from partway into a step returns to THAT step's own start first (doesn't skip two steps back)", () => {
+    expect(previousStepIndex(ACTIONS, 7)).toBe(6); // partway into step 2 -> step 2's own start
+  });
+
+  it("REQUIRED: previousStepIndex from a step's own start jumps to the PREVIOUS step's start", () => {
+    expect(previousStepIndex(ACTIONS, 6)).toBe(0); // at step 2's start -> step 1's start
+  });
+
+  it("previousStepIndex from step 1 (the first step) goes to -1 (blank canvas)", () => {
+    expect(previousStepIndex(ACTIONS, 0)).toBe(-1);
+    expect(previousStepIndex(ACTIONS, 3)).toBe(0); // partway into step 1 -> step 1's own start first
+  });
+
+  it("is deterministic and never throws on an empty actions array", () => {
+    expect(() => nextStepIndex([], -1)).not.toThrow();
+    expect(() => previousStepIndex([], -1)).not.toThrow();
+    expect(totalTeachingSteps([])).toBe(0);
+  });
+});
+
 describe("computeCanvasStateAtStep — erase removes a shape from the reconstructed state", () => {
   const ERASE_ACTIONS: ProfessorTeachingAction[] = [
-    { type: "draw-shape", actionId: "d0", shapeId: "shape:sketch", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550 },
-    { type: "erase", actionId: "d1", targetShapeId: "shape:sketch", durationMs: 300 },
-    { type: "draw-shape", actionId: "d2", shapeId: "shape:clean", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550 },
+    { type: "draw-shape", actionId: "d0", shapeId: "shape:sketch", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550, stepId: 0 },
+    { type: "erase", actionId: "d1", targetShapeId: "shape:sketch", durationMs: 300, stepId: 0 },
+    { type: "draw-shape", actionId: "d2", shapeId: "shape:clean", shape: "box", bounds: { x: 0, y: 0, w: 100, h: 40 }, durationMs: 550, stepId: 0 },
   ];
 
   it("the shape exists right after it's drawn", () => {

@@ -207,10 +207,10 @@ describe("Required regression 6 — procedures include all selected numbered ste
 // ── 7. Play/Pause/Previous/Next restore deterministic Whiteboard states ──────
 describe("Required regression 7 — Play/Pause/Previous/Next restore deterministic Whiteboard states", () => {
   const ACTIONS: ProfessorTeachingAction[] = [
-    { type: "move-camera", actionId: "a0", targetIds: ["shape:n1"], durationMs: 400 },
-    { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550 },
-    { type: "write", actionId: "a2", shapeId: "shape:n1", targetId: "src1", text: "Rapid assessment", x: 8, y: 20, durationMs: 700 },
-    { type: "emphasize", actionId: "a3", targetId: "shape:n1", treatment: "circle", durationMs: 550 },
+    { type: "move-camera", actionId: "a0", targetIds: ["shape:n1"], durationMs: 400, stepId: 1 },
+    { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550, stepId: 1 },
+    { type: "write", actionId: "a2", shapeId: "shape:n1", targetId: "src1", text: "Rapid assessment", x: 8, y: 20, durationMs: 700, stepId: 1 },
+    { type: "emphasize", actionId: "a3", targetId: "shape:n1", treatment: "circle", durationMs: 550, stepId: 1 },
   ];
 
   it("Play (advancing step by step) then Pause lands on the exact same state as jumping directly to that step", () => {

@@ -29,9 +29,20 @@ export interface Bounds { x: number; y: number; w: number; h: number; }
 // to be deterministic and controllable — documented here rather than left
 // implicit.
 
+// stepId (Phase B2): every action belongs to exactly ONE teaching step — a
+// single narrated point (or the intro/closing) — set by
+// buildProfessorTeachingActions.ts. Lets Previous/Next navigate by
+// pedagogical unit ("speak + write + draw + connect + emphasize" together)
+// instead of by raw micro-action, and lets the playback scheduler know which
+// actions belong to the SAME step for draw-while-teaching interleaving. See
+// lib/whiteboard/professorTimelineEngine.ts's step-boundary helpers.
 export type ProfessorTeachingAction =
-  | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number }
-  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number }
+  | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number; stepId: number }
+  // bend: Phase B2 connector-obstacle-avoidance — a nonzero value curves
+  // the arrow (tldraw's own native "bend" arc prop) around a third node's
+  // box the straight from->to line would otherwise cross. 0/omitted means
+  // a straight line, unchanged from Phase B1.
+  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number; bend?: number; stepId: number }
   // "circle"/"box" map to tldraw's ellipse/rectangle geo shapes (the only
   // two ever produced before this comment was added). "diamond"/"hexagon"/
   // "cloud" are real, additional tldraw geo shapes — decision points, traps/
@@ -44,17 +55,17 @@ export type ProfessorTeachingAction =
   // meaning" and "this is what got drawn." Phase B1 does not use either to
   // decide bounds; a real lane-aware layout that positions by spatialIntent
   // is Phase B2's job.
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: string; teachingRole?: string }
-  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number }
-  | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number }
-  | { type: "pause"; actionId: string; durationMs: number }
-  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number }
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: string; teachingRole?: string; stepId: number }
+  | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number; stepId: number }
+  | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number; stepId: number }
+  | { type: "pause"; actionId: string; durationMs: number; stepId: number }
+  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number; stepId: number }
   /** Removes a previously-drawn shape from the canvas from this point in the
    *  timeline forward — e.g. clearing a rough sketch before drawing the
    *  clean version. Handled by computeCanvasStateAtStep exactly like every
    *  other action: state-at-step is recomputed from scratch, so an erase is
    *  just "this shapeId's entry doesn't exist for index >= this action's". */
-  | { type: "erase"; actionId: string; targetShapeId: string; durationMs: number };
+  | { type: "erase"; actionId: string; targetShapeId: string; durationMs: number; stepId: number };
 
 // ── NarrationSegment — the spoken teaching script, tightly linked to actions ─
 

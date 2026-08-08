@@ -1,30 +1,44 @@
 // lib/whiteboard/groupLayout.ts
 // Deterministic, measured, collision-free geometry engine for the
 // professor-performance whiteboard — the direct fix for "shapes overlap,
-// labels cross, no visual hierarchy." Consumes the AI's semantic
-// ProfessorGroup[] (meaning only — see professorLessonPlan.ts's
-// ProfessorGroupSchema) and produces real pixel bounds. OpenAI still never
-// chooses a coordinate; this module is the "deterministic code transforms
-// groups into coordinates" half of that split.
+// labels cross, no visual hierarchy," extended in Phase B2 to produce a real
+// composed lecture board instead of a single vertical strip. OpenAI still
+// never chooses a coordinate; this module is the "deterministic code
+// transforms meaning into coordinates" half of that split.
 //
-// Placement strategy, in group.order sequence (the SAME order nodeScripts
-// narrates its member nodes in, so the spatial build order and the spoken
-// narrative order can never diverge):
-//   - every group lays out its own nodes as a single top-to-bottom column,
-//     sized from the REAL final shortLabel (measured width AND wrapped
-//     height — not a pre-AI estimate), EXCEPT:
-//   - a "comparison" group splits its nodes into two side-by-side columns,
-//     so the contrast reads left-vs-right rather than stacked;
-//   - a "warning" group reads as set apart from the main flow — it's placed
-//     in a side lane beside the group immediately before it, rather than
-//     consuming its own full-width row.
-// Groups stack vertically (GROUP_GAP_Y between each). After every node has a
-// provisional box, one deterministic AABB collision pass
-// (resolveCollisions()) pushes any still-overlapping pair apart — a backstop
-// for cases the region logic above didn't fully account for (e.g. a
-// side-lane warning whose column is taller than the group it sits beside).
+// Phase B2 placement strategy — REGION-based, driven by each node's own
+// spatialIntent (professorLessonPlan.ts's SpatialIntentSchema), not by
+// ProfessorGroup.type:
+//   - "central-mechanism" nodes form the CENTER column, the board's anchor.
+//   - "left-branch"/"right-branch" nodes flank the center column on either
+//     side, at the SAME top y — read as branches off the main concept, not
+//     stacked below it.
+//   - "comparison-column" nodes form their own row below the flank row,
+//     split into two side-by-side sub-columns (buildProfessorTeachingActions.ts
+//     draws a real bracket divider between them, unchanged from Phase B1).
+//   - "warning-aside" nodes form their own row, further below, with extra
+//     separation (WARNING_EXTRA_GAP) so it reads as set apart from the main
+//     explanation rather than just the next paragraph.
+//   - "final-summary" nodes ALWAYS form the LAST row, regardless of their
+//     narrative group.order — a closing synthesis reads at the bottom.
+// A node with no matching region (shouldn't happen — spatialIntent is a
+// required field) defaults to "central-mechanism". A page whose nodes are
+// ALL central-mechanism collapses to exactly the old single-column behavior
+// — the "smallest visual grammar that explains the page well" falls out of
+// this algorithm for free, not as a special case.
+//
+// Within each region, nodes are placed in the SAME order group.order/
+// nodeScripts narrates them (region bucketing traverses groups in order,
+// preserving each group's own nodeIds order) — the spatial build order and
+// the spoken narrative order still can never diverge, per Phase B1's
+// original design goal.
+//
+// After every node has a provisional box, the SAME deterministic AABB
+// collision pass as before (resolveCollisions()) pushes any still-
+// overlapping pair apart — a backstop for cases the region logic above
+// didn't fully account for (e.g. a very wide warning row).
 
-import type { GroupType } from "./professorLessonPlan";
+import type { GroupType, SpatialIntent } from "./professorLessonPlan";
 import { estimateLabelWidth, estimateLabelHeight } from "./textMetrics";
 
 export interface LayoutBox { x: number; y: number; w: number; h: number; }
@@ -33,6 +47,25 @@ export interface LayoutPoint { x: number; y: number; }
 export interface GroupLayoutNodeInput {
   id: string;
   label: string;
+  /** Composition intent (Phase B1) — drives which region this node lands
+   *  in. Optional only for callers that predate Phase B2 / don't care about
+   *  region placement; defaults to "central-mechanism" (the single-column
+   *  center lane), which reproduces the pre-B2 layout for any such caller. */
+  spatialIntent?: SpatialIntent;
+}
+
+type RegionKey = "left" | "center" | "right" | "comparison" | "warning" | "summary";
+
+function regionForSpatialIntent(intent: SpatialIntent | undefined): RegionKey {
+  switch (intent) {
+    case "left-branch": return "left";
+    case "right-branch": return "right";
+    case "comparison-column": return "comparison";
+    case "warning-aside": return "warning";
+    case "final-summary": return "summary";
+    case "central-mechanism":
+    default: return "center";
+  }
 }
 
 export interface GroupLayoutGroupInput {
@@ -58,6 +91,13 @@ const CANVAS_MARGIN = 40;
 const NODE_GAP_Y = 24;
 const NODE_GAP_X = 28;
 const GROUP_GAP_Y = 56;
+// Phase B2 — gap between REGIONS (rows in the composed board), deliberately
+// larger than GROUP_GAP_Y so a region reads as a distinct section, not just
+// the next paragraph in the same flow.
+const REGION_ROW_GAP = 72;
+// Extra separation before the warning row on top of REGION_ROW_GAP — a trap/
+// exception should read as visually set apart, not just "the next section."
+const WARNING_EXTRA_GAP = 40;
 
 interface SizedNode {
   id: string;
@@ -82,6 +122,48 @@ function layoutColumn(sized: SizedNode[], x: number, top: number, nodeBounds: Ma
   }
   const height = sized.length > 0 ? y - NODE_GAP_Y - top : 0;
   return { x, y: top, w: width, h: height };
+}
+
+/**
+ * Phase B2 — lays out two comparison sub-columns with each PAIR of
+ * corresponding items (colA[i], colB[i]) sharing the same row y, so the
+ * contrast reads as a genuine side-by-side comparison ("item i vs item i")
+ * instead of two independently-stacked columns that happen to drift out of
+ * alignment once labels wrap to different heights. Any length mismatch
+ * (colA/colB of different sizes) falls back to independent stacking for the
+ * unpaired tail.
+ */
+function layoutPairedColumns(
+  colA: SizedNode[], colB: SizedNode[], xA: number, xB: number, top: number,
+  nodeBounds: Map<string, LayoutBox>,
+): { boxA: LayoutBox; boxB: LayoutBox } {
+  let y = top;
+  let widthA = 0;
+  let widthB = 0;
+  const pairCount = Math.min(colA.length, colB.length);
+
+  for (let i = 0; i < pairCount; i++) {
+    const a = colA[i];
+    const b = colB[i];
+    const rowHeight = Math.max(a.h, b.h);
+    nodeBounds.set(a.id, { x: xA, y, w: a.w, h: rowHeight });
+    nodeBounds.set(b.id, { x: xB, y, w: b.w, h: rowHeight });
+    widthA = Math.max(widthA, a.w);
+    widthB = Math.max(widthB, b.w);
+    y += rowHeight + NODE_GAP_Y;
+  }
+
+  const pairedBottom = y;
+  const tailA = layoutColumn(colA.slice(pairCount), xA, pairedBottom, nodeBounds);
+  const tailB = layoutColumn(colB.slice(pairCount), xB, pairedBottom, nodeBounds);
+
+  const heightA = tailA.h > 0 ? (pairedBottom - top) + NODE_GAP_Y + tailA.h : (pairCount > 0 ? pairedBottom - NODE_GAP_Y - top : 0);
+  const heightB = tailB.h > 0 ? (pairedBottom - top) + NODE_GAP_Y + tailB.h : (pairCount > 0 ? pairedBottom - NODE_GAP_Y - top : 0);
+
+  return {
+    boxA: { x: xA, y: top, w: Math.max(widthA, tailA.w), h: heightA },
+    boxB: { x: xB, y: top, w: Math.max(widthB, tailB.w), h: heightB },
+  };
 }
 
 function boxUnion(boxes: LayoutBox[]): LayoutBox {
@@ -152,10 +234,37 @@ export function pushClearOf(box: LayoutBox, obstacles: LayoutBox[]): LayoutBox {
 }
 
 /**
- * Place every group (in group.order sequence), then every node within each
- * group, then run the collision backstop. Pure function — no randomness, no
- * Date.now(); the same (nodes, groups) input always produces the same
- * output, which is what makes a cached ProfessorLessonPlan safe to replay.
+ * Bucket every drawn node into its region (by spatialIntent), preserving
+ * group.order/nodeIds traversal order within each bucket — the SAME
+ * traversal Phase B1 used, just sorted into 6 buckets instead of driving
+ * per-group placement directly. Pure — no randomness.
+ */
+function bucketByRegion(
+  sortedGroups: GroupLayoutGroupInput[],
+  nodeById: Map<string, GroupLayoutNodeInput>,
+): Record<RegionKey, SizedNode[]> {
+  const buckets: Record<RegionKey, SizedNode[]> = {
+    left: [], center: [], right: [], comparison: [], warning: [], summary: [],
+  };
+  const seen = new Set<string>();
+  for (const group of sortedGroups) {
+    for (const id of group.nodeIds) {
+      if (seen.has(id)) continue; // a node double-listed across groups is placed once
+      const n = nodeById.get(id);
+      if (!n) continue;
+      seen.add(id);
+      const region = regionForSpatialIntent(n.spatialIntent);
+      buckets[region].push({ id: n.id, w: estimateLabelWidth(n.label), h: estimateLabelHeight(n.label) });
+    }
+  }
+  return buckets;
+}
+
+/**
+ * Place every node by REGION (Phase B2 — see file header), then run the
+ * collision backstop. Pure function — no randomness, no Date.now(); the same
+ * (nodes, groups) input always produces the same output, which is what makes
+ * a cached ProfessorLessonPlan safe to replay.
  */
 export function computeGroupLayout(
   nodes: GroupLayoutNodeInput[],
@@ -167,52 +276,87 @@ export function computeGroupLayout(
   const nodeBounds = new Map<string, LayoutBox>();
   const groupBounds = new Map<string, LayoutBox>();
 
-  let cursorY = CANVAS_MARGIN;
-  let maxX = CANVAS_MARGIN;
-  let previousRegion: LayoutBox | null = null;
+  const regions = bucketByRegion(sortedGroups, nodeById);
 
-  for (const group of sortedGroups) {
-    const sized = sizeNodes(group.nodeIds, nodeById);
-    if (sized.length === 0) continue; // groundProfessorLesson never emits these, but stay defensive
+  // ── Row 1: center flanked by left/right branches, all top-aligned so they
+  //     read as branching OFF the main concept, not stacked below it. ──────
+  const topY = CANVAS_MARGIN;
+  const leftWidth   = regions.left.length   > 0 ? Math.max(...regions.left.map(n => n.w))   : 0;
+  const centerWidth  = regions.center.length > 0 ? Math.max(...regions.center.map(n => n.w)) : 0;
 
-    let region: LayoutBox;
+  const leftX   = CANVAS_MARGIN;
+  const centerX = CANVAS_MARGIN + (leftWidth > 0 ? leftWidth + NODE_GAP_X : 0);
+  const rightX  = centerX + centerWidth + (centerWidth > 0 ? NODE_GAP_X : 0);
 
-    if (group.type === "comparison" && sized.length >= 2) {
-      const mid = Math.ceil(sized.length / 2);
-      const colA = sized.slice(0, mid);
-      const colB = sized.slice(mid);
-      const boxA = layoutColumn(colA, CANVAS_MARGIN, cursorY, nodeBounds);
-      const boxB = layoutColumn(colB, CANVAS_MARGIN + boxA.w + NODE_GAP_X, cursorY, nodeBounds);
-      region = boxUnion([boxA, boxB]);
-      cursorY = region.y + region.h + GROUP_GAP_Y;
-    } else if (group.type === "warning" && previousRegion) {
-      // Side lane beside the previous region — set apart from the main
-      // flow's column, top-aligned with it, instead of consuming its own
-      // full-width row. Does not advance cursorY on its own; the collision
-      // pass reconciles anything this ends up overlapping.
-      const laneX = previousRegion.x + previousRegion.w + NODE_GAP_X;
-      region = layoutColumn(sized, laneX, previousRegion.y, nodeBounds);
-    } else {
-      region = layoutColumn(sized, CANVAS_MARGIN, cursorY, nodeBounds);
-      cursorY = region.y + region.h + GROUP_GAP_Y;
-    }
+  const leftBox   = regions.left.length   > 0 ? layoutColumn(regions.left,   leftX,   topY, nodeBounds) : null;
+  const centerBox = regions.center.length > 0 ? layoutColumn(regions.center, centerX, topY, nodeBounds) : null;
+  const rightBox  = regions.right.length  > 0 ? layoutColumn(regions.right,  rightX,  topY, nodeBounds) : null;
 
-    groupBounds.set(group.id, region);
-    maxX = Math.max(maxX, region.x + region.w);
-    previousRegion = region;
+  const flankBoxes = [leftBox, centerBox, rightBox].filter((b): b is LayoutBox => Boolean(b));
+  let cursorY = flankBoxes.length > 0 ? Math.max(...flankBoxes.map(b => b.y + b.h)) + REGION_ROW_GAP : topY;
+  let maxX = Math.max(CANVAS_MARGIN, ...flankBoxes.map(b => b.x + b.w));
+
+  // ── Row 2: comparison-column region, split into two side-by-side columns
+  //     — buildProfessorTeachingActions.ts draws a real bracket divider
+  //     between them (unchanged from Phase B1), computed from these same
+  //     final node bounds. ────────────────────────────────────────────────
+  let comparisonBox: LayoutBox | null = null;
+  if (regions.comparison.length >= 2) {
+    const mid = Math.ceil(regions.comparison.length / 2);
+    const colA = regions.comparison.slice(0, mid);
+    const colB = regions.comparison.slice(mid);
+    // Row-align each pair (colA[i] vs colB[i]) so the contrast reads as a
+    // genuine side-by-side comparison, not two columns that drift apart
+    // once labels wrap to different heights. colB's x depends on colA's
+    // widest member, computed first.
+    const colAWidth = Math.max(...colA.map(n => n.w));
+    const { boxA, boxB } = layoutPairedColumns(colA, colB, CANVAS_MARGIN, CANVAS_MARGIN + colAWidth + NODE_GAP_X, cursorY, nodeBounds);
+    comparisonBox = boxUnion([boxA, boxB]);
+  } else if (regions.comparison.length === 1) {
+    // A single surviving comparison node has nothing to contrast against —
+    // draw it as a plain single column rather than a degenerate 2-column
+    // split with an empty second column.
+    comparisonBox = layoutColumn(regions.comparison, CANVAS_MARGIN, cursorY, nodeBounds);
+  }
+  if (comparisonBox) {
+    cursorY = comparisonBox.y + comparisonBox.h + REGION_ROW_GAP;
+    maxX = Math.max(maxX, comparisonBox.x + comparisonBox.w);
+  }
+
+  // ── Row 3: warning-aside region — extra separation on top of the normal
+  //     row gap, so a trap/exception reads as set apart, not just the next
+  //     paragraph. ───────────────────────────────────────────────────────
+  let warningBox: LayoutBox | null = null;
+  if (regions.warning.length > 0) {
+    const warningY = cursorY + (cursorY > topY ? WARNING_EXTRA_GAP : 0);
+    warningBox = layoutColumn(regions.warning, CANVAS_MARGIN, warningY, nodeBounds);
+    cursorY = warningBox.y + warningBox.h + REGION_ROW_GAP;
+    maxX = Math.max(maxX, warningBox.x + warningBox.w);
+  }
+
+  // ── Row 4: final-summary — ALWAYS last, regardless of narrative
+  //     group.order, since a closing synthesis reads at the bottom. ───────
+  let summaryBox: LayoutBox | null = null;
+  if (regions.summary.length > 0) {
+    summaryBox = layoutColumn(regions.summary, CANVAS_MARGIN, cursorY, nodeBounds);
+    maxX = Math.max(maxX, summaryBox.x + summaryBox.w);
   }
 
   const resolvedNodeBounds = resolveCollisions(nodeBounds);
 
   // Recompute canvas extent (and group bounds) from the POST-collision
-  // positions — a side-lane warning or a collision push-down can extend past
-  // the provisional cursorY/maxX computed during placement.
+  // positions — the collision pass can push a box past the provisional
+  // cursorY/maxX computed during placement.
   let canvasWidth = maxX + CANVAS_MARGIN;
   let canvasHeight = cursorY + CANVAS_MARGIN;
   for (const box of resolvedNodeBounds.values()) {
     canvasWidth = Math.max(canvasWidth, box.x + box.w + CANVAS_MARGIN);
     canvasHeight = Math.max(canvasHeight, box.y + box.h + CANVAS_MARGIN);
   }
+  // groupBounds is keyed by ProfessorGroup.id (narrative grouping, used for
+  // camera batching in buildProfessorTeachingActions.ts) — recomputed from
+  // final node positions regardless of which REGION each member landed in,
+  // so a group whose nodes span multiple regions still gets one framing box.
   for (const group of sortedGroups) {
     const memberBoxes = group.nodeIds.map(id => resolvedNodeBounds.get(id)).filter((b): b is LayoutBox => Boolean(b));
     if (memberBoxes.length > 0) groupBounds.set(group.id, boxUnion(memberBoxes));
@@ -223,6 +367,67 @@ export function computeGroupLayout(
     groupBounds,
     canvas: { width: canvasWidth, height: canvasHeight },
   };
+}
+
+// ── Phase B2: connector obstacle avoidance ──────────────────────────────────
+// A straight line between two anchor points can, once regions are genuinely
+// spread across a 2D board, pass through a THIRD node's box that has nothing
+// to do with that connection. tldraw's native arrow "bend" prop (a real,
+// built-in curve — not a synthesized multi-segment path) is enough to route
+// around a single obstacle without inventing a full orthogonal-routing
+// engine; this stays a single, deterministic curve amount per arrow.
+
+function pointInBox(p: LayoutPoint, box: LayoutBox): boolean {
+  return p.x > box.x && p.x < box.x + box.w && p.y > box.y && p.y < box.y + box.h;
+}
+
+function orientation(a: LayoutPoint, b: LayoutPoint, c: LayoutPoint): number {
+  return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+}
+
+function segmentsIntersect(p1: LayoutPoint, p2: LayoutPoint, p3: LayoutPoint, p4: LayoutPoint): boolean {
+  const d1 = orientation(p3, p4, p1);
+  const d2 = orientation(p3, p4, p2);
+  const d3 = orientation(p1, p2, p3);
+  const d4 = orientation(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/** Does the straight segment from->to pass through box (or start/end inside
+ *  it)? Pure geometry — no knowledge of which shapes these points belong to;
+ *  callers are responsible for excluding the connection's own two
+ *  endpoints from `box`. */
+export function lineIntersectsBox(from: LayoutPoint, to: LayoutPoint, box: LayoutBox): boolean {
+  if (pointInBox(from, box) || pointInBox(to, box)) return true;
+  const tl = { x: box.x, y: box.y };
+  const tr = { x: box.x + box.w, y: box.y };
+  const bl = { x: box.x, y: box.y + box.h };
+  const br = { x: box.x + box.w, y: box.y + box.h };
+  return (
+    segmentsIntersect(from, to, tl, tr) ||
+    segmentsIntersect(from, to, tr, br) ||
+    segmentsIntersect(from, to, br, bl) ||
+    segmentsIntersect(from, to, bl, tl)
+  );
+}
+
+const AVOIDANCE_BEND_MAGNITUDE = 60;
+
+/**
+ * A deterministic tldraw arrow `bend` value: 0 if the straight from->to line
+ * doesn't cross any obstacle, otherwise a fixed-magnitude curve away from
+ * the first blocking obstacle's center (sign chosen so the arc bows to
+ * whichever side that obstacle ISN'T on). One bend per arrow, not a
+ * multi-waypoint path — sufficient to clear a single incidental obstacle,
+ * not a general maze-routing solver.
+ */
+export function computeAvoidanceBend(from: LayoutPoint, to: LayoutPoint, obstacles: LayoutBox[]): number {
+  const blocker = obstacles.find(box => lineIntersectsBox(from, to, box));
+  if (!blocker) return 0;
+  const cx = blocker.x + blocker.w / 2;
+  const cy = blocker.y + blocker.h / 2;
+  const cross = (to.x - from.x) * (cy - from.y) - (to.y - from.y) * (cx - from.x);
+  return cross >= 0 ? -AVOIDANCE_BEND_MAGNITUDE : AVOIDANCE_BEND_MAGNITUDE;
 }
 
 /** The point where a ray from box's center toward (towardX, towardY) exits
