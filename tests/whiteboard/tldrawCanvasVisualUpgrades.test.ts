@@ -30,13 +30,47 @@ describe("TldrawCanvas.tsx — EDGE_COLOR is actually applied (was dead code)", 
   });
 });
 
+describe("TldrawCanvas.tsx — Phase B1: 'brace' renders as a real bracket, not a rectangle fallback", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: toTldrawShapeSpec special-cases 'brace' BEFORE the generic geo-shape branch", () => {
+    const braceIdx = src.indexOf('if (s.kind === "brace") {');
+    const genericIdx = src.indexOf('if (s.kind === "box" || s.kind === "circle"');
+    expect(braceIdx).toBeGreaterThan(-1);
+    expect(genericIdx).toBeGreaterThan(-1);
+    expect(braceIdx).toBeLessThan(genericIdx);
+  });
+
+  it('REQUIRED: the generic geo-shape branch no longer lists "brace" — it must not fall back to a plain rectangle', () => {
+    const genericIdx = src.indexOf('if (s.kind === "box" || s.kind === "circle"');
+    const block = src.slice(genericIdx, genericIdx + 200);
+    expect(block).not.toMatch(/s\.kind === "brace"/);
+  });
+
+  it('REQUIRED: "brace" returns a real tldraw "line" shape with 4 points (a squared bracket), not a "geo" rectangle', () => {
+    const braceIdx = src.indexOf('if (s.kind === "brace") {');
+    const block = src.slice(braceIdx, braceIdx + 1300);
+    expect(block).toMatch(/type: "line", x: s\.bounds\.x, y: s\.bounds\.y,/);
+    expect(block).toMatch(/points: \{/);
+    expect(block).toMatch(/p1: \{ id: "p1", index: "a1", x: 0, y: 0 \}/);
+    expect(block).toMatch(/p4: \{ id: "p4", index: "a4", x: 0, y: h \}/);
+  });
+
+  it("the function's return type now includes \"line\" alongside geo/arrow/text", () => {
+    const idx = src.indexOf("function toTldrawShapeSpec(");
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/type: "geo" \| "arrow" \| "text" \| "line"/);
+  });
+});
+
 describe("TldrawCanvas.tsx — richer geo shape vocabulary (diamond/hexagon/cloud), not just rectangle/ellipse", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
 
   it("REQUIRED: toTldrawShapeSpec's geo branch now accepts diamond/hexagon/cloud shape kinds", () => {
     const idx = src.indexOf("function toTldrawShapeSpec(");
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 2100);
     expect(block).toMatch(/s\.kind === "diamond" \|\| s\.kind === "hexagon" \|\| s\.kind === "cloud"/);
   });
 

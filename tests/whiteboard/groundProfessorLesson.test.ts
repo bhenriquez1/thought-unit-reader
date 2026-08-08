@@ -26,7 +26,7 @@ function makeScript(overrides: Partial<ProfessorLessonScript> = {}): ProfessorLe
     title: "Test Title",
     learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [
-      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+      { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
     ],
     groups: [],
     synthesisQuestion: "What comes next?",
@@ -46,8 +46,8 @@ describe("groundProfessorLesson — drops hallucinated ids", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "Real", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "made-up-id", shortLabel: "Fake", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "Real", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "made-up-id", shortLabel: "Fake", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -59,8 +59,8 @@ describe("groundProfessorLesson — drops hallucinated ids", () => {
     const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -73,8 +73,8 @@ describe("groundProfessorLesson — at most one emphasized point", () => {
     const vsg = makeVsg(["n1", "n2"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: true, explain: [] },
-        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: true, explain: [] },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "circle", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "circle", relationships: [], explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -89,7 +89,7 @@ describe("groundProfessorLesson — density cap", () => {
     const ids = Array.from({ length: MAX_GROUNDED_TARGETS + 5 }, (_, i) => `n${i}`);
     const vsg = makeVsg(ids);
     const script = makeScript({
-      nodeScripts: ids.map(id => ({ targetId: id, shortLabel: "Label", narration: "x", tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [] })),
+      nodeScripts: ids.map(id => ({ targetId: id, shortLabel: "Label", narration: "x", tone: "explain" as const, pace: "normal" as const, emphasize: false, teachingRole: "context" as const, spatialIntent: "central-mechanism" as const, drawingIntent: "plain" as const, emphasisTreatment: "none" as const, relationships: [], explain: [] })),
     });
     const result = groundProfessorLesson(script, vsg);
     expect(result.nodeScripts.length).toBeLessThanOrEqual(MAX_GROUNDED_TARGETS);
@@ -101,8 +101,8 @@ describe("groundProfessorLesson — duplicate targetId collapse", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First version", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "n1", shortLabel: "Second version", narration: "y", tone: "explain", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "First version", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n1", shortLabel: "Second version", narration: "y", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -118,7 +118,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
       nodeScripts: [{
         targetId: "n1",
         shortLabel: "The clinician should perform a rapid initial assessment of the patient before doing anything else at all",
-        narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [],
+        narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
       }],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -133,7 +133,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
     const script = makeScript({
       nodeScripts: [{
         targetId: "n1", shortLabel: "X. Y. Z. W. Phase two is Y and Z happens too eventually.",
-        narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [],
+        narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
       }],
     });
     const result = groundProfessorLesson(script, vsg);
@@ -154,7 +154,7 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
 describe("groundProfessorLesson — never throws, even on a fully-hallucinated script", () => {
   it("returns an empty nodeScripts array rather than crashing", () => {
     const vsg = makeVsg(["n1"]);
-    const script = makeScript({ nodeScripts: [{ targetId: "bogus", shortLabel: "x", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: [] }] });
+    const script = makeScript({ nodeScripts: [{ targetId: "bogus", shortLabel: "x", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] }] });
     expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
     expect(groundProfessorLesson(script, vsg).nodeScripts).toEqual([]);
   });
@@ -163,8 +163,8 @@ describe("groundProfessorLesson — never throws, even on a fully-hallucinated s
 describe("groundProfessorLesson — groups", () => {
   function twoNodeScripts() {
     return [
-      { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce" as const, pace: "normal" as const, emphasize: false, explain: [] },
-      { targetId: "n2", shortLabel: "Second", narration: "y", tone: "explain" as const, pace: "normal" as const, emphasize: false, explain: [] },
+      { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce" as const, pace: "normal" as const, emphasize: false, teachingRole: "context" as const, spatialIntent: "central-mechanism" as const, drawingIntent: "plain" as const, emphasisTreatment: "none" as const, relationships: [], explain: [] },
+      { targetId: "n2", shortLabel: "Second", narration: "y", tone: "explain" as const, pace: "normal" as const, emphasize: false, teachingRole: "context" as const, spatialIntent: "central-mechanism" as const, drawingIntent: "plain" as const, emphasisTreatment: "none" as const, relationships: [], explain: [] },
     ];
   }
 
@@ -254,8 +254,8 @@ describe("groundProfessorLesson — groups", () => {
     const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
-        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
       ],
       groups: [],
     });
@@ -283,7 +283,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "Hypothermia", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "Hypothermia", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [
           explainAction({ type: "write", id: "metabolism", text: "less metabolic demand" }),
           explainAction({ type: "arrow", from: "self", to: "metabolism" }),
@@ -299,7 +299,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [
           explainAction({ type: "arrow", from: "self", to: "notYetDeclared" }),
           explainAction({ type: "write", id: "notYetDeclared", text: "later" }),
@@ -314,7 +314,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [explainAction({ type: "emphasize", target: "ghost", style: "circle" })],
       }],
     });
@@ -326,7 +326,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [explainAction({ type: "emphasize", target: "self", style: "highlight" })],
       }],
     });
@@ -338,7 +338,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [
           explainAction({ type: "write", id: "a", text: "first" }),
           explainAction({ type: "write", id: "a", text: "second" }),
@@ -354,7 +354,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [explainAction({ type: "write", id: "a", text: "this fragment has way more words than a hand-drawn aside should ever have" })],
       }],
     });
@@ -366,7 +366,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const many = Array.from({ length: 10 }, (_, i) => explainAction({ type: "write", id: `w${i}`, text: `frag ${i}` }));
     const script = makeScript({
-      nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, explain: many }],
+      nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: many }],
     });
     const result = groundProfessorLesson(script, vsg);
     expect(result.nodeScripts[0].explain.length).toBeLessThanOrEqual(6);
@@ -376,9 +376,9 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
     const script = makeScript({
       nodeScripts: [
-        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, explain: [] },
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
         {
-          targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false,
+          targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
           explain: [explainAction({ type: "write", id: "a", text: "should never appear" })],
         },
       ],
@@ -391,7 +391,7 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     const vsg = makeVsg(["n1"]);
     const script = makeScript({
       nodeScripts: [{
-        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [],
         explain: [
           explainAction({ type: "write", id: null, text: "no id" }),
           explainAction({ type: "icon", id: "i1", icon: null }),
@@ -401,5 +401,154 @@ describe("groundProfessorLesson — sanitizes explain[] mini-diagrams", () => {
     });
     expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
     expect(groundProfessorLesson(script, vsg).nodeScripts[0].explain).toEqual([]);
+  });
+});
+
+describe("groundProfessorLesson — Phase B1: teachingRole/spatialIntent/drawingIntent survive unchanged", () => {
+  it("REQUIRED: teachingRole, spatialIntent, and drawingIntent pass through to the grounded entry exactly as declared", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "mechanism", spatialIntent: "warning-aside", drawingIntent: "contrast",
+        emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].teachingRole).toBe("mechanism");
+    expect(result.nodeScripts[0].spatialIntent).toBe("warning-aside");
+    expect(result.nodeScripts[0].drawingIntent).toBe("contrast");
+  });
+});
+
+describe("groundProfessorLesson — Phase B1: emphasisTreatment is forced to match the single-winner rule", () => {
+  it("REQUIRED: the winning emphasized entry keeps its chosen treatment", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "warn", pace: "slow", emphasize: true,
+        teachingRole: "consequence", spatialIntent: "central-mechanism", drawingIntent: "plain",
+        emphasisTreatment: "crossOut", relationships: [], explain: [],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].emphasisTreatment).toBe("crossOut");
+  });
+
+  it("REQUIRED: a non-winning (second) emphasize:true entry is forced to emphasisTreatment 'none', even though it asked for a real treatment", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "circle", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "warn", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "highlight", relationships: [], explain: [] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "n1")!.emphasisTreatment).toBe("circle");
+    expect(result.nodeScripts.find(n => n.targetId === "n2")!.emphasisTreatment).toBe("none");
+  });
+
+  it("a script that never sets emphasize:true never has a non-'none' emphasisTreatment", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain",
+        emphasisTreatment: "highlight", // AI mistakenly set a treatment despite emphasize:false
+        relationships: [], explain: [],
+      }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].emphasisTreatment).toBe("none");
+  });
+});
+
+describe("groundProfessorLesson — Phase B1: sanitizes relationships[]", () => {
+  it("REQUIRED: keeps a relationship targeting another real, surviving node", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [{ targetId: "n2", kind: "causes", label: null }] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "n1")!.relationships).toEqual([{ targetId: "n2", kind: "causes", label: null }]);
+  });
+
+  it("REQUIRED: drops a relationship targeting a node that never survived grounding (density-capped/never-narrated)", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [{ targetId: "n2", kind: "causes", label: null }] },
+        // n2 deliberately NOT narrated — its only mention is the relationship above.
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].relationships).toEqual([]);
+  });
+
+  it("REQUIRED: drops a self-referencing relationship", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{ targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [{ targetId: "n1", kind: "supports", label: null }] }],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts[0].relationships).toEqual([]);
+  });
+
+  it("REQUIRED: drops a relationship targeting an edge id — relationships are node-only, like groups", () => {
+    const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [{ targetId: "e1", kind: "supports", label: null }] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "n1")!.relationships).toEqual([]);
+  });
+
+  it("REQUIRED: deduplicates repeated relationship targets, keeping the first", () => {
+    const vsg = makeVsg(["n1", "n2"]);
+    const script = makeScript({
+      nodeScripts: [
+        {
+          targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false,
+          teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [],
+          relationships: [{ targetId: "n2", kind: "causes", label: "first" }, { targetId: "n2", kind: "contrasts", label: "second" }],
+        },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "n1")!.relationships).toEqual([{ targetId: "n2", kind: "causes", label: "first" }]);
+  });
+
+  it("an edge-target nodeScript entry never gets relationships, even if the AI provided some — same rule as explain[]", () => {
+    const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
+    const script = makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "First", narration: "x", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+        { targetId: "n2", shortLabel: "Second", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "x", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [], relationships: [{ targetId: "n1", kind: "supports", label: null }] },
+      ],
+    });
+    const result = groundProfessorLesson(script, vsg);
+    expect(result.nodeScripts.find(n => n.targetId === "e1")!.relationships).toEqual([]);
+  });
+
+  it("never throws on a malformed relationships array", () => {
+    const vsg = makeVsg(["n1"]);
+    const script = makeScript({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "x", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", explain: [],
+        relationships: [{ targetId: "", kind: "supports", label: null }, { targetId: "does-not-exist", kind: "causes", label: null }],
+      }],
+    });
+    expect(() => groundProfessorLesson(script, vsg)).not.toThrow();
+    expect(groundProfessorLesson(script, vsg).nodeScripts[0].relationships).toEqual([]);
   });
 });

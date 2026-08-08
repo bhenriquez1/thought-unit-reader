@@ -13,8 +13,41 @@
 //     primary objects even if the underlying VSG has more nodes/edges.
 
 import type { VisualSceneGraph } from "./visualSceneGraph";
-import type { ProfessorLessonScript, ProfessorNodeScript, GroupType, ExplanationAction } from "./professorLessonPlan";
+import type {
+  ProfessorLessonScript, ProfessorNodeScript, GroupType, ExplanationAction, ProfessorRelationship,
+} from "./professorLessonPlan";
 import { clampToShortLabel, isParagraphShaped } from "./textMetrics";
+
+/** Mirrors ProfessorNodeScriptSchema.relationships' own .max(3) — re-enforced
+ *  here as a hard backstop, same discipline as MAX_EXPLAIN_ACTIONS below. */
+const MAX_RELATIONSHIPS = 3;
+
+/**
+ * Validate one nodeScript entry's AI-declared relationships[] against the
+ * FINAL set of node ids that survived grounding (not the original script's
+ * targetIds — some of those may have been density-capped or deduplicated
+ * away by the time this runs). A relationship pointing at a dropped node, a
+ * non-node (edge) id, or itself is simply dropped, never rendered — the same
+ * "no highlight is better than a wrong highlight" philosophy as
+ * sanitizeExplain(). Never throws.
+ */
+function sanitizeRelationships(
+  raw: ProfessorRelationship[],
+  ownTargetId: string,
+  survivingNodeIds: Set<string>,
+): ProfessorRelationship[] {
+  const seen = new Set<string>();
+  const result: ProfessorRelationship[] = [];
+  for (const rel of raw) {
+    if (result.length >= MAX_RELATIONSHIPS) break;
+    if (!rel.targetId || rel.targetId === ownTargetId) continue;      // self-reference — drop
+    if (!survivingNodeIds.has(rel.targetId)) continue;                 // hallucinated/dropped node — drop
+    if (seen.has(rel.targetId)) continue;                              // duplicate target — keep first only
+    seen.add(rel.targetId);
+    result.push(rel.label ? { ...rel, label: clampToShortLabel(rel.label, 4) } : rel);
+  }
+  return result;
+}
 
 /** Keeps the canvas readable — the VSG itself may carry up to 12 nodes plus
  *  edges; this is the whiteboard-specific "fewer than 10 main visual
@@ -194,15 +227,25 @@ export function groundProfessorLesson(
     seenTargets.add(entry.targetId);
     const emphasize = Boolean(entry.emphasize) && !emphasizeUsed;
     if (emphasize) emphasizeUsed = true;
+    // The chosen treatment only ever applies to the ONE winning emphasis —
+    // every other entry (including one that set emphasize:true but lost the
+    // "first wins" race above) is forced to "none" regardless of what the
+    // model requested, so a downstream reader can trust
+    // `emphasize === (emphasisTreatment !== "none")` always holds.
+    const emphasisTreatment = emphasize
+      ? (entry.emphasisTreatment === "none" ? "circle" : entry.emphasisTreatment)
+      : "none";
     // Explain asides belong to a POINT, not a connector — an edge-target
     // entry with a non-empty explain[] gets none (a connector doesn't get
-    // its own mini-diagram).
+    // its own mini-diagram). Relationships are sanitized in a second pass
+    // below, once the FINAL surviving node id set is known.
     const explain = nodeIds.has(entry.targetId) ? sanitizeExplain(entry.explain) : [];
 
     grounded.push({
       ...entry,
       shortLabel: sanitizeLabel(entry.shortLabel),
       emphasize,
+      emphasisTreatment,
       explain,
     });
   }
@@ -211,12 +254,25 @@ export function groundProfessorLesson(
     .map(entry => entry.targetId)
     .filter(id => vsg.nodes.some(n => n.id === id)); // groups are node-only, never edges
 
+  // Second pass: relationships must be validated against the FINAL surviving
+  // node set, not the entry's own local view — a relationship declared
+  // before this entry in the raw script may target a node that got dropped
+  // later (density cap, duplicate). Edge-target entries never get
+  // relationships (same reasoning as explain above).
+  const survivingNodeIds = new Set(groundedNodeIds);
+  const withRelationships = grounded.map(entry => ({
+    ...entry,
+    relationships: nodeIds.has(entry.targetId)
+      ? sanitizeRelationships(entry.relationships, entry.targetId, survivingNodeIds)
+      : [],
+  }));
+
   return {
     title:              sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
     visualGrammar:      script.visualGrammar,
     learningObjective:  script.learningObjective.trim(),
     synthesisQuestion:  script.synthesisQuestion.trim(),
-    nodeScripts:         grounded,
+    nodeScripts:         withRelationships,
     groups:              resolveGroups(script.groups, vsg, groundedNodeIds),
   };
 }
