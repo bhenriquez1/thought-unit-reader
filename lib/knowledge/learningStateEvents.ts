@@ -33,7 +33,22 @@ export type LearningStateEvent =
   | { kind: "confidence-reported"; confidence: number; occurredAt: string; sourceId: string }
   // A specific misconception was observed (e.g. a wrong-answer explanation
   // matched a known misconception category).
-  | { kind: "misconception-observed"; misconception: string; occurredAt: string; sourceId?: string };
+  | { kind: "misconception-observed"; misconception: string; occurredAt: string; sourceId?: string }
+  // Phase B3 — a single Whiteboard teaching step (one narrated point) played
+  // to completion. Deliberately evidence-only: no score field changes here.
+  // The coarser "watched the whole lesson" signal (whiteboard-lesson-completed
+  // above) is what earns the modest understandingScore credit — per-step
+  // completion is a finer-grained activity trail, not additional credit for
+  // simply continuing to watch.
+  | { kind: "teaching-step-completed"; stepId: number; occurredAt: string; sourceId: string }
+  // Phase B3 — a Professor/Whiteboard lesson began (its first teaching step
+  // started). Evidence + exposure only, same shape as "exposure" above but
+  // its own kind so a Whiteboard lesson start is distinguishable in the
+  // evidence trail from a generic page-read exposure. Deliberately does NOT
+  // grant understandingScore — only whiteboard-lesson-completed (finishing
+  // the lesson) does that, and even then only once per distinct lesson (see
+  // the whiteboard-lesson-completed case below).
+  | { kind: "professor-lesson-started"; occurredAt: string; sourceId: string };
 
 export function emptyProgress(nodeId: string, documentId: string): KnowledgeNodeProgress {
   return {
@@ -115,15 +130,23 @@ export function applyLearningEvent(
     }
 
     case "whiteboard-lesson-completed": {
+      // Phase B3: idempotent on replay — a snapshotId already present in
+      // whiteboardSnapshotIds means THIS exact lesson has already been
+      // credited once, so rewatching it does not grant understandingScore
+      // again (only the first completion of a given lesson does). Replays
+      // still count as exposure/activity (exposureCount, lastStudiedAt,
+      // evidence) — only the mastery credit itself is capped at "once per
+      // distinct lesson," not the activity trail.
+      const alreadyCredited = !!event.snapshotId && progress.whiteboardSnapshotIds.includes(event.snapshotId);
       return {
         ...progress,
-        understandingScore: clamp(progress.understandingScore + 8),
+        understandingScore: alreadyCredited ? progress.understandingScore : clamp(progress.understandingScore + 8),
         exposureCount: progress.exposureCount + 1,
         lastStudiedAt: event.occurredAt,
         whiteboardSnapshotIds: event.snapshotId && !progress.whiteboardSnapshotIds.includes(event.snapshotId)
           ? [...progress.whiteboardSnapshotIds, event.snapshotId]
           : progress.whiteboardSnapshotIds,
-        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, "lesson completed"),
+        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, alreadyCredited ? "lesson replayed" : "lesson completed"),
       };
     }
 
@@ -168,6 +191,22 @@ export function applyLearningEvent(
         ...(event.sourceId
           ? { evidence: pushEvidence(progress, "recall", event.sourceId, event.occurredAt, `misconception: ${event.misconception}`) }
           : {}),
+      };
+    }
+
+    case "teaching-step-completed": {
+      return {
+        ...progress,
+        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, `step ${event.stepId} completed`),
+      };
+    }
+
+    case "professor-lesson-started": {
+      return {
+        ...progress,
+        exposureCount: progress.exposureCount + 1,
+        lastStudiedAt: event.occurredAt,
+        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, "lesson started"),
       };
     }
   }

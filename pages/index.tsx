@@ -36,7 +36,6 @@ import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
-import { generateWhiteboardStepsFromModel } from "@/lib/insights/whiteboardFromStudyModel";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -1326,11 +1325,6 @@ export default function ThoughtUnitReader() {
       note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors + savedHighlightsStore only",
     });
   }, [currentPageStudyModel, canonicalLeftPanelUnits, canonicalLeftPanelDiagnostic, currentPage, pageTextByPage, savedHighlightAnchors]);
-
-  const whiteboardSteps = useMemo(
-    () => currentPageStudyModel ? generateWhiteboardStepsFromModel(currentPageStudyModel, currentPage) : [],
-    [currentPageStudyModel, currentPage],
-  );
 
   // Teaching sequence for Universal Recall Lab (shared with WhiteboardPanel Teach tab)
   const currentPageNoteCards = useMemo((): NoteCard[] | null => {
@@ -6840,35 +6834,57 @@ export default function ThoughtUnitReader() {
                 fallbackUsed: !activeCanonicalThoughtUnit,
                 pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
               }) as any) && null}
-              <WhiteboardPanel
-                key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
-                concept={activeCanonicalThoughtUnit?.title || wbConcept || ""}
-                context={activeCanonicalThoughtUnit?.exactText || wbContext || wbConcept || ""}
-                studyModel={currentPageStudyModel as any}
-                pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-                lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
-                currentPage={currentPage}
-                pageTruthKey={pageTruthKey}
-                pageTeachingType={surgeonAnnotations.plan?.pageRole ?? null}
-                onAnchorStep={(id) => {
-                  DEV && console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
-                  setFocusedEvidenceId(id);
-                }}
-                activeAnchorId={focusedEvidenceId}
-                bookId={bookId}
-                bookTitle={uploadedFile?.name}
-                // SurgeonAnnotationPlan.pageThesis is authoritative — it's the same
-                // shared page-understanding pass that also drives highlighting and
-                // pageTeachingType. currentPageStudyModel comes from a separate
-                // synthesis pipeline that reads the page independently; falling
-                // back to it here (rather than preferring it) avoids the
-                // Whiteboard and highlights ever disagreeing about the page.
-                pageTitle={surgeonAnnotations.plan?.pageThesis ?? currentPageStudyModel?.pageThesis ?? null}
-                knowledgeNodeId={pageKgNodeIdRef.current}
-                onOpenChiefResident={handleOpenChiefResident}
-                whiteboardGrammar={activePack.whiteboardGrammar}
-                canonicalEntries={whiteboardCanonicalEntries}
-              />
+              {/* Phase B3-4: a render crash inside the Professor Whiteboard
+                  (TldrawCanvas/tldraw itself) must not take down the whole
+                  Reader page underneath it. resetKeys ties the boundary to
+                  the current document+page identity — navigating to a
+                  different document/page always rebuilds fresh from that
+                  identity rather than staying wedged on a stale error, the
+                  same way the WhiteboardPanel key prop below already forces
+                  a fresh mount per page. onError logs only structural,
+                  privacy-safe diagnostics (ids/counts/error name+message),
+                  never page content. */}
+              <ErrorBoundary
+                resetKeys={[resolvedDocumentId ?? bookId ?? "", pageTruthKey ?? "", currentPage ?? 0]}
+                onError={(error) => console.error("🖍️ WhiteboardPanel Error:", {
+                  message: error.message,
+                  name: error.name,
+                  bookId,
+                  currentPage,
+                  pageTruthKey,
+                })}
+              >
+                <WhiteboardPanel
+                  key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
+                  concept={activeCanonicalThoughtUnit?.title || wbConcept || ""}
+                  context={activeCanonicalThoughtUnit?.exactText || wbContext || wbConcept || ""}
+                  studyModel={currentPageStudyModel as any}
+                  pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                  lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
+                  currentPage={currentPage}
+                  pageTruthKey={pageTruthKey}
+                  pageTeachingType={surgeonAnnotations.plan?.pageRole ?? null}
+                  onAnchorStep={(id) => {
+                    DEV && console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
+                    setFocusedEvidenceId(id);
+                  }}
+                  activeAnchorId={focusedEvidenceId}
+                  bookId={bookId}
+                  resolvedDocumentId={resolvedDocumentId}
+                  bookTitle={uploadedFile?.name}
+                  // SurgeonAnnotationPlan.pageThesis is authoritative — it's the same
+                  // shared page-understanding pass that also drives highlighting and
+                  // pageTeachingType. currentPageStudyModel comes from a separate
+                  // synthesis pipeline that reads the page independently; falling
+                  // back to it here (rather than preferring it) avoids the
+                  // Whiteboard and highlights ever disagreeing about the page.
+                  pageTitle={surgeonAnnotations.plan?.pageThesis ?? currentPageStudyModel?.pageThesis ?? null}
+                  knowledgeNodeId={pageKgNodeIdRef.current}
+                  onOpenChiefResident={handleOpenChiefResident}
+                  whiteboardGrammar={activePack.whiteboardGrammar}
+                  canonicalEntries={whiteboardCanonicalEntries}
+                />
+              </ErrorBoundary>
             </div>
           </div>
         </div>

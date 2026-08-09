@@ -530,6 +530,14 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   });
 });
 
+describe("buildProfessorTeachingActions — Phase B3: every narration segment is explicitly PROFESSOR_EXPLANATION", () => {
+  it("REQUIRED: every segment in the plan carries contentRole: 'PROFESSOR_EXPLANATION'", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    expect(plan.segments.length).toBeGreaterThan(0);
+    expect(plan.segments.every(s => s.contentRole === "PROFESSOR_EXPLANATION")).toBe(true);
+  });
+});
+
 describe("buildProfessorTeachingActions — Phase B2: every action carries a teaching-step id", () => {
   it("REQUIRED: title/learningObjective actions share stepId 0; each nodeScript/edge entry gets its own incrementing stepId", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);

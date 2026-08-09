@@ -187,6 +187,7 @@ export function buildProfessorTeachingActions(
       pace,
       pauseAfterMs: PAUSE_AFTER_MS_BY_TONE[tone] ?? 400,
       linkedActionIds,
+      contentRole: "PROFESSOR_EXPLANATION",
     };
     segments.push(seg);
 

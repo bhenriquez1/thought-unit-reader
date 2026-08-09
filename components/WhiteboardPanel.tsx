@@ -1,7 +1,7 @@
 // components/WhiteboardPanel.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
@@ -18,6 +18,11 @@ import {
 } from "@/lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
+import { buildProfessorLessonCacheKey, type ProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlan";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
+import {
+  buildWhiteboardLessonSnapshot, saveWhiteboardLessonSnapshot,
+} from "@/lib/knowledge/whiteboardLessonSnapshotStore";
 
 // SOLE Whiteboard rendering pipeline: Current Page -> Professor Lesson
 // Planner (TldrawCanvas + useProfessorLesson) -> tldraw Lesson -> Render.
@@ -61,6 +66,17 @@ type Props = {
 
   /** Metadata for save actions */
   bookId?: string;
+  /** The RESOLVED, collision-resistant document identity (see
+   *  lib/insights/resolveDocumentIdentity.ts) — used for Learning State
+   *  writes and Whiteboard lesson snapshot persistence (Phase B3), so two
+   *  different PDFs sharing a filename never collide there the way bookId
+   *  alone could. Falls back to bookId when not passed (older call sites).
+   *  Deliberately NOT threaded into the `documentId` prop passed to the
+   *  TldrawCanvas element below — that prop drives the Professor Lesson Planner's
+   *  own cache key and canvas storage key, a pre-existing, out-of-B3-scope
+   *  quirk that still uses bookId; changing it would regenerate/invalidate
+   *  every cached lesson plan, which is not what B3 asked for. */
+  resolvedDocumentId?: string;
   bookTitle?: string;
   pageTitle?: string | null;
   knowledgeNodeId?: string | null;
@@ -99,6 +115,7 @@ export default function WhiteboardPanel({
   onAnchorStep,
   activeAnchorId,
   bookId,
+  resolvedDocumentId,
   bookTitle,
   pageTitle,
   knowledgeNodeId,
@@ -125,15 +142,24 @@ export default function WhiteboardPanel({
     [pageTeachingType, whiteboardGrammar],
   );
 
-  const vsgState = useMemo((): VSGState => {
-    const entries =
+  // Same canonical thought-unit entries feed both the VSG (below) and the
+  // Phase B3 Learning State / snapshot identity's thoughtUnitIds — computed
+  // once so the two can never silently diverge.
+  const resolvedCanonicalEntries = useMemo(
+    () =>
       canonicalEntries && canonicalEntries.length > 0
         ? canonicalEntries
-        : noteCardsToCanonicalEntries(teachNoteCards);
-    return computeVSGState(entries, effectiveGrammar, {
+        : noteCardsToCanonicalEntries(teachNoteCards),
+    [canonicalEntries, teachNoteCards],
+  );
+
+  const vsgState = useMemo((): VSGState => {
+    return computeVSGState(resolvedCanonicalEntries, effectiveGrammar, {
       pageNumber: currentPage,
     });
-  }, [canonicalEntries, teachNoteCards, effectiveGrammar, currentPage]);
+  }, [resolvedCanonicalEntries, effectiveGrammar, currentPage]);
+
+  const thoughtUnitIds = useMemo(() => resolvedCanonicalEntries.map(e => e.id), [resolvedCanonicalEntries]);
 
   // Stable key for tldraw's own IndexedDB canvas persistence — keyed by
   // pageTruthKey (documentId + pageNumber + text-ready flag), not just
@@ -150,6 +176,102 @@ export default function WhiteboardPanel({
   const canvasStorageKey = bookId && effectivePageTruthKey
     ? `${bookId}_${effectivePageTruthKey}`
     : undefined;
+
+  // ── Phase B3-2/B3-3: Learning State + snapshot identity ──────────────────
+  // The RESOLVED documentId (never bookId — see the resolvedDocumentId prop's
+  // doc comment) is what every Learning State write and snapshot save below
+  // is keyed on, so two different books sharing a filename can never collide
+  // here even though TldrawCanvas's OWN internal plan cache still keys on
+  // bookId (a separate, pre-existing, out-of-scope concern — see above).
+  const effectiveLearningDocumentId = resolvedDocumentId ?? bookId ?? "unknown-document";
+
+  // Same identity formula TldrawCanvas uses internally for its own cache key
+  // (buildProfessorLessonCacheKey), but computed here from the RESOLVED
+  // documentId — this is the canonical identity for every Learning State
+  // event and the B3-3 snapshot store, deliberately independent of whatever
+  // TldrawCanvas's onLessonCompleted callback itself reports.
+  const lessonId = useMemo(() => {
+    if (!effectivePageTruthKey) return null;
+    return buildProfessorLessonCacheKey({
+      documentId: effectiveLearningDocumentId,
+      pageTruthKey: effectivePageTruthKey,
+      activeCanonicalUnitId: knowledgeNodeId ?? null,
+    });
+  }, [effectiveLearningDocumentId, effectivePageTruthKey, knowledgeNodeId]);
+
+  // Fires professor-lesson-started at most once per distinct lessonId within
+  // this mount (Restart/replay of the SAME lesson doesn't re-fire it) — a new
+  // lessonId (different page/document/concept) simply won't match the ref's
+  // stale value, so it fires again naturally without an explicit reset.
+  const lessonStartFiredForRef = useRef<string | null>(null);
+
+  // Read at SAVE time (not capture time) by saveWhiteboardLessonSnapshot, so
+  // a save scheduled before the learner navigates away doesn't silently
+  // attach to whatever page/document they've since moved to.
+  const liveIdentityRef = useRef({ documentId: effectiveLearningDocumentId, pageTruthKey: effectivePageTruthKey ?? "" });
+  liveIdentityRef.current = { documentId: effectiveLearningDocumentId, pageTruthKey: effectivePageTruthKey ?? "" };
+
+  const handleTeachingStepStarted = (stepId: number) => {
+    if (stepId !== 0 || !knowledgeNodeId || !lessonId) return;
+    if (lessonStartFiredForRef.current === lessonId) return;
+    lessonStartFiredForRef.current = lessonId;
+    recordLearningEvent(knowledgeNodeId, effectiveLearningDocumentId, {
+      kind: "professor-lesson-started",
+      occurredAt: new Date().toISOString(),
+      sourceId: lessonId,
+    }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
+  };
+
+  const handleTeachingStepCompleted = (stepId: number, info?: { misconceptionLabel?: string }) => {
+    if (!knowledgeNodeId) return;
+    const occurredAt = new Date().toISOString();
+    const sourceId = lessonId ? `${lessonId}:step-${stepId}` : `step-${stepId}`;
+    recordLearningEvent(knowledgeNodeId, effectiveLearningDocumentId, {
+      kind: "teaching-step-completed",
+      stepId,
+      occurredAt,
+      sourceId,
+    }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
+    // Phase B1's own "debunk this misconception" signal (crossOut emphasis),
+    // reused here rather than building new interactive checkpoint UI.
+    if (info?.misconceptionLabel) {
+      recordLearningEvent(knowledgeNodeId, effectiveLearningDocumentId, {
+        kind: "misconception-observed",
+        misconception: info.misconceptionLabel,
+        occurredAt,
+        sourceId,
+      }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
+    }
+  };
+
+  const handleLessonCompleted = (_canvasReportedSnapshotId: string, plan: ProfessorLessonPlan) => {
+    if (!lessonId || !effectivePageTruthKey) return;
+    const occurredAt = new Date().toISOString();
+    // whiteboard-lesson-completed's own reducer is idempotent per snapshotId
+    // (Phase B3: replay doesn't inflate mastery), so it's safe to fire on
+    // every completion/replay, not just the first.
+    if (knowledgeNodeId) {
+      recordLearningEvent(knowledgeNodeId, effectiveLearningDocumentId, {
+        kind: "whiteboard-lesson-completed",
+        occurredAt,
+        sourceId: lessonId,
+        snapshotId: lessonId,
+      }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
+    }
+    const snapshot = buildWhiteboardLessonSnapshot({
+      lessonId,
+      documentId: effectiveLearningDocumentId,
+      pageNumber: currentPage ?? null,
+      pageTruthKey: effectivePageTruthKey,
+      conceptIds: knowledgeNodeId ? [knowledgeNodeId] : [],
+      thoughtUnitIds,
+      plan,
+      createdAt: occurredAt,
+    });
+    saveWhiteboardLessonSnapshot(snapshot, () => liveIdentityRef.current)
+      .then(result => { if (!result.saved) console.warn("[WHITEBOARD_SNAPSHOT_SAVE_REJECTED]", result.reason); })
+      .catch(err => console.error("[WHITEBOARD_SNAPSHOT_SAVE_ERROR]", err));
+  };
 
   const [isOpen, setIsOpen] = useState(true);
 
@@ -281,6 +403,9 @@ export default function WhiteboardPanel({
                   pageTruthKey={effectivePageTruthKey}
                   activeCanonicalUnitId={knowledgeNodeId ?? null}
                   pageTeachingType={pageTeachingType ?? null}
+                  onTeachingStepStarted={handleTeachingStepStarted}
+                  onTeachingStepCompleted={handleTeachingStepCompleted}
+                  onLessonCompleted={handleLessonCompleted}
                 />
               </div>
             </div>

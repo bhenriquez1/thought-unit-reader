@@ -1,7 +1,16 @@
 // lib/chapterAnimations.ts
 // Chapter-synced whiteboard animation generation system
 
-import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
+// Phase B3-5: lib/WhiteboardExplanationService.ts (the legacy diagram-fetch
+// pipeline this type used to live in) was removed as dead code — this app's
+// sole Whiteboard rendering pipeline is TldrawCanvas's Professor Lesson
+// Planner (see components/WhiteboardPanel.tsx). Inlined here since this is
+// the only remaining consumer of the shape.
+interface WhiteboardStep {
+  type: "draw" | "erase" | "text" | "image";
+  payload: any;
+  delayMs?: number;
+}
 
 export interface ChapterConcept {
   title: string;

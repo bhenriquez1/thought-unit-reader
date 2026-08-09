@@ -31,7 +31,9 @@ export { useRelationshipStore } from '../../lib/relationshipSchema/store';
 
 // Speech + Whiteboard integration
 export { SpeechExplainActions, PauseActionPanel } from './SpeechExplainActions';
-export { WhiteboardOverlay } from './WhiteboardOverlay';
+// Phase B3-5: WhiteboardOverlay removed as dead code — zero importers outside
+// this barrel file (TldrawCanvas's Professor Lesson Planner is the sole
+// Whiteboard rendering pipeline; see components/WhiteboardPanel.tsx).
 
 // Ninja Nerd Narration System
 export { SpeechNarrationPanel } from './SpeechNarrationPanel';

@@ -105,12 +105,51 @@ describe("applyLearningEvent — recall-graded", () => {
 });
 
 describe("applyLearningEvent — whiteboard-lesson-completed", () => {
-  it("raises understandingScore and records the snapshot id exactly once even if repeated", () => {
+  it("raises understandingScore once and records the snapshot id exactly once even if repeated", () => {
+    let p = emptyProgress("n1", "doc-1");
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1" });
+    expect(p.understandingScore).toBe(8);
+    expect(p.whiteboardSnapshotIds).toEqual(["snap-1"]);
+  });
+
+  it("REQUIRED (Phase B3): replaying the SAME lesson (same snapshotId) does not inflate understandingScore again — only the first completion of a distinct lesson earns credit", () => {
     let p = emptyProgress("n1", "doc-1");
     p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1" });
     p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T2, sourceId: "lesson-2", snapshotId: "snap-1" });
-    expect(p.understandingScore).toBe(16);
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T2, sourceId: "lesson-3", snapshotId: "snap-1" });
+    expect(p.understandingScore).toBe(8);
     expect(p.whiteboardSnapshotIds).toEqual(["snap-1"]);
+    // Replays still count as activity — exposure/evidence keep accumulating,
+    // only the score credit itself is capped.
+    expect(p.exposureCount).toBe(3);
+    expect(p.evidence).toHaveLength(3);
+    expect(p.evidence[2]).toMatchObject({ detail: "lesson replayed" });
+  });
+
+  it("a DIFFERENT lesson (different snapshotId) earns its own credit independently", () => {
+    let p = emptyProgress("n1", "doc-1");
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1" });
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T2, sourceId: "lesson-2", snapshotId: "snap-2" });
+    expect(p.understandingScore).toBe(16);
+    expect(p.whiteboardSnapshotIds).toEqual(["snap-1", "snap-2"]);
+  });
+});
+
+describe("applyLearningEvent — professor-lesson-started (Phase B3)", () => {
+  it("increments exposureCount and sets lastStudiedAt, without touching mastery/understanding/recall scores", () => {
+    const base = emptyProgress("n1", "doc-1");
+    const next = applyLearningEvent(base, { kind: "professor-lesson-started", occurredAt: T1, sourceId: "lesson-1" });
+    expect(next.exposureCount).toBe(1);
+    expect(next.lastStudiedAt).toBe(T1);
+    expect(next.understandingScore).toBe(base.understandingScore);
+    expect(next.masteryScore).toBe(base.masteryScore);
+    expect(next.recallScore).toBe(base.recallScore);
+  });
+
+  it("appends a whiteboard evidence entry citing the lesson id", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "professor-lesson-started", occurredAt: T1, sourceId: "lesson-1" });
+    expect(next.evidence).toHaveLength(1);
+    expect(next.evidence[0]).toMatchObject({ sourceType: "whiteboard", sourceId: "lesson-1", occurredAt: T1, detail: "lesson started" });
   });
 });
 
@@ -137,5 +176,31 @@ describe("applyLearningEvent — confidence-reported and misconception-observed"
     p = applyLearningEvent(p, { kind: "misconception-observed", misconception: "confuses X with Y", occurredAt: T2 });
     p = applyLearningEvent(p, { kind: "misconception-observed", misconception: "thinks Z is reversible", occurredAt: T2 });
     expect(p.observedMisconceptions).toEqual(["confuses X with Y", "thinks Z is reversible"]);
+  });
+});
+
+describe("applyLearningEvent — teaching-step-completed (Phase B3)", () => {
+  it("REQUIRED: is evidence-only — no score field changes at all", () => {
+    const base = emptyProgress("n1", "doc-1");
+    const next = applyLearningEvent(base, { kind: "teaching-step-completed", stepId: 3, occurredAt: T1, sourceId: "step-3" });
+    expect(next.understandingScore).toBe(base.understandingScore);
+    expect(next.recallScore).toBe(base.recallScore);
+    expect(next.memoryStrength).toBe(base.memoryStrength);
+    expect(next.masteryScore).toBe(base.masteryScore);
+    expect(next.confidenceScore).toBe(base.confidenceScore);
+    expect(next.exposureCount).toBe(base.exposureCount);
+  });
+
+  it("appends a whiteboard evidence entry citing the step id", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "teaching-step-completed", stepId: 2, occurredAt: T1, sourceId: "step-2" });
+    expect(next.evidence).toHaveLength(1);
+    expect(next.evidence[0]).toMatchObject({ sourceType: "whiteboard", sourceId: "step-2", occurredAt: T1, detail: "step 2 completed" });
+  });
+
+  it("multiple step-completed events accumulate distinct evidence entries", () => {
+    let p = emptyProgress("n1", "doc-1");
+    p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 1, occurredAt: T1, sourceId: "step-1" });
+    p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 2, occurredAt: T2, sourceId: "step-2" });
+    expect(p.evidence).toHaveLength(2);
   });
 });
