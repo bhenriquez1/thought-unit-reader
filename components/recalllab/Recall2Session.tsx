@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { applyConfidence } from "@/lib/recalllab/recall2Srs";
 import { flushSessionResults } from "@/lib/recalllab/recall2Store";
+import { recordRecallBlueprintRating } from "@/lib/recalllab/recallLearningState";
 import type { ConfidenceLevel, RecallBlueprint, SessionPhase } from "@/lib/recalllab/recall2Types";
 import type { RecallCoachRequest, RecallCoachResponse } from "@/pages/api/recall-coach";
 
@@ -73,6 +74,8 @@ interface Recall2SessionProps {
   bookTitle?:      string;
   onClose:         () => void;
   onNavigateToPage?: (page: number) => void;
+  /** Canonical page sessions keep AI off: their evidence is already complete. */
+  allowAiCoach?:   boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -84,6 +87,7 @@ export default function Recall2Session({
   bookTitle,
   onClose,
   onNavigateToPage,
+  allowAiCoach = true,
 }: Recall2SessionProps) {
   const [queue,   setQueue]   = useState<RecallBlueprint[]>(() => [...initialQueue]);
   const [idx,     setIdx]     = useState(0);
@@ -91,10 +95,13 @@ export default function Recall2Session({
 
   // Track updated blueprints for batch flush on session end
   const updatedRef = useRef<Map<string, RecallBlueprint>>(new Map());
+  const learningWritesRef = useRef<Promise<void>>(Promise.resolve());
+  const ratingLockedRef = useRef(false);
 
   // Track consecutive wrong answers for AI coach trigger
   const consecutiveWrongRef = useRef(0);
   const requeuedRef         = useRef<Set<string>>(new Set()); // prevent infinite re-queue
+  const missedCardsRef      = useRef<Set<string>>(new Set());
 
   // AI coach state
   const [coachMessage, setCoachMessage] = useState<string | null>(null);
@@ -104,10 +111,29 @@ export default function Recall2Session({
   const [sessionEasy,   setSessionEasy]   = useState(0);
   const [sessionMissed, setSessionMissed] = useState(0);
   const [done,          setDone]          = useState(false);
+  const [finishing,     setFinishing]     = useState(false);
 
   const total        = initialQueue.length;
   const card         = queue[idx];
-  const progressPct  = total > 0 ? Math.round((idx / total) * 100) : 0;
+  const progressPct  = total > 0 ? Math.min(100, Math.round((idx / total) * 100)) : 0;
+
+  const persistPending = useCallback(async () => {
+    const updated = [...updatedRef.current.values()];
+    await Promise.all([
+      updated.length > 0 ? flushSessionResults(updated) : Promise.resolve(),
+      learningWritesRef.current,
+    ]);
+  }, []);
+
+  const closeSession = useCallback(() => {
+    void persistPending()
+      .catch(err => console.error("[RECALL_SESSION_FLUSH_FAILED]", err))
+      .finally(onClose);
+  }, [onClose, persistPending]);
+
+  // Parent-driven unmounts (for example document navigation) still make a
+  // best-effort flush of ratings already made in this session.
+  useEffect(() => () => { void persistPending(); }, [persistPending]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
 
@@ -159,22 +185,31 @@ export default function Recall2Session({
   // ── Rate a card ───────────────────────────────────────────────────────
 
   function rate(confidence: ConfidenceLevel) {
-    if (!card) return;
+    if (!card || ratingLockedRef.current) return;
+    ratingLockedRef.current = true;
 
-    const updated = applyConfidence(card, confidence);
+    const occurredAt = new Date().toISOString();
+    const updated = applyConfidence(card, confidence, occurredAt);
     updatedRef.current.set(updated.id, updated);
+    learningWritesRef.current = learningWritesRef.current
+      .then(async () => { await recordRecallBlueprintRating(updated, confidence, occurredAt); })
+      .catch(err => { console.error("[RECALL_LEARNING_STATE_WRITE_FAILED]", err); });
 
     // Update queue entry with new confidence history (for coach context)
     setQueue(prev => prev.map((bp, i) => i === idx ? updated : bp));
 
     const isWrong = confidence === "guessed" || confidence === "blank";
+    const willRequeue = isWrong && !requeuedRef.current.has(card.id);
 
     if (isWrong) {
-      setSessionMissed(n => n + 1);
+      if (!missedCardsRef.current.has(card.id)) {
+        missedCardsRef.current.add(card.id);
+        setSessionMissed(n => n + 1);
+      }
       consecutiveWrongRef.current += 1;
 
       // Re-queue once — insert 3 positions ahead
-      if (!requeuedRef.current.has(card.id)) {
+      if (willRequeue) {
         requeuedRef.current.add(card.id);
         const insertAt = Math.min(idx + 3, queue.length);
         setQueue(prev => {
@@ -185,7 +220,7 @@ export default function Recall2Session({
       }
 
       // AI coach after 5 consecutive wrong
-      if (consecutiveWrongRef.current >= 5) {
+      if (allowAiCoach && consecutiveWrongRef.current >= 5) {
         consecutiveWrongRef.current = 0;
         void fetchCoach();
       }
@@ -195,16 +230,18 @@ export default function Recall2Session({
     }
 
     setFlipped(false);
+    const nextQueueLength = queue.length + (willRequeue ? 1 : 0);
     setTimeout(() => {
-      setIdx(i => {
-        const next = i + 1;
-        if (next >= queue.length) {
-          // Session complete — flush SRS updates
-          void flushSessionResults([...updatedRef.current.values()]);
-          setDone(true);
-        }
-        return next;
-      });
+      const next = idx + 1;
+      if (next >= nextQueueLength) {
+        setFinishing(true);
+        void persistPending()
+          .catch(err => console.error("[RECALL_SESSION_FLUSH_FAILED]", err))
+          .finally(() => { setFinishing(false); setDone(true); });
+      } else {
+        ratingLockedRef.current = false;
+        setIdx(next);
+      }
     }, 110);
   }
 
@@ -228,7 +265,7 @@ export default function Recall2Session({
           <Stat label="Easy"     value={String(sessionEasy)} color="#10b981" />
           <Stat label="Missed"   value={String(sessionMissed)} color={sessionMissed > 0 ? "#f87171" : "#94a3b8"} />
         </div>
-        <button type="button" onClick={onClose} style={btnStyle("#3b82f6")}>← Back to Recall 2.0</button>
+        <button type="button" onClick={closeSession} style={btnStyle("#3b82f6")}>← Back to Recall 2.0</button>
       </div>
     );
   }
@@ -241,7 +278,7 @@ export default function Recall2Session({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 20 }}>🧑‍🏫</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>AI Coach</span>
-          <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(148,163,184,0.5)" }}>after 5 misses</span>
+          {allowAiCoach && <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(148,163,184,0.5)" }}>after 5 misses</span>}
         </div>
         <div style={{
           flex: 1, overflowY: "auto",
@@ -272,7 +309,7 @@ export default function Recall2Session({
 
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "rgba(148,163,184,0.6)", fontSize: 12, cursor: "pointer", padding: 0, flexShrink: 0 }}>
+        <button type="button" onClick={closeSession} style={{ background: "none", border: "none", color: "rgba(148,163,184,0.6)", fontSize: 12, cursor: "pointer", padding: 0, flexShrink: 0 }}>
           ← Back
         </button>
         <div style={{ flex: 1, fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.55)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -290,6 +327,12 @@ export default function Recall2Session({
       {coachLoading && (
         <div style={{ fontSize: 10, color: "#60a5fa", textAlign: "center", animation: "pulse 1s infinite" }}>
           AI coach is preparing a tip…
+        </div>
+      )}
+
+      {finishing && (
+        <div style={{ fontSize: 10, color: "#60a5fa", textAlign: "center" }}>
+          Saving retrieval results…
         </div>
       )}
 

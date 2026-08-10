@@ -7,8 +7,7 @@ import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
-import { getNodeProgress, saveNodeProgress } from "@/lib/knowledge/knowledgeGraphStore";
-import { applyLearningEvent, emptyProgress } from "@/lib/knowledge/learningStateEvents";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -58,6 +57,9 @@ export interface RecallSet {
   documentId?: string;
   // Knowledge Graph reference (KG PR 1) — back-filled incrementally, never required.
   knowledgeNodeId?: string;
+  /** Exact page/extraction identity. Missing means legacy and is never treated
+   *  as canonical current-page retrieval material. */
+  pageTruthKey?: string;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -228,14 +230,21 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   let prior: RecallSet | undefined;
   try {
     const existing = await idbGetAll();
-    const stale = existing.filter(
-      (s) => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id && !s.id.startsWith("rs-")
-    );
+    const stale = existing.filter((s) => {
+      const sameOwner = c.documentId && c.pageTruthKey
+        ? s.documentId === c.documentId && s.pageTruthKey === c.pageTruthKey
+        : s.bookId === c.bookId;
+      return sameOwner && s.pageNumber === c.pageNumber && s.id !== c.id && !s.id.startsWith("rs-");
+    });
     for (const s of stale) {
       await idbDelete(s.id);
       lsRemove(s.id);
     }
-    prior = existing.find((s) => s.id === c.id);
+    prior = existing.find((s) =>
+      s.id === c.id
+      && (!c.documentId || s.documentId === c.documentId)
+      && (!c.pageTruthKey || s.pageTruthKey === c.pageTruthKey)
+    );
   } catch { /* non-fatal — still try to save */ }
 
   // Preserve SRS review history when regenerating cards for the same page.
@@ -368,15 +377,15 @@ export async function updateCardDifficulty(setId: string, cardId: string, diffic
   // via the deterministic event reducer (learningStateEvents.ts), not a
   // hand-rolled patch, so this write shares the exact same logic every other
   // module (Whiteboard, DAT Apex) will use once they're wired in later phases.
-  if (set.knowledgeNodeId) {
+  if (set.knowledgeNodeId && set.documentId && set.pageTruthKey) {
     const nodeId = set.knowledgeNodeId;
     const occurredAt = new Date().toISOString();
-    getNodeProgress(nodeId)
-      .then((existing) => {
-        const base = existing ?? emptyProgress(nodeId, set.documentId ?? set.bookId);
-        const next = applyLearningEvent(base, { kind: "recall-graded", difficulty, occurredAt, sourceId: cardId });
-        return saveNodeProgress(next);
-      })
+    recordLearningEvent(
+      nodeId,
+      set.documentId,
+      { kind: "recall-graded", difficulty, occurredAt, sourceId: cardId },
+      set.pageTruthKey,
+    )
       .catch((err) => {
         console.error("[KG_PROGRESS_WRITE_FAIL]", { nodeId, error: err instanceof Error ? err.message : String(err) });
       });
@@ -451,6 +460,7 @@ export interface BuildRecallSetOpts {
   conceptOrdinals?: number[];
   /** Resolved document identity — see RecallSet.documentId. */
   documentId?: string;
+  pageTruthKey?: string;
   /** The page's primary KnowledgeNode id, when already resolved (e.g.
    *  pageKgNodeIdRef.current in pages/index.tsx) — threading this through is
    *  what makes updateCardDifficulty() actually write to Learning State for
@@ -523,9 +533,10 @@ export function buildRecallSetFromView(
   }
 
   return {
-    id:          stableRecallId(bookId, pageNumber),
+    id:          stableRecallId(opts?.documentId ?? bookId, pageNumber),
     bookId,
     documentId:  opts?.documentId,
+    pageTruthKey: opts?.pageTruthKey,
     bookTitle:   opts?.bookTitle,
     sourceLabel: opts?.sourceLabel,
     pageNumber,
@@ -566,11 +577,13 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
 
   return {
     id:           stableRecallId(
-      note.bookId,
+      opts?.documentId ?? note.bookId,
       note.pageNumber,
       opts?.conceptOrdinals?.length ? `note-${note.id}-c${opts.conceptOrdinals.join("-")}` : `note-${note.id}`
     ),
     bookId:       note.bookId,
+    documentId:   opts?.documentId,
+    pageTruthKey: opts?.pageTruthKey,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
     pageNumber:   note.pageNumber,
@@ -579,6 +592,7 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
     cards,
     createdAt:    Date.now(),
     sourceNoteId: note.id,
+    knowledgeNodeId: opts?.knowledgeNodeId ?? note.knowledgeNodeId,
   };
 }
 
@@ -599,8 +613,10 @@ export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, 
   ];
 
   return {
-    id:           stableRecallId(note.bookId, note.pageNumber, `notecard-${note.id}-${noteCard.type}`),
+    id:           stableRecallId(opts?.documentId ?? note.bookId, note.pageNumber, `notecard-${note.id}-${noteCard.type}`),
     bookId:       note.bookId,
+    documentId:   opts?.documentId,
+    pageTruthKey: opts?.pageTruthKey,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
     pageNumber:   note.pageNumber,
@@ -609,6 +625,7 @@ export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, 
     cards,
     createdAt:    Date.now(),
     sourceNoteId: note.id,
+    knowledgeNodeId: opts?.knowledgeNodeId ?? note.knowledgeNodeId,
   };
 }
 
@@ -632,8 +649,10 @@ export function buildRecallSetFromThoughtUnit(detail: ThoughtUnitDetail, opts?: 
     cards.push(card("tu-dat", "fact", `What is the DAT high-yield fact for: ${detail.title}?`, detail.datFact));
 
   return {
-    id:          stableRecallId(detail.bookId, detail.pageNumber, `tu-${detail.evidenceRefId}`),
+    id:          stableRecallId(opts?.documentId ?? detail.bookId, detail.pageNumber, `tu-${detail.evidenceRefId}`),
     bookId:      detail.bookId,
+    documentId:  opts?.documentId,
+    pageTruthKey: opts?.pageTruthKey,
     bookTitle:   opts?.bookTitle,
     sourceLabel: opts?.sourceLabel ?? "right-panel",
     pageNumber:  detail.pageNumber,
@@ -641,6 +660,7 @@ export function buildRecallSetFromThoughtUnit(detail: ThoughtUnitDetail, opts?: 
     topic:       detail.title,
     cards,
     createdAt:   Date.now(),
+    knowledgeNodeId: opts?.knowledgeNodeId ?? undefined,
   };
 }
 
@@ -696,6 +716,8 @@ export function buildRecallSetFromTeachingSequence(
     bookTitle?: string;
     pageNumber: number;
     pageTitle?: string | null;
+    documentId?: string;
+    pageTruthKey?: string;
     knowledgeNodeId?: string | null;
     subject?: NoteSubject;
   }
@@ -731,8 +753,10 @@ export function buildRecallSetFromTeachingSequence(
   const topic = opts.pageTitle || `Page ${opts.pageNumber}`;
 
   return {
-    id:              stableRecallId(opts.bookId, opts.pageNumber, "teach-seq"),
+    id:              stableRecallId(opts.documentId ?? opts.bookId, opts.pageNumber, "teach-seq"),
     bookId:          opts.bookId,
+    documentId:      opts.documentId,
+    pageTruthKey:    opts.pageTruthKey,
     bookTitle:       opts.bookTitle,
     sourceLabel:     "teach-canvas",
     pageNumber:      opts.pageNumber,
