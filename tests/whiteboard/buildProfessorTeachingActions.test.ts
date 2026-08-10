@@ -151,14 +151,14 @@ describe("buildProfessorTeachingActions — a move-camera action precedes each n
   });
 });
 
-describe("buildProfessorTeachingActions — camera moves by teaching region, not per individual object", () => {
-  it("two nodes in the SAME semantic group share one region camera move plus the final overview", () => {
+describe("buildProfessorTeachingActions — Director camera follows each active teaching step", () => {
+  it("emits one camera request for each visual node/edge step plus the final overview", () => {
     const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(2);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(4);
   });
 
-  it("a node in a DIFFERENT group triggers a second region camera move before the final overview", () => {
+  it("does not collapse distinct active steps merely because they share or change groups", () => {
     const grounded = makeGrounded({
       groups: [
         { id: "g1", type: "core", order: 1, nodeIds: ["n1"] },
@@ -166,16 +166,18 @@ describe("buildProfessorTeachingActions — camera moves by teaching region, not
       ],
     });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(3);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(4);
   });
 
-  it("a region's move-camera action targets every shapeId in that region, not just the one node currently being drawn", () => {
+  it("never targets an unrevealed future concept", () => {
     const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     const cameraAction = plan.actions.find(a => a.type === "move-camera") as any;
     const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
     const n2Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).shapeId;
-    expect(cameraAction.targetIds).toEqual(expect.arrayContaining([n1Shape, n2Shape]));
+    expect(cameraAction.targetIds).toContain(n1Shape);
+    expect(cameraAction.targetIds).not.toContain(n2Shape);
+    expect(cameraAction.focusBounds).toBeDefined();
   });
 });
 
@@ -553,11 +555,12 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   });
 });
 
-describe("buildProfessorTeachingActions — Phase B3: every narration segment is explicitly PROFESSOR_EXPLANATION", () => {
-  it("REQUIRED: every segment in the plan carries contentRole: 'PROFESSOR_EXPLANATION'", () => {
+describe("buildProfessorTeachingActions — Director separates source reading from Professor explanation", () => {
+  it("carries both SOURCE_VERBATIM and PROFESSOR_EXPLANATION segments without changing Current Page", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     expect(plan.segments.length).toBeGreaterThan(0);
-    expect(plan.segments.every(s => s.contentRole === "PROFESSOR_EXPLANATION")).toBe(true);
+    expect(plan.segments.some(s => s.contentRole === "SOURCE_VERBATIM")).toBe(true);
+    expect(plan.segments.some(s => s.contentRole === "PROFESSOR_EXPLANATION")).toBe(true);
   });
 });
 
@@ -571,8 +574,10 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
     const e1Arrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).targetId === "e1") as any;
     const n2Draw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any;
     expect(n1Draw.stepId).toBe(1);
-    expect(e1Arrow.stepId).toBe(2);
-    expect(n2Draw.stepId).toBe(3);
+    // The Director holds an edge until both endpoint concepts exist, so no
+    // connector reveals a future step early.
+    expect(n2Draw.stepId).toBe(2);
+    expect(e1Arrow.stepId).toBe(3);
   });
 
   it("every action belonging to ONE nodeScript entry (draw + write + emphasize + its speak/pause) shares the same stepId", () => {
@@ -586,9 +591,9 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
 
   it("the synthesis question's speak action gets the FINAL stepId, one past the last narrated point", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
-    const lastNodeStepId = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).stepId;
+    const lastNarratedStepId = (plan.actions.find(a => a.type === "draw-arrow" && (a as any).targetId === "e1") as any).stepId;
     const synthesisSpeak = plan.actions.find(a => a.type === "speak" && (a as any).text === "How would you explain this back?") as any;
-    expect(synthesisSpeak.stepId).toBe(lastNodeStepId + 1);
+    expect(synthesisSpeak.stepId).toBe(lastNarratedStepId + 1);
   });
 
   it("the final step first frames every primary concept, producing the compact integrated picture", () => {

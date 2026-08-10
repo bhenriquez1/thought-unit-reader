@@ -1834,10 +1834,18 @@ export default function ThoughtUnitReader() {
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
+  const [professorAutoStart, setProfessorAutoStart] = useState(false);
+  const [professorSurface, setProfessorSurface] = useState<"pdf" | "whiteboard">("whiteboard");
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
   const lastDetectedUnitRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (showWhiteboardPanel) return;
+    setProfessorAutoStart(false);
+    setProfessorSurface("whiteboard");
+  }, [showWhiteboardPanel]);
 
   // ✅ Recall Lab v2 — thought-unit box layout, opened from RightPanel/LeftPanel/NoteLab
   const [recallLabOpenUnit, setRecallLabOpenUnit] = useState<ThoughtUnitDetail | null>(null);
@@ -4929,9 +4937,21 @@ export default function ThoughtUnitReader() {
   );
 
   const handleOpenWhiteboardPanel = useCallback(
-    () => setShowWhiteboardPanel(true),
+    () => {
+      setProfessorAutoStart(false);
+      setProfessorSurface("whiteboard");
+      setShowWhiteboardPanel(true);
+    },
     []
   );
+
+  const handleStartProfessor = useCallback(() => {
+    setWbConcept("");
+    setWbContext("");
+    setProfessorAutoStart(true);
+    setProfessorSurface("pdf");
+    setShowWhiteboardPanel(true);
+  }, []);
 
   const handleJumpToUnit = useCallback(
     (id: string) => onPdfHighlightFocus(id),
@@ -5486,6 +5506,7 @@ export default function ThoughtUnitReader() {
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}
                 onSpeechExplainSegment={explainThoughtUnitById}
                 onOpenWhiteboard={handleOpenWhiteboardPanel}
+                onStartProfessor={handleStartProfessor}
                 onOpenChiefResident={handleOpenChiefResident}
                 groundedAnnotations={surgeonAnnotations.groundedAnnotations}
                 selectionText={sel.selectionText ?? ""}
@@ -6826,9 +6847,26 @@ export default function ThoughtUnitReader() {
       {showWhiteboardPanel && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.78)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); } }}
+          style={{
+            background: professorAutoStart && professorSurface === "pdf" ? "transparent" : "rgba(0,0,0,0.78)",
+            pointerEvents: professorAutoStart && professorSurface === "pdf" ? "none" : "auto",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setProfessorAutoStart(false); setWbConcept(""); setWbContext(""); } }}
         >
+          {professorAutoStart && professorSurface === "pdf" && (
+            <div
+              style={{ position: "fixed", right: 22, bottom: 22, pointerEvents: "auto", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 999, background: "rgba(15,23,42,0.94)", border: "1px solid rgba(129,140,248,0.4)", color: "#c7d2fe", boxShadow: "0 12px 32px rgba(0,0,0,0.35)" }}
+            >
+              <span style={{ fontSize: 11, fontWeight: 700 }}>Professor is following the PDF</span>
+              <button
+                type="button"
+                onClick={() => { setShowWhiteboardPanel(false); setProfessorAutoStart(false); }}
+                style={{ border: 0, borderRadius: 999, padding: "4px 8px", background: "rgba(255,255,255,0.08)", color: "#e2e8f0", fontSize: 10, cursor: "pointer" }}
+              >
+                Stop
+              </button>
+            </div>
+          )}
           {(DEV && console.log("[WHITEBOARD_CENTERED_MODAL]", {
             page: currentPage,
             hasStudyModel: !!currentPageStudyModel,
@@ -6836,12 +6874,17 @@ export default function ThoughtUnitReader() {
           }) as any) && null}
           <div
             className="relative bg-[#0d1424] text-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-700/60"
-            style={{ width: "min(94vw, 1120px)", height: "min(88vh, 740px)" }}
+            style={{
+              width: "min(94vw, 1120px)", height: "min(88vh, 740px)",
+              opacity: professorAutoStart && professorSurface === "pdf" ? 0 : 1,
+              pointerEvents: professorAutoStart && professorSurface === "pdf" ? "none" : "auto",
+              transition: "opacity 220ms ease",
+            }}
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
-              <span className="text-sm font-semibold tracking-wide text-gray-200">Whiteboard</span>
+              <span className="text-sm font-semibold tracking-wide text-gray-200">{professorAutoStart ? "Professor" : "Whiteboard"}</span>
               <button
-                onClick={() => { setShowWhiteboardPanel(false); setWbConcept(""); setWbContext(""); }}
+                onClick={() => { setShowWhiteboardPanel(false); setProfessorAutoStart(false); setWbConcept(""); setWbContext(""); }}
                 className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
                 aria-label="Close whiteboard"
               >
@@ -6888,6 +6931,8 @@ export default function ThoughtUnitReader() {
                   currentPage={currentPage}
                   pageTruthKey={pageTruthKey}
                   pageTeachingType={surgeonAnnotations.plan?.pageRole ?? null}
+                  autoStartProfessor={professorAutoStart}
+                  onProfessorSurfaceChange={(surface) => setProfessorSurface(surface)}
                   onAnchorStep={(id) => {
                     DEV && console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
                     setFocusedEvidenceId(id);

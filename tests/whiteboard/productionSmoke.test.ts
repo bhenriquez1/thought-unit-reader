@@ -82,7 +82,7 @@ describe("TldrawCanvas.tsx — canvas initialization failure guard", () => {
   it("the rebuild effect clears the teaching layer unconditionally, BEFORE checking whether there is a lesson to draw — so a lessonPlan transition to null never leaves prior shapes visible", () => {
     const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
+    const block = src.slice(idx, idx + 1100);
     expect(block).toMatch(/if \(!lessonPlan\) \{/);
     expect(block).toMatch(/setTotalSteps\(0\);/);
   });

@@ -163,7 +163,7 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
       expect(body).not.toMatch(/playSegmentThenAdvance\(/);
     }
     const advIdx = src.indexOf("const advanceForPlayback = useCallback");
-    const advBody = src.slice(advIdx, advIdx + 2300);
+    const advBody = src.slice(advIdx, advIdx + 3000);
     expect(advBody).toMatch(/playSegmentThenAdvance\(segment, next\)/);
   });
 
@@ -259,7 +259,8 @@ describe("Camera movement is driven by move-camera actions, not manual pan/zoom 
   it("applyStateAtStep resolves the camera target from the pure engine and calls zoomToBounds", () => {
     const idx = src.indexOf("const applyStateAtStep = useCallback");
     const body = src.slice(idx, src.indexOf("const setStepIndex = useCallback"));
-    expect(body).toMatch(/resolveCameraTargetAtStep\(plan\.actions, index\)/);
+    expect(body).toMatch(/resolveCameraActionAtStep\(plan\.actions, index\)/);
+    expect(body).toMatch(/cameraAction\.focusBounds \?\? mergeBounds\(liveBounds\)/);
     expect(body).toMatch(/editor\.zoomToBounds\(/);
   });
 });
@@ -300,7 +301,7 @@ describe("Student layer survives a lesson rebuild — only locked (teaching-laye
     // only skipped on a confirmed duplicate mount (React StrictMode
     // double-invoking onMount for the SAME editor instance, see
     // isDuplicateMount above), never based on whether a plan exists yet.
-    expect(mountBody).toMatch(/editorRef\.current = editor;\s*\n\s*if \(!isDuplicateMount\) \{\s*\n\s*clearTeachingLayer\(editor\);/);
+    expect(mountBody).toMatch(/editorRef\.current = editor;\s*\n\s*setCanvasReady\(true\);\s*\n\s*if \(!isDuplicateMount\) \{\s*\n\s*clearTeachingLayer\(editor\);/);
   });
 });
 

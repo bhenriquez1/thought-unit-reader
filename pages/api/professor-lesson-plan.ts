@@ -120,11 +120,22 @@ Rules:
 5. Set emphasize:true on EXACTLY ONE node or edge across the whole script — the single
    highest-yield point on this page, the one thing you'd circle if you could only circle
    one thing. Leave it false on everything else.
-6. visualGrammar: choose the ONE that best matches how this page's ideas actually relate —
+6. Classify the ACTUAL CURRENT PAGE, not the book title. teachingStructures is the smallest
+   set (1-4) that correctly describes this page, chosen from: definition-concept,
+   mechanism-causal-process, sequence-procedure, comparison-contrast,
+   classification-hierarchy, anatomy-spatial-relationship, equation-calculation,
+   worked-example-problem-solving, timeline-history, argument-evidence,
+   narrative-event-sequence, decision-tree, diagnostic-reasoning,
+   table-data-interpretation, figure-image-interpretation, exception-trap-warning,
+   synthesis-summary. A mixed page may use several. Unknown disciplines still use these
+   semantic structures; never fall back merely because the subject is unfamiliar.
+   visualGrammar: choose the ONE that best matches how this page's ideas actually relate —
    "procedure" (ordered steps), "mechanism" (cause leads to effect leads to effect),
    "anatomy" (a structure with labeled parts), "diagnosis" (branching decision points),
-   "comparison" (two things contrasted), "equation" (a formula worked through), or
-   "concept-map" (a looser network of related ideas) — when nothing else clearly fits.
+   "comparison" (two things contrasted), "equation" (a formula worked through),
+   "hierarchy", "timeline", "argument", "narrative", "decision-tree",
+   "data-interpretation", "figure-interpretation", "summary", or "concept-map"
+   (a looser network of related ideas) — when nothing else clearly fits.
    You are told this page's pageTeachingType — the classification the SAME page already
    received from the highlighting pass (e.g. "anatomy", "pharmacology", "decision-tree",
    "workflow"). Let it strongly inform BOTH your visualGrammar choice and how you narrate:
@@ -157,8 +168,10 @@ Rules:
         "mechanism" (a causal chain), "sequence" (ordered steps), "comparison" (things
         contrasted side by side), "clinical" (significance/application/decision), "warning"
         (a trap/exception/danger — this should read as SET APART from the main flow, not
-        crammed into the same line as everything else), or "summary" (a closing synthesis
-        point, drawn last).
+        crammed into the same line as everything else), "summary" (a closing synthesis
+        point, drawn last), "hierarchy" (parent/child classification), "timeline"
+        (chronological events), "argument" (claim/evidence/reasoning), "narrative"
+        (character/event progression), or "data" (table/chart/figure interpretation).
       - order: the 1-based sequence you'd physically build these regions in, top to bottom —
         the SAME order your nodeScripts narrates that group's nodes in. A page's core idea is
         almost always order 1; a warning is usually NOT order 1 even if it's important, because
@@ -236,6 +249,30 @@ Rules:
     the page supports structural relationships. End with a summary-role/final-summary point when
     a real page node can carry it; the app will deterministically zoom out to the compact complete
     picture for synthesis. Never invent a summary node merely to satisfy this preference.
+
+20. PROFESSOR DIRECTOR — every nodeScripts entry must explicitly include:
+    - sourceEvidence: 1-4 CURRENT-page node ids that support this teaching point. Include the
+      target node itself for node targets; use the edge's endpoint node ids for edge targets.
+    - teachingGoal: what the learner should understand or be able to do after this step.
+    - teachingStructure: the single semantic structure from rule 6 governing this step.
+    - visualNeeded: true only when a progressive visual materially helps. Definitions or plain
+      exposition may remain verbal on the PDF; mechanisms, procedures, spatial relationships,
+      comparisons, calculations, timelines, decision logic, and difficult interpretations often
+      benefit from a visual. Do not force every paragraph onto the Whiteboard.
+    - visualIntent: a concise semantic description of what the visual should reveal. When
+      visualNeeded is false, describe why verbal/source-follow teaching is sufficient.
+    - cameraIntent: stay-on-pdf (required when visualNeeded=false), active-concept,
+      keep-context, comparison, follow-sequence, or summary-overview.
+    - checkpoint: a short teach-back question when useful, otherwise null.
+    sourceEvidence and all factual narration must remain inside the supplied current-page nodes.
+    Context beyond the page must be explicitly labeled as enrichment. Do not invent facts.
+
+21. The renderer builds one step at a time. Do not phrase visualIntent as a request for one
+    completed poster. Describe the next reveal only. Do not reveal future steps, recreate the
+    whole board, or force every page into boxes and arrows. Match the grammar to the content:
+    equations should transform, comparisons should align, timelines should order events,
+    arguments should connect claim/evidence/reasoning, and spatial pages should use a simplified
+    labeled sketch.
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 

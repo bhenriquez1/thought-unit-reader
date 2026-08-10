@@ -16,7 +16,7 @@ import {
 } from "@/lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
-import { buildProfessorLessonCacheKey, type ProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlan";
+import { buildProfessorLessonCacheKey, type ProfessorLessonPlan, type ProfessorSurface } from "@/lib/whiteboard/professorLessonPlan";
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import {
   buildWhiteboardLessonSnapshot, saveWhiteboardLessonSnapshot,
@@ -99,6 +99,8 @@ type Props = {
   onReanalyzeCanonical?: () => void;
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
+  autoStartProfessor?: boolean;
+  onProfessorSurfaceChange?: (surface: ProfessorSurface, info: { stepId: number; visualNeeded: boolean }) => void;
 };
 
 export default function WhiteboardPanel({
@@ -122,6 +124,8 @@ export default function WhiteboardPanel({
   canonicalStatus,
   onReanalyzeCanonical,
   onOpenChiefResident,
+  autoStartProfessor = false,
+  onProfessorSurfaceChange,
 }: Props) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
@@ -407,6 +411,8 @@ export default function WhiteboardPanel({
                   pageTruthKey={effectivePageTruthKey}
                   activeCanonicalUnitId={knowledgeNodeId ?? null}
                   pageTeachingType={pageTeachingType ?? null}
+                  autoStartProfessor={autoStartProfessor}
+                  onProfessorSurfaceChange={onProfessorSurfaceChange}
                   onTeachingStepStarted={handleTeachingStepStarted}
                   onTeachingStepCompleted={handleTeachingStepCompleted}
                   onLessonCompleted={handleLessonCompleted}

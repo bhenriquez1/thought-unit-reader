@@ -31,6 +31,7 @@ import {
 import { getProfessorLessonPlan, saveProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlanCache";
 import type { ProfessorLessonPlanResponse } from "@/pages/api/professor-lesson-plan";
 import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
+import { refineProfessorTldrawExecution } from "@/lib/whiteboard/professorTldrawAgent";
 
 export type ProfessorLessonStatus = "idle" | "loading" | "success" | "error";
 
@@ -234,10 +235,12 @@ export function useProfessorLesson({
           return;
         }
 
-        const plan = buildProfessorTeachingActions(v, grounded, {
+        const deterministicPlan = buildProfessorTeachingActions(v, grounded, {
           documentId, pageNumber: v.sourcePageNumber ?? 0, pageTruthKey,
           activeCanonicalUnitId, vsgId: v.id, plannerVersion: PLANNER_VERSION,
         });
+        const plan = await refineProfessorTldrawExecution(deterministicPlan, ctrl.signal);
+        if (ctrl.signal.aborted) return;
         setLessonPlan(plan);
         setErrorMessage(null);
         setErrorCode(null);

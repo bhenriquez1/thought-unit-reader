@@ -618,6 +618,8 @@ interface RightPanelProps {
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Chief Resident are rendered by the caller. */
   onOpenWhiteboard?: () => void;
+  /** Starts the orchestrated read→explain→optional visual Professor session. */
+  onStartProfessor?: () => void;
   /** Opens Chief Resident (ChiefResidentModalShell wrapping the shared NoteLab
    *  ChiefResidentPanel) — one entry point, no scope pre-selection; the panel's
    *  own mode picker (Teach This Page, etc.) replaces the old per-scope chips. */
@@ -886,6 +888,7 @@ export function RightPanel({
   highlightedAnchorTexts,
   onSpeechExplainSegment,
   onOpenWhiteboard,
+  onStartProfessor,
   onOpenChiefResident,
   selectionText = "",
   canonicalLeftPanelUnits = [],
@@ -1734,7 +1737,7 @@ export function RightPanel({
             onPlayStateChange={onSpeechPlayStateChange}
             onExplainSegment={onSpeechExplainSegment}
             highlightedAnchorTexts={highlightedAnchorTexts}
-            onOpenProfessor={onOpenWhiteboard}
+            onOpenProfessor={onStartProfessor ?? onOpenWhiteboard}
             thoughtUnits={canonicalLeftPanelUnits}
             selectedUnitId={focusedEvidenceId ?? null}
             primary

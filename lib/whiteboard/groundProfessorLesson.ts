@@ -15,7 +15,7 @@
 
 import type { VisualSceneGraph } from "./visualSceneGraph";
 import type {
-  ProfessorLessonScript, ProfessorNodeScript, GroupType, ExplanationAction, ProfessorRelationship,
+  ProfessorLessonScript, ProfessorNodeScript, GroupType, ExplanationAction, ProfessorRelationship, TeachingStructure,
 } from "./professorLessonPlan";
 import { clampToShortLabel, isParagraphShaped } from "./textMetrics";
 
@@ -109,6 +109,7 @@ export interface GroundedProfessorGroup {
 export interface GroundedProfessorLessonScript {
   title: string;
   visualGrammar: ProfessorLessonScript["visualGrammar"];
+  teachingStructures?: ProfessorLessonScript["teachingStructures"];
   centralQuestion: string;
   learningObjective: string;
   synthesisQuestion: string;
@@ -202,6 +203,15 @@ function sanitizeLabel(raw: string, maxWords = 8): string {
   return clampToShortLabel(singleSentence.replace(/[.!?]+$/, ""), Math.min(maxWords, 6));
 }
 
+function fallbackTeachingStructure(entry: ProfessorNodeScript): TeachingStructure {
+  if (entry.teachingRole === "warning") return "exception-trap-warning";
+  if (entry.teachingRole === "mechanism" || entry.drawingIntent === "chain") return "mechanism-causal-process";
+  if (entry.drawingIntent === "sequence") return "sequence-procedure";
+  if (entry.drawingIntent === "contrast") return "comparison-contrast";
+  if (entry.teachingRole === "summary") return "synthesis-summary";
+  return "definition-concept";
+}
+
 /**
  * Ground a ProfessorLessonScript against the VisualSceneGraph it was
  * generated for. Never throws — always returns a script the converter can
@@ -243,6 +253,29 @@ export function groundProfessorLesson(
     // below, once the FINAL surviving node id set is known.
     const explain = nodeIds.has(entry.targetId) ? sanitizeExplain(entry.explain) : [];
 
+    // Evidence references are ids only. Resolve them against CURRENT-page VSG
+    // nodes here; edge ids and hallucinated/future-page ids are never allowed
+    // to become Professor source passages. A node step always retains its own
+    // target as the minimum traceable source.
+    const targetEdge = vsg.edges.find(edge => edge.id === entry.targetId);
+    const targetEvidenceIds = nodeIds.has(entry.targetId)
+      ? [entry.targetId]
+      : targetEdge
+      ? [targetEdge.fromId, targetEdge.toId]
+      : [];
+    const sourceEvidence = Array.from(new Set([
+      ...targetEvidenceIds,
+      ...(entry.sourceEvidence ?? []).filter(id => nodeIds.has(id)),
+    ])).slice(0, 4);
+
+    // A visual=false step cannot smuggle in a camera move through a conflicting
+    // planner field. Conversely a visual step cannot remain "stay-on-pdf";
+    // deterministic execution promotes it to an active-concept focus.
+    const visualNeeded = entry.visualNeeded !== false;
+    const cameraIntent = visualNeeded
+      ? (!entry.cameraIntent || entry.cameraIntent === "stay-on-pdf" ? "active-concept" : entry.cameraIntent)
+      : "stay-on-pdf";
+
     grounded.push({
       ...entry,
       // Edge captions have less room at the midpoint than node labels do.
@@ -252,6 +285,13 @@ export function groundProfessorLesson(
       emphasize,
       emphasisTreatment,
       explain,
+      sourceEvidence,
+      visualNeeded,
+      cameraIntent,
+      teachingGoal: entry.teachingGoal?.trim() || entry.narration.trim(),
+      teachingStructure: entry.teachingStructure ?? fallbackTeachingStructure(entry),
+      visualIntent: entry.visualIntent?.trim() || entry.drawingIntent,
+      checkpoint: entry.checkpoint?.trim() || null,
     });
   }
 
@@ -275,6 +315,9 @@ export function groundProfessorLesson(
   return {
     title:              sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
     visualGrammar:      script.visualGrammar,
+    teachingStructures: script.teachingStructures?.length
+      ? script.teachingStructures
+      : Array.from(new Set(withRelationships.map(entry => entry.teachingStructure ?? fallbackTeachingStructure(entry)))),
     centralQuestion:    clampToShortLabel(script.centralQuestion.trim(), 16),
     learningObjective:  script.learningObjective.trim(),
     synthesisQuestion:  script.synthesisQuestion.trim(),

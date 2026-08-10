@@ -22,12 +22,12 @@ describe("Reader Speech Phase 2 — exactly two visible experiences", () => {
     expect(panel).not.toContain("STUDY_SPEECH_MODES");
   });
 
-  it("defaults to Current Page and delegates Professor to the existing Whiteboard engine", () => {
+  it("defaults to Current Page and starts the orchestrated Professor experience", () => {
     expect(panel).toMatch(/useState<VisibleSpeechMode>\("currentPage"\)/);
-    expect(panel).toMatch(/onClick=\{\(\) => onOpenProfessor\?\.\(\)\}/);
-    expect(panel).toContain("Open Professor Whiteboard");
-    expect(panel).toContain("Narration and drawing stay synchronized");
-    expect(rightPanel).toContain("onOpenProfessor={onOpenWhiteboard}");
+    expect(panel).toMatch(/onClick=\{\(\) => \{ stopAudio\(\); onOpenProfessor\?\.\(\); \}\}/);
+    expect(panel).toContain("Start Professor");
+    expect(panel).toContain("opens the Whiteboard only when a visual lesson materially helps");
+    expect(rightPanel).toContain("onOpenProfessor={onStartProfessor ?? onOpenWhiteboard}");
     expect(whiteboard).toContain('import { useProfessorLesson }');
   });
 
@@ -40,7 +40,7 @@ describe("Reader Speech Phase 2 — exactly two visible experiences", () => {
     expect(panel).toContain('startMode: fromIdx === 0 ? "page-start" : "explicit-cursor"');
   });
 
-  it("marks Whiteboard narration explicitly as Professor explanation", () => {
-    expect(whiteboard).toContain('contentRole: "PROFESSOR_EXPLANATION"');
+  it("passes each Director segment's explicit source-vs-explanation role to TTS", () => {
+    expect(whiteboard).toContain("contentRole: segment.contentRole");
   });
 });

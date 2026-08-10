@@ -22,6 +22,43 @@ import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 export interface Point { x: number; y: number; }
 export interface Bounds { x: number; y: number; w: number; h: number; }
 
+export const ProfessorSurfaceSchema = z.enum(["pdf", "whiteboard"]);
+export type ProfessorSurface = z.infer<typeof ProfessorSurfaceSchema>;
+
+export const CameraIntentSchema = z.enum([
+  "stay-on-pdf",
+  "active-concept",
+  "keep-context",
+  "comparison",
+  "follow-sequence",
+  "summary-overview",
+]);
+export type CameraIntent = z.infer<typeof CameraIntentSchema>;
+
+/** Domain-neutral semantic structures. The planner classifies the current
+ * page from its evidence, never from the book title, then selects the
+ * smallest useful combination for each teaching step. */
+export const TeachingStructureSchema = z.enum([
+  "definition-concept",
+  "mechanism-causal-process",
+  "sequence-procedure",
+  "comparison-contrast",
+  "classification-hierarchy",
+  "anatomy-spatial-relationship",
+  "equation-calculation",
+  "worked-example-problem-solving",
+  "timeline-history",
+  "argument-evidence",
+  "narrative-event-sequence",
+  "decision-tree",
+  "diagnostic-reasoning",
+  "table-data-interpretation",
+  "figure-image-interpretation",
+  "exception-trap-warning",
+  "synthesis-summary",
+]);
+export type TeachingStructure = z.infer<typeof TeachingStructureSchema>;
+
 // ── ProfessorTeachingAction — the deterministic, replayable drawing timeline ─
 // Every action carries a stable actionId (referenced by NarrationSegment.
 // linkedActionIds) and a durationMs (pacing for autoplay/Previous-Next). The
@@ -58,7 +95,8 @@ export type ProfessorTeachingAction =
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number; stepId: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number; stepId: number }
   | { type: "pause"; actionId: string; durationMs: number; stepId: number }
-  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number; stepId: number }
+  | { type: "move-camera"; actionId: string; targetIds: string[]; durationMs: number; stepId: number; focusBounds?: Bounds; cameraIntent?: CameraIntent; retainContextTargetIds?: string[] }
+  | { type: "set-surface"; actionId: string; surface: ProfessorSurface; reason: "source-passage" | "visual-lesson" | "return-to-source" | "summary"; durationMs: number; stepId: number }
   /** Removes a previously-drawn shape from the canvas from this point in the
    *  timeline forward — e.g. clearing a rough sketch before drawing the
    *  clean version. Handled by computeCanvasStateAtStep exactly like every
@@ -81,13 +119,10 @@ export interface NarrationSegment {
   pace: NarrationPace;
   pauseAfterMs: number;
   linkedActionIds: string[];
-  /** Phase B3 — always "PROFESSOR_EXPLANATION": every Professor/Whiteboard
-   *  narration segment is AI-authored teaching language (see the SYSTEM_PROMPT
-   *  in pages/api/professor-lesson-plan.ts: "teach it, don't read it"), never
-   *  verbatim source text. Explicit rather than implicit so a consumer never
-   *  has to assume "this surface is always non-verbatim" — the same field
-   *  name lib/speech/studySpeechEngine.ts's SpeechSegment carries, where the
-   *  value genuinely varies per segment. */
+  /** Explicit source-vs-commentary boundary. Director source-passage phases
+   *  are SOURCE_VERBATIM; explanation/checkpoint phases are
+   *  PROFESSOR_EXPLANATION. Current Page remains an independent, fully
+   *  source-faithful speech path. */
   contentRole: SpeechContentRole;
 }
 
@@ -100,6 +135,7 @@ export interface NarrationSegment {
 
 export const VisualGrammarChoiceSchema = z.enum([
   "definition", "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map",
+  "hierarchy", "timeline", "argument", "narrative", "decision-tree", "data-interpretation", "figure-interpretation", "summary",
 ]);
 export type VisualGrammarChoice = z.infer<typeof VisualGrammarChoiceSchema>;
 
@@ -271,8 +307,27 @@ export const ProfessorNodeScriptSchema = z.object({
    *  edges — see ProfessorRelationshipSchema. Required (may be empty) for the
    *  same Structured-Outputs-strict-mode reason as `explain`/`groups`. */
   relationships: z.array(ProfessorRelationshipSchema).max(3),
+  /** Canonical VSG node ids supporting this step. The grounding layer drops
+   * anything outside the current page and always restores the target node as
+   * a minimum evidence anchor. */
+  sourceEvidence: z.array(z.string().min(1)).min(1).max(4),
+  teachingGoal: z.string().min(1).max(240),
+  teachingStructure: TeachingStructureSchema,
+  /** False keeps Professor on the PDF for this Thought Unit. No drawing or
+   * camera action is emitted for a verbal-only step. */
+  visualNeeded: z.boolean(),
+  visualIntent: z.string().min(1).max(240),
+  cameraIntent: CameraIntentSchema,
+  checkpoint: z.string().min(1).max(240).nullable(),
 });
-export type ProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
+type StrictProfessorNodeScript = z.infer<typeof ProfessorNodeScriptSchema>;
+type DirectorNodeFields = "sourceEvidence" | "teachingGoal" | "teachingStructure" | "visualNeeded" | "visualIntent" | "cameraIntent" | "checkpoint";
+/** Runtime Structured Output requires every Director field. The optionality
+ * here is TypeScript-only backward compatibility for persisted v1-v6 plans
+ * and older deterministic fixtures; groundProfessorLesson always expands
+ * them to explicit v7 values before execution. */
+export type ProfessorNodeScript = Omit<StrictProfessorNodeScript, DirectorNodeFields>
+  & Partial<Pick<StrictProfessorNodeScript, DirectorNodeFields>>;
 
 // ── ProfessorGroup — semantic organization, NOT geometry ────────────────────
 // The bridge between "AI decides meaning" and "deterministic code decides
@@ -293,6 +348,11 @@ export const GroupTypeSchema = z.enum([
   "clinical",   // clinical significance / application / decision point
   "warning",    // a trap, exception, or danger — reads as set apart from the main flow
   "summary",    // a closing synthesis point, drawn last
+  "hierarchy",  // parent/child classification
+  "timeline",   // chronological events and consequences
+  "argument",   // claim/evidence/reasoning
+  "narrative",  // character/event progression
+  "data",       // table/chart/figure interpretation
 ]);
 export type GroupType = z.infer<typeof GroupTypeSchema>;
 
@@ -315,6 +375,7 @@ export type ProfessorGroup = z.infer<typeof ProfessorGroupSchema>;
 export const ProfessorLessonScriptSchema = z.object({
   pageTruthKey:      z.string().min(1),
   visualGrammar:     VisualGrammarChoiceSchema,
+  teachingStructures: z.array(TeachingStructureSchema).min(1).max(4),
   /** Short hand-written title, e.g. "ASPIRIN OVERDOSE" — 2-6 words. */
   title:             z.string().min(1).max(50),
   /** The motivating question written under the title before any mechanism
@@ -334,7 +395,11 @@ export const ProfessorLessonScriptSchema = z.object({
   /** The lesson's closing "one synthesis question." */
   synthesisQuestion: z.string().min(1).max(240),
 });
-export type ProfessorLessonScript = z.infer<typeof ProfessorLessonScriptSchema>;
+type StrictProfessorLessonScript = z.infer<typeof ProfessorLessonScriptSchema>;
+export type ProfessorLessonScript = Omit<StrictProfessorLessonScript, "nodeScripts" | "teachingStructures"> & {
+  nodeScripts: ProfessorNodeScript[];
+  teachingStructures?: TeachingStructure[];
+};
 
 // ── ProfessorLessonPlan — the final, playback-ready timeline ────────────────
 // Built once per (documentId, pageTruthKey, activeCanonicalUnitId, VSG
@@ -357,11 +422,44 @@ export interface ProfessorLessonPlan {
   actions:           ProfessorTeachingAction[];
   segments:          NarrationSegment[];
   visualGrammar:      VisualGrammarChoice;
+  teachingStructures?: TeachingStructure[];
   title:              string;
   centralQuestion:    string;
   learningObjective:  string;
   synthesisQuestion:  string;
   sourceSnapshot:     ProfessorLessonSourceSnapshot;
+  /** Canonical Professor Director contract. This is the orchestration layer
+   * above tldraw: evidence and pedagogy stay semantic; drawInstructions are
+   * the already-validated deterministic actions the renderer may execute. */
+  directorSteps?:     ProfessorDirectorStep[];
+  executionAgent?: {
+    provider: "claude" | "deterministic";
+    model: string | null;
+    correctedStepIds: number[];
+  };
+}
+
+export interface ProfessorSourceEvidence {
+  targetId: string;
+  sourceId: string;
+  exactText: string;
+}
+
+export interface ProfessorDirectorStep {
+  stepId: number;
+  targetId: string;
+  sourceEvidence: ProfessorSourceEvidence[];
+  teachingGoal: string;
+  teachingStructure: TeachingStructure;
+  visualNeeded: boolean;
+  visualIntent: string;
+  narration: string;
+  drawInstructions: ProfessorTeachingAction[];
+  relationships: ProfessorRelationship[];
+  emphasis: Array<{ targetId: string; treatment: Exclude<EmphasisTreatmentChoice, "none"> }>;
+  focusBounds: Bounds | null;
+  cameraIntent: CameraIntent;
+  checkpoint: string | null;
 }
 
 // ── Cache key ─────────────────────────────────────────────────────────────
@@ -399,7 +497,10 @@ export interface ProfessorLessonPlan {
 // v6 (Phase 3): added a centralQuestion opening, expanded teachingRole with
 // warning/summary, carried semantic roles through the executable canvas
 // state for consistent color, and finishes on a whole-board synthesis view.
-export const PLANNER_VERSION = 6;
+// v7: adds the domain-adaptive Professor Director contract, explicit source
+// evidence / teaching structure / visualNeeded decisions per Thought Unit,
+// PDF↔Whiteboard surface actions, and intent-aware camera focus bounds.
+export const PLANNER_VERSION = 7;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;
