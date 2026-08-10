@@ -15,6 +15,7 @@ const STORE_FILE       = path.resolve(__dirname, "../../lib/recalllab/recallStor
 const RIGHT_PANEL_FILE = path.resolve(__dirname, "../../components/reader/RightPanel.tsx");
 const INDEX_FILE       = path.resolve(__dirname, "../../pages/index.tsx");
 const RECALL_LAB_FILE  = path.resolve(__dirname, "../../components/recalllab/RecallLab.tsx");
+const RECALL2_SESSION_FILE = path.resolve(__dirname, "../../components/recalllab/Recall2Session.tsx");
 
 describe("recallStore.ts — RecallSet carries documentId, and buildRecallSetFromView threads opts through", () => {
   let src: string;
@@ -44,13 +45,16 @@ describe("recallStore.ts — RecallSet carries documentId, and buildRecallSetFro
     expect(block).toMatch(/knowledgeNodeId:\s*opts\?\.knowledgeNodeId \?\? undefined,/);
   });
 
-  it("REQUIRED: updateCardDifficulty writes progress via the deterministic applyLearningEvent reducer, not a hand-rolled patch", () => {
-    expect(src).toMatch(/import \{ applyLearningEvent, emptyProgress \} from "@\/lib\/knowledge\/learningStateEvents";/);
+  it("REQUIRED: updateCardDifficulty writes through recordLearningEvent only when full canonical identity is present", () => {
+    expect(src).toMatch(/import \{ recordLearningEvent \} from "@\/lib\/knowledge\/recordLearningEvent";/);
     const idx = src.indexOf("export async function updateCardDifficulty(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 2600);
-    expect(block).toMatch(/applyLearningEvent\(base, \{ kind: "recall-graded", difficulty, occurredAt, sourceId: cardId \}\)/);
-    expect(block).toMatch(/emptyProgress\(nodeId, set\.documentId \?\? set\.bookId\)/);
+    expect(block).toMatch(/set\.knowledgeNodeId && set\.documentId && set\.pageTruthKey/);
+    expect(block).toMatch(/recordLearningEvent\(/);
+    expect(block).toMatch(/set\.documentId,/);
+    expect(block).toMatch(/set\.pageTruthKey,/);
+    expect(block).not.toMatch(/set\.documentId \?\? set\.bookId/);
   });
 });
 
@@ -83,11 +87,12 @@ describe("pages/index.tsx — the RightPanel call site and Focus-Cycle auto-save
   let src: string;
   beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
 
-  it("REQUIRED: <RightPanel> receives knowledgeNodeId from pageKgNodeIdRef", () => {
+  it("REQUIRED: <RightPanel> receives the reactive page KnowledgeNode id", () => {
     const idx = src.indexOf("<RightPanel\n");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 500);
-    expect(block).toMatch(/knowledgeNodeId=\{pageKgNodeIdRef\.current\}/);
+    expect(block).toMatch(/knowledgeNodeId=\{pageKnowledgeNodeId\}/);
+    expect(src).toMatch(/setPageKnowledgeNodeId\(node\.id\)/);
   });
 
   it("REQUIRED: sendCurrentPageToRecallLab (Focus Cycle auto-save) also threads documentId/knowledgeNodeId", () => {
@@ -128,5 +133,21 @@ describe("RecallLab.tsx — Quiz Me and Quick Recall persist the set before open
     expect(saveIdx).toBeGreaterThan(-1);
     expect(setViewIdx).toBeGreaterThan(-1);
     expect(saveIdx).toBeLessThan(setViewIdx);
+  });
+});
+
+describe("Recall 2.0 — every confidence rating drives the shared Learning State", () => {
+  it("rates with one explicit occurredAt and queues recordRecallBlueprintRating using the updated SM-2 card", () => {
+    const src = fs.readFileSync(RECALL2_SESSION_FILE, "utf8");
+    expect(src).toMatch(/const occurredAt = new Date\(\)\.toISOString\(\);/);
+    expect(src).toMatch(/applyConfidence\(card, confidence, occurredAt\)/);
+    expect(src).toMatch(/recordRecallBlueprintRating\(updated, confidence, occurredAt\)/);
+  });
+
+  it("waits for both card persistence and Learning State writes before closing", () => {
+    const src = fs.readFileSync(RECALL2_SESSION_FILE, "utf8");
+    expect(src).toMatch(/await Promise\.all\(\[/);
+    expect(src).toMatch(/flushSessionResults\(updated\)/);
+    expect(src).toMatch(/learningWritesRef\.current/);
   });
 });

@@ -27,9 +27,14 @@ const CONFIDENCE_EF_DELTA: Record<ConfidenceLevel, number> = {
  * Apply one confidence rating to a blueprint and return the updated copy.
  * Never mutates the input.
  */
-export function applyConfidence(bp: RecallBlueprint, confidence: ConfidenceLevel): RecallBlueprint {
+export function applyConfidence(
+  bp: RecallBlueprint,
+  confidence: ConfidenceLevel,
+  reviewedAt = new Date().toISOString(),
+): RecallBlueprint {
   const quality  = CONFIDENCE_QUALITY[confidence];
-  const todayStr = isoToday();
+  const reviewedDate = new Date(reviewedAt);
+  const todayStr = reviewedDate.toISOString().slice(0, 10);
 
   const newEF = clamp(bp.easeFactor + CONFIDENCE_EF_DELTA[confidence], 1.3, 2.5);
 
@@ -47,8 +52,8 @@ export function applyConfidence(bp: RecallBlueprint, confidence: ConfidenceLevel
     newInterval = Math.max(1, Math.round(bp.interval * newEF));
   }
 
-  const nextDue = new Date();
-  nextDue.setDate(nextDue.getDate() + newInterval);
+  const nextDue = new Date(reviewedDate);
+  nextDue.setUTCDate(nextDue.getUTCDate() + newInterval);
 
   return {
     ...bp,

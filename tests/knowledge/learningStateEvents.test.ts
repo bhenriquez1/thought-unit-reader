@@ -102,6 +102,19 @@ describe("applyLearningEvent — recall-graded", () => {
     const next = grade(emptyProgress("n1", "doc-1"), "easy");
     expect(next.exposureCount).toBe(1);
   });
+
+  it("uses the scheduler fields supplied by the actual retrieval rating", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), {
+      kind: "recall-graded",
+      difficulty: "medium",
+      occurredAt: T1,
+      sourceId: "card-scheduled",
+      nextReviewAt: "2026-01-05T00:00:00.000Z",
+      predictedForgetAt: "2026-01-08T00:00:00.000Z",
+    });
+    expect(next.nextReviewAt).toBe("2026-01-05T00:00:00.000Z");
+    expect(next.predictedForgetAt).toBe("2026-01-08T00:00:00.000Z");
+  });
 });
 
 describe("applyLearningEvent — whiteboard-lesson-completed", () => {

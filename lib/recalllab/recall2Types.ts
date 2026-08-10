@@ -15,6 +15,13 @@ export type RecallCategory =
 /** 4-level confidence rating replacing Easy / Medium / Hard. */
 export type ConfidenceLevel = "easy" | "unsure" | "guessed" | "blank";
 
+/** Provenance for cards assembled by the canonical Phase 4 retrieval path. */
+export type RecallSourceKind =
+  | "canonical-thought-unit"
+  | "professor-snapshot"
+  | "misconception-repair"
+  | "legacy";
+
 /** Named study phases composing a full session. */
 export type SessionPhase =
   | "warmup"    // recognition + understanding due cards
@@ -25,8 +32,14 @@ export type SessionPhase =
 
 export interface RecallBlueprint {
   id: string;
+  /** Human-readable filename grouping only. Never used as canonical identity. */
   bookId: string;
   pageNumber?: number;
+
+  // Canonical page identity. Optional only for imported pre-Phase-4 cards.
+  documentId?: string;
+  pageTruthKey?: string;
+  knowledgeNodeId?: string;
 
   // Card content
   category: RecallCategory;
@@ -41,6 +54,12 @@ export interface RecallBlueprint {
   sourceLabel?: string;
   /** Canonical thought-unit ID this card was derived from. */
   canonicalUnitId?: string;
+  /** Which already-grounded artifact supplied the prompt/answer. */
+  sourceKind?: RecallSourceKind;
+  /** Whiteboard lesson id when this card replays a Professor snapshot. */
+  sourceSnapshotId?: string;
+  /** Known misconception repaired by this card, if any. */
+  misconception?: string;
   /** djb2 hash of the lowercased front text — used for deduplication. */
   canonicalHash: string;
 

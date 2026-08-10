@@ -8,6 +8,12 @@ const DB_NAME    = "avrrio_recall2_v1";
 const STORE_NAME = "blueprints";
 const LS_KEY     = "recall2_mirror_v1";
 
+export interface RecallPageIdentity {
+  documentId: string;
+  pageNumber: number;
+  pageTruthKey: string;
+}
+
 // ── Deterministic ID helpers ──────────────────────────────────────────────
 
 /** djb2 hash → base36 string — stable, no btoa needed. */
@@ -26,10 +32,16 @@ export function newBlueprint(
   opts: {
     bookId: string;
     pageNumber?: number;
+    documentId?: string;
+    pageTruthKey?: string;
+    knowledgeNodeId?: string;
     canonicalUnitId?: string;
     sourceLabel?: string;
     hint?: string;
     learningObjective?: string;
+    sourceKind?: RecallBlueprint["sourceKind"];
+    sourceSnapshotId?: string;
+    misconception?: string;
   },
 ): RecallBlueprint {
   const today = isoToday();
@@ -37,6 +49,9 @@ export function newBlueprint(
     id:                  `bp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     bookId:              opts.bookId,
     pageNumber:          opts.pageNumber,
+    documentId:          opts.documentId,
+    pageTruthKey:        opts.pageTruthKey,
+    knowledgeNodeId:     opts.knowledgeNodeId,
     category,
     front,
     back,
@@ -44,6 +59,9 @@ export function newBlueprint(
     learningObjective:   opts.learningObjective,
     sourceLabel:         opts.sourceLabel,
     canonicalUnitId:     opts.canonicalUnitId,
+    sourceKind:          opts.sourceKind,
+    sourceSnapshotId:    opts.sourceSnapshotId,
+    misconception:       opts.misconception,
     canonicalHash:       canonicalHash(front.toLowerCase().slice(0, 120)),
     interval:            1,
     easeFactor:          2.5,
@@ -64,13 +82,19 @@ function isoToday(): string {
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") { reject(new Error("IDB unavailable")); return; }
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
         store.createIndex("bookId",  "bookId",  { unique: false });
+        store.createIndex("documentId", "documentId", { unique: false });
         store.createIndex("dueDate", "dueDate", { unique: false });
+      } else {
+        const store = req.transaction!.objectStore(STORE_NAME);
+        if (!store.indexNames.contains("documentId")) {
+          store.createIndex("documentId", "documentId", { unique: false });
+        }
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -132,6 +156,17 @@ async function idbGetByBookId(bookId: string): Promise<RecallBlueprint[]> {
   });
 }
 
+async function idbGetByDocumentId(documentId: string): Promise<RecallBlueprint[]> {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction(STORE_NAME, "readonly");
+    const index = tx.objectStore(STORE_NAME).index("documentId");
+    const req   = index.getAll(documentId);
+    req.onsuccess = () => resolve((req.result as RecallBlueprint[]) ?? []);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
 // ── localStorage mirror (sync read, best-effort write) ────────────────────
 
 function lsRead(): RecallBlueprint[] {
@@ -172,11 +207,44 @@ export function getBlueprints(bookId?: string): RecallBlueprint[] {
   return bookId ? all.filter(bp => bp.bookId === bookId) : all;
 }
 
+/** Exact canonical-document read. Cards lacking documentId are deliberately excluded. */
+export function getBlueprintsForDocument(documentId: string): RecallBlueprint[] {
+  return lsRead().filter(bp => bp.documentId === documentId);
+}
+
+export function blueprintMatchesPageIdentity(
+  blueprint: RecallBlueprint,
+  identity: RecallPageIdentity,
+): boolean {
+  return blueprint.documentId === identity.documentId
+    && blueprint.pageNumber === identity.pageNumber
+    && blueprint.pageTruthKey === identity.pageTruthKey;
+}
+
+/** Exact canonical-page read. No filename, page-only, or stale-key fallback. */
+export function getBlueprintsForPage(identity: RecallPageIdentity): RecallBlueprint[] {
+  return lsRead().filter(bp => blueprintMatchesPageIdentity(bp, identity));
+}
+
 /** Async read from IDB (authoritative). */
 export async function getBlueprintsAsync(bookId?: string): Promise<RecallBlueprint[]> {
   const all = bookId ? await idbGetByBookId(bookId) : await idbGetAll();
   lsWrite(all);
   return all;
+}
+
+export async function getBlueprintsForDocumentAsync(documentId: string): Promise<RecallBlueprint[]> {
+  const matching = await idbGetByDocumentId(documentId);
+  const all = await idbGetAll();
+  lsWrite(all);
+  return matching;
+}
+
+export async function getBlueprintsForPageAsync(identity: RecallPageIdentity): Promise<RecallBlueprint[]> {
+  const documentCards = await idbGetByDocumentId(identity.documentId);
+  const all = await idbGetAll();
+  lsWrite(all);
+  return documentCards.filter(bp => blueprintMatchesPageIdentity(bp, identity));
 }
 
 /** Save a single blueprint (upsert). */
@@ -192,7 +260,10 @@ export async function saveBlueprintsDedup(
   incoming: RecallBlueprint[],
   bookId: string,
 ): Promise<{ saved: number; skipped: number }> {
-  const existing = await idbGetByBookId(bookId);
+  const documentId = incoming.find(bp => bp.documentId)?.documentId;
+  const existing = documentId
+    ? await idbGetByDocumentId(documentId)
+    : await idbGetByBookId(bookId);
   const existingHashes = new Set(existing.map(bp => bp.canonicalHash));
 
   const toSave = incoming.filter(bp => !existingHashes.has(bp.canonicalHash));
@@ -202,6 +273,65 @@ export async function saveBlueprintsDedup(
   lsWrite(all);
   notifyUpdate();
   return { saved: toSave.length, skipped: incoming.length - toSave.length };
+}
+
+const PROGRESS_FIELDS = [
+  "interval",
+  "easeFactor",
+  "dueDate",
+  "lastReviewedAt",
+  "reviewCount",
+  "consecutiveCorrect",
+  "confidenceHistory",
+  "createdAt",
+] as const satisfies readonly (keyof RecallBlueprint)[];
+
+/** Hydrate freshly assembled canonical content with the learner's prior SRS state. */
+export function mergeBlueprintProgress(
+  incoming: RecallBlueprint[],
+  existing: RecallBlueprint[],
+): RecallBlueprint[] {
+  const existingById = new Map(existing.map(bp => [bp.id, bp]));
+  const existingByHash = new Map(existing.map(bp => [bp.canonicalHash, bp]));
+
+  return incoming.map(next => {
+    const candidate = existingById.get(next.id) ?? existingByHash.get(next.canonicalHash);
+    const previous = candidate
+      && candidate.documentId === next.documentId
+      && candidate.pageNumber === next.pageNumber
+      && candidate.pageTruthKey === next.pageTruthKey
+      && candidate.sourceKind === next.sourceKind
+      && candidate.canonicalUnitId === next.canonicalUnitId
+      && candidate.sourceSnapshotId === next.sourceSnapshotId
+      ? candidate
+      : undefined;
+    if (!previous) return next;
+    const hydrated = { ...next };
+    for (const field of PROGRESS_FIELDS) {
+      (hydrated as Record<string, unknown>)[field] = previous[field];
+    }
+    return hydrated;
+  });
+}
+
+/**
+ * Upsert an exact-document canonical card set while retaining review history.
+ * Returns the hydrated cards so an explicit current-page session can start
+ * immediately, even when some cards are not due yet.
+ */
+export async function saveBlueprintsPreservingProgress(
+  incoming: RecallBlueprint[],
+  identity: RecallPageIdentity,
+): Promise<RecallBlueprint[]> {
+  const valid = incoming.filter(bp => blueprintMatchesPageIdentity(bp, identity));
+  const existing = (await idbGetByDocumentId(identity.documentId))
+    .filter(bp => blueprintMatchesPageIdentity(bp, identity));
+  const hydrated = mergeBlueprintProgress(valid, existing);
+  await idbPutAll(hydrated);
+  const all = await idbGetAll();
+  lsWrite(all);
+  notifyUpdate();
+  return hydrated;
 }
 
 /** Update a blueprint after a rating. */

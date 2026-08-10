@@ -727,6 +727,10 @@ export default function ThoughtUnitReader() {
   // Primary KnowledgeNode for the current page — populated by the KG effect below.
   // Used by all note-save paths to attach knowledgeNodeId without blocking the UI.
   const pageKgNodeIdRef = useRef<string | null>(null);
+  // Reactive mirror: Recall's canonical session must re-render once the async
+  // resolver produces the page node, otherwise a ref-only write can leave new
+  // cards permanently detached from Learning State until an unrelated render.
+  const [pageKnowledgeNodeId, setPageKnowledgeNodeId] = useState<string | null>(null);
 
   // KG cross-module selection sync: badge clicks → auto-navigate + highlight.
   const selectedKgNodeId = useKnowledgeSelectionStore((s) => s.selectedNodeId);
@@ -1942,7 +1946,12 @@ export default function ThoughtUnitReader() {
   // syllabus exists for this book yet (safe; KnowledgeNode.chapterCandidateId
   // is nullable).
   useEffect(() => {
+    // Clear before readiness checks: while the next page's study model is
+    // loading, Recall must see no node rather than the page just left.
+    pageKgNodeIdRef.current = null;
+    setPageKnowledgeNodeId(null);
     if (!currentPageStudyModel || !bookId) return;
+    let cancelled = false;
     const { visualAnchors } = currentPageStudyModel;
     if (!visualAnchors.length) return;
 
@@ -1952,22 +1961,22 @@ export default function ThoughtUnitReader() {
     )?.id ?? null;
     const profileId = syllabus?.selectedProfileId ?? "general";
 
-    // Clear the primary node ref so stale page data never bleeds into a new page's notes.
-    pageKgNodeIdRef.current = null;
-
     const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
 
     for (const anchor of visualAnchors) {
       if (!anchor.id) continue;
       resolveOrCreateNode(anchor, resolvedDocumentId, bookId, currentPage, chapterCandidateId, profileId)
         .then(node => {
+          if (cancelled) return;
           // First resolved anchor (primary) wins; subsequent anchors leave it unchanged.
           if (anchor.id === primaryAnchor?.id && !pageKgNodeIdRef.current) {
             pageKgNodeIdRef.current = node.id;
+            setPageKnowledgeNodeId(node.id);
           }
         })
         .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
     }
+    return () => { cancelled = true; };
   }, [currentPageStudyModel, bookId, resolvedDocumentId, currentPage]);
 
   const activePageTextKey = `${bookId}:${currentPage}`;
@@ -5456,7 +5465,7 @@ export default function ThoughtUnitReader() {
                 key={`${pageTruthKey}-${rightPanelResetKey}`}
                 ctx={activePageContext}
                 resolvedDocumentId={resolvedDocumentId}
-                knowledgeNodeId={pageKgNodeIdRef.current}
+                knowledgeNodeId={pageKnowledgeNodeId}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
                 intelligence={intelligenceSnapshot}
@@ -6203,6 +6212,11 @@ export default function ThoughtUnitReader() {
             <ErrorBoundary onError={(error) => console.error('🧠 RecallLab Error:', error.message, error.stack)}>
               <RecallLab
                 bookId={bookId}
+                documentId={resolvedDocumentId}
+                pageTruthKey={pageTruthKey}
+                surgeonPageTruthKey={surgeonAnnotations.plan?.pageTruthKey ?? null}
+                groundedAnnotations={surgeonAnnotations.groundedAnnotations}
+                knowledgeNodeId={pageKnowledgeNodeId}
                 refreshKey={recallLabRefreshKey}
                 lastSetId={lastRecallSetId ?? undefined}
                 onNavigateToPage={handleRecallNavigateToPage}

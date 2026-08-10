@@ -23,6 +23,7 @@ import {
 import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import Recall2Lab from "./Recall2Lab";
 
 const DEV = process.env.NODE_ENV === "development";
@@ -31,6 +32,13 @@ interface RecallLabProps {
   onNavigateToPage?: (pageNumber: number) => void;
   /** When provided, only sets for this book are shown */
   bookId?: string;
+  /** Resolved collision-resistant identity for the active document. */
+  documentId: string;
+  /** Exact current extraction identity. */
+  pageTruthKey: string;
+  surgeonPageTruthKey?: string | null;
+  groundedAnnotations: GroundedSurgeonAnnotation[];
+  knowledgeNodeId?: string | null;
   /** Increment to trigger a data reload from localStorage */
   refreshKey?: number;
   /** If set, auto-open this set in a recall session immediately */
@@ -117,21 +125,26 @@ const SRS_COLOR: Record<SrsState, string> = {
   mastered: "#10b981",
 };
 
-async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
+async function loadSetsAsync(documentId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
-  const filtered = bookId ? all.filter((s) => s.bookId === bookId) : all;
-  DEV && console.log("[RECALL_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
+  const filtered = documentId ? all.filter((s) => s.documentId === documentId) : all;
+  DEV && console.log("[RECALL_RENDER_COUNT]", { total: all.length, filtered: filtered.length, documentId: documentId ?? "all" });
   return filtered;
 }
 
-function loadSetsSync(bookId?: string): RecallSet[] {
+function loadSetsSync(documentId?: string): RecallSet[] {
   const all = getAllRecallSets();
-  return bookId ? all.filter((s) => s.bookId === bookId) : all;
+  return documentId ? all.filter((s) => s.documentId === documentId) : all;
 }
 
 export default function RecallLab({
   onNavigateToPage,
   bookId,
+  documentId,
+  pageTruthKey,
+  surgeonPageTruthKey,
+  groundedAnnotations,
+  knowledgeNodeId,
   refreshKey,
   lastSetId,
   openUnit,
@@ -146,17 +159,17 @@ export default function RecallLab({
 }: RecallLabProps) {
   // Start from LS mirror for instant render; IDB async load fills in on mount
   const [sets, setSets] = useState<RecallSet[]>(() => {
-    const sync = loadSetsSync(bookId);
+    const sync = loadSetsSync(documentId);
     DEV && console.log("[RECALLLAB_MOUNT]", { setsInStorage: sync.length, lastSetId: lastSetId ?? null });
     return sync;
   });
   const [view, setView] = useState<View>({ kind: "dashboard" });
   const [initialLoaded, setInitialLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"classic" | "v2">("classic");
+  const [activeTab, setActiveTab] = useState<"classic" | "v2">("v2");
 
   // On mount: load from IDB (authoritative)
   useEffect(() => {
-    loadSetsAsync(bookId).then((all) => {
+    loadSetsAsync(documentId).then((all) => {
       setSets(all);
       setInitialLoaded(true);
       if (lastSetId) {
@@ -171,7 +184,7 @@ export default function RecallLab({
   // Reload from IDB when refreshKey changes
   useEffect(() => {
     if (!initialLoaded) return;
-    loadSetsAsync(bookId).then((all) => {
+    loadSetsAsync(documentId).then((all) => {
       setSets(all);
       DEV && console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, count: all.length });
     });
@@ -183,28 +196,28 @@ export default function RecallLab({
   useEffect(() => {
     if (!initialLoaded) return;
     setView({ kind: "dashboard" });
-    loadSetsAsync(bookId).then((all) => {
+    loadSetsAsync(documentId).then((all) => {
       setSets(all);
       DEV && console.log("[RECALLLAB_BOOKID_CHANGED]", { bookId, count: all.length });
     });
-  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // IDB-aware recall-lab-updated event
   useEffect(() => {
     const handler = () => {
-      loadSetsAsync(bookId).then((all) => {
+      loadSetsAsync(documentId).then((all) => {
         setSets(all);
         DEV && console.log("[RECALLLAB_STATE_COUNT]", { count: all.length });
       });
     };
     window.addEventListener("recall-lab-updated", handler);
     return () => window.removeEventListener("recall-lab-updated", handler);
-  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When lastSetId changes, auto-open after IDB read
   useEffect(() => {
     if (!lastSetId || !initialLoaded) return;
-    loadSetsAsync(bookId).then((all) => {
+    loadSetsAsync(documentId).then((all) => {
       setSets(all);
       const found = all.find((s) => s.id === lastSetId);
       DEV && console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: all.length });
@@ -221,7 +234,7 @@ export default function RecallLab({
 
   async function handleDelete(id: string) {
     await deleteRecallSet(id);
-    const updated = await loadSetsAsync(bookId);
+    const updated = await loadSetsAsync(documentId);
     setSets(updated);
     if ((view.kind === "session" || view.kind === "deck") && view.set.id === id) {
       setView({ kind: "dashboard" });
@@ -240,7 +253,11 @@ export default function RecallLab({
           // rating (RC "Quiz Me grading is lost", Learning State Engine
           // Phase A). Awaiting the save closes that race: no rating is
           // possible until the set genuinely exists in storage.
-          const set = buildRecallSetFromThoughtUnit(detail);
+          const set = buildRecallSetFromThoughtUnit(detail, {
+            documentId,
+            pageTruthKey,
+            knowledgeNodeId,
+          });
           try {
             await saveRecallSet(set);
           } catch (err) {
@@ -274,7 +291,7 @@ export default function RecallLab({
         set={view.set}
         onClose={() => {
           setView({ kind: "dashboard" });
-          loadSetsAsync(bookId).then(setSets);
+          loadSetsAsync(documentId).then(setSets);
         }}
         onNavigateToPage={onNavigateToPage}
       />
@@ -289,6 +306,12 @@ export default function RecallLab({
         <div style={{ flex: 1, overflow: "hidden" }}>
           <Recall2Lab
             bookId={bookId}
+            documentId={documentId}
+            pageNumber={currentPage ?? 0}
+            pageTruthKey={pageTruthKey}
+            surgeonPageTruthKey={surgeonPageTruthKey}
+            groundedAnnotations={groundedAnnotations}
+            knowledgeNodeId={knowledgeNodeId}
             bookTitle={sets[0]?.bookTitle}
             topic={currentPageTitle ?? undefined}
             legacySets={sets}
@@ -394,6 +417,9 @@ export default function RecallLab({
                   bookId: bookId ?? "default-book",
                   pageNumber: currentPage ?? 0,
                   pageTitle: currentPageTitle ?? undefined,
+                  documentId,
+                  pageTruthKey,
+                  knowledgeNodeId,
                 });
                 try {
                   await saveRecallSet(set);

@@ -24,7 +24,15 @@ export type LearningStateEvent =
   // a Whiteboard lesson started, NoteLab evidence was attached, etc.
   | { kind: "exposure"; sourceType: LearningEvidenceSourceType; occurredAt: string; sourceId: string; detail?: string }
   // A Recall card (or equivalent retrieval-practice item) was graded.
-  | { kind: "recall-graded"; difficulty: "easy" | "medium" | "hard"; occurredAt: string; sourceId: string }
+  | {
+      kind: "recall-graded";
+      difficulty: "easy" | "medium" | "hard";
+      occurredAt: string;
+      sourceId: string;
+      /** Scheduling fields come from the same actual SRS rating. */
+      nextReviewAt?: string;
+      predictedForgetAt?: string;
+    }
   // A Whiteboard "Professor" lesson for this concept finished playing.
   | { kind: "whiteboard-lesson-completed"; occurredAt: string; sourceId: string; snapshotId?: string }
   // A DAT Apex question targeting this concept was answered.
@@ -125,6 +133,8 @@ export function applyLearningEvent(
         missCount: progress.failedRecallCount + (succeeded ? 0 : 1),
         lastReviewedAt: event.occurredAt,
         lastStudiedAt: event.occurredAt,
+        nextReviewAt: event.nextReviewAt ?? progress.nextReviewAt,
+        predictedForgetAt: event.predictedForgetAt ?? progress.predictedForgetAt,
         evidence: pushEvidence(progress, "recall", event.sourceId, event.occurredAt, `rated ${event.difficulty}`),
       };
     }
