@@ -14,13 +14,13 @@ import type { ProfessorTeachingAction } from "../../lib/whiteboard/professorLess
 // step-boundary tests below.
 const ACTIONS: ProfessorTeachingAction[] = [
   { type: "move-camera", actionId: "a0", targetIds: ["shape:n1"], durationMs: 400, stepId: 1 },
-  { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550, stepId: 1 },
+  { type: "draw-shape", actionId: "a1", shapeId: "shape:n1", targetId: "src1", shape: "box", bounds: { x: 0, y: 0, w: 200, h: 56 }, durationMs: 550, teachingRole: "mechanism", stepId: 1 },
   { type: "write", actionId: "a2", shapeId: "shape:n1", targetId: "src1", text: "Rapid assessment", x: 8, y: 20, durationMs: 700, stepId: 1 },
   { type: "emphasize", actionId: "a3", targetId: "shape:n1", treatment: "circle", durationMs: 550, stepId: 1 },
   { type: "speak", actionId: "a4", segmentId: "seg0", text: "Start with the central problem.", durationMs: 900, stepId: 1 },
   { type: "pause", actionId: "a5", durationMs: 400, stepId: 1 },
   { type: "move-camera", actionId: "a6", targetIds: ["shape:n1", "shape:n2"], durationMs: 400, stepId: 2 },
-  { type: "draw-arrow", actionId: "a7", shapeId: "shape:e1", from: { x: 100, y: 56 }, to: { x: 100, y: 120 }, durationMs: 500, stepId: 2 },
+  { type: "draw-arrow", actionId: "a7", shapeId: "shape:e1", from: { x: 100, y: 56 }, to: { x: 100, y: 120 }, durationMs: 500, relationshipKind: "causes", stepId: 2 },
   { type: "speak", actionId: "a8", segmentId: "seg1", text: "This leads to the next step.", durationMs: 700, stepId: 2 },
 ];
 
@@ -35,6 +35,7 @@ describe("computeCanvasStateAtStep — reconstructs from scratch every call", ()
     const s = state.get("shape:n1");
     expect(s).toBeDefined();
     expect(s!.kind).toBe("box");
+    expect(s!.teachingRole).toBe("mechanism");
     expect(s!.text).toBe("");
   });
 
@@ -57,6 +58,7 @@ describe("computeCanvasStateAtStep — reconstructs from scratch every call", ()
     expect(arrow!.kind).toBe("arrow");
     expect(arrow!.from).toEqual({ x: 100, y: 56 });
     expect(arrow!.to).toEqual({ x: 100, y: 120 });
+    expect(arrow!.relationshipKind).toBe("causes");
   });
 
   it("REQUIRED: identical stepIndex always reconstructs an equal state, independent of what indices were visited before — this is what makes Previous/Restart exact-state jumps", () => {

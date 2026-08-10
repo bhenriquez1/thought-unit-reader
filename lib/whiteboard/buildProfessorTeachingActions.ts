@@ -60,6 +60,24 @@ const EDGE_KIND_LABEL: Record<string, string> = {
   reference:   "relates to",
 };
 
+// Structural edge entries also receive an AI-authored shortLabel. Prefer it
+// when it actually explains the mechanism ("reduces tissue seal"), but keep
+// the canonical connective for generic labels ("leads to"). This lets an
+// arrow answer WHY two ideas connect without turning every connector into a
+// second node or surrendering routing/placement to the model.
+const GENERIC_CONNECTOR_LABELS = new Set([
+  "leads to", "lead to", "causes", "then", "next", "explains",
+  "relates to", "supports", "part of", "vs", "versus",
+]);
+
+function edgeExplanationLabel(shortLabel: string, kind: string): string {
+  const fallback = EDGE_KIND_LABEL[kind] ?? "relates to";
+  const normalized = shortLabel.trim().toLowerCase().replace(/[.!?:;]+$/g, "");
+  return normalized.length === 0 || GENERIC_CONNECTOR_LABELS.has(normalized)
+    ? fallback
+    : shortLabel.trim();
+}
+
 // The AI picks an icon KEY (meaning); this map is what actually decides the
 // rendered glyph — "AI proposes meaning, code proposes the visual," same
 // split as shapeKindForNode() below. tldraw geo-shape labels render plain
@@ -282,17 +300,28 @@ export function buildProfessorTeachingActions(
       .filter(([id]) => id !== fromId && id !== toId)
       .map(([, box]) => box);
 
-  // ── Step 1: short hand-written title ───────────────────────────────────
+  // ── Step 1: central concept + motivating question ──────────────────────
   // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
   // collided with the first box's own position.
   if (grounded.title) {
-    const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 22;
+    const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 40;
     const titleActionId = nextActionId();
     push({
       type: "write", actionId: titleActionId, shapeId: String(createShapeId("pl-title")),
-      text: grounded.title, x: 24, y: topLayoutY - 60, durationMs: writeDurationMs(grounded.title),
+      text: grounded.title, x: 24, y: topLayoutY - 105, durationMs: writeDurationMs(grounded.title),
     });
     pushSegment(`${grounded.title}.`, "introduce", "normal", [titleActionId]);
+  }
+
+  if (grounded.centralQuestion) {
+    const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 40;
+    const questionActionId = nextActionId();
+    push({
+      type: "write", actionId: questionActionId, shapeId: String(createShapeId("pl-central-question")),
+      text: grounded.centralQuestion, x: 24, y: topLayoutY - 58,
+      durationMs: writeDurationMs(grounded.centralQuestion),
+    });
+    pushSegment(grounded.centralQuestion, "question", "slow", [questionActionId]);
   }
 
   // ── Step 1b: learning objective, spoken only — states what the student
@@ -480,7 +509,8 @@ export function buildProfessorTeachingActions(
         const relArrowId = nextActionId();
         push({
           type: "draw-arrow", actionId: relArrowId, shapeId: relShapeId,
-          from: relFrom, to: relTo, bend: relBend, durationMs: ARROW_DURATION_MS,
+          from: relFrom, to: relTo, bend: relBend, relationshipKind: rel.kind,
+          durationMs: ARROW_DURATION_MS,
         });
         linked.push(relArrowId);
 
@@ -547,7 +577,7 @@ export function buildProfessorTeachingActions(
       // the (previously never-applied) arrow color. See EDGE_KIND_LABEL.
       // Nudged clear of any node box it would otherwise sit on top of (same
       // obstacle list explain[] sub-diagrams already avoid).
-      const edgeLabel = EDGE_KIND_LABEL[edge.kind];
+      const edgeLabel = edgeExplanationLabel(entry.shortLabel, edge.kind);
       if (edgeLabel) {
         const edgeLabelPlaced = pushClearOf({
           x: (arrowFrom.x + arrowTo.x) / 2 - estimateLabelWidth(edgeLabel) / 2,
@@ -609,11 +639,29 @@ export function buildProfessorTeachingActions(
     });
   }
 
-  // ── Final: one synthesis question, spoken only — no new visual object,
-  //     keeps the canvas under the primary-object ceiling. Its own step. ───
+  // ── Final: zoom back to the complete causal picture, then ask the learner
+  //     to synthesize it. This is one pedagogical step: the board remains the
+  //     compact final artifact and the question is spoken over the overview.
   if (grounded.synthesisQuestion) {
     currentStepId += 1;
-    pushSegment(grounded.synthesisQuestion, "question", "slow", []);
+    const overviewTargetIds = Array.from(new Set(
+      effectiveGroups.flatMap(group => shapeIdsByGroup.get(group.id) ?? []),
+    ));
+    const overviewLinkedActionIds: string[] = [];
+    if (overviewTargetIds.length > 0) {
+      const overviewActionId = nextActionId();
+      push({
+        type: "move-camera", actionId: overviewActionId,
+        targetIds: overviewTargetIds, durationMs: CAMERA_DURATION_MS,
+      });
+      overviewLinkedActionIds.push(overviewActionId);
+    }
+    pushSegment(
+      grounded.synthesisQuestion,
+      "question",
+      "slow",
+      overviewLinkedActionIds,
+    );
   }
 
   return {
@@ -621,6 +669,7 @@ export function buildProfessorTeachingActions(
     segments,
     visualGrammar:      grounded.visualGrammar,
     title:               grounded.title,
+    centralQuestion:     grounded.centralQuestion,
     learningObjective:   grounded.learningObjective,
     synthesisQuestion:   grounded.synthesisQuestion,
     sourceSnapshot,

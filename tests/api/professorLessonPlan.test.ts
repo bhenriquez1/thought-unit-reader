@@ -107,6 +107,17 @@ describe("pages/api/professor-lesson-plan.ts — prompt encodes the professor-pe
   it("requires one synthesis question", () => {
     expect(src).toMatch(/synthesisQuestion/);
   });
+
+  it("requires a motivating central question and a progressive teaching build", () => {
+    expect(src).toMatch(/centralQuestion is the motivating question/);
+    expect(src).toMatch(/construct the answer progressively/);
+    expect(src).toMatch(/Build progressively in nodeScripts order/);
+  });
+
+  it("asks edge labels to explain causal links instead of repeating a generic connective", () => {
+    expect(src).toMatch(/For an EDGE target, shortLabel should explain the causal link/);
+    expect(src).toMatch(/not merely repeat "leads to"/);
+  });
 });
 
 describe("pages/api/professor-lesson-plan.ts — pageTeachingType (shared page classifier) informs teaching style", () => {

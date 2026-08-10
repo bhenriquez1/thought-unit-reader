@@ -20,6 +20,7 @@ function makeGrounded(overrides: Partial<GroundedProfessorLessonScript> = {}): G
   return {
     title: "Test Lesson",
     visualGrammar: "procedure",
+    centralQuestion: "Why must stabilization come first?",
     learningObjective: "Explain how to stabilize the patient before diagnosis.",
     synthesisQuestion: "How would you explain this back?",
     nodeScripts: [
@@ -77,11 +78,22 @@ describe("buildProfessorTeachingActions — visuals synchronized with narration"
     expect(segment).toBeDefined();
   });
 
-  it("the synthesis question is spoken with no new visual object", () => {
+  it("the synthesis question is spoken over a whole-board camera view, with no new diagram object", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     const segment = plan.segments.find(s => s.text === "How would you explain this back?");
     expect(segment).toBeDefined();
-    expect(segment!.linkedActionIds).toEqual([]);
+    const linked = plan.actions.filter(a => segment!.linkedActionIds.includes(a.actionId));
+    expect(linked).toHaveLength(1);
+    expect(linked[0].type).toBe("move-camera");
+  });
+
+  it("writes the motivating central question before drawing the first concept", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const questionIndex = plan.actions.findIndex(a => a.type === "write" && a.text === "Why must stabilization come first?");
+    const firstNodeIndex = plan.actions.findIndex(a => a.type === "draw-shape" && a.targetId === "src-n1");
+    expect(questionIndex).toBeGreaterThanOrEqual(0);
+    expect(questionIndex).toBeLessThan(firstNodeIndex);
+    expect(plan.centralQuestion).toBe("Why must stabilization come first?");
   });
 });
 
@@ -140,13 +152,13 @@ describe("buildProfessorTeachingActions — a move-camera action precedes each n
 });
 
 describe("buildProfessorTeachingActions — camera moves by teaching region, not per individual object", () => {
-  it("two nodes in the SAME semantic group share a single move-camera action", () => {
+  it("two nodes in the SAME semantic group share one region camera move plus the final overview", () => {
     const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(1);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(2);
   });
 
-  it("a node in a DIFFERENT group from the previous one triggers a new move-camera action", () => {
+  it("a node in a DIFFERENT group triggers a second region camera move before the final overview", () => {
     const grounded = makeGrounded({
       groups: [
         { id: "g1", type: "core", order: 1, nodeIds: ["n1"] },
@@ -154,7 +166,7 @@ describe("buildProfessorTeachingActions — camera moves by teaching region, not
       ],
     });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(2);
+    expect(plan.actions.filter(a => a.type === "move-camera")).toHaveLength(3);
   });
 
   it("a region's move-camera action targets every shapeId in that region, not just the one node currently being drawn", () => {
@@ -181,7 +193,7 @@ describe("buildProfessorTeachingActions — group-aware geometry: no overlap, re
   }
   function groupedGrounded(): GroundedProfessorLessonScript {
     return {
-      title: "T", visualGrammar: "concept-map", learningObjective: "L", synthesisQuestion: "Q",
+      title: "T", visualGrammar: "concept-map", centralQuestion: "How are these connected?", learningObjective: "L", synthesisQuestion: "Q",
       nodeScripts: Array.from({ length: 5 }, (_, i) => ({
         targetId: `n${i}`, shortLabel: `Point number ${i} with a somewhat longer descriptive phrase`,
         narration: `Narration ${i}.`, tone: "explain" as const, pace: "normal" as const, emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
@@ -227,7 +239,7 @@ describe("buildProfessorTeachingActions — deterministic, non-AI treatments fro
   }
   function seqGrounded(): GroundedProfessorLessonScript {
     return {
-      title: "Test", visualGrammar: "procedure", learningObjective: "Learn the steps.",
+      title: "Test", visualGrammar: "procedure", centralQuestion: "What is the sequence?", learningObjective: "Learn the steps.",
       synthesisQuestion: "Explain the steps back.",
       nodeScripts: [
         { targetId: "n1", shortLabel: "Step one", narration: "First.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
@@ -299,7 +311,7 @@ describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/
   }
   function variedGrounded(): GroundedProfessorLessonScript {
     return {
-      title: "Test", visualGrammar: "procedure", learningObjective: "Learn.", synthesisQuestion: "Explain back.",
+      title: "Test", visualGrammar: "procedure", centralQuestion: "How does this work?", learningObjective: "Learn.", synthesisQuestion: "Explain back.",
       nodeScripts: [
         { targetId: "hub",      shortLabel: "Hub",      narration: "Hub.",      tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
         { targetId: "decision", shortLabel: "Decision", narration: "Decide.",   tone: "explain",   pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
@@ -365,6 +377,17 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
     expect(Math.abs(labelAction.x - midX)).toBeLessThan(100);
   });
 
+  it("uses an informative AI-authored edge label when it explains why the causal arrow exists", () => {
+    const grounded = makeGrounded({
+      nodeScripts: makeGrounded().nodeScripts.map(entry =>
+        entry.targetId === "e1" ? { ...entry, shortLabel: "prevents further harm" } : entry,
+      ),
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    expect(plan.actions.some(a => a.type === "write" && a.text === "prevents further harm")).toBe(true);
+    expect(plan.actions.some(a => a.type === "write" && a.text === "then")).toBe(false);
+  });
+
   it("the edge label's action is linked into that edge's own narration segment", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     const labelAction = plan.actions.find(a => a.type === "write" && a.text === "then") as any;
@@ -387,7 +410,7 @@ describe("buildProfessorTeachingActions — edge arrows carry a targetId and a s
         canvas: { width: 460, height: 300 }, builtAt: 0,
       };
       const grounded: GroundedProfessorLessonScript = {
-        title: "T", visualGrammar: "procedure", learningObjective: "L", synthesisQuestion: "Q",
+        title: "T", visualGrammar: "procedure", centralQuestion: "How does this proceed?", learningObjective: "L", synthesisQuestion: "Q",
         nodeScripts: [
           { targetId: "n1", shortLabel: "A", narration: "A.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
           { targetId: "e1", shortLabel: "B", narration: "B.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
@@ -567,6 +590,17 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
     const synthesisSpeak = plan.actions.find(a => a.type === "speak" && (a as any).text === "How would you explain this back?") as any;
     expect(synthesisSpeak.stepId).toBe(lastNodeStepId + 1);
   });
+
+  it("the final step first frames every primary concept, producing the compact integrated picture", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const synthesisSpeak = plan.actions.find(a => a.type === "speak" && a.text === "How would you explain this back?")!;
+    const overview = plan.actions.find(a => a.type === "move-camera" && a.stepId === synthesisSpeak.stepId) as any;
+    const primaryShapeIds = plan.actions
+      .filter(a => a.type === "draw-shape" && a.targetId?.startsWith("src-"))
+      .map(a => (a as any).shapeId);
+    expect(overview.targetIds).toEqual(expect.arrayContaining(primaryShapeIds));
+    expect(synthesisSpeak.actionId).not.toBe(overview.actionId);
+  });
 });
 
 describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive onto the final action, never discarded", () => {
@@ -642,6 +676,7 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored relationships 
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
     const relArrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).shapeId === "shape:pr-n1-n2") as any;
     expect(relArrow).toBeDefined();
+    expect(relArrow.relationshipKind).toBe("warns-about");
     const relLabel = plan.actions.find(a => a.type === "write" && (a as any).text === "check this first") as any;
     expect(relLabel).toBeDefined();
   });
@@ -720,7 +755,7 @@ describe("buildProfessorTeachingActions — Phase B1: comparison-group divider b
   }
   function comparisonGrounded(): GroundedProfessorLessonScript {
     return {
-      title: "T", visualGrammar: "comparison", learningObjective: "L", synthesisQuestion: "Q",
+      title: "T", visualGrammar: "comparison", centralQuestion: "How do these differ?", learningObjective: "L", synthesisQuestion: "Q",
       nodeScripts: Array.from({ length: 4 }, (_, i) => ({
         targetId: `n${i}`, shortLabel: `Point ${i}`, narration: `N${i}.`, tone: "explain" as const, pace: "normal" as const,
         emphasize: false, teachingRole: "context" as const, spatialIntent: "comparison-column" as const, drawingIntent: "contrast" as const,

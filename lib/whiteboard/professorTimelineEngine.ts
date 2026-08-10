@@ -16,7 +16,7 @@
 // No React, no tldraw Editor — TldrawCanvas.tsx diffs this pure state against
 // whatever shapes currently exist and creates/updates/deletes accordingly.
 
-import type { Bounds, Point, ProfessorTeachingAction } from "./professorLessonPlan";
+import type { Bounds, Point, ProfessorTeachingAction, RelationshipKind, TeachingRole } from "./professorLessonPlan";
 
 export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text" | "diamond" | "hexagon" | "cloud";
 
@@ -30,6 +30,12 @@ export interface ShapeVisualState {
    *  draw-arrow.bend comment in professorLessonPlan.ts. Only meaningful
    *  when kind === "arrow". */
   bend?: number;
+  /** Semantic connector meaning for AI-authored relationships. Structural
+   *  VSG edges keep resolving their kind from targetId at render time. */
+  relationshipKind?: RelationshipKind;
+  /** Pedagogical role selected by the Professor planner. The renderer maps
+   *  this to one stable color vocabulary across every lesson. */
+  teachingRole?: TeachingRole;
   /** Text-only anchor (used when a shape has no draw-shape backing it, e.g.
    *  the title, which is a bare `write` with no enclosing box). */
   x?: number;
@@ -68,6 +74,7 @@ export function computeCanvasStateAtStep(
         shapeId: action.shapeId,
         kind: action.shape,
         bounds: action.bounds,
+        teachingRole: action.teachingRole,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
         emphasisTreatments: prior?.emphasisTreatments ?? [],
@@ -80,6 +87,7 @@ export function computeCanvasStateAtStep(
         from: action.from,
         to: action.to,
         bend: action.bend,
+        relationshipKind: action.relationshipKind,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
         emphasisTreatments: prior?.emphasisTreatments ?? [],
@@ -92,6 +100,9 @@ export function computeCanvasStateAtStep(
         bounds: prior?.bounds,
         from: prior?.from,
         to: prior?.to,
+        bend: prior?.bend,
+        relationshipKind: prior?.relationshipKind,
+        teachingRole: prior?.teachingRole,
         x: prior?.x ?? action.x,
         y: prior?.y ?? action.y,
         text: action.text,

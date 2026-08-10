@@ -43,20 +43,18 @@ export type ProfessorTeachingAction =
   // the arrow (tldraw's own native "bend" arc prop) around a third node's
   // box the straight from->to line would otherwise cross. 0/omitted means
   // a straight line, unchanged from Phase B1.
-  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number; bend?: number; stepId: number }
+  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number; bend?: number; relationshipKind?: RelationshipKind; stepId: number }
   // "circle"/"box" map to tldraw's ellipse/rectangle geo shapes (the only
   // two ever produced before this comment was added). "diamond"/"hexagon"/
   // "cloud" are real, additional tldraw geo shapes — decision points, traps/
   // warnings, and clinical pearls now get their OWN distinct shape, not just
   // a different fill color on an identical rectangle. See
   // shapeKindForNode() in buildProfessorTeachingActions.ts for the mapping.
-  // spatialIntent/teachingRole: optional pass-through metadata from the AI
-  // script (see SpatialIntentSchema/TeachingRoleSchema below) — carried onto
-  // the final action so it's provably NOT discarded between "AI proposes
-  // meaning" and "this is what got drawn." Phase B1 does not use either to
-  // decide bounds; a real lane-aware layout that positions by spatialIntent
-  // is Phase B2's job.
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: string; teachingRole?: string; stepId: number }
+  // spatialIntent/teachingRole: semantic metadata from the AI script (see
+  // SpatialIntentSchema/TeachingRoleSchema below). Deterministic code maps
+  // spatialIntent to regions and teachingRole to the stable color vocabulary;
+  // neither field ever contains coordinates or renderer-specific values.
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: SpatialIntent; teachingRole?: TeachingRole; stepId: number }
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number; stepId: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number; stepId: number }
   | { type: "pause"; actionId: string; durationMs: number; stepId: number }
@@ -177,23 +175,17 @@ export const ExplanationActionSchema = z.object({
 export type ExplanationAction = z.infer<typeof ExplanationActionSchema>;
 
 // ── Teaching-arc role — closes the gap between a loose group type (below)
-// and a real per-point pedagogical stage. Purely descriptive/semantic;
-// consumed today only as pass-through metadata (see
-// buildProfessorTeachingActions.ts) plus regression tests proving it
-// survives the pipeline — a future layout pass (Phase B2) may use it to
-// influence composition.
+// and a real per-point pedagogical stage. TldrawCanvas maps this meaning to
+// one stable color across lessons; the model still never chooses a color.
 export const TeachingRoleSchema = z.enum([
-  "definition", "mechanism", "consequence", "application", "reinforcement", "context",
+  "definition", "mechanism", "consequence", "application", "warning", "summary", "reinforcement", "context",
 ]);
 export type TeachingRole = z.infer<typeof TeachingRoleSchema>;
 
 // ── Spatial intent — where this idea belongs in the board's COMPOSITION,
 // never a coordinate. The model may say "this is a left branch" or "this is
-// the warning aside," never "put this at x=400." Phase B1 threads this
-// through to the final action as metadata only — lib/whiteboard/groupLayout.ts
-// still lays out purely by group.order/group.type (unchanged); a real
-// lane-aware layout engine that actually POSITIONS by spatialIntent is
-// Phase B2's job.
+// the warning aside," never "put this at x=400." groupLayout.ts maps the
+// intent into deterministic lanes, measures boxes, and resolves collisions.
 export const SpatialIntentSchema = z.enum([
   "left-branch", "right-branch", "central-mechanism", "warning-aside", "comparison-column", "final-summary",
 ]);
@@ -325,6 +317,10 @@ export const ProfessorLessonScriptSchema = z.object({
   visualGrammar:     VisualGrammarChoiceSchema,
   /** Short hand-written title, e.g. "ASPIRIN OVERDOSE" — 2-6 words. */
   title:             z.string().min(1).max(50),
+  /** The motivating question written under the title before any mechanism
+   *  is drawn. It frames the board around something the explanation will
+   *  answer, instead of opening with a pre-built diagram. */
+  centralQuestion:   z.string().min(1).max(160),
   /** One sentence: what the student should be able to do after this lesson.
    *  Spoken as its own intro segment, right after the title. */
   learningObjective: z.string().min(1).max(300),
@@ -362,6 +358,7 @@ export interface ProfessorLessonPlan {
   segments:          NarrationSegment[];
   visualGrammar:      VisualGrammarChoice;
   title:              string;
+  centralQuestion:    string;
   learningObjective:  string;
   synthesisQuestion:  string;
   sourceSnapshot:     ProfessorLessonSourceSnapshot;
@@ -399,7 +396,10 @@ export interface ProfessorLessonPlan {
 // arrows, a comparison-group divider bracket, and an AI-chosen emphasis
 // treatment instead of a hardcoded circle. A v1-v4 cached plan predates all
 // of this and must be regenerated, not just re-read.
-export const PLANNER_VERSION = 5;
+// v6 (Phase 3): added a centralQuestion opening, expanded teachingRole with
+// warning/summary, carried semantic roles through the executable canvas
+// state for consistent color, and finishes on a whole-board synthesis view.
+export const PLANNER_VERSION = 6;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

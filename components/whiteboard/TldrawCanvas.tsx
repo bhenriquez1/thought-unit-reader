@@ -64,6 +64,7 @@ import {
 } from "@/lib/speech/speechController";
 import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
 import type { SpeechState } from "@/lib/speech/speechState";
+import { colorForRelationship, colorForTeachingRole } from "@/lib/whiteboard/teachingVisualSemantics";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
@@ -338,8 +339,9 @@ export default function TldrawCanvas({
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const storeUnsubRef = useRef<(() => void) | null>(null);
 
-  // ── Color lookup: node/edge tier is on the VSG, not the lesson script —
-  //    threaded through at render time so semantic color-coding survives. ──
+  // ── Source color lookup. Phase 3's pedagogical role color is applied on
+  //    top of this in applyStateAtStep; danger-tier source evidence remains
+  //    red even when an older cached script classified it more generically. ─
   const colorForTarget = useCallback((targetId: string | undefined, fallback: string): string => {
     const v = vsgForColorsRef.current;
     if (!v || !targetId) return fallback;
@@ -352,6 +354,11 @@ export default function TldrawCanvas({
     const edge = v.edges.find(e => e.id === targetId);
     if (edge) return EDGE_COLOR[edge.kind] ?? fallback;
     return fallback;
+  }, []);
+
+  const isDangerTarget = useCallback((targetId: string | undefined): boolean => {
+    const v = vsgForColorsRef.current;
+    return Boolean(v && targetId && v.nodes.some(n => n.sourceId === targetId && n.tier === "danger"));
   }, []);
 
   // ── The ONLY function that decides what the canvas should look like at a
@@ -402,7 +409,11 @@ export default function TldrawCanvas({
 
     for (const s of state.values()) {
       const targetId = shapeIdToTargetIdRef.current.get(s.shapeId);
-      const shapeSpec = toTldrawShapeSpec(s, colorForTarget(targetId, s.kind === "arrow" ? "grey" : "blue"));
+      const sourceColor = colorForTarget(targetId, s.kind === "arrow" ? "grey" : "blue");
+      const semanticColor = colorForTeachingRole(s.teachingRole)
+        ?? colorForRelationship(s.relationshipKind);
+      const color = isDangerTarget(targetId) ? "red" : (semanticColor ?? sourceColor);
+      const shapeSpec = toTldrawShapeSpec(s, color);
       if (!shapeSpec) continue;
       if (createdShapeIdsRef.current.has(s.shapeId)) {
         updates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props });
@@ -516,7 +527,7 @@ export default function TldrawCanvas({
     });
 
     setActiveSegmentId(resolveActiveSegmentIdAtStep(plan.actions, index));
-  }, [colorForTarget]);
+  }, [colorForTarget, isDangerTarget]);
 
   const setStepIndex = useCallback((n: number) => {
     stepIndexRef.current = n;
