@@ -10,6 +10,8 @@ function validNodeScript() {
     emphasize: false, explain: [],
     teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain",
     emphasisTreatment: "none", relationships: [],
+    sourceEvidence: ["n1"], teachingGoal: "Understand this point.", teachingStructure: "definition-concept",
+    visualNeeded: false, visualIntent: "Teach verbally on the PDF.", cameraIntent: "stay-on-pdf", checkpoint: null,
   };
 }
 
@@ -17,6 +19,7 @@ function validScript() {
   return {
     pageTruthKey: "doc::1::t",
     visualGrammar: "procedure",
+    teachingStructures: ["sequence-procedure"],
     title: "Test Title",
     centralQuestion: "Why does this process matter?",
     learningObjective: "Explain the key idea in your own words.",
@@ -51,6 +54,14 @@ describe("ProfessorNodeScriptSchema", () => {
 
   it("REQUIRED (Phase B1): teachingRole/spatialIntent/drawingIntent/emphasisTreatment/relationships must all be explicitly present — same Structured-Outputs strict-mode discipline as emphasize", () => {
     for (const key of ["teachingRole", "spatialIntent", "drawingIntent", "emphasisTreatment", "relationships"]) {
+      const script = validNodeScript() as Record<string, unknown>;
+      delete script[key];
+      expect(() => ProfessorNodeScriptSchema.parse(script)).toThrow();
+    }
+  });
+
+  it("requires every v7 Professor Director field in strict Structured Output", () => {
+    for (const key of ["sourceEvidence", "teachingGoal", "teachingStructure", "visualNeeded", "visualIntent", "cameraIntent", "checkpoint"]) {
       const script = validNodeScript() as Record<string, unknown>;
       delete script[key];
       expect(() => ProfessorNodeScriptSchema.parse(script)).toThrow();
@@ -114,8 +125,8 @@ describe("ProfessorLessonScriptSchema", () => {
     expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), visualGrammar: "bar-chart" })).toThrow();
   });
 
-  it("accepts all 8 documented visualGrammar values, including 'definition'", () => {
-    const values = ["definition", "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map"];
+  it("accepts the domain-adaptive visualGrammar vocabulary", () => {
+    const values = ["definition", "procedure", "mechanism", "anatomy", "diagnosis", "comparison", "equation", "concept-map", "hierarchy", "timeline", "argument", "narrative", "decision-tree", "data-interpretation", "figure-interpretation", "summary"];
     for (const v of values) {
       expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), visualGrammar: v })).not.toThrow();
     }

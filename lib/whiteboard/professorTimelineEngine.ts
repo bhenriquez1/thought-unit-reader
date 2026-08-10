@@ -16,7 +16,7 @@
 // No React, no tldraw Editor — TldrawCanvas.tsx diffs this pure state against
 // whatever shapes currently exist and creates/updates/deletes accordingly.
 
-import type { Bounds, Point, ProfessorTeachingAction, RelationshipKind, TeachingRole } from "./professorLessonPlan";
+import type { Bounds, Point, ProfessorSurface, ProfessorTeachingAction, RelationshipKind, TeachingRole } from "./professorLessonPlan";
 
 export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text" | "diamond" | "hexagon" | "cloud";
 
@@ -144,10 +144,32 @@ export function resolveCameraTargetAtStep(
   actions: ProfessorTeachingAction[],
   stepIndex: number,
 ): string[] | null {
+  return resolveCameraActionAtStep(actions, stepIndex)?.targetIds ?? null;
+}
+
+/** Full intent-aware camera request at or before stepIndex. */
+export function resolveCameraActionAtStep(
+  actions: ProfessorTeachingAction[],
+  stepIndex: number,
+): Extract<ProfessorTeachingAction, { type: "move-camera" }> | null {
   const ceiling = Math.min(stepIndex, actions.length - 1);
   for (let i = ceiling; i >= 0; i--) {
     const action = actions[i];
-    if (action.type === "move-camera") return action.targetIds;
+    if (action.type === "move-camera") return action;
+  }
+  return null;
+}
+
+export function resolveProfessorSurfaceAtStep(
+  actions: ProfessorTeachingAction[],
+  stepIndex: number,
+): { surface: ProfessorSurface; actionId: string; stepId: number } | null {
+  const ceiling = Math.min(stepIndex, actions.length - 1);
+  for (let i = ceiling; i >= 0; i--) {
+    const action = actions[i];
+    if (action.type === "set-surface") {
+      return { surface: action.surface, actionId: action.actionId, stepId: action.stepId };
+    }
   }
   return null;
 }

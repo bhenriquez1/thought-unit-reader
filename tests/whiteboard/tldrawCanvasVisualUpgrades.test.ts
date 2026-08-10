@@ -65,10 +65,10 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
     expect(block).toMatch(/playSegmentThenAdvance\(segment, speakIndex, \{ earlyStart: true, stepId \}\);/);
   });
 
-  it("REQUIRED: maybeEarlyStartStepNarration never double-starts a step already recorded in stepNarrationRef", () => {
+  it("REQUIRED: maybeEarlyStartStepNarration never double-starts a segment already recorded in stepNarrationRef", () => {
     const idx = src.indexOf("const maybeEarlyStartStepNarration = useCallback");
-    const block = src.slice(idx, idx + 400);
-    expect(block).toMatch(/if \(stepNarrationRef\.current\.has\(stepId\)\) return;/);
+    const block = src.slice(idx, idx + 1000);
+    expect(block).toMatch(/if \(stepNarrationRef\.current\.has\(segment\.id\)\) return;/);
   });
 
   it("REQUIRED: when the pointer's own arrival reaches the speak action, it consults stepNarrationRef instead of blindly calling playSegmentThenAdvance — 'done' advances immediately, 'pending' waits without starting a second Audio element", () => {
@@ -88,7 +88,7 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
     const idx = src.indexOf("if (opts?.earlyStart) {");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 700);
-    expect(block).toMatch(/stepNarrationRef\.current\.set\(opts\.stepId!, "done"\);/);
+    expect(block).toMatch(/stepNarrationRef\.current\.set\(segment\.id, "done"\);/);
     expect(block).toMatch(/if \(stepIndexRef\.current >= index\) advanceForPlaybackRef\.current\(\);/);
   });
 
@@ -121,7 +121,7 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
 
   it("REQUIRED: Props accepts onTeachingStepStarted/onTeachingStepCompleted/onLessonCompleted, all optional", () => {
     const idx = src.indexOf("interface Props {");
-    const block = src.slice(idx, idx + 2600);
+    const block = src.slice(idx, idx + 4200);
     expect(block).toMatch(/onTeachingStepStarted\?:\s*\(stepId: number\) => void;/);
     expect(block).toMatch(/onTeachingStepCompleted\?:\s*\(stepId: number, info\?: \{ misconceptionLabel\?: string \}\) => void;/);
     expect(block).toMatch(/onLessonCompleted\?:\s*\(snapshotId: string, plan: ProfessorLessonPlan\) => void;/);
@@ -131,6 +131,15 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
     const idx = src.indexOf("const advanceForPlayback = useCallback");
     const block = src.slice(idx, idx + 1200);
     expect(block).toMatch(/onTeachingStepStartedRef\.current\?\.\(action\.stepId\);/);
+    expect(block).toMatch(/focusDirectorEvidence\(action\.stepId\);/);
+  });
+
+  it("keeps source-follow highlighting on the Director step's canonical current-page evidence", () => {
+    const idx = src.indexOf("const focusDirectorEvidence = useCallback");
+    const block = src.slice(idx, idx + 600);
+    expect(block).toMatch(/directorSteps\?\.find/);
+    expect(block).toMatch(/sourceEvidence\[0\]\?\.sourceId/);
+    expect(block).toMatch(/setThoughtUnit\(sourceId\)/);
   });
 
   it("REQUIRED: onTeachingStepCompleted fires for the PREVIOUS step when a new one begins, carrying a misconception label when the step's own crossOut emphasis flags one", () => {
@@ -231,7 +240,7 @@ describe("TldrawCanvas.tsx — per-step camera padding scales with content, floo
   });
 
   it("a full zoomToFit still happens before any step has run (index === -1) — only the PER-STEP crop changed, not the initial whole-scene view", () => {
-    expect(src).toMatch(/else if \(index === -1\) \{\s*\n\s*editor\.zoomToFit\(\);/);
+    expect(src).toMatch(/else if \(index === -1\) \{[\s\S]*?editor\.zoomToFit\(\);/);
   });
 });
 
@@ -277,7 +286,7 @@ describe("TldrawCanvas.tsx — a pageTruthKey/lessonPlan change cancels narratio
   it("REQUIRED: the rebuild effect (fires on every lessonPlan reference change) both clears the teaching layer AND stops all speech, in the same synchronous block — before the 'nothing to draw yet' early return", () => {
     const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 500);
+    const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/clearTeachingLayer\(editor\);/);
     expect(block).toMatch(/stopNarration\("rebuild"\);/);
     // Both must run BEFORE the null-plan early return, so a page change with
@@ -327,14 +336,15 @@ describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] per-step logging, pr
     expect(block).not.toMatch(/shortLabel/i);
   });
 
-  it("REQUIRED: a second log carries cameraBounds, queried directly from the editor's actual viewport, not the internally-computed target bounds", () => {
+  it("REQUIRED: camera diagnostics capture the requested bounds plus actual editor viewport before and after the animation settles", () => {
     const idx = src.indexOf('console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]"');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 300);
+    const block = src.slice(idx, idx + 1400);
     expect(block).toMatch(/cameraBounds:/);
-    const boundsIdx = src.indexOf("const vpBounds = editor.getViewportPageBounds();");
-    expect(boundsIdx).toBeGreaterThan(-1);
-    expect(boundsIdx).toBeLessThan(idx);
+    expect(block).toMatch(/actualEditorViewport:/);
+    expect(src).toContain("const before = editor.getViewportPageBounds();");
+    expect(src).toContain("const settled = editor.getViewportPageBounds();");
+    expect(src).toContain('phase: "transition-settled"');
   });
 });
 

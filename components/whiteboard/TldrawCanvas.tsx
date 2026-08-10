@@ -49,13 +49,13 @@ import {
 } from "@/lib/whiteboard/visualSceneGraph";
 import { useProfessorLesson } from "@/components/whiteboard/useProfessorLesson";
 import {
-  computeCanvasStateAtStep, resolveCameraTargetAtStep, resolveActiveSegmentIdAtStep,
+  computeCanvasStateAtStep, resolveCameraActionAtStep, resolveProfessorSurfaceAtStep, resolveActiveSegmentIdAtStep,
   nextStepIndex, previousStepIndex, resolveStepIdAtStep, totalTeachingSteps,
   stepStartIndex, stepEndIndex, stepMisconceptionLabel,
   type ShapeVisualState,
 } from "@/lib/whiteboard/professorTimelineEngine";
 import { buildProfessorLessonCacheKey } from "@/lib/whiteboard/professorLessonPlan";
-import type { ProfessorTeachingAction, NarrationSegment, Bounds, ProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlan";
+import type { ProfessorTeachingAction, NarrationSegment, Bounds, ProfessorLessonPlan, ProfessorSurface } from "@/lib/whiteboard/professorLessonPlan";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 import {
@@ -112,6 +112,13 @@ interface Props {
    *  passed straight through to the Professor Lesson Planner so it teaches
    *  in a style that matches what kind of page this actually is. */
   pageTeachingType?:       string | null;
+  /** Start the full Professor performance as soon as the validated plan is
+   * ready. Manual Whiteboard entry leaves this false and keeps existing
+   * controls unchanged. */
+  autoStartProfessor?:      boolean;
+  /** Lets the Reader keep the mounted playback session alive while returning
+   * visual attention to the PDF for source/verbal phases. */
+  onProfessorSurfaceChange?: (surface: ProfessorSurface, info: { stepId: number; visualNeeded: boolean }) => void;
   /** Phase B2 — stable extension points for Phase B3's Learning State
    *  wiring. Fired at the obvious moments (a teaching step begins/ends
    *  during autoplay, the lesson reaches its end) but INTENTIONALLY do
@@ -225,6 +232,7 @@ export default function TldrawCanvas({
   noteCards, pageTitle, whiteboardGrammar = "flow",
   onAnchorClick, vsg, activeAnchorId, storageKey,
   documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType,
+  autoStartProfessor = false, onProfessorSurfaceChange,
   onTeachingStepStarted, onTeachingStepCompleted, onLessonCompleted,
 }: Props) {
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
@@ -250,7 +258,11 @@ export default function TldrawCanvas({
 
   const [canvasInitFailure, setCanvasInitFailure] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const [canvasReady, setCanvasReady] = useState(false);
   const mountCountRef = useRef(0);
+  const lastCameraActionIdRef = useRef<string | null>(null);
+  const lastSurfaceActionIdRef = useRef<string | null>(null);
+  const cameraDiagnosticTimerRef = useRef<number | null>(null);
 
   // ── Fallback VSG: derive one from noteCards when no vsg prop was given.
   //    The professor engine ALWAYS operates on a VisualSceneGraph — there is
@@ -337,7 +349,17 @@ export default function TldrawCanvas({
   const shapeIdToTargetIdRef = useRef<Map<string, string>>(new Map());
   const onAnchorClickRef = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
+  const onProfessorSurfaceChangeRef = useRef(onProfessorSurfaceChange);
+  useEffect(() => { onProfessorSurfaceChangeRef.current = onProfessorSurfaceChange; }, [onProfessorSurfaceChange]);
   const storeUnsubRef = useRef<(() => void) | null>(null);
+
+  const focusDirectorEvidence = useCallback((stepId: number) => {
+    const step = planRef.current?.directorSteps?.find(candidate => candidate.stepId === stepId);
+    const sourceId = step?.sourceEvidence[0]?.sourceId;
+    if (!sourceId) return;
+    onAnchorClickRef.current?.(sourceId);
+    useReadingFocusStore.getState().setThoughtUnit(sourceId);
+  }, []);
 
   // ── Source color lookup. Phase 3's pedagogical role color is applied on
   //    top of this in applyStateAtStep; danger-tier source evidence remains
@@ -461,11 +483,13 @@ export default function TldrawCanvas({
     // between "we called createShape" and "tldraw actually has the shape"
     // is visible here, not just inferred.
     const vsgNow = vsgForColorsRef.current;
+    const semanticStepId = resolveStepIdAtStep(plan.actions, index);
     console.log("[WHITEBOARD_STEP_DIAGNOSTIC]", {
       pageTruthKey:        plan.sourceSnapshot?.pageTruthKey ?? null,
       sceneGraphId:        vsgNow?.id ?? null,
-      currentTeachingStep: index,
-      totalTeachingSteps:  plan.actions.length,
+      currentTeachingStep: semanticStepId,
+      currentActionIndex:  index,
+      totalTeachingSteps:  totalTeachingSteps(plan.actions),
       // "draw" actions specifically (draw-shape/draw-arrow) — a subset of
       // totalTeachingSteps, which also counts write/speak/pause/move-camera/
       // emphasize/erase actions that never create a shape on their own.
@@ -480,18 +504,32 @@ export default function TldrawCanvas({
     });
     if (DEV) {
       setStepDiagnostic({
-        step: index + 1, total: plan.actions.length, nodeCount: vsgNow?.nodes.length ?? 0,
+        step: Math.max(semanticStepId + 1, 0), total: totalTeachingSteps(plan.actions), nodeCount: vsgNow?.nodes.length ?? 0,
         generated: wantedIds.size, visible: createdShapeIdsRef.current.size,
       });
     }
 
-    const cameraTargets = resolveCameraTargetAtStep(plan.actions, index);
-    if (cameraTargets && cameraTargets.length > 0) {
-      const bounds = cameraTargets
+    const surfaceState = resolveProfessorSurfaceAtStep(plan.actions, index);
+    if (surfaceState && surfaceState.actionId !== lastSurfaceActionIdRef.current) {
+      lastSurfaceActionIdRef.current = surfaceState.actionId;
+      const directorStep = plan.directorSteps?.find(step => step.stepId === surfaceState.stepId);
+      onProfessorSurfaceChangeRef.current?.(surfaceState.surface, {
+        stepId: surfaceState.stepId,
+        visualNeeded: directorStep?.visualNeeded ?? surfaceState.surface === "whiteboard",
+      });
+    }
+
+    const cameraAction = resolveCameraActionAtStep(plan.actions, index);
+    if (cameraAction && cameraAction.actionId !== lastCameraActionIdRef.current) {
+      lastCameraActionIdRef.current = cameraAction.actionId;
+      const liveBounds = cameraAction.targetIds
         .map(id => editor.getShapePageBounds(shapeIdOf(id)))
         .filter((b): b is NonNullable<typeof b> => !!b)
         .map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
-      const merged = mergeBounds(bounds);
+      // focusBounds comes from deterministic layout and therefore works even
+      // when the active shape is about to be drawn but does not exist in the
+      // tldraw store yet. Live editor bounds remain the fallback/verification.
+      const merged = cameraAction.focusBounds ?? mergeBounds(liveBounds);
       if (merged) {
         // A single node's bounds are ~290x56 — a flat 40px pad on that made
         // the per-step camera crop tight enough to read as "punched in on a
@@ -506,25 +544,44 @@ export default function TldrawCanvas({
         // active teaching region, zoom only to emphasize a detail."
         const padX = Math.max(100, merged.w * 0.3);
         const padY = Math.max(140, merged.h * 1.2);
-        editor.zoomToBounds(
-          { x: merged.x - padX, y: merged.y - padY, w: merged.w + padX * 2, h: merged.h + padY * 2 } as any,
-          { animation: { duration: 300 } } as any,
-        );
+        const requestedBounds = { x: merged.x - padX, y: merged.y - padY, w: merged.w + padX * 2, h: merged.h + padY * 2 };
+        const before = editor.getViewportPageBounds();
+        editor.zoomToBounds(requestedBounds as any, { animation: { duration: cameraAction.durationMs } } as any);
+
+        if (cameraDiagnosticTimerRef.current != null) window.clearTimeout(cameraDiagnosticTimerRef.current);
+        console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]", {
+          phase: "transition-requested",
+          stepId: semanticStepId,
+          actionIndex: index,
+          cameraIntent: cameraAction.cameraIntent ?? "active-concept",
+          activeTargetIds: cameraAction.targetIds,
+          retainContextTargetIds: cameraAction.retainContextTargetIds ?? [],
+          activeBounds: cameraAction.focusBounds ?? null,
+          cameraBounds: requestedBounds,
+          actualEditorViewport: { x: before.x, y: before.y, w: before.w, h: before.h },
+          editorCamera: (editor as any).getCamera?.() ?? null,
+        });
+        const diagnosticActionId = cameraAction.actionId;
+        cameraDiagnosticTimerRef.current = window.setTimeout(() => {
+          if (lastCameraActionIdRef.current !== diagnosticActionId) return;
+          const settled = editor.getViewportPageBounds();
+          console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]", {
+            phase: "transition-settled",
+            stepId: semanticStepId,
+            actionIndex: index,
+            cameraIntent: cameraAction.cameraIntent ?? "active-concept",
+            activeBounds: cameraAction.focusBounds ?? null,
+            cameraBounds: requestedBounds,
+            actualEditorViewport: { x: settled.x, y: settled.y, w: settled.w, h: settled.h },
+            editorCamera: (editor as any).getCamera?.() ?? null,
+          });
+        }, cameraAction.durationMs + 40);
       }
     } else if (index === -1) {
+      lastCameraActionIdRef.current = null;
+      lastSurfaceActionIdRef.current = null;
       editor.zoomToFit();
     }
-
-    // A second small log for cameraBounds specifically — the camera call
-    // above animates (300ms), so this is the viewport at the MOMENT the
-    // step was applied, not necessarily the final settled position; still a
-    // real, directly-queried value (not the internally-computed target) for
-    // answering "are shapes being drawn outside what the camera can see."
-    const vpBounds = editor.getViewportPageBounds();
-    console.log("[WHITEBOARD_CAMERA_DIAGNOSTIC]", {
-      currentTeachingStep: index,
-      cameraBounds: { x: Math.round(vpBounds.x), y: Math.round(vpBounds.y), w: Math.round(vpBounds.w), h: Math.round(vpBounds.h) },
-    });
 
     setActiveSegmentId(resolveActiveSegmentIdAtStep(plan.actions, index));
   }, [colorForTarget, isDangerTarget]);
@@ -615,7 +672,7 @@ export default function TldrawCanvas({
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3", contentRole: "PROFESSOR_EXPLANATION" }),
+          body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3", contentRole: segment.contentRole }),
         });
         const data = await res.json();
         let resolved: ResolvedNarrationAudio;
@@ -661,7 +718,7 @@ export default function TldrawCanvas({
   // point every navigation action (Next/Previous/Restart/rebuild/unmount)
   // already funnels through, so a stale entry from a step the student
   // navigated away from mid-narration never lingers into a later visit.
-  const stepNarrationRef = useRef<Map<number, "pending" | "done">>(new Map());
+  const stepNarrationRef = useRef<Map<string, "pending" | "done">>(new Map());
 
   // Plays `segment` (the action at `index`) to completion, THEN advances —
   // never on a timer. This is the only place a "speak" step's own audio is
@@ -743,7 +800,7 @@ export default function TldrawCanvas({
       activeUtteranceRef.current = null;
       console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioEnded: true, reason, earlyStart: !!opts?.earlyStart });
       if (opts?.earlyStart) {
-        stepNarrationRef.current.set(opts.stepId!, "done");
+        stepNarrationRef.current.set(segment.id, "done");
         // Narration outlasted the drawing — the pointer already caught up
         // to this speak action's own index and is waiting on us; continue.
         // If the pointer HASN'T arrived yet (drawing still revealing),
@@ -829,7 +886,6 @@ export default function TldrawCanvas({
   const maybeEarlyStartStepNarration = useCallback((stepId: number) => {
     const plan = planRef.current;
     if (!plan || !narrationEnabled) return;
-    if (stepNarrationRef.current.has(stepId)) return;
     const start = stepStartIndex(plan.actions, stepId);
     const end = stepEndIndex(plan.actions, stepId);
     if (start < 0) return;
@@ -841,9 +897,34 @@ export default function TldrawCanvas({
     if (action.type !== "speak") return;
     const segment = plan.segments.find(s => s.id === action.segmentId);
     if (!segment) return;
+    if (stepNarrationRef.current.has(segment.id)) return;
 
-    stepNarrationRef.current.set(stepId, "pending");
+    stepNarrationRef.current.set(segment.id, "pending");
     playSegmentThenAdvance(segment, speakIndex, { earlyStart: true, stepId });
+  }, [narrationEnabled, playSegmentThenAdvance]);
+
+  // A Director step contains two speech phases under the SAME semantic
+  // stepId: source reading on the PDF, then Professor explanation. Once the
+  // source segment ends and the surface switches to Whiteboard, start the
+  // explanation immediately while the following draw actions reveal. This
+  // preserves source→explain order without waiting for the drawing to finish.
+  const maybeEarlyStartVisualNarration = useCallback((fromIndex: number, stepId: number) => {
+    const plan = planRef.current;
+    if (!plan || !narrationEnabled) return;
+    const end = stepEndIndex(plan.actions, stepId);
+    for (let i = fromIndex + 1; i <= end; i++) {
+      const candidate = plan.actions[i];
+      if (candidate.type !== "speak") continue;
+      const segment = plan.segments.find(item => item.id === candidate.segmentId);
+      if (!segment || segment.contentRole !== "PROFESSOR_EXPLANATION") return;
+      const hasVisualReveal = plan.actions.slice(fromIndex + 1, i).some(action =>
+        action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize",
+      );
+      if (!hasVisualReveal || stepNarrationRef.current.has(segment.id)) return;
+      stepNarrationRef.current.set(segment.id, "pending");
+      playSegmentThenAdvance(segment, i, { earlyStart: true, stepId });
+      return;
+    }
   }, [narrationEnabled, playSegmentThenAdvance]);
 
   // Full stop: releases speech ownership entirely (explicit navigation —
@@ -920,6 +1001,12 @@ export default function TldrawCanvas({
       clearNarrationCache();
       stepIndexRef.current = -1;
       setStepIndexState(-1);
+      lastCameraActionIdRef.current = null;
+      lastSurfaceActionIdRef.current = null;
+      if (cameraDiagnosticTimerRef.current != null) {
+        window.clearTimeout(cameraDiagnosticTimerRef.current);
+        cameraDiagnosticTimerRef.current = null;
+      }
       setCanvasInitFailure(null);
 
       if (!lessonPlan) {
@@ -976,6 +1063,7 @@ export default function TldrawCanvas({
     // entirely" — only the parts of this callback that are NOT idempotent
     // (full state rebuild) are the ones being skipped here.
     editorRef.current = editor;
+    setCanvasReady(true);
     if (!isDuplicateMount) {
       clearTeachingLayer(editor);
       // Read-only by default (see editingEnabled) — the isPlaying/editingEnabled
@@ -1014,6 +1102,7 @@ export default function TldrawCanvas({
     storeUnsubRef.current?.();
     stopNarration("unmount");
     clearNarrationCache();
+    if (cameraDiagnosticTimerRef.current != null) window.clearTimeout(cameraDiagnosticTimerRef.current);
   }, []);
 
   // ── Playback: the ONLY code that advances the timeline during Play ───────
@@ -1043,13 +1132,18 @@ export default function TldrawCanvas({
         }
       }
       onTeachingStepStartedRef.current?.(action.stepId);
+      focusDirectorEvidence(action.stepId);
       maybeEarlyStartStepNarration(action.stepId);
+    }
+
+    if (action.type === "set-surface" && action.surface === "whiteboard") {
+      maybeEarlyStartVisualNarration(next, action.stepId);
     }
 
     if (action.type === "speak") {
       const segment = plan.segments.find(s => s.id === action.segmentId);
       if (segment) {
-        const narrationState = stepNarrationRef.current.get(action.stepId);
+        const narrationState = stepNarrationRef.current.get(segment.id);
         if (narrationState === "done") {
           // Already finished early — the drawing simply took longer than
           // the narration this time. Nothing left to wait for.
@@ -1071,9 +1165,23 @@ export default function TldrawCanvas({
     }
     const duration = Math.max(action.durationMs, 200) / SPEED_FACTOR[speedRef.current];
     stepTimerRef.current = window.setTimeout(() => advanceForPlaybackRef.current(), duration);
-  }, [setStepIndex, playSegmentThenAdvance, maybeEarlyStartStepNarration]);
+  }, [setStepIndex, playSegmentThenAdvance, maybeEarlyStartStepNarration, maybeEarlyStartVisualNarration, focusDirectorEvidence]);
 
   useEffect(() => { advanceForPlaybackRef.current = advanceForPlayback; }, [advanceForPlayback]);
+
+  const autoStartedPlanRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoStartProfessor || !canvasReady || !lessonPlan) return;
+    const planKey = buildProfessorLessonCacheKey(lessonPlan.sourceSnapshot);
+    if (autoStartedPlanRef.current === planKey) return;
+    autoStartedPlanRef.current = planKey;
+    setNarrationEnabled(true);
+    setIsPlaying(true);
+    // Let the narration-enabled render commit so the current playback
+    // callback sees the new setting before it resolves the first source clip.
+    const timer = window.setTimeout(() => advanceForPlaybackRef.current(), 60);
+    return () => window.clearTimeout(timer);
+  }, [autoStartProfessor, canvasReady, lessonPlan]);
 
   // ── Manual controls — always instant, exact-state jumps, never audio ────
   // Phase B2: Next/Previous move by TEACHING STEP (one narrated point's
@@ -1095,8 +1203,11 @@ export default function TldrawCanvas({
       const misconceptionLabel = stepMisconceptionLabel(plan.actions, fromStepId);
       onTeachingStepCompletedRef.current?.(fromStepId, misconceptionLabel ? { misconceptionLabel } : undefined);
     }
-    if (toStepId >= 0) onTeachingStepStartedRef.current?.(toStepId);
-  }, []);
+    if (toStepId >= 0) {
+      onTeachingStepStartedRef.current?.(toStepId);
+      focusDirectorEvidence(toStepId);
+    }
+  }, [focusDirectorEvidence]);
 
   const handleNext = useCallback(() => {
     setIsPlaying(false);

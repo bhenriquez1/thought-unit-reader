@@ -23,6 +23,7 @@ import type { GroundedProfessorLessonScript } from "./groundProfessorLesson";
 import type {
   ProfessorLessonPlan, ProfessorTeachingAction, NarrationSegment,
   ProfessorLessonSourceSnapshot, ExplainIcon, DrawingIntent,
+  ProfessorDirectorStep, CameraIntent, Bounds,
 } from "./professorLessonPlan";
 import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
 import { computeGroupLayout, anchorPoint, pushClearOf, computeAvoidanceBend } from "./groupLayout";
@@ -133,6 +134,20 @@ function boxCenter(box: LayoutBox): { x: number; y: number } {
   return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
 }
 
+function mergeLayoutBounds(boxes: Bounds[]): Bounds | null {
+  if (boxes.length === 0) return null;
+  const x = Math.min(...boxes.map(box => box.x));
+  const y = Math.min(...boxes.map(box => box.y));
+  const right = Math.max(...boxes.map(box => box.x + box.w));
+  const bottom = Math.max(...boxes.map(box => box.y + box.h));
+  return { x, y, w: right - x, h: bottom - y };
+}
+
+function normalizedCameraIntent(entry: GroundedProfessorLessonScript["nodeScripts"][number]): CameraIntent {
+  if (entry.visualNeeded === false) return "stay-on-pdf";
+  return entry.cameraIntent && entry.cameraIntent !== "stay-on-pdf" ? entry.cameraIntent : "active-concept";
+}
+
 // A professor's diagram uses different SHAPES for different kinds of ideas,
 // not just one box with a different border color — a diamond at a decision
 // point, a hexagon for a warning, a cloud for an expert aside, matching how
@@ -171,6 +186,7 @@ export function buildProfessorTeachingActions(
 
   const actions: ProfessorTeachingAction[] = [];
   const segments: NarrationSegment[] = [];
+  const directorSteps: ProfessorDirectorStep[] = [];
   let stepSequenceCounter = 0;
 
   // Phase B2: every action pushed via `push()` is auto-stamped with the
@@ -197,7 +213,13 @@ export function buildProfessorTeachingActions(
   // the fix for "the drawing and narration are not tightly synchronized":
   // each teaching point's visual actions are followed right away by the
   // speech that explains them, not by the next point's visuals.
-  const pushSegment = (text: string, tone: NarrationSegment["tone"], pace: NarrationSegment["pace"], linkedActionIds: string[]) => {
+  const pushSegment = (
+    text: string,
+    tone: NarrationSegment["tone"],
+    pace: NarrationSegment["pace"],
+    linkedActionIds: string[],
+    contentRole: NarrationSegment["contentRole"] = "PROFESSOR_EXPLANATION",
+  ) => {
     const seg: NarrationSegment = {
       id: nextSegmentId(),
       text,
@@ -205,7 +227,7 @@ export function buildProfessorTeachingActions(
       pace,
       pauseAfterMs: PAUSE_AFTER_MS_BY_TONE[tone] ?? 400,
       linkedActionIds,
-      contentRole: "PROFESSOR_EXPLANATION",
+      contentRole,
     };
     segments.push(seg);
 
@@ -232,7 +254,10 @@ export function buildProfessorTeachingActions(
   //     them needs to wait for script-processing order at all; only the
   //     DRAWING (the write/draw-shape actions) does. ─────────────────────────
   const scriptByTargetId = new Map(grounded.nodeScripts.map(e => [e.targetId, e]));
-  const drawnNodeIds = new Set(vsg.nodes.map(n => n.id).filter(id => scriptByTargetId.has(id)));
+  const drawnNodeIds = new Set(vsg.nodes.map(n => n.id).filter(id => {
+    const entry = scriptByTargetId.get(id);
+    return Boolean(entry) && entry!.visualNeeded !== false;
+  }));
   const layoutNodes = Array.from(drawnNodeIds).map(id => ({
     id, label: scriptByTargetId.get(id)!.shortLabel, spatialIntent: scriptByTargetId.get(id)!.spatialIntent,
   }));
@@ -254,7 +279,7 @@ export function buildProfessorTeachingActions(
 
   const { nodeBounds: nodeBoundsById, groupBounds: groupBoundsById } = computeGroupLayout(layoutNodes, effectiveGroups);
 
-  // Every drawn node's group id, for camera batching below.
+  // Every drawn node's group id, for intent-aware camera context below.
   const groupIdByNodeId = new Map<string, string>();
   for (const g of effectiveGroups) {
     for (const id of g.nodeIds) {
@@ -300,9 +325,83 @@ export function buildProfessorTeachingActions(
       .filter(([id]) => id !== fromId && id !== toId)
       .map(([, box]) => box);
 
+  // A structural edge cannot be taught before both endpoint concepts exist.
+  // Preserve the planner's order as far as possible, but hold an edge entry
+  // until its two node entries have been scheduled. This prevents a future
+  // branch/arrow appearing early while keeping the edge's narration and draw
+  // action together under one semantic stepId.
+  const remainingEntries = [...grounded.nodeScripts];
+  const teachingEntries: typeof remainingEntries = [];
+  const scheduledNodeIds = new Set<string>();
+  while (remainingEntries.length > 0) {
+    const readyIndex = remainingEntries.findIndex(entry => {
+      const edge = vsg.edges.find(candidate => candidate.id === entry.targetId);
+      return !edge || (scheduledNodeIds.has(edge.fromId) && scheduledNodeIds.has(edge.toId));
+    });
+    const index = readyIndex >= 0 ? readyIndex : 0;
+    const [entry] = remainingEntries.splice(index, 1);
+    teachingEntries.push(entry);
+    if (vsg.nodes.some(node => node.id === entry.targetId)) scheduledNodeIds.add(entry.targetId);
+  }
+
+  const evidenceForEntry = (entry: GroundedProfessorLessonScript["nodeScripts"][number]) =>
+    (entry.sourceEvidence ?? [entry.targetId])
+      .map(targetId => vsg.nodes.find(node => node.id === targetId))
+      .filter((node): node is VSGNode => Boolean(node))
+      .map(node => ({ targetId: node.id, sourceId: node.sourceId, exactText: node.body.trim() }))
+      .filter(evidence => evidence.exactText.length > 0);
+
+  const sourcePassagesForEntry = (entry: GroundedProfessorLessonScript["nodeScripts"][number]) => {
+    const passages: string[] = [];
+    for (const evidence of evidenceForEntry(entry)) {
+      let remaining = evidence.exactText;
+      while (remaining.length > 1400) {
+        const sentenceBreak = Math.max(remaining.lastIndexOf(". ", 1400), remaining.lastIndexOf("? ", 1400), remaining.lastIndexOf("! ", 1400));
+        const wordBreak = remaining.lastIndexOf(" ", 1400);
+        const splitAt = sentenceBreak >= 500 ? sentenceBreak + 1 : wordBreak >= 500 ? wordBreak : 1400;
+        passages.push(remaining.slice(0, splitAt).trim());
+        remaining = remaining.slice(splitAt).trimStart();
+      }
+      if (remaining.trim()) passages.push(remaining.trim());
+    }
+    return passages;
+  };
+
+  const cameraFocusForNode = (
+    nodeId: string,
+    intent: CameraIntent,
+    revealedNodeIds: string[],
+  ): { focusBounds: Bounds; targetIds: string[]; retainContextTargetIds: string[] } => {
+    const activeBounds = nodeBoundsById.get(nodeId)!;
+    const activeShapeId = nodeShapeId(nodeId);
+    const priorIds = revealedNodeIds.filter(id => id !== nodeId && nodeBoundsById.has(id));
+    let contextIds: string[] = [];
+
+    if (intent === "comparison") {
+      const groupId = groupIdByNodeId.get(nodeId);
+      contextIds = priorIds.filter(id => groupIdByNodeId.get(id) === groupId);
+    } else if (intent === "follow-sequence" || intent === "keep-context") {
+      const previousId = priorIds[priorIds.length - 1];
+      if (previousId) contextIds = [previousId];
+    }
+
+    const contextBounds = contextIds.map(id => nodeBoundsById.get(id)!).filter(Boolean);
+    const focusBounds = intent === "comparison"
+      ? (groupBoundsById.get(groupIdByNodeId.get(nodeId) ?? "") ?? mergeLayoutBounds([activeBounds, ...contextBounds]) ?? activeBounds)
+      : (mergeLayoutBounds([activeBounds, ...contextBounds]) ?? activeBounds);
+
+    return {
+      focusBounds,
+      targetIds: [...contextIds.map(nodeShapeId), activeShapeId],
+      retainContextTargetIds: contextIds.map(nodeShapeId),
+    };
+  };
+
   // ── Step 1: central concept + motivating question ──────────────────────
   // Placed comfortably ABOVE the topmost laid-out node — a fixed (24, 12)
   // collided with the first box's own position.
+  push({ type: "set-surface", actionId: nextActionId(), surface: "pdf", reason: "source-passage", durationMs: 200 });
+
   if (grounded.title) {
     const topLayoutY = nodeBoundsById.size > 0 ? Math.min(...Array.from(nodeBoundsById.values()).map(b => b.y)) : 40;
     const titleActionId = nextActionId();
@@ -330,12 +429,7 @@ export function buildProfessorTeachingActions(
     pushSegment(grounded.learningObjective, "introduce", "normal", []);
   }
 
-  // Tracks the current teaching region so the camera moves once per region
-  // instead of once per object — "move by meaningful teaching region," not
-  // aggressively after every individual shape. Edges never trigger their own
-  // camera move: both endpoints already belong to a region the camera has
-  // already framed by the time an edge between them is drawn.
-  let currentGroupId: string | null = null;
+  const revealedNodeIds: string[] = [];
 
   // ── Step 2..N: one draw-shape + write (+ optional emphasize) per node,
   //     one draw-arrow per edge — in the grounded script's own order, which
@@ -344,19 +438,123 @@ export function buildProfessorTeachingActions(
   //     entry, including its explain[] chain and relationships, shares one
   //     stepId, so Previous/Next and the draw-while-teaching scheduler both
   //     treat "this narrated point" as one pedagogical unit. ───────────────
-  for (const entry of grounded.nodeScripts) {
+  const deferredRelationships = new Map<string, Array<{
+    fromId: string;
+    rel: GroundedProfessorLessonScript["nodeScripts"][number]["relationships"][number];
+  }>>();
+
+  const emitRelationship = (
+    fromId: string,
+    rel: GroundedProfessorLessonScript["nodeScripts"][number]["relationships"][number],
+    linked: string[],
+  ) => {
+    const fromBounds = nodeBoundsById.get(fromId);
+    const toBounds = nodeBoundsById.get(rel.targetId);
+    if (!fromBounds || !toBounds) return;
+    const pairKey = `${fromId}|${rel.targetId}`;
+    const reversePairKey = `${rel.targetId}|${fromId}`;
+    if (existingEdgePairs.has(pairKey) || existingEdgePairs.has(reversePairKey)) return;
+
+    const fromCenter = boxCenter(fromBounds);
+    const toCenter = boxCenter(toBounds);
+    const from = anchorPoint(fromBounds, toCenter.x, toCenter.y);
+    const to = anchorPoint(toBounds, fromCenter.x, fromCenter.y);
+    const shapeId = String(createShapeId(`pr-${fromId}-${rel.targetId}`));
+    const bend = computeAvoidanceBend(from, to, connectorObstacles(fromId, rel.targetId));
+    const arrowActionId = nextActionId();
+    push({
+      type: "draw-arrow", actionId: arrowActionId, shapeId,
+      from, to, bend, relationshipKind: rel.kind, durationMs: ARROW_DURATION_MS,
+    });
+    linked.push(arrowActionId);
+
+    const labelText = rel.label ?? RELATIONSHIP_KIND_LABEL[rel.kind] ?? rel.kind;
+    const labelRaw = {
+      x: (from.x + to.x) / 2 - estimateLabelWidth(labelText) / 2,
+      y: (from.y + to.y) / 2 - 8,
+      w: estimateLabelWidth(labelText), h: estimateLabelHeight(labelText),
+    };
+    const labelPlaced = pushClearOf(labelRaw, obstacleBoxes.filter(box => box !== fromBounds && box !== toBounds));
+    obstacleBoxes.push(labelPlaced);
+    const labelActionId = nextActionId();
+    push({
+      type: "write", actionId: labelActionId, shapeId: String(createShapeId(`pr-label-${fromId}-${rel.targetId}`)),
+      text: labelText, x: labelPlaced.x, y: labelPlaced.y, durationMs: writeDurationMs(labelText),
+    });
+    linked.push(labelActionId);
+  };
+
+  for (const entry of teachingEntries) {
     currentStepId += 1;
+    const directorActionStart = actions.length;
+    const sourceEvidence = evidenceForEntry(entry);
+    let directorFocusBounds: Bounds | null = null;
+    const cameraIntent = normalizedCameraIntent(entry);
+    const teachingStructure = entry.teachingStructure ?? "definition-concept";
+    const visualNeeded = entry.visualNeeded !== false;
+
+    // Professor always begins a canonical Thought Unit at the source. The
+    // literal current-page passage is spoken with SOURCE_VERBATIM semantics;
+    // this does not alter Current Page mode and cannot contain commentary.
+    push({
+      type: "set-surface", actionId: nextActionId(), surface: "pdf",
+      reason: "source-passage", durationMs: 220,
+    });
+    for (const sourcePassage of sourcePassagesForEntry(entry)) {
+      pushSegment(sourcePassage, "introduce", "normal", [], "SOURCE_VERBATIM");
+    }
+
+    const finishDirectorStep = () => {
+      const stepActions = actions.slice(directorActionStart);
+      directorSteps.push({
+        stepId: currentStepId,
+        targetId: entry.targetId,
+        sourceEvidence,
+        teachingGoal: entry.teachingGoal ?? entry.narration,
+        teachingStructure,
+        visualNeeded,
+        visualIntent: entry.visualIntent ?? entry.drawingIntent,
+        narration: entry.narration,
+        drawInstructions: stepActions.filter(action =>
+          action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize" || action.type === "erase",
+        ),
+        relationships: entry.relationships,
+        emphasis: entry.emphasize && entry.emphasisTreatment !== "none"
+          ? [{ targetId: entry.targetId, treatment: entry.emphasisTreatment }]
+          : [],
+        focusBounds: directorFocusBounds,
+        cameraIntent,
+        checkpoint: entry.checkpoint ?? null,
+      });
+    };
+
+    if (!visualNeeded) {
+      pushSegment(entry.narration, entry.tone, entry.pace, []);
+      if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
+      finishDirectorStep();
+      continue;
+    }
+
+    push({
+      type: "set-surface", actionId: nextActionId(), surface: "whiteboard",
+      reason: "visual-lesson", durationMs: 260,
+    });
+
     const node = vsg.nodes.find(n => n.id === entry.targetId);
     if (node) {
       const bounds = nodeBoundsById.get(node.id)!; // set for every drawn node in the pre-pass above
       const shapeId = nodeShapeId(node.id);
 
-      const groupId = groupIdByNodeId.get(node.id) ?? node.id;
-      if (groupId !== currentGroupId) {
-        currentGroupId = groupId;
-        const targets = shapeIdsByGroup.get(groupId) ?? [shapeId];
-        push({ type: "move-camera", actionId: nextActionId(), targetIds: targets, durationMs: CAMERA_DURATION_MS });
-      }
+      const camera = cameraFocusForNode(node.id, cameraIntent, revealedNodeIds);
+      directorFocusBounds = camera.focusBounds;
+      push({
+        type: "move-camera", actionId: nextActionId(),
+        targetIds: camera.targetIds,
+        retainContextTargetIds: camera.retainContextTargetIds,
+        focusBounds: camera.focusBounds,
+        cameraIntent,
+        durationMs: CAMERA_DURATION_MS,
+      });
 
       const drawActionId = nextActionId();
       push({
@@ -492,46 +690,24 @@ export function buildProfessorTeachingActions(
       //     turn. Skipped when a VSG edge already connects the exact same
       //     pair, so a relationship never produces a visibly redundant
       //     second arrow on top of a structural one. ─────────────────────
+      revealedNodeIds.push(node.id);
       for (const rel of entry.relationships) {
-        const toBounds = nodeBoundsById.get(rel.targetId);
-        if (!toBounds) continue; // defensive — grounding guarantees this holds
-        const pairKey = `${node.id}|${rel.targetId}`;
-        const reversePairKey = `${rel.targetId}|${node.id}`;
-        if (existingEdgePairs.has(pairKey) || existingEdgePairs.has(reversePairKey)) continue;
-
-        const relFromCenter = boxCenter(bounds);
-        const relToCenter = boxCenter(toBounds);
-        const relFrom = anchorPoint(bounds, relToCenter.x, relToCenter.y);
-        const relTo = anchorPoint(toBounds, relFromCenter.x, relFromCenter.y);
-        const relShapeId = String(createShapeId(`pr-${node.id}-${rel.targetId}`));
-        const relBend = computeAvoidanceBend(relFrom, relTo, connectorObstacles(node.id, rel.targetId));
-
-        const relArrowId = nextActionId();
-        push({
-          type: "draw-arrow", actionId: relArrowId, shapeId: relShapeId,
-          from: relFrom, to: relTo, bend: relBend, relationshipKind: rel.kind,
-          durationMs: ARROW_DURATION_MS,
-        });
-        linked.push(relArrowId);
-
-        const relLabelText = rel.label ?? RELATIONSHIP_KIND_LABEL[rel.kind] ?? rel.kind;
-        const relLabelRaw = {
-          x: (relFrom.x + relTo.x) / 2 - estimateLabelWidth(relLabelText) / 2,
-          y: (relFrom.y + relTo.y) / 2 - 8,
-          w: estimateLabelWidth(relLabelText), h: estimateLabelHeight(relLabelText),
-        };
-        const relLabelPlaced = pushClearOf(relLabelRaw, obstacleBoxes.filter(b => b !== bounds && b !== toBounds));
-        obstacleBoxes.push(relLabelPlaced);
-        const relLabelId = nextActionId();
-        push({
-          type: "write", actionId: relLabelId, shapeId: String(createShapeId(`pr-label-${node.id}-${rel.targetId}`)),
-          text: relLabelText, x: relLabelPlaced.x, y: relLabelPlaced.y,
-          durationMs: writeDurationMs(relLabelText),
-        });
-        linked.push(relLabelId);
+        if (revealedNodeIds.includes(rel.targetId)) {
+          emitRelationship(node.id, rel, linked);
+        } else {
+          const pending = deferredRelationships.get(rel.targetId) ?? [];
+          pending.push({ fromId: node.id, rel });
+          deferredRelationships.set(rel.targetId, pending);
+        }
       }
+      for (const deferred of deferredRelationships.get(node.id) ?? []) {
+        emitRelationship(deferred.fromId, deferred.rel, linked);
+      }
+      deferredRelationships.delete(node.id);
 
       pushSegment(entry.narration, entry.tone, entry.pace, linked);
+      if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
+      finishDirectorStep();
       continue;
     }
 
@@ -543,10 +719,30 @@ export function buildProfessorTeachingActions(
       // action at some point in this timeline? An edge pointing at a node
       // the AI chose to skip narrating (rule 1 allows skipping "a couple of
       // nodes") would otherwise draw an arrow to/from an invisible box.
-      if (!scriptByTargetId.has(edge.fromId) || !scriptByTargetId.has(edge.toId)) continue;
+      if (!drawnNodeIds.has(edge.fromId) || !drawnNodeIds.has(edge.toId)) {
+        pushSegment(entry.narration, entry.tone, entry.pace, []);
+        if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
+        finishDirectorStep();
+        continue;
+      }
       const from = nodeBoundsById.get(edge.fromId);
       const to   = nodeBoundsById.get(edge.toId);
-      if (!from || !to) continue; // edge references a node id not in this VSG at all — skip, not a crash
+      if (!from || !to || !revealedNodeIds.includes(edge.fromId) || !revealedNodeIds.includes(edge.toId)) {
+        pushSegment(entry.narration, entry.tone, entry.pace, []);
+        if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
+        finishDirectorStep();
+        continue;
+      }
+
+      directorFocusBounds = mergeLayoutBounds([from, to]);
+      push({
+        type: "move-camera", actionId: nextActionId(),
+        targetIds: [nodeShapeId(edge.fromId), nodeShapeId(edge.toId)],
+        retainContextTargetIds: [nodeShapeId(edge.fromId)],
+        focusBounds: directorFocusBounds ?? undefined,
+        cameraIntent,
+        durationMs: CAMERA_DURATION_MS,
+      });
 
       const shapeId = String(createShapeId(`pe-${edge.id}`));
 
@@ -597,7 +793,15 @@ export function buildProfessorTeachingActions(
       }
 
       pushSegment(entry.narration, entry.tone, entry.pace, linkedArrowActions);
+      if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
+      finishDirectorStep();
+      continue;
     }
+
+    // Defensive: a planner target that vanished after grounding should not
+    // leave a half-open surface transition in the final plan.
+    pushSegment(entry.narration, entry.tone, entry.pace, []);
+    finishDirectorStep();
   }
 
   // ── Comparison-group divider: a real bracket between the two columns a
@@ -649,12 +853,26 @@ export function buildProfessorTeachingActions(
     ));
     const overviewLinkedActionIds: string[] = [];
     if (overviewTargetIds.length > 0) {
+      push({
+        type: "set-surface", actionId: nextActionId(), surface: "whiteboard",
+        reason: "summary", durationMs: 260,
+      });
       const overviewActionId = nextActionId();
+      const overviewBounds = mergeLayoutBounds(Array.from(nodeBoundsById.values()));
       push({
         type: "move-camera", actionId: overviewActionId,
-        targetIds: overviewTargetIds, durationMs: CAMERA_DURATION_MS,
+        targetIds: overviewTargetIds,
+        focusBounds: overviewBounds ?? undefined,
+        cameraIntent: "summary-overview",
+        retainContextTargetIds: overviewTargetIds,
+        durationMs: CAMERA_DURATION_MS,
       });
       overviewLinkedActionIds.push(overviewActionId);
+    } else {
+      push({
+        type: "set-surface", actionId: nextActionId(), surface: "pdf",
+        reason: "return-to-source", durationMs: 220,
+      });
     }
     pushSegment(
       grounded.synthesisQuestion,
@@ -668,10 +886,14 @@ export function buildProfessorTeachingActions(
     actions,
     segments,
     visualGrammar:      grounded.visualGrammar,
+    teachingStructures: grounded.teachingStructures?.length
+      ? grounded.teachingStructures
+      : Array.from(new Set(grounded.nodeScripts.map(entry => entry.teachingStructure ?? "definition-concept"))),
     title:               grounded.title,
     centralQuestion:     grounded.centralQuestion,
     learningObjective:   grounded.learningObjective,
     synthesisQuestion:   grounded.synthesisQuestion,
     sourceSnapshot,
+    directorSteps,
   };
 }

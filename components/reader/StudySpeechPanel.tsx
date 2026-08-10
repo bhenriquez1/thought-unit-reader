@@ -60,7 +60,7 @@ const VISIBLE_SPEECH_MODES: ReadonlyArray<{
   {
     id: "professor",
     label: "Professor",
-    description: "Open the synchronized Professor Lesson and Whiteboard experience.",
+    description: "Start a grounded Professor lesson that moves between the PDF and Whiteboard when useful.",
   },
 ];
 
@@ -1674,15 +1674,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {visibleMode === "professor" ? (
             <div style={{ borderRadius: 10, border: "1px solid rgba(129,140,248,0.25)", background: "rgba(99,102,241,0.07)", padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
               <p style={{ margin: 0, color: "#cbd5e1", fontSize: 11, lineHeight: 1.55 }}>
-                Professor opens the Whiteboard teaching engine after loading the full current-page evidence. Narration and drawing stay synchronized throughout the lesson.
+                Professor follows the current page, explains each Thought Unit, and opens the Whiteboard only when a visual lesson materially helps.
               </p>
               <button
                 type="button"
-                onClick={() => onOpenProfessor?.()}
+                onClick={() => { stopAudio(); onOpenProfessor?.(); }}
                 disabled={!onOpenProfessor}
                 style={{ alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.45)", background: "rgba(99,102,241,0.16)", color: "#c7d2fe", fontSize: 11, fontWeight: 700, cursor: onOpenProfessor ? "pointer" : "not-allowed", opacity: onOpenProfessor ? 1 : 0.45 }}
               >
-                Open Professor Whiteboard
+                ▶ Start Professor
               </button>
             </div>
           ) : (
