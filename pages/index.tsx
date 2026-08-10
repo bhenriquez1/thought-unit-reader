@@ -5521,7 +5521,11 @@ export default function ThoughtUnitReader() {
             <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
               <LearningSourcesManager
                 bookId={bookId}
+                documentId={resolvedDocumentId}
                 currentPage={currentPage}
+                pageTruthKey={pageTruthKey}
+                surgeonPageTruthKey={surgeonAnnotations.plan?.pageTruthKey ?? null}
+                groundedAnnotations={surgeonAnnotations.groundedAnnotations}
                 studyModel={currentPageStudyModel}
                 onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
                 refreshKey={noteLabRefreshKey}

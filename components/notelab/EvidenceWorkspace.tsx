@@ -22,6 +22,12 @@ import {
   type LearningSourceType,
 } from "@/lib/learningHub/learningSourceStore";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { WhiteboardLessonSnapshot } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
+import type {
+  CanonicalTextbookEvidence,
+  RecallMaterialPreview,
+  RelatedConceptPreview,
+} from "@/lib/notelab/conceptEvidenceWorkspace";
 
 // ── Relationship config ───────────────────────────────────────────────────
 
@@ -78,16 +84,22 @@ interface ConceptHealth {
   overall:       number;
 }
 
-function computeConceptHealth(sources: LearningSource[]): ConceptHealth {
-  if (sources.length === 0) return { understanding: 0, evidenceDepth: 0, application: 0, recall: 0, overall: 0 };
+function computeConceptHealth(
+  sources: LearningSource[],
+  canonicalEvidenceCount: number,
+  professorSnapshotCount: number,
+): ConceptHealth {
+  if (sources.length === 0 && canonicalEvidenceCount === 0 && professorSnapshotCount === 0) {
+    return { understanding: 0, evidenceDepth: 0, application: 0, recall: 0, overall: 0 };
+  }
 
   // Understanding: high-authority sources (priority 1-3)
   const authSources = sources.filter(s => AUTHORITY_PRIORITY[s.authorityLevel] <= 3);
-  const understanding = Math.min(100, authSources.length * 35);
+  const understanding = Math.min(100, canonicalEvidenceCount * 22 + authSources.length * 30);
 
   // Evidence depth: weighted sum of all source authority weights
   const rawWeight = sources.reduce((sum, s) => sum + (AUTHORITY_WEIGHT[s.authorityLevel] ?? 2), 0);
-  const evidenceDepth = Math.min(100, Math.round((rawWeight / 60) * 100));
+  const evidenceDepth = Math.min(100, Math.round(((rawWeight + canonicalEvidenceCount * 20) / 60) * 100));
 
   // Application: exam-blueprint + peer-reviewed + research sources
   const applicationTypes: LearningSourceType[] = ["exam_blueprint", "article", "research", "chief_resident"];
@@ -97,7 +109,7 @@ function computeConceptHealth(sources: LearningSource[]): ConceptHealth {
   // Recall: look for recall_mistake + personal_note sources (proxy for active recall done)
   const recallTypes: LearningSourceType[] = ["recall_mistake", "personal_note", "whiteboard"];
   const recallSources = sources.filter(s => recallTypes.includes(s.type));
-  const recall = Math.min(100, recallSources.length * 50);
+  const recall = Math.min(100, recallSources.length * 40 + professorSnapshotCount * 35);
 
   const overall = Math.round((understanding + evidenceDepth + application + recall) / 4);
   return { understanding, evidenceDepth, application, recall, overall };
@@ -115,6 +127,9 @@ interface TimelineMilestone {
 function computeTimeline(
   sources: LearningSource[],
   studyModel: CurrentPageStudyModel | null | undefined,
+  canonicalEvidenceCount: number,
+  professorSnapshotCount: number,
+  recallMaterialCount: number,
 ): TimelineMilestone[] {
   const hasSourceType = (types: LearningSourceType[]) =>
     sources.some(s => types.includes(s.type));
@@ -123,20 +138,20 @@ function computeTimeline(
     {
       icon:     "📖",
       label:    "Read",
-      achieved: Boolean(studyModel?.pageThesis) || sources.length > 0,
+      achieved: canonicalEvidenceCount > 0,
       detail:   "Page studied",
     },
     {
       icon:     "🔆",
       label:    "Highlighted",
-      achieved: Boolean(studyModel?.visualAnchors?.length),
-      detail:   `${studyModel?.visualAnchors?.length ?? 0} highlights`,
+      achieved: canonicalEvidenceCount > 0,
+      detail:   `${canonicalEvidenceCount} grounded annotations`,
     },
     {
       icon:     "🎨",
       label:    "Whiteboard",
-      achieved: hasSourceType(["whiteboard"]),
-      detail:   "Visual diagram saved",
+      achieved: professorSnapshotCount > 0,
+      detail:   `${professorSnapshotCount} Professor snapshot${professorSnapshotCount === 1 ? "" : "s"}`,
     },
     {
       icon:     "🩺",
@@ -147,7 +162,7 @@ function computeTimeline(
     {
       icon:     "🃏",
       label:    "Recall",
-      achieved: hasSourceType(["recall_mistake"]) || sources.some(s => s.thoughtUnits.length > 0),
+      achieved: hasSourceType(["recall_mistake"]) || recallMaterialCount > 0,
       detail:   "Cards reviewed",
     },
     {
@@ -169,11 +184,11 @@ interface SourceRec {
   priority: "high" | "medium" | "low";
 }
 
-function computeMissingRecs(sources: LearningSource[]): SourceRec[] {
+function computeMissingRecs(sources: LearningSource[], canonicalEvidenceCount: number): SourceRec[] {
   const has = (types: LearningSourceType[]) => sources.some(s => types.includes(s.type));
   const recs: SourceRec[] = [];
 
-  if (!has(["textbook"]))
+  if (canonicalEvidenceCount === 0 && !has(["textbook"]))
     recs.push({ icon: "📖", label: "Link your textbook passage — it grounds all other sources", type: "textbook", priority: "high" });
   if (!has(["professor_notes", "lecture_notes"]))
     recs.push({ icon: "🎓", label: "Add professor or lecture notes for this topic", type: "professor_notes", priority: "high" });
@@ -256,11 +271,16 @@ function detectConflicts(sources: LearningSource[]): SourceConflict[] {
 
 interface EvidenceWorkspaceProps {
   sources:           LearningSource[];
+  canonicalEvidence: CanonicalTextbookEvidence[];
+  professorSnapshots: WhiteboardLessonSnapshot[];
+  recallMaterial:    RecallMaterialPreview[];
+  relatedConcepts:   RelatedConceptPreview[];
   activeUnitId?:     string | null;
   activeUnitLabel?:  string | null;
   studyModel?:       CurrentPageStudyModel | null;
   onUpdateSource:    (source: LearningSource) => void;
   onDeleteSource:    (id: string) => void;
+  onSaveStudentNote: (text: string) => Promise<void>;
   onRequestAdd:      () => void;
 }
 
@@ -268,19 +288,35 @@ interface EvidenceWorkspaceProps {
 
 export default function EvidenceWorkspace({
   sources,
+  canonicalEvidence,
+  professorSnapshots,
+  recallMaterial,
+  relatedConcepts,
   activeUnitId,
   activeUnitLabel,
   studyModel,
   onUpdateSource,
   onDeleteSource,
+  onSaveStudentNote,
   onRequestAdd,
 }: EvidenceWorkspaceProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [studentNote, setStudentNote] = useState("");
+  const [savingStudentNote, setSavingStudentNote] = useState(false);
 
-  const health    = useMemo(() => computeConceptHealth(sources), [sources]);
-  const timeline  = useMemo(() => computeTimeline(sources, studyModel), [sources, studyModel]);
-  const missingRecs = useMemo(() => computeMissingRecs(sources), [sources]);
+  const health = useMemo(
+    () => computeConceptHealth(sources, canonicalEvidence.length, professorSnapshots.length),
+    [sources, canonicalEvidence.length, professorSnapshots.length],
+  );
+  const timeline = useMemo(
+    () => computeTimeline(sources, studyModel, canonicalEvidence.length, professorSnapshots.length, recallMaterial.length),
+    [sources, studyModel, canonicalEvidence.length, professorSnapshots.length, recallMaterial.length],
+  );
+  const missingRecs = useMemo(
+    () => computeMissingRecs(sources, canonicalEvidence.length),
+    [sources, canonicalEvidence.length],
+  );
   const conflicts = useMemo(() => detectConflicts(sources), [sources]);
 
   // Sort sources: by authority priority, then creation date
@@ -302,10 +338,37 @@ export default function EvidenceWorkspace({
     updateSource(updated).then(() => onUpdateSource(updated));
   }, [onUpdateSource]);
 
+  const handleStudentNoteSave = useCallback(async () => {
+    if (!studentNote.trim() || savingStudentNote) return;
+    setSavingStudentNote(true);
+    try {
+      await onSaveStudentNote(studentNote);
+      setStudentNote("");
+    } finally {
+      setSavingStudentNote(false);
+    }
+  }, [studentNote, savingStudentNote, onSaveStudentNote]);
+
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0, overflowY: "auto", height: "100%" }}>
+
+      {/* One shared downstream path — each stage below reuses the prior
+          canonical artifacts instead of independently reading the PDF. */}
+      <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", flexWrap: "wrap", gap: 4, flexShrink: 0 }}>
+        {[
+          "Source evidence", "Concept", "Explanation", "Student note",
+          "Professor snapshot", "Recall material", "Related concepts",
+        ].map((stage, index, stages) => (
+          <React.Fragment key={stage}>
+            <span style={{ fontSize: 7, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(203,213,225,0.65)", padding: "2px 5px", borderRadius: 4, background: "rgba(255,255,255,0.04)" }}>
+              {stage}
+            </span>
+            {index < stages.length - 1 && <span style={{ fontSize: 8, color: "rgba(52,211,153,0.4)" }}>→</span>}
+          </React.Fragment>
+        ))}
+      </div>
 
       {/* ── 1. Active Concept + Health ────────────────────────────── */}
       <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
@@ -372,46 +435,28 @@ export default function EvidenceWorkspace({
         </div>
       </div>
 
-      {/* ── 3. Source Evidence List ───────────────────────────────── */}
-      <div style={{ padding: "10px 14px 4px", flexShrink: 0 }}>
+      {/* ── 3. Canonical source evidence ──────────────────────────── */}
+      <div style={{ padding: "10px 14px 8px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(148,163,184,0.5)" }}>
-            SOURCE EVIDENCE ({sortedSources.length})
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(253,224,71,0.65)" }}>
+            SOURCE EVIDENCE ({canonicalEvidence.length})
           </span>
-          <button
-            type="button"
-            onClick={onRequestAdd}
-            style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399", cursor: "pointer" }}
-          >
-            + Add Source
-          </button>
+          <span style={{ marginLeft: "auto", fontSize: 8, color: "rgba(52,211,153,0.6)" }}>
+            Surgeon-grounded · read only
+          </span>
         </div>
-
-        {sortedSources.length === 0 ? (
-          <div style={{ padding: "20px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 24, marginBottom: 8 }}>📚</div>
-            <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", lineHeight: 1.6 }}>
-              No sources linked yet.{"\n"}Add a source to begin building your evidence.
-            </div>
+        {canonicalEvidence.length === 0 ? (
+          <div style={{ padding: "10px", borderRadius: 7, background: "rgba(255,255,255,0.025)", border: "1px dashed rgba(148,163,184,0.16)", fontSize: 9, lineHeight: 1.5, color: "rgba(148,163,184,0.55)" }}>
+            No grounded Surgeon evidence is available for this exact page truth yet. NoteLab will not substitute cached or filename-matched content.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 4 }}>
-            {sortedSources.map(source => (
-              <SourceEvidenceCard
-                key={source.id}
-                source={source}
-                expanded={expandedId === source.id}
-                onToggle={() => setExpandedId(expandedId === source.id ? null : source.id)}
-                onRelationshipChange={(rel) => handleRelationshipChange(source, rel)}
-                onConfidenceChange={(val) => handleConfidenceChange(source, val)}
-                onDelete={() => onDeleteSource(source.id)}
-              />
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {canonicalEvidence.map(evidence => <CanonicalEvidenceCard key={evidence.id} evidence={evidence} />)}
           </div>
         )}
       </div>
 
-      {/* ── 4. Avrrio Interpretation ─────────────────────────────── */}
+      {/* ── 4. Explanation ────────────────────────────────────────── */}
       {studyModel && (
         studyModel.studyNotes.whyThisMatters ||
         studyModel.studyNotes.commonConfusion ||
@@ -422,8 +467,8 @@ export default function EvidenceWorkspace({
         <div style={{ padding: "10px 14px 8px", borderTop: "1px solid rgba(103,232,249,0.12)", flexShrink: 0 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(103,232,249,0.55)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
             <span>🧬</span>
-            <span>AVRRIO INTERPRETATION</span>
-            <span style={{ fontSize: 8, fontWeight: 400, color: "rgba(103,232,249,0.35)", marginLeft: "auto" }}>AI-inferred · not source text</span>
+            <span>EXPLANATION · AVRRIO INTERPRETATION</span>
+            <span style={{ fontSize: 8, fontWeight: 400, color: "rgba(103,232,249,0.35)", marginLeft: "auto" }}>already computed · not source text</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {studyModel.studyNotes.whyThisMatters && (
@@ -445,7 +490,133 @@ export default function EvidenceWorkspace({
         </div>
       )}
 
-      {/* ── 5. Missing Sources ────────────────────────────────────── */}
+      {/* ── 5. Student note + supplemental evidence ──────────────── */}
+      <div style={{ padding: "10px 14px 4px", flexShrink: 0 }}>
+        <div style={{ marginBottom: 10, padding: 9, borderRadius: 8, background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.12)" }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(203,213,225,0.65)", marginBottom: 6 }}>
+            STUDENT NOTE
+          </div>
+          <textarea
+            value={studentNote}
+            onChange={event => setStudentNote(event.target.value)}
+            placeholder="Write what this concept means in your own words…"
+            rows={3}
+            style={{ width: "100%", resize: "vertical", borderRadius: 6, padding: "7px 8px", fontSize: 10, lineHeight: 1.5, color: "rgba(241,245,249,0.9)", background: "rgba(2,6,23,0.55)", border: "1px solid rgba(148,163,184,0.18)", outline: "none" }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={handleStudentNoteSave}
+              disabled={!studentNote.trim() || savingStudentNote}
+              style={{ fontSize: 9, fontWeight: 700, padding: "4px 9px", borderRadius: 5, background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.28)", color: "#6ee7b7", cursor: "pointer", opacity: !studentNote.trim() || savingStudentNote ? 0.45 : 1 }}
+            >
+              {savingStudentNote ? "Saving…" : "Save note"}
+            </button>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(148,163,184,0.5)" }}>
+            STUDENT NOTES & SUPPLEMENTAL SOURCES ({sortedSources.length})
+          </span>
+          <button
+            type="button"
+            onClick={onRequestAdd}
+            style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399", cursor: "pointer" }}
+          >
+            + Add Source
+          </button>
+        </div>
+
+        {sortedSources.length === 0 ? (
+          <div style={{ padding: "20px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 24, marginBottom: 8 }}>📚</div>
+            <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", lineHeight: 1.6 }}>
+              No student notes or supplemental sources yet.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 4 }}>
+            {sortedSources.map(source => (
+              <SourceEvidenceCard
+                key={source.id}
+                source={source}
+                expanded={expandedId === source.id}
+                onToggle={() => setExpandedId(expandedId === source.id ? null : source.id)}
+                onRelationshipChange={(rel) => handleRelationshipChange(source, rel)}
+                onConfidenceChange={(val) => handleConfidenceChange(source, val)}
+                onDelete={() => onDeleteSource(source.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 6. Saved Professor snapshots ─────────────────────────── */}
+      <div style={{ padding: "10px 14px 8px", borderTop: "1px solid rgba(134,239,172,0.12)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(134,239,172,0.65)" }}>
+            PROFESSOR SNAPSHOTS ({professorSnapshots.length})
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 8, color: "rgba(134,239,172,0.4)" }}>reused · no regeneration</span>
+        </div>
+        {professorSnapshots.length === 0 ? (
+          <div style={{ fontSize: 9, lineHeight: 1.5, color: "rgba(148,163,184,0.5)" }}>
+            Complete this page&apos;s Professor Whiteboard lesson to save a reusable semantic snapshot.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {professorSnapshots.slice(0, 3).map(snapshot => (
+              <ProfessorSnapshotCard key={snapshot.lessonId} snapshot={snapshot} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 7. Recall material ────────────────────────────────────── */}
+      <div style={{ padding: "10px 14px 8px", borderTop: "1px solid rgba(192,132,252,0.12)", flexShrink: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(216,180,254,0.65)", marginBottom: 7 }}>
+          RECALL MATERIAL ({recallMaterial.length})
+        </div>
+        {recallMaterial.length === 0 ? (
+          <div style={{ fontSize: 9, lineHeight: 1.5, color: "rgba(148,163,184,0.5)" }}>
+            Recall prompts will appear from the saved Professor lesson and current canonical study material.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {recallMaterial.map(item => (
+              <div key={item.id} style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(192,132,252,0.05)", border: "1px solid rgba(192,132,252,0.12)" }}>
+                <div style={{ fontSize: 7, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: item.kind === "misconception-repair" ? "#fca5a5" : "rgba(216,180,254,0.7)", marginBottom: 3 }}>
+                  {item.kind.replaceAll("-", " ")}{item.sourceSnapshotId ? " · Professor snapshot" : " · current page"}
+                </div>
+                <div style={{ fontSize: 10, lineHeight: 1.5, color: "rgba(226,232,240,0.82)" }}>{item.prompt}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 8. Related concepts from Knowledge Graph ─────────────── */}
+      <div style={{ padding: "10px 14px 8px", borderTop: "1px solid rgba(96,165,250,0.12)", flexShrink: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(147,197,253,0.65)", marginBottom: 7 }}>
+          RELATED CONCEPTS ({relatedConcepts.length})
+        </div>
+        {relatedConcepts.length === 0 ? (
+          <div style={{ fontSize: 9, lineHeight: 1.5, color: "rgba(148,163,184,0.5)" }}>
+            No related Knowledge Graph concepts are linked to this page yet.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {relatedConcepts.map(concept => (
+              <div key={concept.id} style={{ padding: "5px 8px", borderRadius: 6, background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.14)", maxWidth: "100%" }}>
+                <div style={{ fontSize: 9, fontWeight: 600, color: "rgba(219,234,254,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{concept.title}</div>
+                <div style={{ fontSize: 7, color: "rgba(147,197,253,0.48)", marginTop: 2 }}>{concept.relationship} · {concept.role}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 9. Missing Sources ────────────────────────────────────── */}
       {missingRecs.length > 0 && (
         <div style={{ padding: "8px 14px", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "rgba(251,191,36,0.6)", marginBottom: 7 }}>
@@ -475,7 +646,7 @@ export default function EvidenceWorkspace({
         </div>
       )}
 
-      {/* ── 5. Source Conflicts ───────────────────────────────────── */}
+      {/* ── 10. Source Conflicts ──────────────────────────────────── */}
       {conflicts.length > 0 && (
         <div style={{ padding: "8px 14px 12px", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
           <button
@@ -509,6 +680,48 @@ export default function EvidenceWorkspace({
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────
+
+function CanonicalEvidenceCard({ evidence }: { evidence: CanonicalTextbookEvidence }) {
+  const importanceColor = evidence.importance === "critical"
+    ? "#fca5a5"
+    : evidence.importance === "high" ? "#fde047" : "#94a3b8";
+  return (
+    <div style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(253,224,71,0.045)", border: "1px solid rgba(253,224,71,0.14)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: "0.07em", color: "#fde047" }}>PRIMARY TEXTBOOK</span>
+        <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, color: "rgba(203,213,225,0.65)", background: "rgba(255,255,255,0.05)" }}>{evidence.canonicalType}</span>
+        <span style={{ marginLeft: "auto", fontSize: 7, color: importanceColor }}>{evidence.importance} · {Math.round(evidence.confidence * 100)}% grounded</span>
+      </div>
+      <div style={{ fontSize: 10, lineHeight: 1.55, color: "rgba(241,245,249,0.88)", borderLeft: "2px solid rgba(253,224,71,0.35)", paddingLeft: 8 }}>
+        {evidence.exactText}
+      </div>
+      <div style={{ fontSize: 8, lineHeight: 1.45, color: "rgba(148,163,184,0.58)", marginTop: 5 }}>
+        Why it matters: {evidence.reason}
+      </div>
+    </div>
+  );
+}
+
+function ProfessorSnapshotCard({ snapshot }: { snapshot: WhiteboardLessonSnapshot }) {
+  return (
+    <details style={{ padding: "7px 9px", borderRadius: 7, background: "rgba(134,239,172,0.045)", border: "1px solid rgba(134,239,172,0.13)" }}>
+      <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 10 }}>🎨</span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(220,252,231,0.82)" }}>{snapshot.visualGrammar} lesson</span>
+        <span style={{ marginLeft: "auto", fontSize: 7, color: "rgba(134,239,172,0.45)" }}>{snapshot.teachingSteps.length} teaching steps</span>
+      </summary>
+      <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 5 }}>
+        {snapshot.teachingSteps.map(step => (
+          <div key={step.stepId} style={{ paddingLeft: 8, borderLeft: "2px solid rgba(134,239,172,0.18)" }}>
+            <div style={{ fontSize: 8, fontWeight: 700, color: "rgba(187,247,208,0.72)" }}>{step.stepId + 1}. {step.label}</div>
+            {step.narration && <div style={{ fontSize: 9, lineHeight: 1.45, color: "rgba(203,213,225,0.68)", marginTop: 2 }}>{step.narration}</div>}
+            {step.misconceptionLabel && <div style={{ fontSize: 8, color: "rgba(252,165,165,0.72)", marginTop: 2 }}>Misconception: {step.misconceptionLabel}</div>}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
 
 function HealthBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
