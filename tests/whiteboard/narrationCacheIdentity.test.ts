@@ -68,14 +68,16 @@ describe("TldrawCanvas.tsx — narration cache is fully cleared (and blob URLs r
   it("REQUIRED: the lesson-rebuild effect (fires on every page/document/reanalyze change) calls clearNarrationCache()", () => {
     const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 400);
+    const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/stopNarration\("rebuild"\);\s*\n\s*clearNarrationCache\(\);/);
   });
 
   it("REQUIRED: unmount cleanup also calls clearNarrationCache() — the cache must not leak blob URLs for the life of a long reading session", () => {
-    const idx = src.indexOf('useEffect(() => () => {\n    storeUnsubRef.current?.();\n    stopNarration("unmount");');
+    const idx = src.indexOf('useEffect(() => () => {\n    storeUnsubRef.current?.();');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 200);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/agentAbortRef\.current\?\.abort\(\);/);
+    expect(block).toMatch(/stopNarration\("unmount"\);/);
     expect(block).toMatch(/clearNarrationCache\(\);/);
   });
 });

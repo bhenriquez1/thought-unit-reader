@@ -239,3 +239,36 @@ describe("computeCanvasStateAtStep — erase removes a shape from the reconstruc
     expect(state.has("shape:clean")).toBe(true);
   });
 });
+
+describe("computeCanvasStateAtStep — runtime Professor freehand primitives", () => {
+  const FREEHAND: ProfessorTeachingAction[] = [{
+    type: "draw-freehand",
+    actionId: "agent-stroke",
+    shapeId: "shape:prof-agent-1-tray",
+    targetId: "source-tray",
+    points: [{ x: 10, y: 20, z: 0.2 }, { x: 40, y: 50, z: 0.8 }],
+    visualStyle: { color: "black", size: "m", dash: "draw", fill: "none" },
+    visualRole: "drawAnatomySketch",
+    isPen: true,
+    closed: false,
+    durationMs: 200,
+    stepId: 1,
+  }];
+
+  it("reconstructs pressure, grounding and visual role exactly for replay", () => {
+    const state = computeCanvasStateAtStep(FREEHAND, 0).get("shape:prof-agent-1-tray");
+    expect(state).toMatchObject({
+      kind: "freehand",
+      targetId: "source-tray",
+      points: FREEHAND[0].type === "draw-freehand" ? FREEHAND[0].points : [],
+      visualRole: "drawAnatomySketch",
+      isPen: true,
+      closed: false,
+    });
+  });
+
+  it("is absent before reveal and restored identically after a backward replay", () => {
+    expect(computeCanvasStateAtStep(FREEHAND, -1).size).toBe(0);
+    expect(computeCanvasStateAtStep(FREEHAND, 0)).toEqual(computeCanvasStateAtStep(FREEHAND, 0));
+  });
+});

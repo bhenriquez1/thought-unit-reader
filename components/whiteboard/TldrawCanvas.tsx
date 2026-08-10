@@ -27,7 +27,7 @@
 // incremental undo.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Tldraw, createShapeId, toRichText, type Editor } from "@tldraw/tldraw";
+import { Tldraw, b64Vecs, createShapeId, toRichText, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import { getAssetUrls } from "@tldraw/assets/selfHosted.js";
 
@@ -65,6 +65,12 @@ import {
 import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
 import type { SpeechState } from "@/lib/speech/speechState";
 import { colorForRelationship, colorForTeachingRole } from "@/lib/whiteboard/teachingVisualSemantics";
+import {
+  buildProfessorTldrawAgentRequest,
+  requestProfessorTldrawAgent,
+  verifyProfessorTldrawAgentResponse,
+  type ProfessorAgentCanvasContext,
+} from "@/lib/whiteboard/professorTldrawAgent";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
@@ -155,6 +161,62 @@ function mergeBounds(list: Bounds[]): Bounds | null {
 
 function shapeIdOf(raw: string): ReturnType<typeof createShapeId> {
   return raw as unknown as ReturnType<typeof createShapeId>;
+}
+
+function intersects(a: Bounds, b: Bounds): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/** tldraw Agent-style visual context: a small viewport screenshot plus exact,
+ * structured shape data. No unrelated PDF pages or hidden lesson steps are
+ * included. */
+async function captureProfessorAgentCanvas(
+  editor: Editor,
+  targetIdByShapeId: Map<string, string>,
+  semanticRoleByShapeId: Map<string, string>,
+): Promise<ProfessorAgentCanvasContext> {
+  const viewport = editor.getViewportPageBounds();
+  const viewportBounds = { x: viewport.x, y: viewport.y, w: viewport.w, h: viewport.h };
+  const shapes = editor.getCurrentPageShapes();
+  const withBounds = shapes.flatMap(shape => {
+    const box = editor.getShapePageBounds(shape);
+    if (!box) return [];
+    const bounds = { x: box.x, y: box.y, w: box.w, h: box.h };
+    let text = "";
+    try {
+      text = String((editor.getShapeUtil(shape) as any).getText?.(shape) ?? "").slice(0, 160);
+    } catch { /* a non-text shape simply contributes no text */ }
+    const shapeId = String(shape.id);
+    return [{
+      shape,
+      bounds,
+      visible: intersects(bounds, viewportBounds),
+      structured: {
+        shapeId,
+        type: shape.type,
+        bounds,
+        text,
+        semanticRole: semanticRoleByShapeId.get(shapeId) ?? `canvas-${shape.type}`,
+        sourceTargetId: targetIdByShapeId.get(shapeId) ?? null,
+        origin: shapeId.startsWith("shape:prof-agent-") ? "agent" as const : shape.isLocked ? "planner" as const : "student" as const,
+      },
+    }];
+  });
+  withBounds.sort((a, b) => Number(b.visible) - Number(a.visible));
+  const structuredShapes = withBounds.slice(0, 60).map(entry => entry.structured);
+  const visibleShapes = withBounds.filter(entry => entry.visible).map(entry => entry.shape);
+  let screenshotBase64: string | null = null;
+  if (visibleShapes.length > 0) {
+    try {
+      const image = await editor.toImageDataUrl(visibleShapes, {
+        format: "png", bounds: viewport as any, scale: 0.45, pixelRatio: 1,
+        padding: 0, background: true, darkMode: false,
+      });
+      const encoded = image.url.replace(/^data:image\/png;base64,/, "");
+      if (encoded.length <= 900_000) screenshotBase64 = encoded;
+    } catch { /* structured shape context remains sufficient fallback */ }
+  }
+  return { viewportBounds, shapes: structuredShapes, screenshotBase64 };
 }
 
 // Every tldraw shape id MUST start with "shape:" (createShapeId enforces
@@ -322,6 +384,8 @@ export default function TldrawCanvas({
   const [stepIndex, setStepIndexState] = useState(-1);
   const stepIndexRef = useRef(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   // The teaching canvas is READ-ONLY by default — locked while playing AND
   // while paused/finished, until the student explicitly clicks "Edit a
   // copy." A fresh lesson (new pageTruthKey/documentId/activeCanonicalUnitId
@@ -347,6 +411,17 @@ export default function TldrawCanvas({
   const createdShapeIdsRef  = useRef<Set<string>>(new Set());
   const targetIdToShapeIdRef = useRef<Map<string, string>>(new Map());
   const shapeIdToTargetIdRef = useRef<Map<string, string>>(new Map());
+  // Runtime visual-agent layer. The canonical plan remains immutable; these
+  // verified actions overlay (and, for a successfully illustrated step,
+  // replace) only that step's deterministic visual fallback. Keeping them in
+  // a separate replayable map preserves exact Previous/Restart behavior.
+  const agentActionsByStepRef = useRef<Map<number, ProfessorTeachingAction[]>>(new Map());
+  const agentRevealCountByStepRef = useRef<Map<number, number>>(new Map());
+  const agentLocalIdsByStepRef = useRef<Map<number, string[]>>(new Map());
+  const agentAttemptedStepIdsRef = useRef<Set<number>>(new Set());
+  const agentAbortRef = useRef<AbortController | null>(null);
+  const agentSemanticRoleByShapeIdRef = useRef<Map<string, string>>(new Map());
+  const [agentVisualStatus, setAgentVisualStatus] = useState<"idle" | "observing" | "drawing" | "inspecting" | "fallback">("idle");
   const onAnchorClickRef = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const onProfessorSurfaceChangeRef = useRef(onProfessorSurfaceChange);
@@ -391,6 +466,40 @@ export default function TldrawCanvas({
     const plan = planRef.current;
     if (!plan) return;
     const state = computeCanvasStateAtStep(plan.actions, index);
+    const semanticStepId = resolveStepIdAtStep(plan.actions, index);
+
+    const revealedAgentActions: ProfessorTeachingAction[] = [];
+    const coveredSourceTargetsByStep = new Map<number, Set<string>>();
+    for (const [agentStepId, stepActions] of agentActionsByStepRef.current) {
+      if (agentStepId > semanticStepId) continue;
+      const revealCount = agentRevealCountByStepRef.current.get(agentStepId) ?? 0;
+      const revealed = stepActions.slice(0, revealCount);
+      revealedAgentActions.push(...revealed);
+      const covered = new Set(revealed.flatMap(action =>
+        (action.type === "draw-freehand" || action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write") && action.targetId
+          ? [action.targetId]
+          : [],
+      ));
+      if (covered.size > 0) coveredSourceTargetsByStep.set(agentStepId, covered);
+    }
+
+    // Once Claude has produced real verified visual primitives for a step,
+    // only the source concepts it explicitly grounded replace their box-based
+    // deterministic fallback. An ungrounded decorative stroke can augment
+    // the board, but can never hide required labels/relations.
+    if (coveredSourceTargetsByStep.size > 0) {
+      for (const action of plan.actions) {
+        const covered = coveredSourceTargetsByStep.get(action.stepId);
+        if (!covered || !("targetId" in action) || !action.targetId || !covered.has(action.targetId)) continue;
+        if (action.type === "draw-shape" || action.type === "draw-freehand" || action.type === "draw-arrow" || action.type === "write") {
+          state.delete(action.shapeId);
+        }
+      }
+    }
+    if (revealedAgentActions.length > 0) {
+      const agentState = computeCanvasStateAtStep(revealedAgentActions, revealedAgentActions.length - 1);
+      for (const [shapeId, visual] of agentState) state.set(shapeId, visual);
+    }
 
     const wantedPrimaryIds = new Set(state.keys());
     const wantedEmphasisIds = new Set(
@@ -430,7 +539,7 @@ export default function TldrawCanvas({
     const updates: any[] = [];
 
     for (const s of state.values()) {
-      const targetId = shapeIdToTargetIdRef.current.get(s.shapeId);
+      const targetId = s.targetId ?? shapeIdToTargetIdRef.current.get(s.shapeId);
       const sourceColor = colorForTarget(targetId, s.kind === "arrow" ? "grey" : "blue");
       const semanticColor = colorForTeachingRole(s.teachingRole)
         ?? colorForRelationship(s.relationshipKind);
@@ -438,9 +547,9 @@ export default function TldrawCanvas({
       const shapeSpec = toTldrawShapeSpec(s, color);
       if (!shapeSpec) continue;
       if (createdShapeIdsRef.current.has(s.shapeId)) {
-        updates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props });
+        updates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: s.opacity ?? 1 });
       } else {
-        creates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: 1, isLocked: true });
+        creates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: s.opacity ?? 1, isLocked: true });
         createdShapeIdsRef.current.add(s.shapeId);
       }
 
@@ -483,7 +592,6 @@ export default function TldrawCanvas({
     // between "we called createShape" and "tldraw actually has the shape"
     // is visible here, not just inferred.
     const vsgNow = vsgForColorsRef.current;
-    const semanticStepId = resolveStepIdAtStep(plan.actions, index);
     console.log("[WHITEBOARD_STEP_DIAGNOSTIC]", {
       pageTruthKey:        plan.sourceSnapshot?.pageTruthKey ?? null,
       sceneGraphId:        vsgNow?.id ?? null,
@@ -493,7 +601,7 @@ export default function TldrawCanvas({
       // "draw" actions specifically (draw-shape/draw-arrow) — a subset of
       // totalTeachingSteps, which also counts write/speak/pause/move-camera/
       // emphasize/erase actions that never create a shape on their own.
-      drawActionCount:     plan.actions.filter(a => a.type === "draw-shape" || a.type === "draw-arrow").length,
+      drawActionCount:     plan.actions.filter(a => a.type === "draw-shape" || a.type === "draw-freehand" || a.type === "draw-arrow").length,
       nodeCount:           vsgNow?.nodes.length ?? 0,
       edgeCount:           vsgNow?.edges.length ?? 0,
       shapeRecordsGenerated: wantedIds.size,
@@ -501,6 +609,7 @@ export default function TldrawCanvas({
       currentStepShapeIds:   Array.from(state.values()).map(s => s.shapeId),
       editorShapeCount:      editor.getCurrentPageShapeIds().size,
       visibleShapeCount:     createdShapeIdsRef.current.size,
+      agentVisualActionCount: revealedAgentActions.length,
     });
     if (DEV) {
       setStepDiagnostic({
@@ -519,7 +628,10 @@ export default function TldrawCanvas({
       });
     }
 
-    const cameraAction = resolveCameraActionAtStep(plan.actions, index);
+    const agentCameraAction = [...revealedAgentActions].reverse().find(
+      (action): action is Extract<ProfessorTeachingAction, { type: "move-camera" }> => action.type === "move-camera",
+    ) ?? null;
+    const cameraAction = agentCameraAction ?? resolveCameraActionAtStep(plan.actions, index);
     if (cameraAction && cameraAction.actionId !== lastCameraActionIdRef.current) {
       lastCameraActionIdRef.current = cameraAction.actionId;
       const liveBounds = cameraAction.targetIds
@@ -592,6 +704,137 @@ export default function TldrawCanvas({
     const editor = editorRef.current;
     if (editor) applyStateAtStep(editor, n);
   }, [applyStateAtStep]);
+
+  const captureAgentContext = useCallback(async (editor: Editor): Promise<ProfessorAgentCanvasContext> => {
+    const semanticRoles = new Map(agentSemanticRoleByShapeIdRef.current);
+    for (const action of planRef.current?.actions ?? []) {
+      if (action.type === "draw-shape") semanticRoles.set(action.shapeId, action.teachingRole ?? "planner-visual");
+      if (action.type === "draw-arrow") semanticRoles.set(action.shapeId, action.relationshipKind ?? "planner-relationship");
+      if (action.type === "write" && !semanticRoles.has(action.shapeId)) semanticRoles.set(action.shapeId, "planner-label");
+    }
+    return captureProfessorAgentCanvas(editor, shapeIdToTargetIdRef.current, semanticRoles);
+  }, []);
+
+  const registerRuntimeAgentActions = useCallback((actions: ProfessorTeachingAction[]) => {
+    for (const action of actions) {
+      if (action.type !== "draw-shape" && action.type !== "draw-freehand" && action.type !== "draw-arrow" && action.type !== "write") continue;
+      agentSemanticRoleByShapeIdRef.current.set(action.shapeId, action.visualRole ?? "agent-visual");
+      if (action.targetId) {
+        targetIdToShapeIdRef.current.set(action.targetId, action.shapeId);
+        shapeIdToTargetIdRef.current.set(action.shapeId, action.targetId);
+      }
+    }
+  }, []);
+
+  const revealRuntimeAgentActions = useCallback(async (
+    editor: Editor,
+    stepId: number,
+    nextActions: ProfessorTeachingAction[],
+  ) => {
+    if (nextActions.length === 0) return;
+    const existing = agentActionsByStepRef.current.get(stepId) ?? [];
+    const start = existing.length;
+    const combined = [...existing, ...nextActions];
+    agentActionsByStepRef.current.set(stepId, combined);
+    registerRuntimeAgentActions(nextActions);
+    for (let i = 0; i < nextActions.length; i++) {
+      if (planRef.current == null) return;
+      agentRevealCountByStepRef.current.set(stepId, start + i + 1);
+      applyStateAtStep(editor, stepIndexRef.current);
+      const dwell = Math.min(280, Math.max(120, nextActions[i].durationMs));
+      await new Promise<void>(resolve => window.setTimeout(resolve, dwell));
+    }
+  }, [applyStateAtStep, registerRuntimeAgentActions]);
+
+  /** Runtime tldraw Agent loop, adapted from the official starter's core
+   * pattern: observe screenshot + structured shapes, execute a typed action
+   * batch progressively, inspect the updated canvas, apply at most one local
+   * correction batch, then return control to the deterministic timeline. */
+  const ensureRuntimeAgentVisualStep = useCallback(async (editor: Editor, stepId: number) => {
+    const plan = planRef.current;
+    if (!plan || agentAttemptedStepIdsRef.current.has(stepId)) return;
+    const directorStep = plan.directorSteps?.find(step => step.stepId === stepId);
+    if (!directorStep?.visualNeeded || !directorStep.focusBounds) return;
+    agentAttemptedStepIdsRef.current.add(stepId);
+    agentAbortRef.current?.abort();
+    const controller = new AbortController();
+    agentAbortRef.current = controller;
+    // Two bounded passes are allowed: execute the current step, then inspect
+    // the updated canvas and make one local correction. Slow visual requests
+    // fall back to the deterministic Director board without stalling playback.
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 30_000);
+    const planIdentity = buildProfessorLessonCacheKey(plan.sourceSnapshot);
+
+    try {
+      setAgentVisualStatus("observing");
+      const initialCanvas = await captureAgentContext(editor);
+      const executeRequest = buildProfessorTldrawAgentRequest({
+        plan, stepId, pass: "execute", canvas: initialCanvas,
+      });
+      if (!executeRequest) throw new Error("agent_step_not_visual");
+      const executeResponse = await requestProfessorTldrawAgent(executeRequest, controller.signal);
+      if (buildProfessorLessonCacheKey(planRef.current?.sourceSnapshot ?? plan.sourceSnapshot) !== planIdentity) return;
+      const execute = verifyProfessorTldrawAgentResponse(executeRequest, executeResponse);
+      const hasIllustration = execute.actions.some(action =>
+        action.type === "draw-freehand" || action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write",
+      );
+      if (!hasIllustration) throw new Error("agent_returned_no_visual_primitives");
+      agentLocalIdsByStepRef.current.set(stepId, execute.localIds);
+      setAgentVisualStatus("drawing");
+      await revealRuntimeAgentActions(editor, stepId, execute.actions);
+
+      // The second request sees the UPDATED canvas, not the pre-computed
+      // scene. It may only correct this step's own agent shapes.
+      if (!controller.signal.aborted && planRef.current) {
+        setAgentVisualStatus("inspecting");
+        const updatedCanvas = await captureAgentContext(editor);
+        const inspectRequest = buildProfessorTldrawAgentRequest({
+          plan, stepId, pass: "inspect", canvas: updatedCanvas,
+          priorAgentLocalIds: agentLocalIdsByStepRef.current.get(stepId) ?? [],
+        });
+        if (inspectRequest) {
+          const inspectResponse = await requestProfessorTldrawAgent(inspectRequest, controller.signal);
+          const correction = verifyProfessorTldrawAgentResponse(inspectRequest, inspectResponse);
+          const hasCorrection = correction.actions.some(action =>
+            action.type === "erase" || action.type === "draw-freehand" || action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write",
+          );
+          if (hasCorrection) {
+            agentLocalIdsByStepRef.current.set(stepId, [
+              ...(agentLocalIdsByStepRef.current.get(stepId) ?? []),
+              ...correction.localIds,
+            ]);
+            await revealRuntimeAgentActions(editor, stepId, correction.actions);
+          }
+          console.log("[PROFESSOR_VISUAL_AGENT_DIAGNOSTIC]", {
+            stepId,
+            pass: "inspect",
+            initialActionCount: execute.actions.length,
+            correctionActionCount: hasCorrection ? correction.actions.length : 0,
+            correctionRequested: inspectResponse.assessment.needsCorrection,
+            model: correction.model ?? execute.model,
+          });
+        }
+      }
+      setAgentVisualStatus("idle");
+    } catch (error) {
+      if (planRef.current && (timedOut || !controller.signal.aborted)) {
+        setAgentVisualStatus("fallback");
+        console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
+          stepId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+      // No verified visual actions means applyStateAtStep continues using
+      // the existing deterministic layout; Professor playback never stalls.
+    } finally {
+      window.clearTimeout(timeout);
+      if (agentAbortRef.current === controller) agentAbortRef.current = null;
+    }
+  }, [captureAgentContext, revealRuntimeAgentActions]);
 
   // ── Narration: single ordered queue, pre-buffered, advance-on-ended ──────
   // Real neural TTS (pages/api/tts.ts), falling back to browser speech only
@@ -918,7 +1161,7 @@ export default function TldrawCanvas({
       const segment = plan.segments.find(item => item.id === candidate.segmentId);
       if (!segment || segment.contentRole !== "PROFESSOR_EXPLANATION") return;
       const hasVisualReveal = plan.actions.slice(fromIndex + 1, i).some(action =>
-        action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize",
+        action.type === "draw-shape" || action.type === "draw-freehand" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize",
       );
       if (!hasVisualReveal || stepNarrationRef.current.has(segment.id)) return;
       stepNarrationRef.current.set(segment.id, "pending");
@@ -957,7 +1200,7 @@ export default function TldrawCanvas({
       // "draw-arrow" carries an edge id as targetId (buildProfessorTeachingActions.ts)
       // — registering it here is what lets colorForTarget resolve an edge's
       // kind and apply EDGE_COLOR instead of always falling back to grey.
-      if ((a.type === "write" || a.type === "draw-shape" || a.type === "draw-arrow") && a.targetId && a.shapeId) {
+      if ((a.type === "write" || a.type === "draw-shape" || a.type === "draw-freehand" || a.type === "draw-arrow") && a.targetId && a.shapeId) {
         t2s.set(a.targetId, a.shapeId);
         s2t.set(a.shapeId, a.targetId);
       }
@@ -996,6 +1239,14 @@ export default function TldrawCanvas({
 
     try {
       clearTeachingLayer(editor);
+      agentAbortRef.current?.abort();
+      agentAbortRef.current = null;
+      agentActionsByStepRef.current.clear();
+      agentRevealCountByStepRef.current.clear();
+      agentLocalIdsByStepRef.current.clear();
+      agentAttemptedStepIdsRef.current.clear();
+      agentSemanticRoleByShapeIdRef.current.clear();
+      setAgentVisualStatus("idle");
       setIsPlaying(false);
       stopNarration("rebuild");
       clearNarrationCache();
@@ -1100,6 +1351,7 @@ export default function TldrawCanvas({
 
   useEffect(() => () => {
     storeUnsubRef.current?.();
+    agentAbortRef.current?.abort();
     stopNarration("unmount");
     clearNarrationCache();
     if (cameraDiagnosticTimerRef.current != null) window.clearTimeout(cameraDiagnosticTimerRef.current);
@@ -1138,6 +1390,24 @@ export default function TldrawCanvas({
 
     if (action.type === "set-surface" && action.surface === "whiteboard") {
       maybeEarlyStartVisualNarration(next, action.stepId);
+      const editor = editorRef.current;
+      const directorStep = plan.directorSteps?.find(step => step.stepId === action.stepId);
+      const shouldRunAgent = Boolean(
+        editor
+        && directorStep?.visualNeeded
+        && directorStep.focusBounds
+        && !agentAttemptedStepIdsRef.current.has(action.stepId),
+      );
+      if (editor && shouldRunAgent) {
+        void ensureRuntimeAgentVisualStep(editor, action.stepId).finally(() => {
+          // Pause/manual navigation may happen while Claude is inspecting.
+          // Only resume this exact autoplay pointer when it is still active.
+          if (isPlayingRef.current && stepIndexRef.current === next) {
+            advanceForPlaybackRef.current();
+          }
+        });
+        return;
+      }
     }
 
     if (action.type === "speak") {
@@ -1165,7 +1435,7 @@ export default function TldrawCanvas({
     }
     const duration = Math.max(action.durationMs, 200) / SPEED_FACTOR[speedRef.current];
     stepTimerRef.current = window.setTimeout(() => advanceForPlaybackRef.current(), duration);
-  }, [setStepIndex, playSegmentThenAdvance, maybeEarlyStartStepNarration, maybeEarlyStartVisualNarration, focusDirectorEvidence]);
+  }, [setStepIndex, playSegmentThenAdvance, maybeEarlyStartStepNarration, maybeEarlyStartVisualNarration, focusDirectorEvidence, ensureRuntimeAgentVisualStep]);
 
   useEffect(() => { advanceForPlaybackRef.current = advanceForPlayback; }, [advanceForPlayback]);
 
@@ -1376,6 +1646,14 @@ export default function TldrawCanvas({
         <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "monospace", flexShrink: 0 }}>
           {lessonPlan?.title || pageTitle || "Whiteboard"}
         </span>
+        {agentVisualStatus !== "idle" && (
+          <span style={{ fontSize: 9, color: agentVisualStatus === "fallback" ? "#94a3b8" : "#a7f3d0", fontFamily: "monospace", flexShrink: 0 }}>
+            {agentVisualStatus === "observing" ? "Claude observing canvas…"
+              : agentVisualStatus === "drawing" ? "Claude drawing…"
+                : agentVisualStatus === "inspecting" ? "Claude inspecting result…"
+                  : "Deterministic visual fallback"}
+          </span>
+        )}
         {/* Dev-only visible readout — see [WHITEBOARD_STEP_DIAGNOSTIC] above.
             Never rendered in production; a glance answer to "is the drawing
             layer actually keeping up with the narration," not a log search. */}
@@ -1519,7 +1797,30 @@ export default function TldrawCanvas({
 }
 
 // ── Pure state -> tldraw shape props ─────────────────────────────────────────
-function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | "arrow" | "text" | "line"; x: number; y: number; props: Record<string, unknown> } | null {
+function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | "arrow" | "text" | "line" | "draw"; x: number; y: number; props: Record<string, unknown> } | null {
+  const visualColor = s.visualStyle?.color ?? color;
+  const visualSize = s.visualStyle?.size ?? "m";
+  const visualDash = s.visualStyle?.dash ?? "draw";
+  const visualFill = s.visualStyle?.fill ?? "none";
+  if (s.kind === "freehand") {
+    if (!s.points || s.points.length < 2) return null;
+    const x = Math.min(...s.points.map(point => point.x));
+    const y = Math.min(...s.points.map(point => point.y));
+    const points = s.points.map(point => ({
+      x: point.x - x,
+      y: point.y - y,
+      z: point.z ?? 0.5,
+    }));
+    return {
+      type: "draw", x, y,
+      props: {
+        color: visualColor, fill: visualFill, dash: visualDash, size: visualSize,
+        segments: [{ type: "free", path: b64Vecs.encodePoints(points) }],
+        isComplete: true, isClosed: s.closed ?? false, isPen: s.isPen ?? true,
+        scale: 1, scaleX: 1, scaleY: 1,
+      },
+    };
+  }
   if (s.kind === "arrow") {
     if (!s.from || !s.to) return null;
     return {
@@ -1530,7 +1831,7 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
         // 0 (straight line) unless computeAvoidanceBend found a third
         // node's box in the way (see buildProfessorTeachingActions.ts).
         bend: s.bend ?? 0,
-        richText: toRichText(s.text ?? ""), size: "s", color,
+        richText: toRichText(s.text ?? ""), size: s.visualStyle?.size ?? "s", color: visualColor, dash: visualDash,
       },
     };
   }
@@ -1547,7 +1848,7 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
     return {
       type: "line", x: s.bounds.x, y: s.bounds.y,
       props: {
-        color, dash: "dashed", size: "s", spline: "line", scale: 1,
+        color: visualColor, dash: s.visualStyle?.dash ?? "dashed", size: s.visualStyle?.size ?? "s", spline: "line", scale: 1,
         points: {
           p1: { id: "p1", index: "a1", x: 0, y: 0 },
           p2: { id: "p2", index: "a2", x: w, y: 0 },
@@ -1563,7 +1864,7 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
     if (!s.bounds) return null;
     return {
       type: "geo", x: s.bounds.x, y: s.bounds.y,
-      props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: "solid", dash: "draw", size: "s", color },
+      props: { geo: "rectangle", w: s.bounds.w, h: Math.min(6, s.bounds.h), fill: s.visualStyle?.fill ?? "solid", dash: visualDash, size: s.visualStyle?.size ?? "s", color: visualColor },
     };
   }
   if (s.kind === "box" || s.kind === "circle" || s.kind === "diamond" || s.kind === "hexagon" || s.kind === "cloud") {
@@ -1583,7 +1884,7 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
         geo: GEO_FOR_KIND[s.kind] ?? "rectangle",
         w: s.bounds.w, h: s.bounds.h,
         richText: toRichText(s.text ?? ""),
-        fill: "none", dash: "draw", size: "m", color, font: "draw",
+        fill: visualFill, dash: visualDash, size: visualSize, color: visualColor, font: "draw",
       },
     };
   }
@@ -1592,6 +1893,6 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
   // rather than another diagram card.
   return {
     type: "text", x: s.x ?? 0, y: s.y ?? 0,
-    props: { richText: toRichText(s.text ?? ""), font: "draw", size: "m", color: "black", autoSize: true, w: 300 },
+    props: { richText: toRichText(s.text ?? ""), font: "draw", size: visualSize, color: s.visualStyle?.color ?? "black", autoSize: true, w: 300 },
   };
 }

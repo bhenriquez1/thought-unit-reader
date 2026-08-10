@@ -34,7 +34,7 @@ describe("Shapes are created LAZILY, not pre-placed and faded in", () => {
 
   it("a shape that shouldn't exist yet (backward jump) is deleted, not merely hidden — genuinely blank, not faint", () => {
     const idx = src.indexOf("const applyStateAtStep = useCallback");
-    const body = src.slice(idx, idx + 2300);
+    const body = src.slice(idx, src.indexOf("const setStepIndex = useCallback"));
     expect(body).toMatch(/editor\.deleteShapes\(\[shapeIdOf\(id\)\]\)/);
   });
 
@@ -116,7 +116,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
 
   it("REQUIRED: a 'speak' step never schedules the fixed-duration dwell timer — it advances only from playSegmentThenAdvance's own onended/onend callback (or an already-early-started result), never a blind timeout", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const body = src.slice(idx, idx + 2900);
+    const body = src.slice(idx, idx + 6200);
     const speakBranchIdx = body.indexOf('if (action.type === "speak") {');
     // The speak branch now has 3 sub-cases (done/pending/not-yet-started);
     // its closing brace is the one right before the dwell-timer line below.
@@ -163,7 +163,7 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
       expect(body).not.toMatch(/playSegmentThenAdvance\(/);
     }
     const advIdx = src.indexOf("const advanceForPlayback = useCallback");
-    const advBody = src.slice(advIdx, advIdx + 3000);
+    const advBody = src.slice(advIdx, advIdx + 6200);
     expect(advBody).toMatch(/playSegmentThenAdvance\(segment, next\)/);
   });
 
@@ -441,6 +441,6 @@ describe("Expanded action vocabulary: erase, line shapes, and multiple simultane
     const idx = src.indexOf('if (s.kind === "line")');
     expect(idx).toBeGreaterThan(-1);
     const body = src.slice(idx, idx + 450);
-    expect(body).toMatch(/fill:\s*"solid"/);
+    expect(body).toMatch(/fill:\s*s\.visualStyle\?\.fill \?\? "solid"/);
   });
 });

@@ -1,44 +1,57 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
 import {
+  ProfessorTldrawAgentRequestSchema,
   ProfessorTldrawAgentResponseSchema,
-  type ProfessorTldrawAgentStepInput,
 } from "@/lib/whiteboard/professorTldrawAgent";
 
-const RequestSchema = z.object({
-  pageTruthKey: z.string().min(1),
-  steps: z.array(z.object({
-    stepId: z.number().int().nonnegative(),
-    visualNeeded: z.boolean(),
-    teachingStructure: z.string().min(1).max(80),
-    visualIntent: z.string().min(1).max(240),
-    cameraIntent: z.enum(["stay-on-pdf", "active-concept", "keep-context", "comparison", "follow-sequence", "summary-overview"]),
-    activeTargetIds: z.array(z.string()).max(12),
-    retainContextTargetIds: z.array(z.string()).max(8),
-    canvasState: z.array(z.object({ shapeId: z.string(), semanticRole: z.string().max(80) })).max(40),
-  })).min(1).max(24),
-});
+export const config = { api: { bodyParser: { sizeLimit: "2mb" } } };
 
 const MODEL = "claude-sonnet-4-6";
 
-const SYSTEM_PROMPT = `You are the constrained visual-execution director for a tldraw Professor lesson.
-OpenAI already produced the validated, current-page-grounded lesson. You must not reinterpret it,
-add facts, add labels, add shapes, invent ids, expose future steps, or change geometry.
+const SYSTEM_PROMPT = `You are the visual-execution agent for one current Professor teaching step on a tldraw canvas.
 
-For each supplied visual step, inspect canvasState (the already-revealed shapes and their semantic
-roles), then decide only:
-- cameraIntent: active-concept, keep-context, comparison, follow-sequence, or summary-overview;
-- retainContextTargetIds: zero or more ids already present in that step's activeTargetIds;
-- correctionNeeded: true only when your choice changes the supplied camera choreography.
+OpenAI already authored and grounded the lesson. You are its hands and eyes, not a second planner. Use only the supplied teachingGoal, visualIntent, narration, relationships, allowedLabels, source ids, focusBounds, fallback visuals, structured canvas shapes, and canvas screenshot. Never add a fact, invent a label, reinterpret the textbook, expose a future step, or redraw the whole board.
 
-For visualNeeded=false, return stay-on-pdf and no retained ids. Comparisons should frame both
-available sides; mechanisms/procedures/timelines should follow sequence and retain the immediately
-useful prior context; summaries use summary-overview. Never return an id you were not given.
-Return JSON only: {"model":"${MODEL}","patches":[...]}.`;
+Work like a professor drawing live. Prefer meaningful teaching illustration over box-only diagrams:
+- drawFreehandStroke: general sketch strokes, outlines and handwritten visual marks.
+- drawAnatomySketch / drawMuscle / drawBone / drawNerve: symbolic strokes only when the validated current step calls for that structure.
+- drawHatching / drawBrace / drawBracket: texture, grouping and spatial emphasis.
+- drawSymbol: a small domain-neutral symbol, decision, cloud, ellipse or guide line.
+- writeLabel: only an EXACT string from allowedLabels.
+- drawFlowArrow: causal, procedural, comparison or directional relation.
+- drawPressureZone / highlightRegion: a translucent region, not a new factual claim.
+- drawCallout: only an EXACT allowedLabels string.
+- drawNumberBadge: progressive procedure/event numbering.
+- eraseRegion: only a priorAgentLocalId from this same teaching step.
+- moveCamera / zoomTo / panTo / focusNode: stay inside focusBounds and keep useful prior context.
+
+Tool-call JSON forms:
+- stroke: {"tool":"drawFreehandStroke|drawAnatomySketch|drawMuscle|drawBone|drawNerve|drawHatching|drawBrace|drawBracket","localId":"...","sourceTargetId":null,"points":[{"x":0,"y":0,"z":0.5}],"color":"black","size":"m","dash":"draw","isPen":true,"closed":false,"fill":"none"}
+- symbol: {"tool":"drawSymbol","localId":"...","sourceTargetId":null,"symbol":"rectangle|ellipse|diamond|hexagon|cloud|line","bounds":{"x":0,"y":0,"w":100,"h":60},"color":"blue","size":"m","dash":"draw","fill":"none"}
+- label: {"tool":"writeLabel","localId":"...","sourceTargetId":null,"text":"EXACT allowed label","x":0,"y":0,"color":"black","size":"m","attachToLocalId":null}
+- arrow: {"tool":"drawFlowArrow","localId":"...","sourceTargetId":null,"from":{"x":0,"y":0},"to":{"x":100,"y":100},"color":"green","size":"m","dash":"draw"}
+- zone: {"tool":"drawPressureZone|highlightRegion","localId":"...","sourceTargetId":null,"bounds":{"x":0,"y":0,"w":100,"h":60},"color":"red","opacity":0.24}
+- callout: {"tool":"drawCallout","localId":"...","sourceTargetId":null,"bounds":{"x":0,"y":0,"w":160,"h":70},"label":"EXACT allowed label","color":"orange"}
+- number: {"tool":"drawNumberBadge","localId":"...","sourceTargetId":null,"bounds":{"x":0,"y":0,"w":28,"h":28},"number":1,"color":"violet"}
+- erase: {"tool":"eraseRegion","targetLocalId":"EXACT prior id"}
+- camera: {"tool":"moveCamera|zoomTo|panTo|focusNode","localId":"...","bounds":{"x":0,"y":0,"w":500,"h":350},"retainShapeIds":[]}
+
+For execute: inspect the screenshot and structured shapes, then return a small progressive action sequence for THIS step. Use freehand strokes, arrows, spatial symbols, hatching and restrained color where they improve teaching. Do not merely reproduce every fallback rectangle.
+
+For inspect: inspect the UPDATED screenshot after your execute actions. If there is overlap, unclear emphasis, poor camera framing, or a missing relation already present in the validated step, return only local corrections. Otherwise return no actions. Never regenerate the entire board.
+
+Coordinates are page coordinates. Stay within focusBounds plus a modest surrounding margin. Keep labels concise by selecting only from allowedLabels. SourceTargetId, when used, must be one supplied allowedSourceTargetId. Local ids must be unique within this response and must match [A-Za-z0-9_-]+.
+
+Return JSON only with:
+{"stepId":number,"pass":"execute|inspect","assessment":{"needsCorrection":boolean,"issues":string[]},"actions":ToolCall[],"complete":boolean}
+Do not include markdown or commentary.`;
 
 function textFromMessage(message: Anthropic.Message): string {
-  return message.content.filter(block => block.type === "text").map(block => block.type === "text" ? block.text : "").join("");
+  return message.content
+    .filter(block => block.type === "text")
+    .map(block => block.type === "text" ? block.text : "")
+    .join("");
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
@@ -47,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(405).json({ error: "method_not_allowed" });
     return;
   }
-  const request = RequestSchema.safeParse(req.body);
+  const request = ProfessorTldrawAgentRequestSchema.safeParse(req.body);
   if (!request.success) {
     res.status(400).json({ error: "invalid_request" });
     return;
@@ -58,31 +71,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  const { screenshotBase64, ...canvasWithoutScreenshot } = request.data.canvas;
+  const promptPayload = {
+    pass: request.data.pass,
+    step: request.data.step,
+    canvas: canvasWithoutScreenshot,
+    priorAgentLocalIds: request.data.priorAgentLocalIds,
+  };
+
   try {
     const client = new Anthropic({ apiKey });
+    const content: Anthropic.MessageParam["content"] = [
+      { type: "text", text: JSON.stringify(promptPayload) },
+    ];
+    if (screenshotBase64) {
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: screenshotBase64 },
+      });
+    }
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: 1800,
+      max_tokens: 3600,
       temperature: 0,
       system: SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content: JSON.stringify({ steps: request.data.steps satisfies ProfessorTldrawAgentStepInput[] }),
-      }],
+      messages: [{ role: "user", content }],
     });
     const raw = textFromMessage(message).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    const parsed = ProfessorTldrawAgentResponseSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) {
+    const parsed = ProfessorTldrawAgentResponseSchema.safeParse({
+      ...JSON.parse(raw),
+      model: MODEL,
+    });
+    if (
+      !parsed.success
+      || parsed.data.stepId !== request.data.step.stepId
+      || parsed.data.pass !== request.data.pass
+    ) {
       res.status(502).json({ error: "invalid_agent_response" });
       return;
     }
-    // The client applies a second deterministic id/subset gate. Returning
-    // the parsed structure here never grants Claude direct tldraw access.
-    res.status(200).json({ ...parsed.data, model: MODEL });
+    res.status(200).json(parsed.data);
   } catch (error) {
     console.error("[PROFESSOR_TLDRAW_AGENT_FAILED]", {
       pageTruthKey: request.data.pageTruthKey,
-      stepCount: request.data.steps.length,
+      stepId: request.data.step.stepId,
+      pass: request.data.pass,
+      shapeCount: request.data.canvas.shapes.length,
+      screenshotPresent: Boolean(request.data.canvas.screenshotBase64),
       error: error instanceof Error ? error.message : String(error),
     });
     res.status(502).json({ error: "agent_unavailable" });
