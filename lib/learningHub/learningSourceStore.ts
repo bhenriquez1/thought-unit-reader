@@ -137,6 +137,15 @@ export type EvidenceRelationship =
 export interface LearningSource {
   id:               string;              // "ls-{timestamp}-{random5}"
   bookId:           string;
+  /** Collision-resistant document identity. New downstream-module writes
+   *  must provide this; it remains optional only so pre-Phase-4 records can
+   *  still be read by legacy book-library views without being silently
+   *  attached to a canonical page. */
+  documentId?:      string;
+  /** Exact page identity for a page-scoped source. A null/absent value is a
+   *  legacy document-level source and never matches loadSourcesForPage. */
+  pageNumber?:      number | null;
+  pageTruthKey?:    string | null;
   chapterId?:       string;
   label:            string;              // user-given display name
   type:             LearningSourceType;
@@ -159,13 +168,14 @@ export interface LearningSource {
 
 function openSourcesIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const os = db.createObjectStore(STORE, { keyPath: "id" });
-        os.createIndex("bookId", "bookId", { unique: false });
-      }
+      const os = db.objectStoreNames.contains(STORE)
+        ? req.transaction!.objectStore(STORE)
+        : db.createObjectStore(STORE, { keyPath: "id" });
+      if (!os.indexNames.contains("bookId")) os.createIndex("bookId", "bookId", { unique: false });
+      if (!os.indexNames.contains("documentId")) os.createIndex("documentId", "documentId", { unique: false });
     };
     req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
     req.onerror   = () => reject(req.error);
@@ -197,6 +207,16 @@ async function idbGetByBook(bookId: string): Promise<LearningSource[]> {
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(STORE, "readonly");
     const req = tx.objectStore(STORE).index("bookId").getAll(bookId);
+    req.onsuccess = () => resolve((req.result as LearningSource[]) ?? []);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbGetByDocument(documentId: string): Promise<LearningSource[]> {
+  const db = await openSourcesIDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).index("documentId").getAll(documentId);
     req.onsuccess = () => resolve((req.result as LearningSource[]) ?? []);
     req.onerror   = () => reject(req.error);
   });
@@ -263,6 +283,42 @@ export async function loadSourcesForBook(bookId: string): Promise<LearningSource
   // fallback
   return lsGetAll()
     .filter(r => r.bookId === bookId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export interface LearningSourcePageIdentity {
+  documentId: string;
+  pageNumber: number;
+  pageTruthKey: string;
+}
+
+/** Exact identity predicate used by every Phase-4 NoteLab read. Legacy
+ *  bookId-only records intentionally fail this check: silently adopting them
+ *  into the current page would recreate the filename/page collision this
+ *  identity contract is designed to prevent. */
+export function learningSourceMatchesPageIdentity(
+  source: Pick<LearningSource, "documentId" | "pageNumber" | "pageTruthKey">,
+  identity: LearningSourcePageIdentity,
+): boolean {
+  return source.documentId === identity.documentId
+    && source.pageNumber === identity.pageNumber
+    && source.pageTruthKey === identity.pageTruthKey;
+}
+
+/** Load only sources belonging to one canonical document/page/text truth.
+ *  IndexedDB and localStorage paths apply the same exact predicate and never
+ *  fall back to bookId, page number alone, or records from an older extraction. */
+export async function loadSourcesForPage(
+  identity: LearningSourcePageIdentity,
+): Promise<LearningSource[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const records = await idbGetByDocument(identity.documentId);
+    const exact = records.filter(record => learningSourceMatchesPageIdentity(record, identity));
+    if (exact.length > 0) return exact.sort((a, b) => b.createdAt - a.createdAt);
+  } catch {}
+  return lsGetAll()
+    .filter(record => learningSourceMatchesPageIdentity(record, identity))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 

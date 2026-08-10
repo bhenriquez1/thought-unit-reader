@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import {
-  loadSourcesForBook,
+  loadSourcesForPage,
   saveSource,
   deleteSource,
   updateSource,
@@ -24,6 +24,21 @@ import {
   type SourceAuthority,
 } from "@/lib/learningHub/learningSourceStore";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
+import { getNodesByDocument } from "@/lib/knowledge/knowledgeGraphStore";
+import { getWhiteboardLessonSnapshotsByDocument } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
+import type { KnowledgeNode } from "@/lib/knowledge/knowledgeGraphSchema";
+import type { WhiteboardLessonSnapshot } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
+import {
+  buildCanonicalTextbookEvidence,
+  buildRecallMaterialPreview,
+  buildRelatedConceptPreviews,
+  selectCurrentPageFocusId,
+  selectEvidenceForConcept,
+  selectProfessorSnapshots,
+  studyModelMatchesPage,
+  type NoteLabPageIdentity,
+} from "@/lib/notelab/conceptEvidenceWorkspace";
 import EvidenceWorkspace from "./EvidenceWorkspace";
 
 // ── Source catalogue ─────────────────────────────────────────────────────────
@@ -66,7 +81,11 @@ const EMPTY_DRAFT: AddDraft = { type: "article", label: "", text: "", url: "" };
 
 interface LearningSourcesManagerProps {
   bookId: string;
-  currentPage?: number;
+  documentId: string;
+  currentPage: number;
+  pageTruthKey: string;
+  surgeonPageTruthKey?: string | null;
+  groundedAnnotations?: GroundedSurgeonAnnotation[];
   studyModel?: CurrentPageStudyModel | null;
   onNavigateToPage?: (page: number) => void;
   refreshKey?: number;
@@ -76,40 +95,115 @@ interface LearningSourcesManagerProps {
 
 export default function LearningSourcesManager({
   bookId,
+  documentId,
   currentPage,
+  pageTruthKey,
+  surgeonPageTruthKey,
+  groundedAnnotations = [],
   studyModel,
   onNavigateToPage,
   refreshKey = 0,
 }: LearningSourcesManagerProps) {
   // Active canonical thought unit from the shared focus store
-  const activeUnitId = useReadingFocusStore(s => s.thoughtUnitId);
+  const focusedUnitId = useReadingFocusStore(s => s.thoughtUnitId);
 
   const [view, setView] = useState<PanelView>("evidence");
   const [sources, setSources] = useState<LearningSource[]>([]);
+  const [professorSnapshots, setProfessorSnapshots] = useState<WhiteboardLessonSnapshot[]>([]);
+  const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [addStep, setAddStep] = useState<AddStep | null>(null);
   const [draft, setDraft] = useState<AddDraft>(EMPTY_DRAFT);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [linkingId, setLinkingId] = useState<string | null>(null);
 
-  // Derive active unit label from studyModel
+  const identity = useMemo<NoteLabPageIdentity>(() => ({
+    documentId,
+    pageNumber: currentPage,
+    pageTruthKey,
+  }), [documentId, currentPage, pageTruthKey]);
+
+  // Reject a model from a different page or an older extraction instead of
+  // leaving a plausible-looking stale explanation in NoteLab.
+  const currentStudyModel = useMemo(
+    () => studyModelMatchesPage(studyModel, identity) ? studyModel : null,
+    [studyModel, identity],
+  );
+
+  const canonicalPageEvidence = useMemo(() => buildCanonicalTextbookEvidence({
+    identity,
+    surgeonPageTruthKey,
+    groundedAnnotations,
+  }), [identity, surgeonPageTruthKey, groundedAnnotations]);
+
+  // Reading focus is global and can briefly retain the previous page's id.
+  // Adopt it only when the current canonical evidence, exact study model, or
+  // current-page Knowledge Graph proves that the id belongs here.
+  const activeUnitId = useMemo(() => {
+    return selectCurrentPageFocusId({
+      focusedUnitId,
+      evidence: canonicalPageEvidence,
+      studyModel: currentStudyModel,
+      knowledgeNodes,
+      pageNumber: currentPage,
+    });
+  }, [focusedUnitId, canonicalPageEvidence, currentStudyModel, knowledgeNodes, currentPage]);
+
+  const conceptEvidence = useMemo(
+    () => selectEvidenceForConcept(canonicalPageEvidence, activeUnitId),
+    [canonicalPageEvidence, activeUnitId],
+  );
+
+  const activeProfessorSnapshots = useMemo(
+    () => selectProfessorSnapshots(professorSnapshots, identity, activeUnitId),
+    [professorSnapshots, identity, activeUnitId],
+  );
+
+  const recallMaterial = useMemo(() => buildRecallMaterialPreview({
+    snapshots: activeProfessorSnapshots,
+    studyModel: currentStudyModel,
+  }), [activeProfessorSnapshots, currentStudyModel]);
+
+  const relatedConcepts = useMemo(
+    () => buildRelatedConceptPreviews(knowledgeNodes, activeUnitId, currentPage),
+    [knowledgeNodes, activeUnitId, currentPage],
+  );
+
+  // Derive active unit label from canonical Surgeon evidence first, with the
+  // exact-identity study model as a secondary already-computed source.
   const activeUnitLabel = useMemo(() => {
-    if (!activeUnitId || !studyModel) return null;
-    const anchor = studyModel.visualAnchors?.find(
+    if (!activeUnitId) return null;
+    const canonical = canonicalPageEvidence.find(item => item.id === activeUnitId);
+    if (canonical) return canonical.exactText;
+    const anchor = currentStudyModel?.visualAnchors?.find(
       a => a.id === activeUnitId || (a as any).evidenceRefId === activeUnitId
     );
     return anchor ? (anchor.exactText ?? null) : null;
-  }, [activeUnitId, studyModel]);
+  }, [activeUnitId, canonicalPageEvidence, currentStudyModel]);
 
-  // Load sources whenever bookId or refreshKey changes
+  // Load every reusable workspace input under the resolved document identity.
+  // State is cleared synchronously and the alive guard prevents a late result
+  // from the previous page becoming a silent stale fallback.
   useEffect(() => {
-    if (!bookId) return;
+    if (!documentId || !pageTruthKey) return;
+    let alive = true;
     setLoading(true);
-    loadSourcesForBook(bookId)
-      .then(setSources)
-      .catch(() => setSources([]))
-      .finally(() => setLoading(false));
-  }, [bookId, refreshKey]);
+    setSources([]);
+    setProfessorSnapshots([]);
+    setKnowledgeNodes([]);
+    Promise.all([
+      loadSourcesForPage(identity).catch(() => [] as LearningSource[]),
+      getWhiteboardLessonSnapshotsByDocument(documentId).catch(() => [] as WhiteboardLessonSnapshot[]),
+      getNodesByDocument(documentId).catch(() => [] as KnowledgeNode[]),
+    ]).then(([nextSources, nextSnapshots, nextNodes]) => {
+      if (!alive) return;
+      setSources(nextSources);
+      setProfessorSnapshots(nextSnapshots);
+      setKnowledgeNodes(nextNodes);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [documentId, currentPage, pageTruthKey, refreshKey]);
 
   // Sources filtered to the active unit (book-level always included)
   const unitSources = useMemo(() => {
@@ -136,6 +230,9 @@ export default function LearningSourcesManager({
     const source: LearningSource = {
       id: genSourceId(),
       bookId,
+      documentId,
+      pageNumber: currentPage,
+      pageTruthKey,
       label: draft.label.trim() || def.label,
       type: draft.type,
       authorityLevel: AUTHORITY_FOR_TYPE[draft.type],
@@ -150,7 +247,31 @@ export default function LearningSourcesManager({
     setSources(prev => [source, ...prev]);
     setDraft(EMPTY_DRAFT);
     setAddStep(null);
-  }, [draft, bookId, activeUnitId]);
+  }, [draft, bookId, documentId, currentPage, pageTruthKey, activeUnitId]);
+
+  const handleSaveStudentNote = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const source: LearningSource = {
+      id: genSourceId(),
+      bookId,
+      documentId,
+      pageNumber: currentPage,
+      pageTruthKey,
+      label: `Student note · Page ${currentPage}`,
+      type: "personal_note",
+      authorityLevel: "personal-note",
+      text: trimmed,
+      canonicalUnitIds: activeUnitId ? [activeUnitId] : [],
+      thoughtUnits: [],
+      relationship: "questions",
+      sourceConfidence: 70,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await saveSource(source);
+    setSources(prev => [source, ...prev]);
+  }, [bookId, documentId, currentPage, pageTruthKey, activeUnitId]);
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteSource(id);
@@ -351,9 +472,14 @@ export default function LearningSourcesManager({
             sources={unitSources}
             activeUnitId={activeUnitId}
             activeUnitLabel={activeUnitLabel}
-            studyModel={studyModel}
+            studyModel={currentStudyModel}
+            canonicalEvidence={conceptEvidence}
+            professorSnapshots={activeProfessorSnapshots}
+            recallMaterial={recallMaterial}
+            relatedConcepts={relatedConcepts}
             onUpdateSource={(s) => setSources(prev => prev.map(x => x.id === s.id ? s : x))}
             onDeleteSource={handleDelete}
+            onSaveStudentNote={handleSaveStudentNote}
             onRequestAdd={() => { setAddStep("pick-type"); setDraft(EMPTY_DRAFT); }}
           />
         ) : (
@@ -369,6 +495,7 @@ export default function LearningSourcesManager({
             onDelete={handleDelete}
             onLinkToUnit={handleLinkToUnit}
             onUnlinkFromUnit={handleUnlinkFromUnit}
+            canonicalEvidenceCount={canonicalPageEvidence.length}
           />
         )}
       </div>
@@ -390,6 +517,7 @@ function SourcesView({
   onDelete,
   onLinkToUnit,
   onUnlinkFromUnit,
+  canonicalEvidenceCount,
 }: {
   sources: LearningSource[];
   unitSources: LearningSource[];
@@ -402,6 +530,7 @@ function SourcesView({
   onDelete: (id: string) => void;
   onLinkToUnit: (id: string) => void;
   onUnlinkFromUnit: (id: string) => void;
+  canonicalEvidenceCount: number;
 }) {
   return (
     <div className="flex flex-col">
@@ -428,7 +557,9 @@ function SourcesView({
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {isTextbook ? (
-                    <span className="text-[9px] text-emerald-400 font-semibold">Connected</span>
+                    <span className={`text-[9px] font-semibold ${canonicalEvidenceCount > 0 ? "text-emerald-400" : "text-slate-600"}`}>
+                      {canonicalEvidenceCount > 0 ? `${canonicalEvidenceCount} grounded` : "Awaiting Surgeon"}
+                    </span>
                   ) : count > 0 ? (
                     <span className="text-[9px] font-semibold" style={{ color: col.text }}>{count} item{count !== 1 ? "s" : ""}</span>
                   ) : (
@@ -551,4 +682,3 @@ function SourcesView({
     </div>
   );
 }
-

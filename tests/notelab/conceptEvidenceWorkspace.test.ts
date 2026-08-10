@@ -97,7 +97,19 @@ describe("EvidenceWorkspace — AVRRIO INTERPRETATION section", () => {
   });
 
   it("has a provenance label distinguishing AI from source text", () => {
-    expect(src).toMatch(/AI-inferred|not source text/);
+    expect(src).toMatch(/already computed|AI-inferred|not source text/);
+  });
+
+  it("renders immutable Surgeon-grounded source evidence", () => {
+    expect(src).toMatch(/Surgeon-grounded/);
+    expect(src).toMatch(/CanonicalEvidenceCard/);
+  });
+
+  it("renders student notes, saved Professor snapshots, recall material, and related concepts", () => {
+    expect(src).toMatch(/STUDENT NOTE/);
+    expect(src).toMatch(/PROFESSOR SNAPSHOTS/);
+    expect(src).toMatch(/RECALL MATERIAL/);
+    expect(src).toMatch(/RELATED CONCEPTS/);
   });
 });
 
@@ -128,5 +140,14 @@ describe("pages/index.tsx — NoteLab sources sub-tab", () => {
 
   it("comment describes Concept Evidence Workspace (not Study Guide)", () => {
     expect(src).toMatch(/Concept Evidence Workspace/);
+  });
+
+  it("passes canonical document/page identity and Surgeon evidence", () => {
+    const block = src.slice(src.indexOf("<LearningSourcesManager"), src.indexOf("</ErrorBoundary>", src.indexOf("<LearningSourcesManager")));
+    expect(block).toMatch(/documentId=\{resolvedDocumentId\}/);
+    expect(block).toMatch(/currentPage=\{currentPage\}/);
+    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(block).toMatch(/surgeonPageTruthKey=\{surgeonAnnotations\.plan\?\.pageTruthKey/);
+    expect(block).toMatch(/groundedAnnotations=\{surgeonAnnotations\.groundedAnnotations\}/);
   });
 });
