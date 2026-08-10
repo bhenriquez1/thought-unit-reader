@@ -5,8 +5,9 @@
 // whiteboard's teaching script:
 //   - A targetId that doesn't name a real VisualSceneGraph node/edge id is
 //     dropped, never rendered (OpenAI never invents nodes).
-//   - Every surviving shortLabel is clamped to <=8 words / non-paragraph-
-//     shaped, regardless of what the model returned.
+//   - Every surviving node shortLabel is clamped to <=8 words and every edge
+//     explanation to <=5 words / non-paragraph-shaped, regardless of what
+//     the model returned.
 //   - At most ONE node/edge is emphasized (the single "circle the high-yield
 //     point" moment) — later duplicates are demoted, not multiplied.
 //   - Total surviving targets are capped so the canvas stays under ~10
@@ -108,6 +109,7 @@ export interface GroundedProfessorGroup {
 export interface GroundedProfessorLessonScript {
   title: string;
   visualGrammar: ProfessorLessonScript["visualGrammar"];
+  centralQuestion: string;
   learningObjective: string;
   synthesisQuestion: string;
   nodeScripts: ProfessorNodeScript[];
@@ -189,15 +191,15 @@ function resolveGroups(
   return result;
 }
 
-function sanitizeLabel(raw: string): string {
-  const clamped = clampToShortLabel(raw, 8);
+function sanitizeLabel(raw: string, maxWords = 8): string {
+  const clamped = clampToShortLabel(raw, maxWords);
   if (!isParagraphShaped(clamped)) return clamped;
   // Still reads as multiple sentences even after the word clamp (e.g. several
   // short clauses crammed together) — cut at the FIRST sentence boundary
   // instead of just trimming words, so no trailing sentence survives.
   const firstSentenceEnd = clamped.search(/[.!?](?:\s|$)/);
   const singleSentence = firstSentenceEnd >= 0 ? clamped.slice(0, firstSentenceEnd) : clamped;
-  return clampToShortLabel(singleSentence.replace(/[.!?]+$/, ""), 6);
+  return clampToShortLabel(singleSentence.replace(/[.!?]+$/, ""), Math.min(maxWords, 6));
 }
 
 /**
@@ -243,7 +245,10 @@ export function groundProfessorLesson(
 
     grounded.push({
       ...entry,
-      shortLabel: sanitizeLabel(entry.shortLabel),
+      // Edge captions have less room at the midpoint than node labels do.
+      // Keep their causal explanation to the prompt's 2-5-word contract;
+      // node labels retain the existing 8-word ceiling.
+      shortLabel: sanitizeLabel(entry.shortLabel, nodeIds.has(entry.targetId) ? 8 : 5),
       emphasize,
       emphasisTreatment,
       explain,
@@ -270,6 +275,7 @@ export function groundProfessorLesson(
   return {
     title:              sanitizeLabel(script.title.length > 0 ? clampToShortLabel(script.title, 6) : script.title),
     visualGrammar:      script.visualGrammar,
+    centralQuestion:    clampToShortLabel(script.centralQuestion.trim(), 16),
     learningObjective:  script.learningObjective.trim(),
     synthesisQuestion:  script.synthesisQuestion.trim(),
     nodeScripts:         withRelationships,

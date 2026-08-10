@@ -24,6 +24,7 @@ function makeScript(overrides: Partial<ProfessorLessonScript> = {}): ProfessorLe
     pageTruthKey: "doc::1::t",
     visualGrammar: "concept-map",
     title: "Test Title",
+    centralQuestion: "How do these ideas connect?",
     learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [
       { targetId: "n1", shortLabel: "Rapid assessment", narration: "Start here.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
@@ -148,6 +149,31 @@ describe("groundProfessorLesson — short labels, no paragraph-shaped nodes", ()
     const script = makeScript({ title: "This Is A Much Longer Title Than The Professor Would Actually Hand Write On The Board" });
     const result = groundProfessorLesson(script, vsg);
     expect(result.title.split(" ").length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("groundProfessorLesson — Phase 3 central question", () => {
+  it("keeps the opening question compact even if the model returns an overlong one", () => {
+    const vsg = makeVsg(["n1"]);
+    const result = groundProfessorLesson(makeScript({
+      centralQuestion: "Why does this extraordinarily detailed mechanism produce so many different consequences across every clinical setting described on this page today?",
+    }), vsg);
+    expect(result.centralQuestion.split(/\s+/)).toHaveLength(16);
+  });
+});
+
+describe("groundProfessorLesson — Phase 3 causal connector labels", () => {
+  it("clamps an edge's explanation to five words while preserving node labels' existing budget", () => {
+    const vsg = makeVsg(["n1", "n2"], [["e1", "n1", "n2"]]);
+    const result = groundProfessorLesson(makeScript({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "A node can still use eight compact words here", narration: "x", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "e1", shortLabel: "this long causal explanation must stay visually compact", narration: "y", tone: "connect", pace: "normal", emphasize: false, teachingRole: "mechanism", spatialIntent: "central-mechanism", drawingIntent: "chain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Result", narration: "z", tone: "explain", pace: "normal", emphasize: false, teachingRole: "consequence", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    }), vsg);
+    expect(result.nodeScripts.find(entry => entry.targetId === "n1")!.shortLabel.split(/\s+/)).toHaveLength(8);
+    expect(result.nodeScripts.find(entry => entry.targetId === "e1")!.shortLabel.split(/\s+/)).toHaveLength(5);
   });
 });
 

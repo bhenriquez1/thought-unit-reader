@@ -73,6 +73,7 @@ describe("Representative trace 1 — mechanism/causal page (aspirin toxicity)", 
   };
   const grounded: GroundedProfessorLessonScript = {
     title: "Aspirin Toxicity", visualGrammar: "mechanism",
+    centralQuestion: "Why does aspirin toxicity disrupt two systems?",
     learningObjective: "Explain how aspirin overdose produces its two parallel toxic effects.",
     synthesisQuestion: "Why does aspirin overdose cause both metabolic and respiratory disturbance?",
     nodeScripts: [
@@ -145,6 +146,7 @@ describe("Representative trace 2 — comparison page (Type 1 vs Type 2 diabetes)
   };
   const grounded: GroundedProfessorLessonScript = {
     title: "Diabetes Types", visualGrammar: "comparison",
+    centralQuestion: "Why do the two diabetes types behave differently?",
     learningObjective: "Contrast the onset and mechanism of Type 1 and Type 2 diabetes.",
     synthesisQuestion: "How does the mechanism difference change first-line treatment?",
     nodeScripts: [
@@ -207,6 +209,7 @@ describe("Representative trace 3 — clinical/procedure page with a warning (sus
   };
   const grounded: GroundedProfessorLessonScript = {
     title: "Suspected Sepsis", visualGrammar: "procedure",
+    centralQuestion: "What must happen first in suspected sepsis?",
     learningObjective: "Sequence the initial assessment and treatment of suspected sepsis.",
     synthesisQuestion: "Why must antibiotics never wait on culture results?",
     nodeScripts: [

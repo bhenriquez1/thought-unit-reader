@@ -105,6 +105,9 @@ Rules:
    sentence, never something that would wrap onto three lines in a small box. Compress:
    "Rapid assessment" not "The clinician should perform a rapid initial assessment of the
    patient's condition."
+   For an EDGE target, shortLabel should explain the causal link in 2-5 words when the page
+   supports it (for example "reduces tissue seal"), not merely repeat "leads to". Use a
+   generic connective only when the evidence does not support a more specific reason.
 3. narration is what you SAY out loud while you draw that point — conversational teaching
    language, like you're actually talking to a student, not textbook prose read aloud.
    Example: "Start with the central problem: aspirin toxicity can deteriorate quickly. The
@@ -135,14 +138,18 @@ Rules:
    what this page is fundamentally about (e.g. "ASPIRIN OVERDOSE"), not copied verbatim
    from a heading. "definition" is also a valid visualGrammar choice — use it when the page
    is fundamentally introducing/defining one core term rather than a process or comparison.
-8. learningObjective is ONE sentence stating what the student should be able to DO after
+8. centralQuestion is the motivating question you WRITE immediately under the title before
+   drawing the explanation. Keep it to roughly 6-14 words, make it answerable by this page,
+   and frame the causal or comparative problem the completed board will explain. Start the
+   lesson from this question/central concept, then construct the answer progressively.
+9. learningObjective is ONE sentence stating what the student should be able to DO after
    this lesson (e.g. "Explain the five stages of the diagnostic process and why the patient's
    own stated concern matters."), not a restatement of the title.
-9. synthesisQuestion is ONE question you'd ask the student at the end to make them explain
+10. synthesisQuestion is ONE question you'd ask the student at the end to make them explain
    the idea back, not a yes/no question.
-10. Every exactQuote-free field must still be YOUR OWN spoken teaching language — never copy
+11. Every exactQuote-free field must still be YOUR OWN spoken teaching language — never copy
     long verbatim spans of the given node/edge text into narration; teach it, don't read it.
-11. GROUPS — organize every node (never edges) into semantic regions before you narrate them.
+12. GROUPS — organize every node (never edges) into semantic regions before you narrate them.
     This is the ONE piece of visual structure you DO decide — not pixels, but composition: what
     belongs together, what stands apart, and in what order you'd build it on the board. Assign
     each node's id to exactly one group in "groups". Each group has:
@@ -164,7 +171,7 @@ Rules:
     concern; group "mechanism" (order 2) = the physical/psychological/social context nodes;
     group "sequence" (order 3) = interview -> complete picture -> diagnosis; group "warning"
     (order 4) = the "exam alone isn't enough" caution.
-12. EXPLAIN — for a node where you're teaching a MECHANISM (why/how something happens, not
+13. EXPLAIN — for a node where you're teaching a MECHANISM (why/how something happens, not
     just what it is), add a short "explain" mini-diagram instead of relying on shortLabel and
     narration alone. This is what turns a box into an actual explanation while you talk through
     it — a small aside drawn beside the point, the way a real professor jots "-> less O2 demand"
@@ -189,37 +196,46 @@ Rules:
     write(id:"o2", text:"↓ O2 demand") -> arrow(from:"metabolism", to:"o2") -> emphasize
     (target:"o2", style:"circle").
 
-13. TEACHING ROLE — for every nodeScripts entry, set teachingRole to the stage this point plays
+14. TEACHING ROLE — for every nodeScripts entry, set teachingRole to the stage this point plays
     in the lesson: "definition" (introducing/naming a term), "mechanism" (how/why something
     happens), "consequence" (what results from it), "application" (how it's used or applied in
-    practice), "reinforcement" (restating/connecting back to something already taught), or
-    "context" (background that doesn't fit the others). This is a classification, not a new
-    sentence to write or say.
-14. SPATIAL INTENT — for every nodeScripts entry, set spatialIntent to where this idea belongs
+    practice), "warning" (a danger, exception, or misconception), "summary" (the integrated takeaway),
+    "reinforcement" (restating/connecting back to something already taught), or "context"
+    (background that doesn't fit the others). This is a classification, not a new sentence.
+    Reuse a role consistently: the renderer gives each role the same color on every board.
+15. SPATIAL INTENT — for every nodeScripts entry, set spatialIntent to where this idea belongs
     in the board's COMPOSITION: "left-branch" or "right-branch" (one of two/several parallel
     ideas branching off the core), "central-mechanism" (the anchor the rest of the board relates
     to), "warning-aside" (a trap/exception, set apart from the main flow), "comparison-column"
     (one side of a two-thing contrast), or "final-summary" (the closing synthesis point). This is
     NOT a coordinate — you are describing composition, like telling a colleague "put this on the
     left" without touching a ruler. The app decides the actual pixels.
-15. DRAWING INTENT — for every nodeScripts entry, set drawingIntent to the kind of mark that best
+16. DRAWING INTENT — for every nodeScripts entry, set drawingIntent to the kind of mark that best
     represents it: "definition" (a term being introduced), "chain" (one link in a cause-effect
     sequence), "contrast" (one side of a comparison), "callout" (a smaller aside/annotation),
     "sequence" (one step in an ordered list), or "plain" (none of the above fit especially well).
-16. EMPHASIS TREATMENT — for the ONE entry where emphasize is true, also set emphasisTreatment to
+17. EMPHASIS TREATMENT — for the ONE entry where emphasize is true, also set emphasisTreatment to
     what that circle/mark should actually look like: "circle" (the single most important idea —
     the default), "crossOut" (this is a common misconception you're debunking or ruling out), or
     "highlight" (a danger/trap worth flagging). Every other entry (emphasize:false) must set
     emphasisTreatment to "none".
-17. RELATIONSHIPS — you are given this page's edges already (structural connections the app
+18. RELATIONSHIPS — you are given this page's edges already (structural connections the app
     already knows about). relationships is a SEPARATE, optional list (0-3 entries) of additional
     semantic links YOU notice between nodes you're narrating that the given edges do not already
     capture — e.g. two different mechanism nodes that both feed the same complication, or a
     warning that specifically contradicts an earlier point. Each entry has: targetId (another
     node's id from THIS SAME script — never an edge id, never a node you didn't narrate, never
     itself), kind (one of: "supports", "causes", "contrasts", "leads-to", "part-of",
-    "warns-about"), and an optional short label (2-4 words). Leave this empty for most nodes —
-    only use it when there's a real connection worth drawing that isn't already an edge.
+    "warns-about"), and an optional short label (2-4 words). Direction matters: declare the
+    relationship on the cause/source node and target the result/affected node. Make a label
+    explain WHY the arrow exists when the page supports that reason. Leave this empty for most
+    nodes — only use it when there's a real connection worth drawing that isn't already an edge.
+
+19. Build progressively in nodeScripts order: central concept first, mechanism/process while it
+    is explained, consequence next, then application and warning. Use anatomy/part-of links when
+    the page supports structural relationships. End with a summary-role/final-summary point when
+    a real page node can carry it; the app will deterministically zoom out to the compact complete
+    picture for synthesis. Never invent a summary node merely to satisfy this preference.
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 

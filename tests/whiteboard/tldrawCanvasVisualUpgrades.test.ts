@@ -30,6 +30,22 @@ describe("TldrawCanvas.tsx — EDGE_COLOR is actually applied (was dead code)", 
   });
 });
 
+describe("TldrawCanvas.tsx — Phase 3 semantic-role colors", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("prefers stable teaching-role and relationship colors over source-tier fallback colors", () => {
+    expect(src).toMatch(/colorForTeachingRole\(s\.teachingRole\)/);
+    expect(src).toMatch(/colorForRelationship\(s\.relationshipKind\)/);
+    expect(src).toMatch(/semanticColor \?\? sourceColor/);
+  });
+
+  it("keeps danger-tier evidence red as a deterministic safety override", () => {
+    expect(src).toMatch(/const isDangerTarget = useCallback/);
+    expect(src).toMatch(/isDangerTarget\(targetId\) \? "red"/);
+  });
+});
+
 describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is early-started at step entry", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
@@ -437,7 +453,7 @@ describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly l
 
   it("only touches isReadonly when it was actually true — never force-unlocks an editor that was already writable (e.g. editingEnabled)", () => {
     const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
-    const block = src.slice(stepIdx, stepIdx + 4700);
+    const block = src.slice(stepIdx, stepIdx + 5600);
     const liftCount = (block.match(/if \(wasReadonly\) editor\.updateInstanceState\(\{ isReadonly: (?:false|true) \}\);/g) ?? []).length;
     expect(liftCount).toBe(2); // one lift, one restore — both gated on wasReadonly
   });

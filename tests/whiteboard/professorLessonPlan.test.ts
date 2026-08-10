@@ -18,6 +18,7 @@ function validScript() {
     pageTruthKey: "doc::1::t",
     visualGrammar: "procedure",
     title: "Test Title",
+    centralQuestion: "Why does this process matter?",
     learningObjective: "Explain the key idea in your own words.",
     nodeScripts: [validNodeScript()],
     groups: [],
@@ -67,6 +68,12 @@ describe("ProfessorNodeScriptSchema", () => {
     const values = ["left-branch", "right-branch", "central-mechanism", "warning-aside", "comparison-column", "final-summary"];
     for (const v of values) {
       expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), spatialIntent: v })).not.toThrow();
+    }
+  });
+
+  it("accepts warning and summary as explicit teaching roles", () => {
+    for (const teachingRole of ["warning", "summary"]) {
+      expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), teachingRole })).not.toThrow();
     }
   });
 
@@ -122,6 +129,12 @@ describe("ProfessorLessonScriptSchema", () => {
     const { learningObjective, ...withoutObjective } = validScript();
     expect(() => ProfessorLessonScriptSchema.parse(withoutObjective)).toThrow();
     expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), learningObjective: "" })).toThrow();
+  });
+
+  it("requires a non-empty centralQuestion for the progressive opening", () => {
+    const { centralQuestion, ...withoutQuestion } = validScript();
+    expect(() => ProfessorLessonScriptSchema.parse(withoutQuestion)).toThrow();
+    expect(() => ProfessorLessonScriptSchema.parse({ ...validScript(), centralQuestion: "" })).toThrow();
   });
 });
 

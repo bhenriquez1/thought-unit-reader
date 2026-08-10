@@ -26,6 +26,7 @@ function fixturePlan(): ProfessorLessonPlan {
   return {
     visualGrammar: "mechanism",
     title: "Test Lesson",
+    centralQuestion: "Why does the test mechanism matter?",
     learningObjective: "Understand the test mechanism.",
     synthesisQuestion: "Why does the test mechanism matter?",
     sourceSnapshot: {
