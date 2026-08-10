@@ -16,9 +16,12 @@
 // No React, no tldraw Editor — TldrawCanvas.tsx diffs this pure state against
 // whatever shapes currently exist and creates/updates/deletes accordingly.
 
-import type { Bounds, Point, ProfessorSurface, ProfessorTeachingAction, RelationshipKind, TeachingRole } from "./professorLessonPlan";
+import type {
+  Bounds, Point, ProfessorFreehandPoint, ProfessorSurface, ProfessorTeachingAction,
+  ProfessorVisualStyle, RelationshipKind, TeachingRole,
+} from "./professorLessonPlan";
 
-export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text" | "diamond" | "hexagon" | "cloud";
+export type ShapeVisualKind = "box" | "circle" | "brace" | "line" | "arrow" | "text" | "diamond" | "hexagon" | "cloud" | "freehand";
 
 export interface ShapeVisualState {
   shapeId: string;
@@ -26,6 +29,7 @@ export interface ShapeVisualState {
   bounds?: Bounds;
   from?: Point;
   to?: Point;
+  points?: ProfessorFreehandPoint[];
   /** Phase B2 connector-obstacle-avoidance — see ProfessorTeachingAction's
    *  draw-arrow.bend comment in professorLessonPlan.ts. Only meaningful
    *  when kind === "arrow". */
@@ -36,6 +40,14 @@ export interface ShapeVisualState {
   /** Pedagogical role selected by the Professor planner. The renderer maps
    *  this to one stable color vocabulary across every lesson. */
   teachingRole?: TeachingRole;
+  /** Runtime-agent presentation metadata. Content remains grounded through
+   * targetId; these fields only control how the verified primitive renders. */
+  targetId?: string;
+  visualStyle?: ProfessorVisualStyle;
+  visualRole?: string;
+  isPen?: boolean;
+  closed?: boolean;
+  opacity?: number;
   /** Text-only anchor (used when a shape has no draw-shape backing it, e.g.
    *  the title, which is a bare `write` with no enclosing box). */
   x?: number;
@@ -75,6 +87,10 @@ export function computeCanvasStateAtStep(
         kind: action.shape,
         bounds: action.bounds,
         teachingRole: action.teachingRole,
+        targetId: action.targetId,
+        visualStyle: action.visualStyle,
+        visualRole: action.visualRole,
+        opacity: action.opacity,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
         emphasisTreatments: prior?.emphasisTreatments ?? [],
@@ -88,6 +104,25 @@ export function computeCanvasStateAtStep(
         to: action.to,
         bend: action.bend,
         relationshipKind: action.relationshipKind,
+        targetId: action.targetId,
+        visualStyle: action.visualStyle,
+        visualRole: action.visualRole,
+        text: prior?.text ?? "",
+        emphasized: prior?.emphasized ?? false,
+        emphasisTreatments: prior?.emphasisTreatments ?? [],
+      });
+    } else if (action.type === "draw-freehand") {
+      const prior = state.get(action.shapeId);
+      state.set(action.shapeId, {
+        shapeId: action.shapeId,
+        kind: "freehand",
+        points: action.points,
+        targetId: action.targetId,
+        visualStyle: action.visualStyle,
+        visualRole: action.visualRole,
+        isPen: action.isPen,
+        closed: action.closed,
+        opacity: action.opacity,
         text: prior?.text ?? "",
         emphasized: prior?.emphasized ?? false,
         emphasisTreatments: prior?.emphasisTreatments ?? [],
@@ -103,6 +138,10 @@ export function computeCanvasStateAtStep(
         bend: prior?.bend,
         relationshipKind: prior?.relationshipKind,
         teachingRole: prior?.teachingRole,
+        targetId: action.targetId ?? prior?.targetId,
+        visualStyle: action.visualStyle ?? prior?.visualStyle,
+        visualRole: action.visualRole ?? prior?.visualRole,
+        opacity: prior?.opacity,
         x: prior?.x ?? action.x,
         y: prior?.y ?? action.y,
         text: action.text,

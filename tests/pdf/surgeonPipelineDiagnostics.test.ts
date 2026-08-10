@@ -210,6 +210,6 @@ describe("TldrawCanvas.tsx — [WHITEBOARD_STEP_DIAGNOSTIC] carries drawActionCo
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx"), "utf8");
     const idx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"');
     const block = src.slice(idx, idx + 800);
-    expect(block).toMatch(/drawActionCount:\s*plan\.actions\.filter\(a => a\.type === "draw-shape" \|\| a\.type === "draw-arrow"\)\.length,/);
+    expect(block).toMatch(/drawActionCount:\s*plan\.actions\.filter\(a => a\.type === "draw-shape" \|\| a\.type === "draw-freehand" \|\| a\.type === "draw-arrow"\)\.length,/);
   });
 });

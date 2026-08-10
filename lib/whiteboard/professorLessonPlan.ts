@@ -59,6 +59,26 @@ export const TeachingStructureSchema = z.enum([
 ]);
 export type TeachingStructure = z.infer<typeof TeachingStructureSchema>;
 
+/** Renderer-safe visual styling shared by deterministic actions and the
+ * constrained runtime tldraw Agent. These are tldraw's built-in style names,
+ * not arbitrary CSS/model output. */
+export type ProfessorVisualColor =
+  | "black" | "grey" | "blue" | "light-blue" | "green" | "light-green"
+  | "yellow" | "orange" | "red" | "violet";
+export type ProfessorVisualSize = "s" | "m" | "l" | "xl";
+export type ProfessorVisualDash = "draw" | "solid" | "dashed" | "dotted";
+export type ProfessorVisualFill = "none" | "semi" | "solid" | "pattern";
+export interface ProfessorVisualStyle {
+  color?: ProfessorVisualColor;
+  size?: ProfessorVisualSize;
+  dash?: ProfessorVisualDash;
+  fill?: ProfessorVisualFill;
+}
+export interface ProfessorFreehandPoint extends Point {
+  /** Normalized pen pressure. Omitted points use a stable mid-pressure. */
+  z?: number;
+}
+
 // ── ProfessorTeachingAction — the deterministic, replayable drawing timeline ─
 // Every action carries a stable actionId (referenced by NarrationSegment.
 // linkedActionIds) and a durationMs (pacing for autoplay/Previous-Next). The
@@ -75,12 +95,12 @@ export type TeachingStructure = z.infer<typeof TeachingStructureSchema>;
 // actions belong to the SAME step for draw-while-teaching interleaving. See
 // lib/whiteboard/professorTimelineEngine.ts's step-boundary helpers.
 export type ProfessorTeachingAction =
-  | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number; stepId: number }
+  | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string }
   // bend: Phase B2 connector-obstacle-avoidance — a nonzero value curves
   // the arrow (tldraw's own native "bend" arc prop) around a third node's
   // box the straight from->to line would otherwise cross. 0/omitted means
   // a straight line, unchanged from Phase B1.
-  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number; bend?: number; relationshipKind?: RelationshipKind; stepId: number }
+  | { type: "draw-arrow"; actionId: string; shapeId: string; targetId?: string; from: Point; to: Point; durationMs: number; bend?: number; relationshipKind?: RelationshipKind; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string }
   // "circle"/"box" map to tldraw's ellipse/rectangle geo shapes (the only
   // two ever produced before this comment was added). "diamond"/"hexagon"/
   // "cloud" are real, additional tldraw geo shapes — decision points, traps/
@@ -91,7 +111,10 @@ export type ProfessorTeachingAction =
   // SpatialIntentSchema/TeachingRoleSchema below). Deterministic code maps
   // spatialIntent to regions and teachingRole to the stable color vocabulary;
   // neither field ever contains coordinates or renderer-specific values.
-  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: SpatialIntent; teachingRole?: TeachingRole; stepId: number }
+  | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: SpatialIntent; teachingRole?: TeachingRole; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string; opacity?: number }
+  /** Native tldraw pressure-sensitive draw shape. Runtime Claude tool calls
+   * are verified and clamped before they can become this action. */
+  | { type: "draw-freehand"; actionId: string; shapeId: string; targetId?: string; points: ProfessorFreehandPoint[]; durationMs: number; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string; isPen?: boolean; closed?: boolean; opacity?: number }
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number; stepId: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number; stepId: number }
   | { type: "pause"; actionId: string; durationMs: number; stepId: number }
@@ -436,6 +459,8 @@ export interface ProfessorLessonPlan {
     provider: "claude" | "deterministic";
     model: string | null;
     correctedStepIds: number[];
+    mode?: "preflight-camera" | "runtime-visual-loop";
+    executedStepIds?: number[];
   };
 }
 
@@ -500,7 +525,9 @@ export interface ProfessorDirectorStep {
 // v7: adds the domain-adaptive Professor Director contract, explicit source
 // evidence / teaching structure / visualNeeded decisions per Thought Unit,
 // PDF↔Whiteboard surface actions, and intent-aware camera focus bounds.
-export const PLANNER_VERSION = 7;
+// v8: teaches the planner to request progressive, domain-adaptive illustrative
+// compositions for the verified Claude/tldraw visual-agent primitive set.
+export const PLANNER_VERSION = 8;
 
 export function buildProfessorLessonCacheKey(params: {
   documentId: string;

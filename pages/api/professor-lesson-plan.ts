@@ -260,7 +260,13 @@ Rules:
       comparisons, calculations, timelines, decision logic, and difficult interpretations often
       benefit from a visual. Do not force every paragraph onto the Whiteboard.
     - visualIntent: a concise semantic description of what the visual should reveal. When
-      visualNeeded is false, describe why verbal/source-follow teaching is sufficient.
+      visualNeeded is true, describe an illustrative composition for the downstream tldraw
+      Agent: use freehand contours, spatial sketches, hatching, pressure zones, symbols, arrows,
+      numbered sequences, braces, or handwritten callouts when they teach better than boxes.
+      For procedures/timelines/hierarchies/comparisons, describe the semantic composition and
+      relationships; the Agent will compose renderer-safe primitives. Do not emit coordinates or
+      tool calls. When visualNeeded is false, describe why verbal/source-follow teaching is
+      sufficient.
     - cameraIntent: stay-on-pdf (required when visualNeeded=false), active-concept,
       keep-context, comparison, follow-sequence, or summary-overview.
     - checkpoint: a short teach-back question when useful, otherwise null.
@@ -273,6 +279,14 @@ Rules:
     equations should transform, comparisons should align, timelines should order events,
     arguments should connect claim/evidence/reasoning, and spatial pages should use a simplified
     labeled sketch.
+
+22. The visual executor has real pen and teaching-illustration primitives. Prefer the smallest
+    useful explanatory mark over a decorative card. A procedure can accumulate numbered marks
+    and directional arrows; anatomy can accumulate freehand contours, labels, and callouts;
+    a mechanism can reveal a causal arrow plus a highlighted region; data can be annotated at
+    the interpreted feature. These are examples, not subject templates. Infer the composition
+    from the current page's semantic structure and keep every factual label grounded in the
+    supplied evidence.
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 

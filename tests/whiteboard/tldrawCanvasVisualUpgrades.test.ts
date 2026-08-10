@@ -26,7 +26,66 @@ describe("TldrawCanvas.tsx — EDGE_COLOR is actually applied (was dead code)", 
   it("REQUIRED: registerAnchors registers draw-arrow actions too, not just write/draw-shape — without this, an arrow's targetId (the edge id) never reaches colorForTarget at all", () => {
     const idx = src.indexOf("const registerAnchors = useCallback(");
     const block = src.slice(idx, idx + 550);
-    expect(block).toMatch(/a\.type === "write" \|\| a\.type === "draw-shape" \|\| a\.type === "draw-arrow"/);
+    expect(block).toMatch(/a\.type === "write" \|\| a\.type === "draw-shape" \|\| a\.type === "draw-freehand" \|\| a\.type === "draw-arrow"/);
+  });
+});
+
+describe("TldrawCanvas.tsx — official-agent-style observe → draw → inspect → correct loop", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("gives Claude both a live viewport screenshot and structured shape data", () => {
+    expect(src).toMatch(/captureProfessorAgentCanvas/);
+    expect(src).toMatch(/editor\.toImageDataUrl\(visibleShapes/);
+    expect(src).toMatch(/semanticRole:/);
+    expect(src).toMatch(/sourceTargetId:/);
+    expect(src).toMatch(/origin: shapeId\.startsWith\("shape:prof-agent-"\)/);
+  });
+
+  it("executes one bounded step, then captures the updated canvas for exactly one inspect\/correction pass", () => {
+    const loop = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
+    expect(loop).toMatch(/pass: "execute"/);
+    expect(loop).toMatch(/verifyProfessorTldrawAgentResponse\(executeRequest, executeResponse\)/);
+    expect(loop).toMatch(/await revealRuntimeAgentActions\(editor, stepId, execute\.actions\)/);
+    expect(loop).toMatch(/const updatedCanvas = await captureAgentContext\(editor\)/);
+    expect(loop).toMatch(/pass: "inspect"/);
+    expect((loop.match(/requestProfessorTldrawAgent\(/g) ?? []).length).toBe(2);
+  });
+
+  it("reveals verified tool calls incrementally instead of placing one completed picture", () => {
+    const reveal = src.slice(src.indexOf("const revealRuntimeAgentActions"), src.indexOf("const ensureRuntimeAgentVisualStep"));
+    expect(reveal).toMatch(/for \(let i = 0; i < nextActions\.length; i\+\+\)/);
+    expect(reveal).toMatch(/agentRevealCountByStepRef\.current\.set\(stepId, start \+ i \+ 1\)/);
+    expect(reveal).toMatch(/applyStateAtStep\(editor, stepIndexRef\.current\)/);
+  });
+
+  it("starts the Professor explanation before waiting on the visual agent, so narration overlaps drawing", () => {
+    const branch = src.indexOf('if (action.type === "set-surface" && action.surface === "whiteboard")');
+    const advance = src.slice(branch, src.indexOf('if (action.type === "speak")', branch));
+    expect(advance.indexOf("maybeEarlyStartVisualNarration")).toBeGreaterThanOrEqual(0);
+    expect(advance.indexOf("ensureRuntimeAgentVisualStep")).toBeGreaterThan(advance.indexOf("maybeEarlyStartVisualNarration"));
+  });
+
+  it("renders native pressure-sensitive tldraw draw shapes and keeps deterministic visuals as fallback", () => {
+    expect(src).toMatch(/type: "draw", x, y/);
+    expect(src).toMatch(/b64Vecs\.encodePoints\(points\)/);
+    expect(src).toMatch(/isComplete: true, isClosed: s\.closed/);
+    expect(src).toMatch(/agent_returned_no_visual_primitives/);
+    expect(src).toMatch(/existing deterministic layout; Professor playback never stalls/);
+  });
+
+  it("only replaces deterministic fallback concepts that an agent primitive explicitly grounds to the same source target", () => {
+    expect(src).toMatch(/coveredSourceTargetsByStep/);
+    expect(src).toMatch(/!action\.targetId \|\| !covered\.has\(action\.targetId\)/);
+    expect(src).toMatch(/ungrounded decorative stroke can augment/);
+  });
+
+  it("returns the visible status to deterministic fallback when the bounded agent loop times out", () => {
+    const loop = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
+    expect(loop).toMatch(/let timedOut = false/);
+    expect(loop).toMatch(/timedOut = true;\s*controller\.abort\(\)/);
+    expect(loop).toMatch(/timedOut \|\| !controller\.signal\.aborted/);
+    expect(loop).toMatch(/setAgentVisualStatus\("fallback"\)/);
   });
 });
 
@@ -73,7 +132,7 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
 
   it("REQUIRED: when the pointer's own arrival reaches the speak action, it consults stepNarrationRef instead of blindly calling playSegmentThenAdvance — 'done' advances immediately, 'pending' waits without starting a second Audio element", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const block = src.slice(idx, idx + 2300);
+    const block = src.slice(idx, idx + 5200);
     const speakIdx = block.indexOf('if (action.type === "speak") {');
     const speakBlock = block.slice(speakIdx, speakIdx + 900);
     expect(speakBlock).toMatch(/narrationState === "done"/);
@@ -203,7 +262,7 @@ describe("TldrawCanvas.tsx — richer geo shape vocabulary (diamond/hexagon/clou
 
   it("REQUIRED: toTldrawShapeSpec's geo branch now accepts diamond/hexagon/cloud shape kinds", () => {
     const idx = src.indexOf("function toTldrawShapeSpec(");
-    const block = src.slice(idx, idx + 2700);
+    const block = src.slice(idx, idx + 5200);
     expect(block).toMatch(/s\.kind === "diamond" \|\| s\.kind === "hexagon" \|\| s\.kind === "cloud"/);
   });
 
@@ -286,7 +345,7 @@ describe("TldrawCanvas.tsx — a pageTruthKey/lessonPlan change cancels narratio
   it("REQUIRED: the rebuild effect (fires on every lessonPlan reference change) both clears the teaching layer AND stops all speech, in the same synchronous block — before the 'nothing to draw yet' early return", () => {
     const idx = src.indexOf("useEffect(() => {\n    const editor = editorRef.current;\n    if (!editor) return;\n\n    try {\n      clearTeachingLayer(editor);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 900);
+    const block = src.slice(idx, idx + 1800);
     expect(block).toMatch(/clearTeachingLayer\(editor\);/);
     expect(block).toMatch(/stopNarration\("rebuild"\);/);
     // Both must run BEFORE the null-plan early return, so a page change with
@@ -463,7 +522,7 @@ describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly l
 
   it("only touches isReadonly when it was actually true — never force-unlocks an editor that was already writable (e.g. editingEnabled)", () => {
     const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
-    const block = src.slice(stepIdx, stepIdx + 5600);
+    const block = src.slice(stepIdx, stepIdx + 10000);
     const liftCount = (block.match(/if \(wasReadonly\) editor\.updateInstanceState\(\{ isReadonly: (?:false|true) \}\);/g) ?? []).length;
     expect(liftCount).toBe(2); // one lift, one restore — both gated on wasReadonly
   });
