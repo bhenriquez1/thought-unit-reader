@@ -30,18 +30,51 @@ import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification"
 import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
 
 export const config = {
-  maxDuration: 30,
+  // Two bounded attempts plus backoff must fit inside the route budget. The
+  // previous 30s route budget was shorter than its own worst-case retry path.
+  maxDuration: 60,
 };
 
-const PLAN_TIMEOUT_MS  = 25_000;
+const PLAN_TIMEOUT_MS  = 28_000;
 const RETRY_BACKOFF_MS = 700;
 
-export type ProfessorLessonPlanResponse =
-  | { ok: true; script: ProfessorLessonScript }
-  | { ok: false; error: string; code: string; fallbackAllowed: true };
+const MIN_COMPLETION_TOKENS = 4_000;
+const TOKENS_PER_NODE       = 650;
+const MAX_COMPLETION_TOKENS = 9_000;
 
-function degraded(message: string, code = "UPSTREAM_UNAVAILABLE"): ProfessorLessonPlanResponse {
-  return { ok: false, error: message, code, fallbackAllowed: true };
+export function professorCompletionBudget(nodeCount: number): number {
+  const boundedCount = Number.isFinite(nodeCount) ? Math.max(1, Math.floor(nodeCount)) : 1;
+  return Math.min(MAX_COMPLETION_TOKENS, MIN_COMPLETION_TOKENS + boundedCount * TOKENS_PER_NODE);
+}
+
+export type ProfessorFailureStage =
+  | "request_validation"
+  | "provider_configuration"
+  | "provider_request"
+  | "provider_response"
+  | "json_parse"
+  | "schema_validation"
+  | "target_grounding";
+
+interface ProfessorFailureDiagnostics {
+  requestId: string;
+  provider: "openai";
+  model: string | null;
+  failureStage: ProfessorFailureStage;
+  upstreamStatus: number | null;
+  finishReason: string | null;
+}
+
+export type ProfessorLessonPlanResponse =
+  | { ok: true; script: ProfessorLessonScript; requestId: string; provider: "openai"; model: string }
+  | ({ ok: false; error: string; code: string; fallbackAllowed: true } & ProfessorFailureDiagnostics);
+
+function degraded(
+  message: string,
+  diagnostics: ProfessorFailureDiagnostics,
+  code = "UPSTREAM_UNAVAILABLE",
+): ProfessorLessonPlanResponse {
+  return { ok: false, error: message, code, fallbackAllowed: true, ...diagnostics };
 }
 
 // ── Static system prompt ───────────────────────────────────────────────────
@@ -195,6 +228,7 @@ async function callOpenAI(
   model: string,
   userContent: string,
   timeoutMs: number,
+  maxCompletionTokens: number,
 ) {
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -209,7 +243,7 @@ async function callOpenAI(
         // lib/insights/openaiChatParams.ts for the shared rule. 0.4 (some
         // genuine variety in phrasing/tone, unlike the strict-extraction
         // annotation pass) only applies on models that support it.
-        ...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens: 2000 }),
+        ...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens }),
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user",   content: userContent },
@@ -242,14 +276,17 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ProfessorLessonPlanResponse>,
 ): Promise<void> {
+  const requestId = newRequestId();
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed", fallbackAllowed: true });
+    res.status(405).json(degraded("Method not allowed", {
+      requestId, provider: "openai", model: null, failureStage: "request_validation",
+      upstreamStatus: null, finishReason: null,
+    }, "method_not_allowed"));
     return;
   }
 
   const body = req.body as Partial<ProfessorLessonInput>;
-  const requestId = newRequestId();
   // Diagnostic identifiers only — documentId is hashed (one-way) so a book's
   // identity never appears in logs, and no node/edge TEXT is ever logged.
   let diagnosticIds: Record<string, unknown> = {
@@ -262,18 +299,27 @@ export default async function handler(
   };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
-    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", fallbackAllowed: true });
+    res.status(400).json(degraded("pageTruthKey is required", {
+      requestId, provider: "openai", model: null, failureStage: "request_validation",
+      upstreamStatus: null, finishReason: null,
+    }, "missing_ptk"));
     return;
   }
   if (!Array.isArray(body.nodes) || body.nodes.length === 0) {
-    res.status(400).json({ ok: false, error: "nodes is required", code: "missing_nodes", fallbackAllowed: true });
+    res.status(400).json(degraded("nodes is required", {
+      requestId, provider: "openai", model: null, failureStage: "request_validation",
+      upstreamStatus: null, finishReason: null,
+    }, "missing_nodes"));
     return;
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("[PROFESSOR_LESSON_UNAVAILABLE]", { reason: "OPENAI_API_KEY missing", ...diagnosticIds });
-    res.status(200).json(degraded("The professor lesson planner is not configured on the server."));
+    res.status(200).json(degraded("The professor lesson planner is not configured on the server.", {
+      requestId, provider: "openai", model: null, failureStage: "provider_configuration",
+      upstreamStatus: null, finishReason: null,
+    }, "PROVIDER_CONFIGURATION"));
     return;
   }
 
@@ -296,13 +342,14 @@ export default async function handler(
   const client = new OpenAI({ apiKey });
   const startedAt = Date.now();
   const model = await resolveTeachingModel(client);
-  diagnosticIds = { ...diagnosticIds, model };
+  const maxCompletionTokens = professorCompletionBudget(body.nodes.length);
+  diagnosticIds = { ...diagnosticIds, model, maxCompletionTokens };
 
   let completion: Awaited<ReturnType<typeof callOpenAI>>;
   let attempts = 1;
   try {
     try {
-      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
     } catch (firstErr: any) {
       // A 400 (invalid_request_error) means THIS request is malformed for the
       // resolved model — e.g. an unsupported parameter. Retrying the exact
@@ -317,9 +364,10 @@ export default async function handler(
         elapsedMs: Date.now() - startedAt,
       });
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS);
+      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
     }
   } catch (err: any) {
+    const isTimeout        = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");
     const isRateLimited    = err instanceof OpenAI.APIError && err.status === 429;
     const isInvalidRequest = isInvalidRequestError(err);
     console.error("[PROFESSOR_LESSON_FAILED]", {
@@ -330,20 +378,50 @@ export default async function handler(
       durationMs: Date.now() - startedAt,
     });
     res.status(200).json(degraded(
-      isRateLimited
+      isTimeout
+        ? "The professor lesson planner timed out."
+        : isRateLimited
         ? "The professor lesson planner is rate-limited — try again shortly."
         : isInvalidRequest
         ? "The professor lesson planner failed due to a request configuration error."
         : "The professor lesson planner is temporarily unavailable.",
-      isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "UPSTREAM_UNAVAILABLE",
+      {
+        requestId,
+        provider: "openai",
+        model,
+        failureStage: "provider_request",
+        upstreamStatus: err?.status ?? null,
+        finishReason: null,
+      },
+      isTimeout ? "TIMEOUT" : isRateLimited ? "RATE_LIMITED" : isInvalidRequest ? "INVALID_REQUEST" : "UPSTREAM_UNAVAILABLE",
     ));
     return;
   }
 
-  const raw = completion.choices[0]?.message?.content;
+  const choice = completion.choices[0];
+  const raw = choice?.message?.content;
   if (!raw) {
-    console.error("[PROFESSOR_LESSON_FAILED]", { ...diagnosticIds, reason: "empty_response", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("The professor lesson planner returned no content."));
+    const finishReason = choice?.finish_reason ?? null;
+    const completionDetails = completion.usage?.completion_tokens_details;
+    console.error("[PROFESSOR_LESSON_FAILED]", {
+      ...diagnosticIds,
+      stage: "provider_response",
+      reason: "empty_response",
+      finishReason,
+      completionTokens: completion.usage?.completion_tokens ?? null,
+      reasoningTokens: completionDetails?.reasoning_tokens ?? null,
+      durationMs: Date.now() - startedAt,
+    });
+    res.status(200).json(degraded(
+      finishReason === "length"
+        ? "The professor lesson planner exhausted its output budget."
+        : "The professor lesson planner returned no content.",
+      {
+        requestId, provider: "openai", model, failureStage: "provider_response",
+        upstreamStatus: 200, finishReason,
+      },
+      finishReason === "length" ? "OUTPUT_TOKEN_LIMIT" : "EMPTY_RESPONSE",
+    ));
     return;
   }
 
@@ -356,20 +434,29 @@ export default async function handler(
     parsed = JSON.parse(raw);
   } catch {
     console.error("[PROFESSOR_LESSON_FAILED]", { ...diagnosticIds, reason: "parse_error", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("The professor lesson planner returned invalid output."));
+    res.status(200).json(degraded("The professor lesson planner returned invalid output.", {
+      requestId, provider: "openai", model, failureStage: "json_parse",
+      upstreamStatus: 200, finishReason: choice?.finish_reason ?? null,
+    }, "JSON_PARSE"));
     return;
   }
 
   const result = ProfessorLessonScriptSchema.safeParse(parsed);
   if (!result.success) {
     console.error("[PROFESSOR_LESSON_FAILED]", { ...diagnosticIds, reason: "schema_error", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("The professor lesson planner returned a malformed script."));
+    res.status(200).json(degraded("The professor lesson planner returned a malformed script.", {
+      requestId, provider: "openai", model, failureStage: "schema_validation",
+      upstreamStatus: 200, finishReason: choice?.finish_reason ?? null,
+    }, "SCHEMA_VALIDATION"));
     return;
   }
 
   if (!targetsPlausible(result.data, validIds)) {
     console.error("[PROFESSOR_LESSON_FAILED]", { ...diagnosticIds, reason: "targets_implausible", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("The professor lesson planner could not be grounded to this page."));
+    res.status(200).json(degraded("The professor lesson planner could not be grounded to this page.", {
+      requestId, provider: "openai", model, failureStage: "target_grounding",
+      upstreamStatus: 200, finishReason: choice?.finish_reason ?? null,
+    }, "TARGET_GROUNDING"));
     return;
   }
 
@@ -386,5 +473,5 @@ export default async function handler(
     durationMs:      Date.now() - startedAt,
   });
 
-  res.status(200).json({ ok: true, script: result.data });
+  res.status(200).json({ ok: true, script: result.data, requestId, provider: "openai", model });
 }

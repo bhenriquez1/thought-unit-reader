@@ -272,7 +272,14 @@ export default function TldrawCanvas({
     ?? derivedVsg?.id
     ?? "unknown-page";
 
-  const { lessonPlan, status: lessonStatus, errorMessage: lessonErrorMessage, errorCode: lessonErrorCode, reanalyze } = useProfessorLesson({
+  const {
+    lessonPlan,
+    status: lessonStatus,
+    errorMessage: lessonErrorMessage,
+    errorCode: lessonErrorCode,
+    errorDiagnostics: lessonErrorDiagnostics,
+    reanalyze,
+  } = useProfessorLesson({
     vsg: derivedVsg,
     documentId: effectiveDocumentId,
     pageTruthKey: effectivePageTruthKey,
@@ -1336,6 +1343,13 @@ export default function TldrawCanvas({
               {lessonErrorCode && (
                 <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
                   code: {lessonErrorCode}
+                </span>
+              )}
+              {lessonErrorDiagnostics && (
+                <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
+                  stage: {lessonErrorDiagnostics.failureStage}
+                  {lessonErrorDiagnostics.model ? ` · model: ${lessonErrorDiagnostics.model}` : ""}
+                  {` · request: ${lessonErrorDiagnostics.requestId}`}
                 </span>
               )}
               <button onClick={reanalyze} style={BTN_PRIMARY}>Retry</button>

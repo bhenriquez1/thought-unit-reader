@@ -37,8 +37,8 @@ describe("buildPageTruthKey — wired into every fallback construction site", ()
   it("REQUIRED: WhiteboardPanel.tsx's fallback uses buildPageTruthKey, not a locally-reimplemented format", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/WhiteboardPanel.tsx"), "utf8");
     expect(src).toMatch(/import \{ buildPageTruthKey \} from "@\/lib\/useActivePageIntelligence"/);
-    expect(src).toMatch(/buildPageTruthKey\(bookId, currentPage\)/);
-    expect(src).not.toMatch(/\$\{bookId\}::\$\{currentPage\}/);
+    expect(src).toMatch(/buildPageTruthKey\(effectiveLearningDocumentId, currentPage\)/);
+    expect(src).not.toMatch(/\$\{effectiveLearningDocumentId\}::\$\{currentPage\}/);
   });
 
   it("REQUIRED: RightPanel.tsx's diagnostic fallback uses buildPageTruthKey, not a locally-reimplemented format", () => {

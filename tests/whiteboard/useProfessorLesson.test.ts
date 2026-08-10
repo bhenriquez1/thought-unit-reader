@@ -15,13 +15,14 @@ describe("useProfessorLesson.ts — identity key drives both effects", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("identityKey is built from documentId + pageTruthKey + activeCanonicalUnitId — current-page ownership", () => {
+  it("identityKey is built from documentId + pageTruthKey + activeCanonicalUnitId + vsgId — current-page and evidence ownership", () => {
     const idx = src.indexOf("function identityKey(");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 250);
+    const body = src.slice(idx, idx + 350);
     expect(body).toMatch(/documentId/);
     expect(body).toMatch(/pageTruthKey/);
     expect(body).toMatch(/activeCanonicalUnitId/);
+    expect(body).toMatch(/vsgId/);
   });
 
   it("Effect A depends only on [key]", () => {
@@ -80,6 +81,12 @@ describe("useProfessorLesson.ts — cache-first, then fetch", () => {
   it("Effect B persists a fresh, successfully-grounded plan back to the cache", () => {
     expect(src).toMatch(/saveProfessorLessonPlan\(/);
   });
+
+  it("cache lookup requires documentId, pageTruthKey, and vsgId to match the live evidence", () => {
+    expect(src).toMatch(/stored\.plan\.sourceSnapshot\.documentId === documentId/);
+    expect(src).toMatch(/stored\.plan\.sourceSnapshot\.pageTruthKey === pageTruthKey/);
+    expect(src).toMatch(/stored\.plan\.sourceSnapshot\.vsgId === vsgId/);
+  });
 });
 
 describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'error', never a substituted generic lesson", () => {
@@ -93,7 +100,7 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
 
   it("an API ok:false response sets status 'error' with a specific message, and leaves lessonPlan alone (stays null on first load)", () => {
     const idx = src.indexOf("if (!data.ok) {");
-    const body = src.slice(idx, idx + 300);
+    const body = src.slice(idx, idx + 900);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
     expect(body).not.toMatch(/setLessonPlan\(/);
@@ -102,14 +109,14 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
   it("zero groundable targets sets status 'error', not an empty-but-successful plan", () => {
     const idx = src.indexOf("if (grounded.nodeScripts.length === 0)");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 420);
+    const body = src.slice(idx, idx + 900);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
   });
 
   it("a thrown/network error sets status 'error' too", () => {
     const idx = src.indexOf("} catch (err: any) {");
-    const body = src.slice(idx, idx + 450);
+    const body = src.slice(idx, idx + 900);
     expect(body).toMatch(/setErrorMessage\(GENERIC_ERROR_MESSAGE\)/);
     expect(body).toMatch(/setStatus\("error"\)/);
   });
@@ -119,6 +126,13 @@ describe("useProfessorLesson.ts — NO fallback: a failure surfaces status:'erro
     const body = src.slice(idx, idx + 150);
     expect(body).toMatch(/errorMessage/);
     expect(body).not.toMatch(/usingFallback/);
+  });
+
+  it("returns structured endpoint/request/model/failure-stage diagnostics for production correlation", () => {
+    expect(src).toMatch(/errorDiagnostics/);
+    expect(src).toMatch(/endpoint: "\/api\/professor-lesson-plan"/);
+    expect(src).toMatch(/failureStage: data\.failureStage/);
+    expect(src).toMatch(/responseStatus: res\.status/);
   });
 });
 

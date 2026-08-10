@@ -302,6 +302,12 @@ describe("buildVSG — deterministic ID", () => {
     expect(a.id).not.toBe(b.id);
   });
 
+  it("produces a different vsg.id when evidence changes under the same stable entry id", () => {
+    const a = buildVSG([CAUSE], "flow");
+    const b = buildVSG([{ ...CAUSE, text: `${CAUSE.text} Updated evidence.` }], "flow");
+    expect(a.id).not.toBe(b.id);
+  });
+
   it("vsg.id starts with the 'vsg_' prefix", () => {
     const vsg = buildVSG([CAUSE, EFFECT], "flow");
     expect(vsg.id).toMatch(/^vsg_/);

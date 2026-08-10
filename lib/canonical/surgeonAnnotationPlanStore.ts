@@ -11,7 +11,7 @@
 // buildAnnotationCacheKey's own pageNumber param — previously named
 // pageIndex and fed a 0-based value, the one 0-based page identity in an
 // app where everything else is 1-based (Thought Unit Engine identity
-// audit's RC7 finding). The byBookPage secondary index this field feeds has
+// audit's RC7 finding). The byDocumentPage secondary index this field feeds has
 // no live caller today (getSurgeonAnnotationPlansByPage/
 // deleteSurgeonAnnotationPlansByDocument are exported but unused), so this
 // rename carries no migration risk — nothing queries by the old
@@ -25,7 +25,7 @@ const STORE_NAME = 'surgeon_plans_v1';
 export interface StoredSurgeonAnnotationPlan {
   /** Primary key — the versioned cache key from buildAnnotationCacheKey(). */
   cacheKey: string;
-  bookId: string;
+  documentId: string;
   pageNumber: number;
   plan: SurgeonAnnotationPlan;
   createdAt: number;
@@ -34,12 +34,14 @@ export interface StoredSurgeonAnnotationPlan {
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') { reject(new Error('IDB unavailable')); return; }
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
-        store.createIndex('byBookPage', ['bookId', 'pageNumber']);
+      const store = db.objectStoreNames.contains(STORE_NAME)
+        ? req.transaction!.objectStore(STORE_NAME)
+        : db.createObjectStore(STORE_NAME, { keyPath: 'cacheKey' });
+      if (!store.indexNames.contains('byDocumentPage')) {
+        store.createIndex('byDocumentPage', ['documentId', 'pageNumber']);
       }
     };
     req.onsuccess  = () => resolve(req.result);
@@ -50,13 +52,13 @@ function openDB(): Promise<IDBDatabase> {
 
 /** Upsert a single plan under its versioned cache key. */
 export async function saveSurgeonAnnotationPlan(
-  bookId: string,
+  documentId: string,
   pageNumber: number,
   cacheKey: string,
   plan: SurgeonAnnotationPlan,
 ): Promise<void> {
   const db = await openDB();
-  const record: StoredSurgeonAnnotationPlan = { cacheKey, bookId, pageNumber, plan, createdAt: Date.now() };
+  const record: StoredSurgeonAnnotationPlan = { cacheKey, documentId, pageNumber, plan, createdAt: Date.now() };
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(record);
@@ -80,27 +82,27 @@ export async function getSurgeonAnnotationPlan(cacheKey: string): Promise<Stored
 /** Get all stored plans (any version) for a page — used to prune stale-version
  *  entries once a fresh plan under the current version has been saved. */
 export async function getSurgeonAnnotationPlansByPage(
-  bookId: string,
+  documentId: string,
   pageNumber: number,
 ): Promise<StoredSurgeonAnnotationPlan[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(STORE_NAME, 'readonly');
-    const idx = tx.objectStore(STORE_NAME).index('byBookPage');
-    const req = idx.getAll(IDBKeyRange.only([bookId, pageNumber]));
+    const idx = tx.objectStore(STORE_NAME).index('byDocumentPage');
+    const req = idx.getAll(IDBKeyRange.only([documentId, pageNumber]));
     req.onsuccess = () => resolve((req.result as StoredSurgeonAnnotationPlan[]) ?? []);
     req.onerror   = () => reject(req.error);
   });
 }
 
 /** Delete every stored plan for a document (used on document deletion). */
-export async function deleteSurgeonAnnotationPlansByDocument(bookId: string): Promise<void> {
+export async function deleteSurgeonAnnotationPlansByDocument(documentId: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx    = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const idx   = store.index('byBookPage');
-    const range = IDBKeyRange.bound([bookId, -Infinity], [bookId, Infinity]);
+    const idx   = store.index('byDocumentPage');
+    const range = IDBKeyRange.bound([documentId, -Infinity], [documentId, Infinity]);
     const req   = idx.openCursor(range);
     req.onsuccess = () => {
       const cursor = req.result;

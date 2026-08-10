@@ -1,10 +1,9 @@
 // tests/whiteboard/whiteboardCanonicalEntriesWiring.test.ts
 // Regression guard: WhiteboardPanel.tsx has always had a `canonicalEntries` prop
-// with the right fallback logic (canonicalEntries?.length > 0 ? canonicalEntries
-// : noteCardsToCanonicalEntries(teachNoteCards)) — but until this change it was
+// with the canonical Surgeon evidence — but until the original wiring change it was
 // declared and never actually passed at the real pages/index.tsx call site, so
-// the deterministic Scene Builder pipeline silently always fell back to
-// OpenAI-authored NoteCard[] data. This test guards against silently reverting
+// the deterministic Scene Builder pipeline silently used independently-authored
+// NoteCard[] data. This test guards against silently reverting
 // to that "declared but never passed" state.
 
 import fs from "fs";
@@ -25,7 +24,7 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
     const idx = src.indexOf("const whiteboardCanonicalEntries = useMemo(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, bookId, currentPage\)/);
+    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, resolvedDocumentId, currentPage\)/);
     expect(block).not.toMatch(/surgeonAnnotations\.groundedAnnotations/);
   });
 
@@ -44,24 +43,26 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
   });
 });
 
-describe("WhiteboardPanel.tsx — canonicalEntries fallback logic is unchanged", () => {
+describe("WhiteboardPanel.tsx — canonical Surgeon evidence is exclusive", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
-  it("still falls back to noteCardsToCanonicalEntries(teachNoteCards) when canonicalEntries is empty", () => {
-    expect(src).toMatch(/canonicalEntries && canonicalEntries\.length > 0\s*\n\s*\? canonicalEntries\s*\n\s*: noteCardsToCanonicalEntries\(teachNoteCards\)/);
+  it("does not fall back to NoteCards from the independent study-model pipeline", () => {
+    expect(src).toMatch(/\(\) => canonicalEntries \?\? \[\]/);
+    expect(src).not.toMatch(/noteCardsToCanonicalEntries/);
+    expect(src).toMatch(/noteCards=\{\[\]\}/);
   });
 });
 
-describe("WhiteboardPanel.tsx — canvas persistence key includes pageTruthKey, not just bookId + pageNumber", () => {
+describe("WhiteboardPanel.tsx — one resolved identity owns canvas and lesson persistence", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
   it("REQUIRED: canvasStorageKey is built from effectivePageTruthKey, not a bare bookId_p{pageNumber} composite — a re-extraction that changes pageTruthKey for the SAME page slot must get a genuinely distinct persistence key", () => {
-    const idx = src.indexOf("const canvasStorageKey = bookId && effectivePageTruthKey");
+    const idx = src.indexOf("const canvasStorageKey = effectivePageTruthKey");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 150);
-    expect(block).toMatch(/\$\{bookId\}_\$\{effectivePageTruthKey\}/);
+    expect(block).toMatch(/\$\{effectiveLearningDocumentId\}_\$\{effectivePageTruthKey\}/);
   });
 
   it("effectivePageTruthKey is computed once and reused for both the storage key and the TldrawCanvas pageTruthKey prop — no duplicated fallback logic that could drift", () => {
@@ -69,17 +70,22 @@ describe("WhiteboardPanel.tsx — canvas persistence key includes pageTruthKey, 
     expect(idx).toBeGreaterThan(-1);
     expect(src).toMatch(/pageTruthKey=\{effectivePageTruthKey\}/);
     // The old duplicated inline fallback expression must not still exist elsewhere.
-    const occurrences = (src.match(/pageTruthKey \?\? \(bookId && currentPage != null \? buildPageTruthKey\(bookId, currentPage\) : undefined\)/g) ?? []).length;
+    const occurrences = (src.match(/pageTruthKey \?\? \(currentPage != null \? buildPageTruthKey\(effectiveLearningDocumentId, currentPage\) : undefined\)/g) ?? []).length;
     expect(occurrences).toBe(1); // exactly the one definition of effectivePageTruthKey itself
   });
 
   it("REQUIRED: falls back through the ONE canonical pageTruthKey builder, not a locally-reimplemented format, when no real pageTruthKey is passed", () => {
     const idx = src.indexOf("const effectivePageTruthKey =");
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/pageTruthKey \?\? \(bookId && currentPage != null \? buildPageTruthKey\(bookId, currentPage\) : undefined\)/);
+    expect(block).toMatch(/pageTruthKey \?\? \(currentPage != null \? buildPageTruthKey\(effectiveLearningDocumentId, currentPage\) : undefined\)/);
   });
 
   it("imports the shared builder from lib/useActivePageIntelligence.ts rather than reimplementing the format inline", () => {
     expect(src).toMatch(/import \{ buildPageTruthKey \} from "@\/lib\/useActivePageIntelligence"/);
+  });
+
+  it("passes the resolved document identity to TldrawCanvas instead of bookId", () => {
+    expect(src).toMatch(/documentId=\{effectiveLearningDocumentId\}/);
+    expect(src).not.toMatch(/documentId=\{bookId\}/);
   });
 });

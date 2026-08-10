@@ -2,7 +2,7 @@
 // Version-keyed cache for SurgeonAnnotationPlan.
 //
 // The cache key includes all factors that change the interpretation of a page:
-//   - bookId + pageNumber (which page — 1-based, matching pageTruthKey's own
+//   - resolved documentId + pageNumber (which page — 1-based, matching pageTruthKey's own
 //     convention; see the Thought Unit Engine identity audit's RC7 finding
 //     that this was previously the ONE 0-based pageIndex in an app where
 //     every other page-identity string is 1-based, reconciled only by a
@@ -54,31 +54,37 @@ export const SEMANTIC_PACK_VERSION = 1;
  *  warning against under-annotating a dense page, and the model/endpoint
  *  now resolves its OpenAI model dynamically via resolveOpenAIModel.ts
  *  instead of a hardcoded "gpt-4o" — a v4-cached plan was generated under
- *  the old, looser density guidance. */
-export const MODEL_VERSION = 5;
+ *  the old, looser density guidance.
+ *  v6: cache identity now uses resolved documentId plus pageContentHash, and
+ *  structured-output model selection prefers bounded GPT-4.1/4o generation
+ *  over reasoning-first models that can exhaust the completion budget. */
+export const MODEL_VERSION = 6;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 
 export interface AnnotationCacheKeyParams {
-  bookId: string;
+  documentId: string;
   /** 1-based, matching pageTruthKey's own convention — NOT a 0-based index. */
   pageNumber: number;
   semanticPackId?: string;
+  /** Hash of the current page text. pageTruthKey only carries text readiness,
+   *  so this is what invalidates a cache entry after a same-slot re-extraction. */
+  pageContentHash: string;
 }
 
 /**
  * Build a stable cache key for a SurgeonAnnotationPlan.
  *
- * Format: `aplan:v<sv>-<pv>-<spv>-<mv>:<bookId>:p<pageNumber>[:<packId>]`
+ * Format: `aplan:v<sv>-<pv>-<spv>-<mv>:<documentId>:p<pageNumber>:<contentHash>[:<packId>]`
  *
  * sv = STRUCTURE_VERSION, pv = PARAGRAPH_ALGORITHM_VERSION,
  * spv = SEMANTIC_PACK_VERSION, mv = MODEL_VERSION
  */
 export function buildAnnotationCacheKey(params: AnnotationCacheKeyParams): string {
-  const { bookId, pageNumber, semanticPackId } = params;
+  const { documentId, pageNumber, semanticPackId, pageContentHash } = params;
   const versionTag = `v${STRUCTURE_VERSION}-${PARAGRAPH_ALGORITHM_VERSION}-${SEMANTIC_PACK_VERSION}-${MODEL_VERSION}`;
   const packSuffix = semanticPackId ? `:${semanticPackId}` : "";
-  return `aplan:${versionTag}:${bookId}:p${pageNumber}${packSuffix}`;
+  return `aplan:${versionTag}:${documentId}:p${pageNumber}:${pageContentHash}${packSuffix}`;
 }
 
 /**

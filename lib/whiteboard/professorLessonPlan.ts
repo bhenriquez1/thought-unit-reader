@@ -368,10 +368,13 @@ export interface ProfessorLessonPlan {
 }
 
 // ── Cache key ─────────────────────────────────────────────────────────────
-// documentId + pageTruthKey + activeCanonicalUnitId + plannerVersion, per
-// the user's spec — fresh, page-specific teaching without repeatedly paying
-// for identical generation. Bump PLANNER_VERSION whenever the prompt/schema
-// changes so a stale cached script isn't silently reused.
+// documentId + pageTruthKey + activeCanonicalUnitId + VSG content id +
+// plannerVersion — fresh, page-specific teaching without repeatedly paying for
+// identical generation. pageTruthKey identifies the page slot/readiness, not
+// the content itself; vsgId is required so a late-arriving canonical Surgeon
+// plan can never reuse a lesson built from a different evidence set. Bump
+// PLANNER_VERSION whenever the prompt/schema changes so a stale cached script
+// isn't silently reused.
 // v2: added learningObjective, made emphasize required (Structured Outputs
 // strict-mode compatibility), added "definition" visualGrammar, "line" draw-
 // shape variant, "highlight"/"number" emphasize treatments, and the "erase"
@@ -402,7 +405,8 @@ export function buildProfessorLessonCacheKey(params: {
   documentId: string;
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
+  vsgId: string;
 }): string {
-  const { documentId, pageTruthKey, activeCanonicalUnitId } = params;
-  return `plesson:v${PLANNER_VERSION}:${documentId}:${pageTruthKey}:${activeCanonicalUnitId ?? "none"}`;
+  const { documentId, pageTruthKey, activeCanonicalUnitId, vsgId } = params;
+  return `plesson:v${PLANNER_VERSION}:${documentId}:${pageTruthKey}:${activeCanonicalUnitId ?? "none"}:${vsgId}`;
 }

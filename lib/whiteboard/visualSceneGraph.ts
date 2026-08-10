@@ -249,9 +249,33 @@ function assignRoles(
   return roles;
 }
 
-// Deterministic content hash (djb2 on grammar + sorted entry IDs).
+// Deterministic content hash (djb2 on grammar + canonical evidence). Entry IDs
+// alone are not content identity: Surgeon evidence IDs are intentionally stable
+// by document/page/index, so a same-slot re-extraction can keep the same IDs
+// while changing the actual quote, reason, type, or relationship. Professor
+// cache ownership depends on this VSG id, so hash every field that can change
+// what should be taught.
 function buildVSGId(entries: CanonicalEntryInput[], grammar: string): string {
-  const input = grammar + ":" + entries.map((e) => e.id).sort().join(",");
+  const canonicalEvidence = [...entries]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((entry) => ({
+      id: entry.id,
+      text: entry.text,
+      title: entry.title ?? null,
+      canonicalType: entry.canonicalType ?? null,
+      importanceScore: entry.importanceScore ?? null,
+      priorityTier: entry.priorityTier ?? null,
+      page: entry.page ?? null,
+      reason: entry.reason ?? null,
+      relatesTo: entry.relatesTo
+        ? {
+            targetId: entry.relatesTo.targetId,
+            type: entry.relatesTo.type,
+            label: entry.relatesTo.label ?? null,
+          }
+        : null,
+    }));
+  const input = `${grammar}:${JSON.stringify(canonicalEvidence)}`;
   let h = 5381;
   for (let i = 0; i < input.length; i++) h = ((h << 5) + h) ^ input.charCodeAt(i);
   return "vsg_" + (h >>> 0).toString(36);

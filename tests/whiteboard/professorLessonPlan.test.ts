@@ -125,28 +125,35 @@ describe("ProfessorLessonScriptSchema", () => {
   });
 });
 
-describe("buildProfessorLessonCacheKey — documentId + pageTruthKey + activeCanonicalUnitId + plannerVersion", () => {
-  it("embeds all three identity components and the planner version", () => {
-    const key = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: "unit-9" });
+describe("buildProfessorLessonCacheKey — documentId + pageTruthKey + activeCanonicalUnitId + vsgId + plannerVersion", () => {
+  it("embeds all content/page identity components and the planner version", () => {
+    const key = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: "unit-9", vsgId: "vsg-a" });
     expect(key).toContain("doc-1");
     expect(key).toContain("doc-1::4::t");
     expect(key).toContain("unit-9");
+    expect(key).toContain("vsg-a");
     expect(key).toContain(`v${PLANNER_VERSION}`);
   });
 
   it("a null activeCanonicalUnitId still produces a stable, distinct key", () => {
-    const key = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null });
+    const key = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
     expect(key).toContain("none");
   });
 
   it("different pageTruthKeys produce different keys — current-page ownership", () => {
-    const a = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null });
-    const b = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::5::t", activeCanonicalUnitId: null });
+    const a = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
+    const b = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::5::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
+    expect(a).not.toBe(b);
+  });
+
+  it("different VSG content ids produce different keys for the same page slot", () => {
+    const a = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
+    const b = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-b" });
     expect(a).not.toBe(b);
   });
 
   it("is deterministic", () => {
-    const params = { documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: "u1" };
+    const params = { documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: "u1", vsgId: "vsg-a" };
     expect(buildProfessorLessonCacheKey(params)).toBe(buildProfessorLessonCacheKey(params));
   });
 });

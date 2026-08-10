@@ -2048,7 +2048,7 @@ export default function ThoughtUnitReader() {
   );
   const surgeonAnnotations = useSurgeonAnnotations({
     pageTruthKey,
-    bookId,
+    documentId:       resolvedDocumentId,
     pageNumber:        currentPage,
     pageText:          pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
     pageImageDataUrl:  pageImageByPage.get(`${bookId}:${currentPage}`) ?? null,
@@ -2068,12 +2068,13 @@ export default function ThoughtUnitReader() {
   // to do with how much the Whiteboard needs to teach the page well; reusing it
   // here was silently starving the Whiteboard of content that the SAME page read
   // already produced. Same one page read either way — just a fuller view of it.
-  // WhiteboardPanel falls back to noteCardsToCanonicalEntries(teachNoteCards) on
-  // its own whenever this is empty (not yet loaded/cached, or degraded) — see
-  // WhiteboardPanel.tsx's vsgState memo.
+  // When this is empty (not yet loaded/cached, or degraded), WhiteboardPanel
+  // stays empty. It never substitutes NoteCards from the independent study-model
+  // pipeline, so a failed Surgeon read cannot produce a plausible but unrelated
+  // Professor lesson.
   const whiteboardCanonicalEntries = useMemo(
-    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, bookId, currentPage),
-    [surgeonAnnotations.wholePageAnnotations, bookId, currentPage],
+    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, resolvedDocumentId, currentPage),
+    [surgeonAnnotations.wholePageAnnotations, resolvedDocumentId, currentPage],
   );
 
   // ── Unified wiring trace — prints one page's full data-flow chain, for
@@ -2093,7 +2094,7 @@ export default function ThoughtUnitReader() {
     console.log("[PIPELINE_WIRING_TRACE]", {
       PAGE: {
         pageTruthKey,
-        documentIdHash: bookId ? hashDocumentId(bookId) : null,
+        documentIdHash: resolvedDocumentId ? hashDocumentId(resolvedDocumentId) : null,
         page: currentPage,
       },
       SURGEON_PAGE_ANALYSIS: {
@@ -2125,7 +2126,7 @@ export default function ThoughtUnitReader() {
         legacyStudyModelPageThesis: (currentPageStudyModel as any)?.pageThesis ?? null,
       },
     });
-  }, [showWhiteboardPanel, pageTruthKey, bookId, currentPage, surgeonAnnotations.plan, surgeonAnnotations.groundedAnnotations, surgeonAnnotations.highlightTargets, surgeonAnnotations.status, whiteboardCanonicalEntries, currentPageStudyModel]);
+  }, [showWhiteboardPanel, pageTruthKey, resolvedDocumentId, currentPage, surgeonAnnotations.plan, surgeonAnnotations.groundedAnnotations, surgeonAnnotations.highlightTargets, surgeonAnnotations.status, whiteboardCanonicalEntries, currentPageStudyModel]);
 
   // DEV-ONLY: expose crash-reproduction hooks so Playwright can inject synthetic
   // synthesis data without needing real API keys. Removed before any production build.
@@ -5328,7 +5329,16 @@ export default function ThoughtUnitReader() {
                 {surgeonAnnotations.status === "error" && surgeonAnnotations.annotationErrorMessage && (
                   <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-amber-700/50 bg-amber-900/70 px-4 py-1.5 text-[11px] text-amber-100 backdrop-blur-sm">
                     <span>⚠</span>
-                    <span className="flex-1">{surgeonAnnotations.annotationErrorMessage}</span>
+                    <span className="flex-1">
+                      {surgeonAnnotations.annotationErrorMessage}
+                      {surgeonAnnotations.annotationFailureStage && (
+                        <span className="ml-1 font-mono text-[9px] text-amber-300/80">
+                          stage: {surgeonAnnotations.annotationFailureStage}
+                          {surgeonAnnotations.annotationModel ? ` · model: ${surgeonAnnotations.annotationModel}` : ""}
+                          {surgeonAnnotations.annotationRequestId ? ` · request: ${surgeonAnnotations.annotationRequestId}` : ""}
+                        </span>
+                      )}
+                    </span>
                     <button
                       onClick={surgeonAnnotations.reanalyze}
                       className="ml-auto shrink-0 text-amber-300 hover:text-white underline"
@@ -5363,7 +5373,7 @@ export default function ThoughtUnitReader() {
 
                 <PureReaderView
                   fileUrl={fileUrl}
-                  docId={bookId}
+                  docId={resolvedDocumentId}
                   currentPage={currentPage}
                   pdfPageCount={pdfPageCount}
                   onPageChange={(p) => syncToPage(p)}
@@ -6855,7 +6865,7 @@ export default function ThoughtUnitReader() {
                 })}
               >
                 <WhiteboardPanel
-                  key={`wb-${bookId ?? "book"}-p${currentPage}-${wbConcept ? "vis" : "page"}`}
+                  key={`wb-${resolvedDocumentId ?? "document"}-p${currentPage}-${pageTruthKey}-${wbConcept ? "vis" : "page"}`}
                   concept={activeCanonicalThoughtUnit?.title || wbConcept || ""}
                   context={activeCanonicalThoughtUnit?.exactText || wbContext || wbConcept || ""}
                   studyModel={currentPageStudyModel as any}
@@ -6875,14 +6885,15 @@ export default function ThoughtUnitReader() {
                   // SurgeonAnnotationPlan.pageThesis is authoritative — it's the same
                   // shared page-understanding pass that also drives highlighting and
                   // pageTeachingType. currentPageStudyModel comes from a separate
-                  // synthesis pipeline that reads the page independently; falling
-                  // back to it here (rather than preferring it) avoids the
-                  // Whiteboard and highlights ever disagreeing about the page.
-                  pageTitle={surgeonAnnotations.plan?.pageThesis ?? currentPageStudyModel?.pageThesis ?? null}
+                  // synthesis pipeline that reads the page independently, so it is
+                  // deliberately not a title fallback here.
+                  pageTitle={surgeonAnnotations.plan?.pageThesis ?? null}
                   knowledgeNodeId={pageKgNodeIdRef.current}
                   onOpenChiefResident={handleOpenChiefResident}
                   whiteboardGrammar={activePack.whiteboardGrammar}
                   canonicalEntries={whiteboardCanonicalEntries}
+                  canonicalStatus={surgeonAnnotations.status}
+                  onReanalyzeCanonical={surgeonAnnotations.reanalyze}
                 />
               </ErrorBoundary>
             </div>

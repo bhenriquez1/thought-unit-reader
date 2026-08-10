@@ -1,7 +1,6 @@
 // tests/reader/useSurgeonAnnotations.test.ts
 // Regression guards for components/reader/useSurgeonAnnotations.ts:
-//   - Effect A depends only on [pageTruthKey] (page identity), matching the
-//     useTeachingSynthesis.ts template.
+//   - Effect A depends on page slot + resolved document + page-content hash.
 //   - Effect B's deps include domain and semanticPack.id — the deliberate
 //     OPPOSITE of useTeachingSynthesis.ts, which reads those via non-reactive
 //     refs specifically so they do NOT retrigger. Here they must.
@@ -23,16 +22,16 @@ describe("useSurgeonAnnotations.ts — Effect A/B dependency shape", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("Effect A depends only on [pageTruthKey]", () => {
+  it("Effect A depends on pageTruthKey + content hash + resolved document identity", () => {
     const idx = src.indexOf("// ── Effect A:");
     const effectBody = src.slice(idx, src.indexOf("// ── Effect B:"));
-    expect(effectBody).toMatch(/\}, \[pageTruthKey\]\);/);
+    expect(effectBody).toMatch(/\}, \[pageTruthKey, pageContentHash, documentId\]\);/);
   });
 
   it("Effect B's dependency array includes domain and semanticPack.id (must retrigger on pack/domain change)", () => {
     const idx = src.indexOf("// ── Effect B:");
     const effectBody = src.slice(idx);
-    expect(effectBody).toMatch(/\}, \[pageTruthKey, domain, semanticPack\.id, enabled, pageText, reanalyzeCount\]\);/);
+    expect(effectBody).toMatch(/\}, \[pageTruthKey, pageContentHash, domain, semanticPack\.id, enabled, pageText, reanalyzeCount\]\);/);
   });
 
   it("does NOT read domain/semanticPack via non-reactive refs the way useTeachingSynthesis.ts does", () => {
@@ -56,16 +55,18 @@ describe("useSurgeonAnnotations.ts — cache key uses pageNumber (1-based), not 
     expect(src).not.toMatch(/pageIndex/);
   });
 
-  it("both buildAnnotationCacheKey call sites pass pageNumber", () => {
+  it("both buildAnnotationCacheKey call sites pass pageNumber, resolved documentId, and pageContentHash", () => {
     const calls = [...src.matchAll(/buildAnnotationCacheKey\(\{[^}]*\}\)/gs)];
     expect(calls.length).toBe(2);
     for (const call of calls) {
       expect(call[0]).toMatch(/pageNumber:\s*pageNumberRef\.current/);
+      expect(call[0]).toMatch(/documentId:\s*documentIdRef\.current/);
+      expect(call[0]).toMatch(/pageContentHash/);
     }
   });
 
   it("saveSurgeonAnnotationPlan is called with pageNumberRef.current, not a separate index", () => {
-    expect(src).toMatch(/saveSurgeonAnnotationPlan\(bookIdRef\.current, pageNumberRef\.current, cacheKey, data\.plan\)/);
+    expect(src).toMatch(/saveSurgeonAnnotationPlan\(documentIdRef\.current, pageNumberRef\.current, cacheKey, data\.plan\)/);
   });
 });
 
@@ -108,7 +109,7 @@ describe("useSurgeonAnnotations.ts — stale-response rejection on real page nav
   it("REQUIRED: a fetch response whose plan.pageTruthKey does not match the current pageTruthKey is dropped, not applied", () => {
     const idx = src.indexOf('if (data.plan.pageTruthKey !== pageTruthKey) {');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 650);
+    const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/Stale response for a page we've since navigated away from — drop/);
     expect(block).toMatch(/setAnnotationFailureStage\("page_identity"\);/);
     expect(block).toMatch(/return;/);
@@ -229,9 +230,9 @@ describe("useSurgeonAnnotations.ts — stale content from a DIFFERENT domain/pac
   });
 
   it("displayedKeyRef is set on Effect A's cache-hit success (reusing the same compositeKey as startedKeyRef)", () => {
-    const idx = src.indexOf("startedKeyRef.current = `${pageTruthKey}|${domain}|${semanticPack.id}`;");
+    const idx = src.indexOf("startedKeyRef.current = `${pageTruthKey}|${pageContentHash}|${domain}|${semanticPack.id}`;");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 130);
+    const block = src.slice(idx, idx + 180);
     expect(block).toMatch(/displayedKeyRef\.current = startedKeyRef\.current;/);
   });
 
@@ -345,6 +346,7 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
     const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/domain:\s*surgeonPageDomain/);
     expect(block).toMatch(/semanticPack:\s*activePack/);
+    expect(block).toMatch(/documentId:\s*resolvedDocumentId/);
   });
 
   it("useSurgeonAnnotations is called AFTER pageTruthKey is destructured from useActivePageIntelligence (no TDZ)", () => {
@@ -362,6 +364,9 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
   it("shows the degraded-status banner with a retry action wired to reanalyze()", () => {
     expect(src).toMatch(/surgeonAnnotations\.status === "error" && surgeonAnnotations\.annotationErrorMessage/);
     expect(src).toMatch(/onClick=\{surgeonAnnotations\.reanalyze\}/);
+    expect(src).toMatch(/surgeonAnnotations\.annotationFailureStage/);
+    expect(src).toMatch(/surgeonAnnotations\.annotationRequestId/);
+    expect(src).toMatch(/surgeonAnnotations\.annotationModel/);
   });
 
   it('shows a "Reading and annotating this page…" notice while status is loading — never silently rendering nothing while the fetch is in flight', () => {
@@ -524,10 +529,10 @@ describe("useSurgeonAnnotations.ts — content-derived integrity check, additive
     expect(src).toMatch(/import \{ computePageContentHash \} from "@\/lib\/insights\/pageContentHash"/);
   });
 
-  it("passes documentId (bookIdRef.current) into buildSurgeonAnnotationInput", () => {
+  it("passes the resolved documentId into buildSurgeonAnnotationInput", () => {
     const idx = src.indexOf("buildSurgeonAnnotationInput({");
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/documentId:\s*bookIdRef\.current,/);
+    expect(block).toMatch(/documentId:\s*documentIdRef\.current,/);
   });
 
   it("REQUIRED: a fetch response whose pageContentHash does not match a freshly re-derived current value is dropped", () => {

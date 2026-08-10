@@ -359,7 +359,7 @@ describe("No fallback — a Professor Lesson Planner failure shows a distinct re
   it('shows a distinct role="alert" retry state when status is "error", separate from the loading skeleton', () => {
     const idx = src.indexOf('lessonStatus === "error"');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 950);
+    const block = src.slice(idx, idx + 1500);
     expect(block).toMatch(/role="alert"/);
     expect(block).toMatch(/onClick=\{reanalyze\}/);
     expect(block).toMatch(/Retry/);

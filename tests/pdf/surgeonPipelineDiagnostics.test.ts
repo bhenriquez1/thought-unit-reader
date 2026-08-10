@@ -133,7 +133,7 @@ describe("pages/index.tsx — [PIPELINE_WIRING_TRACE], the unified data-flow tra
     const idx = src.indexOf('console.log("[PIPELINE_WIRING_TRACE]"');
     const block = src.slice(idx, idx + 300);
     expect(block).toMatch(/pageTruthKey,/);
-    expect(block).toMatch(/documentIdHash:\s*bookId \? hashDocumentId\(bookId\) : null,/);
+    expect(block).toMatch(/documentIdHash:\s*resolvedDocumentId \? hashDocumentId\(resolvedDocumentId\) : null,/);
     expect(block).toMatch(/page:\s*currentPage,/);
   });
 

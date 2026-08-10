@@ -57,7 +57,7 @@ describe("pages/index.tsx — buildCanonicalLeftPanelUnits is called with the li
   });
 });
 
-describe("components/reader/useSurgeonAnnotations.ts — HighlightTarget ids are document-qualified via bookId", () => {
+describe("components/reader/useSurgeonAnnotations.ts — HighlightTarget ids use the resolved document identity", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(path.resolve(__dirname, "../../components/reader/useSurgeonAnnotations.ts"), "utf8"); });
 
@@ -66,8 +66,8 @@ describe("components/reader/useSurgeonAnnotations.ts — HighlightTarget ids are
     expect(src).toMatch(/const id = buildSurgeonEvidenceId\(documentId, pageNumber, i\);/);
   });
 
-  it("REQUIRED: both call sites pass bookIdRef.current as the documentId", () => {
-    const calls = [...src.matchAll(/groundedAnnotationsToHighlightTargets\(grounded, bookIdRef\.current, pageNumberRef\.current\)/g)];
+  it("REQUIRED: both call sites pass documentIdRef.current as the documentId", () => {
+    const calls = [...src.matchAll(/groundedAnnotationsToHighlightTargets\(grounded, documentIdRef\.current, pageNumberRef\.current\)/g)];
     expect(calls.length).toBe(2);
   });
 });

@@ -38,7 +38,9 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
   });
 
   it("returns the structured degraded envelope on every failure path, never a bare error", () => {
-    expect(src).toMatch(/ok:\s*false,\s*error:\s*message,\s*code/);
+    expect(src).toMatch(/ok:\s*false,/);
+    expect(src).toMatch(/error:\s*message,/);
+    expect(src).toMatch(/code,/);
     expect(src).toMatch(/fallbackAllowed:\s*true/);
   });
 
@@ -196,7 +198,7 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
   });
 
   it("diagnosticIds carries pageTruthKey, pageNumber, and extracted-text length — never the text itself", () => {
-    const idx = src.indexOf("const diagnosticIds = {");
+    const idx = src.indexOf("let diagnosticIds: Record<string, unknown> = {");
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/pageTruthKey:\s*body\?\.pageTruthKey \?\? null,/);
     expect(block).toMatch(/pageNumber:\s*body\?\.pageNumber \?\? null,/);
@@ -211,6 +213,14 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
     const block = src.slice(idx, idx + 200);
     expect(block).toMatch(/returnedAnnotationCount:\s*result\.data\.annotations\.length,/);
     expect(block).toMatch(/durationMs:\s*Date\.now\(\) - startedAt,/);
+  });
+
+  it("returns and logs non-secret provider/model/request/failure metadata", () => {
+    expect(src).toMatch(/provider: "openai"/);
+    expect(src).toMatch(/model: diagnostics\.model \?\? null/);
+    expect(src).toMatch(/upstreamStatus:/);
+    expect(src).toMatch(/finishReason:/);
+    expect(src).toMatch(/diagnosticIds = \{ \.\.\.diagnosticIds, model \}/);
   });
 });
 
@@ -315,12 +325,19 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
   });
 
   it("REQUIRED: requestId is present on the ok:true success response", () => {
-    expect(src).toMatch(/res\.status\(200\)\.json\(\{ ok: true, plan: result\.data, pageContentHash: body\.pageContentHash, requestId \}\);/);
+    expect(src).toMatch(/res\.status\(200\)\.json\(\{ ok: true, plan: result\.data, pageContentHash: body\.pageContentHash, requestId, provider: "openai", model \}\);/);
   });
 
   it("REQUIRED: requestId is present on every degraded (ok:false) response via the shared degraded() helper", () => {
-    expect(src).toMatch(/function degraded\(message: string, code: ServerFailureStage, requestId: string\): AnnotationPlanResponse \{/);
-    expect(src).toMatch(/return \{ ok: false, error: message, code, requestId, fallbackAllowed: true \};/);
+    const helperStart = src.indexOf("function degraded(");
+    const helper = src.slice(helperStart, helperStart + 900);
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helper).toMatch(/requestId: string,/);
+    expect(helper).toMatch(/ok: false,/);
+    expect(helper).toMatch(/error: message,/);
+    expect(helper).toMatch(/requestId,/);
+    expect(helper).toMatch(/fallbackAllowed: true,/);
+    expect(helper).toMatch(/provider: "openai",/);
   });
 
   it("REQUIRED: the full documented failure-stage taxonomy is present in ServerFailureStage", () => {
@@ -383,7 +400,7 @@ describe("pages/api/page-annotation-plan.ts — sentenceCount diagnostic (real p
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
   it("REQUIRED: diagnosticIds carries sentenceCount, computed from the real pageText, never fabricated", () => {
-    const idx = src.indexOf("const diagnosticIds = {");
+    const idx = src.indexOf("let diagnosticIds: Record<string, unknown> = {");
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/sentenceCount:\s*body\?\.pageText \? countSentences\(body\.pageText\) : null,/);
   });

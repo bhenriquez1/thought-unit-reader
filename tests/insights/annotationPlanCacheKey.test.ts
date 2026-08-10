@@ -13,14 +13,15 @@ import {
 // ── buildAnnotationCacheKey ───────────────────────────────────────────────────
 
 describe("buildAnnotationCacheKey", () => {
-  it("includes the book id and page number", () => {
-    const key = buildAnnotationCacheKey({ bookId: "book-xyz", pageNumber: 5 });
-    expect(key).toContain("book-xyz");
+  it("includes the resolved document id, page number, and content hash", () => {
+    const key = buildAnnotationCacheKey({ documentId: "doc-xyz", pageNumber: 5, pageContentHash: "hash-a" });
+    expect(key).toContain("doc-xyz");
     expect(key).toContain("p5");
+    expect(key).toContain("hash-a");
   });
 
   it("includes all four version numbers", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
+    const key = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a" });
     expect(key).toContain(`${STRUCTURE_VERSION}`);
     expect(key).toContain(`${PARAGRAPH_ALGORITHM_VERSION}`);
     expect(key).toContain(`${SEMANTIC_PACK_VERSION}`);
@@ -32,36 +33,42 @@ describe("buildAnnotationCacheKey", () => {
     // built under a bumped MODEL_VERSION never matches an old cached key/plan —
     // simulate this by asserting the current key embeds the current MODEL_VERSION
     // in a position that would differ from a hypothetical older value.
-    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
+    const key = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a" });
     const versionSegment = key.split(":")[1]; // "v<sv>-<pv>-<spv>-<mv>"
     expect(versionSegment.endsWith(`-${MODEL_VERSION}`)).toBe(true);
   });
 
   it("includes semantic pack id when provided", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1, semanticPackId: "dentistry" });
+    const key = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a", semanticPackId: "dentistry" });
     expect(key).toContain("dentistry");
   });
 
   it("omits pack suffix when no semanticPackId provided", () => {
-    const keyWithout = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
-    const keyWith    = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1, semanticPackId: "dentistry" });
+    const keyWithout = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a" });
+    const keyWith    = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a", semanticPackId: "dentistry" });
     expect(keyWith).not.toBe(keyWithout);
   });
 
   it("produces different keys for different pages", () => {
-    const k1 = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
-    const k2 = buildAnnotationCacheKey({ bookId: "b", pageNumber: 2 });
+    const k1 = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a" });
+    const k2 = buildAnnotationCacheKey({ documentId: "d", pageNumber: 2, pageContentHash: "hash-a" });
     expect(k1).not.toBe(k2);
   });
 
-  it("produces different keys for different books", () => {
-    const k1 = buildAnnotationCacheKey({ bookId: "book-a", pageNumber: 1 });
-    const k2 = buildAnnotationCacheKey({ bookId: "book-b", pageNumber: 1 });
+  it("produces different keys for different resolved documents", () => {
+    const k1 = buildAnnotationCacheKey({ documentId: "doc-a", pageNumber: 1, pageContentHash: "hash-a" });
+    const k2 = buildAnnotationCacheKey({ documentId: "doc-b", pageNumber: 1, pageContentHash: "hash-a" });
+    expect(k1).not.toBe(k2);
+  });
+
+  it("produces different keys when the same page slot is re-extracted with different content", () => {
+    const k1 = buildAnnotationCacheKey({ documentId: "doc-a", pageNumber: 1, pageContentHash: "hash-a" });
+    const k2 = buildAnnotationCacheKey({ documentId: "doc-a", pageNumber: 1, pageContentHash: "hash-b" });
     expect(k1).not.toBe(k2);
   });
 
   it("key starts with aplan: prefix", () => {
-    const key = buildAnnotationCacheKey({ bookId: "b", pageNumber: 1 });
+    const key = buildAnnotationCacheKey({ documentId: "d", pageNumber: 1, pageContentHash: "hash-a" });
     expect(key).toMatch(/^aplan:/);
   });
 });

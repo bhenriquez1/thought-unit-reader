@@ -1,7 +1,7 @@
 // lib/whiteboard/professorLessonPlanCache.ts
 // IDB persistence for ProfessorLessonPlan, keyed by
 // buildProfessorLessonCacheKey() (documentId + pageTruthKey +
-// activeCanonicalUnitId + PLANNER_VERSION, per professorLessonPlan.ts) —
+// activeCanonicalUnitId + vsgId + PLANNER_VERSION, per professorLessonPlan.ts) —
 // fresh, page-specific teaching without repeatedly paying for identical
 // generation. A PLANNER_VERSION bump makes old entries miss cleanly, same
 // pattern as lib/canonical/surgeonAnnotationPlanStore.ts.

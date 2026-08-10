@@ -38,14 +38,14 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
 
 // ── 1. A page change removes all prior highlights and shapes ────────────────
 describe("Required regression 1 — a page change removes all prior highlights and shapes", () => {
-  it("useSurgeonAnnotations.ts's Effect A (keyed on [pageTruthKey] alone) clears highlightTargets/groundedAnnotations/plan before anything else runs", () => {
+  it("useSurgeonAnnotations.ts's Effect A (keyed on page identity plus content identity) clears highlightTargets/groundedAnnotations/plan before anything else runs", () => {
     const src = fs.readFileSync(ANNOTATIONS_HOOK, "utf8");
     const idx = src.indexOf("// ── Effect A:");
     const effectBody = src.slice(idx, src.indexOf("// ── Effect B:"));
     expect(effectBody).toMatch(/setPlan\(null\)/);
     expect(effectBody).toMatch(/setHighlightTargets\(\[\]\)/);
     expect(effectBody).toMatch(/setGroundedAnnotations\(\[\]\)/);
-    expect(effectBody).toMatch(/\}, \[pageTruthKey\]\);/);
+    expect(effectBody).toMatch(/\}, \[pageTruthKey, pageContentHash, documentId\]\);/);
   });
 
   it("TldrawCanvas.tsx clears every locked teaching-layer shape unconditionally whenever lessonPlan's identity changes — including a transition to null", () => {
@@ -60,9 +60,9 @@ describe("Required regression 1 — a page change removes all prior highlights a
     expect(rebuildIdx).toBeGreaterThan(-1); // clear runs BEFORE the `if (!lessonPlan)` branch, not after
   });
 
-  it("useProfessorLesson.ts's identityKey includes documentId + pageTruthKey — a page change is a real identity change, driving the TldrawCanvas clear above", () => {
+  it("useProfessorLesson.ts's identityKey includes documentId + pageTruthKey + VSG content identity — a page/content change drives the TldrawCanvas clear above", () => {
     const src = fs.readFileSync(LESSON_HOOK, "utf8");
-    expect(src).toMatch(/`\$\{args\.documentId\}::\$\{args\.pageTruthKey\}::\$\{args\.activeCanonicalUnitId \?\? "none"\}`/);
+    expect(src).toMatch(/`\$\{args\.documentId\}::\$\{args\.pageTruthKey\}::\$\{args\.activeCanonicalUnitId \?\? "none"\}::\$\{args\.vsgId\}`/);
   });
 });
 
@@ -72,7 +72,7 @@ describe("Required regression 2 — a mismatched pageTruthKey cannot render", ()
     const src = fs.readFileSync(ANNOTATIONS_HOOK, "utf8");
     const idx = src.indexOf("if (data.plan.pageTruthKey !== pageTruthKey) {");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 650);
+    const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/return;/);
     // setPlan/setHighlightTargets must appear AFTER this guard, not before.
     const setPlanIdx = src.indexOf("setPlan(data.plan)");

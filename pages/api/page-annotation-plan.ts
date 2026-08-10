@@ -17,7 +17,8 @@
 //   - OPENAI_API_KEY is server-side only; never NEXT_PUBLIC_OPENAI_API_KEY.
 //   - All user-controlled values go into the messages array only.
 //   - The system prompt is 100% static developer-authored text.
-//   - Raw SDK errors, model names, and stack traces are never exposed.
+//   - Raw SDK errors and stack traces are never exposed. The non-secret model
+//     id and structured failure metadata are returned for request correlation.
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
@@ -72,11 +73,36 @@ export type ServerFailureStage =
   | "invalid_request";
 
 export type AnnotationPlanResponse =
-  | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string; requestId: string }
-  | { ok: false; error: string; code: ServerFailureStage; requestId: string; fallbackAllowed: true };
+  | { ok: true; plan: SurgeonAnnotationPlan; pageContentHash: string; requestId: string; provider: "openai"; model: string }
+  | {
+      ok: false;
+      error: string;
+      code: ServerFailureStage;
+      requestId: string;
+      fallbackAllowed: true;
+      provider: "openai";
+      model: string | null;
+      upstreamStatus: number | null;
+      finishReason: string | null;
+    };
 
-function degraded(message: string, code: ServerFailureStage, requestId: string): AnnotationPlanResponse {
-  return { ok: false, error: message, code, requestId, fallbackAllowed: true };
+function degraded(
+  message: string,
+  code: ServerFailureStage,
+  requestId: string,
+  diagnostics: { model?: string | null; upstreamStatus?: number | null; finishReason?: string | null } = {},
+): AnnotationPlanResponse {
+  return {
+    ok: false,
+    error: message,
+    code,
+    requestId,
+    fallbackAllowed: true,
+    provider: "openai",
+    model: diagnostics.model ?? null,
+    upstreamStatus: diagnostics.upstreamStatus ?? null,
+    finishReason: diagnostics.finishReason ?? null,
+  };
 }
 
 // Rough diagnostic count only — not used for grounding/selection logic
@@ -331,14 +357,14 @@ export default async function handler(
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.status(405).json({ ok: false, error: "Method not allowed", code: "method_not_allowed", requestId, fallbackAllowed: true });
+    res.status(405).json(degraded("Method not allowed", "method_not_allowed", requestId));
     return;
   }
 
   const body = req.body as Partial<SurgeonAnnotationInput>;
   // Diagnostic identifiers only — never the page/annotation TEXT itself.
   // documentId is hashed (one-way) so a book's identity never appears in logs.
-  const diagnosticIds = {
+  let diagnosticIds: Record<string, unknown> = {
     requestId,
     documentIdHash: body?.documentId ? hashDocumentId(body.documentId) : null,
     pageTruthKey:   body?.pageTruthKey ?? null,
@@ -348,15 +374,15 @@ export default async function handler(
   };
 
   if (!body.pageTruthKey || typeof body.pageTruthKey !== "string") {
-    res.status(400).json({ ok: false, error: "pageTruthKey is required", code: "missing_ptk", requestId, fallbackAllowed: true });
+    res.status(400).json(degraded("pageTruthKey is required", "missing_ptk", requestId));
     return;
   }
   if (!body.pageText || typeof body.pageText !== "string") {
-    res.status(400).json({ ok: false, error: "pageText is required", code: "missing_page_text", requestId, fallbackAllowed: true });
+    res.status(400).json(degraded("pageText is required", "missing_page_text", requestId));
     return;
   }
   if (!body.pageContentHash || typeof body.pageContentHash !== "string") {
-    res.status(400).json({ ok: false, error: "pageContentHash is required", code: "missing_page_content_hash", requestId, fallbackAllowed: true });
+    res.status(400).json(degraded("pageContentHash is required", "missing_page_content_hash", requestId));
     return;
   }
 
@@ -426,6 +452,7 @@ export default async function handler(
   const client = new OpenAI({ apiKey });
   const startedAt = Date.now();
   const model = await resolveTeachingModel(client);
+  diagnosticIds = { ...diagnosticIds, model };
 
   let completion: Awaited<ReturnType<typeof callOpenAI>>;
   let attempts = 1;
@@ -472,14 +499,29 @@ export default async function handler(
         : "Advanced page analysis is temporarily unavailable.",
       code,
       requestId,
+      { model, upstreamStatus: err?.status ?? null },
     ));
     return;
   }
 
-  const raw = completion.choices[0]?.message?.content;
+  const choice = completion.choices[0];
+  const raw = choice?.message?.content;
   if (!raw) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "provider_response", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned no content.", "provider_response", requestId));
+    const finishReason = choice?.finish_reason ?? null;
+    console.error("[SURGEON_PLAN_FAILED]", {
+      ...diagnosticIds,
+      stage: "provider_response",
+      finishReason,
+      completionTokens: completion.usage?.completion_tokens ?? null,
+      reasoningTokens: completion.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      durationMs: Date.now() - startedAt,
+    });
+    res.status(200).json(degraded(
+      "Advanced page analysis returned no content.",
+      "provider_response",
+      requestId,
+      { model, upstreamStatus: 200, finishReason },
+    ));
     return;
   }
 
@@ -489,21 +531,21 @@ export default async function handler(
     parsed = JSON.parse(jsonStr);
   } catch {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "json_parse", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned invalid output.", "json_parse", requestId));
+    res.status(200).json(degraded("Advanced page analysis returned invalid output.", "json_parse", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
   }
 
   const result = SurgeonAnnotationPlanSchema.safeParse(parsed);
   if (!result.success) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation", requestId));
+    res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
   }
 
   const validSentenceIds = new Set(pageSentences.map(s => s.id));
   if (!quotesPlausible(result.data, body.pageText, validSentenceIds)) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "sentence_grounding", durationMs: Date.now() - startedAt });
-    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId));
+    res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
   }
 
@@ -523,5 +565,5 @@ export default async function handler(
   // the client's own fresh recomputation at response-apply time (against
   // whatever page is ACTUALLY on screen then) is the real check; this is
   // just carrying the request's identity through to that comparison.
-  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash, requestId });
+  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash, requestId, provider: "openai", model });
 }

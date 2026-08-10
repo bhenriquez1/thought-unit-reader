@@ -30,7 +30,7 @@ import {
 } from "@/lib/whiteboard/professorLessonPlan";
 import { getProfessorLessonPlan, saveProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlanCache";
 import type { ProfessorLessonPlanResponse } from "@/pages/api/professor-lesson-plan";
-import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
+import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics";
 
 export type ProfessorLessonStatus = "idle" | "loading" | "success" | "error";
 
@@ -46,6 +46,16 @@ export interface UseProfessorLessonResult {
    *  failure; "network_error", "ungroundable", "missing_config"). Shown
    *  alongside errorMessage, never in place of it. */
   errorCode: string | null;
+  errorDiagnostics: {
+    requestId: string;
+    endpoint: "/api/professor-lesson-plan";
+    provider: "openai";
+    model: string | null;
+    failureStage: string;
+    responseStatus: number | null;
+    upstreamStatus: number | null;
+    finishReason: string | null;
+  } | null;
   reanalyze: () => void;
 }
 
@@ -58,8 +68,8 @@ interface Args {
   enabled: boolean;
 }
 
-function identityKey(args: Pick<Args, "documentId" | "pageTruthKey" | "activeCanonicalUnitId">): string {
-  return `${args.documentId}::${args.pageTruthKey}::${args.activeCanonicalUnitId ?? "none"}`;
+function identityKey(args: Pick<Args, "documentId" | "pageTruthKey" | "activeCanonicalUnitId"> & { vsgId: string }): string {
+  return `${args.documentId}::${args.pageTruthKey}::${args.activeCanonicalUnitId ?? "none"}::${args.vsgId}`;
 }
 
 const GENERIC_ERROR_MESSAGE = "Unable to generate Whiteboard for this page.";
@@ -71,6 +81,7 @@ export function useProfessorLesson({
   const [status, setStatus]           = useState<ProfessorLessonStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorCode, setErrorCode]       = useState<string | null>(null);
+  const [errorDiagnostics, setErrorDiagnostics] = useState<UseProfessorLessonResult["errorDiagnostics"]>(null);
   const [reanalyzeCount, setReanalyzeCount] = useState(0);
 
   const abortRef       = useRef<AbortController | null>(null);
@@ -88,7 +99,8 @@ export function useProfessorLesson({
     setReanalyzeCount(c => c + 1);
   }, []);
 
-  const key = identityKey({ documentId, pageTruthKey, activeCanonicalUnitId });
+  const vsgId = vsg?.id ?? "no-vsg";
+  const key = identityKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
 
   // ── Effect A: identity changed → reset + try cache ─────────────────────
   useEffect(() => {
@@ -96,15 +108,21 @@ export function useProfessorLesson({
     setStatus("idle");
     setErrorMessage(null);
     setErrorCode(null);
+    setErrorDiagnostics(null);
     startedKeyRef.current = null;
 
     let cancelled = false;
-    const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId });
+    const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
     (async () => {
       try {
         const stored = await getProfessorLessonPlan(cacheKey);
         if (cancelled) return;
-        if (stored && stored.plan.sourceSnapshot.pageTruthKey === pageTruthKey) {
+        if (
+          stored &&
+          stored.plan.sourceSnapshot.documentId === documentId &&
+          stored.plan.sourceSnapshot.pageTruthKey === pageTruthKey &&
+          stored.plan.sourceSnapshot.vsgId === vsgId
+        ) {
           setLessonPlan(stored.plan);
           setStatus("success");
           startedKeyRef.current = key;
@@ -134,6 +152,7 @@ export function useProfessorLesson({
     setStatus("loading");
     setErrorMessage(null);
     setErrorCode(null);
+    setErrorDiagnostics(null);
 
     // Abort whatever this effect's OWN previous run may still have in
     // flight before starting a new one — Effect A's identityKey-keyed
@@ -166,9 +185,25 @@ export function useProfessorLesson({
         if (ctrl.signal.aborted) return;
 
         if (!data.ok) {
-          console.warn("[PROFESSOR_LESSON_DEGRADED]", { ...diagnosticIds, code: data.code, durationMs: Date.now() - startedAt });
+          const failureDiagnostics = {
+            requestId: data.requestId,
+            endpoint: "/api/professor-lesson-plan" as const,
+            provider: data.provider,
+            model: data.model,
+            failureStage: data.failureStage,
+            responseStatus: res.status,
+            upstreamStatus: data.upstreamStatus,
+            finishReason: data.finishReason,
+          };
+          console.warn("[PROFESSOR_LESSON_DEGRADED]", {
+            ...diagnosticIds,
+            ...failureDiagnostics,
+            code: data.code,
+            durationMs: Date.now() - startedAt,
+          });
           setErrorMessage(GENERIC_ERROR_MESSAGE);
           setErrorCode(data.code);
+          setErrorDiagnostics(failureDiagnostics);
           setStatus("error");
           return;
         }
@@ -185,6 +220,16 @@ export function useProfessorLesson({
           console.warn("[PROFESSOR_LESSON_DEGRADED]", { ...diagnosticIds, code: "ungroundable_response", durationMs: Date.now() - startedAt });
           setErrorMessage(GENERIC_ERROR_MESSAGE);
           setErrorCode("ungroundable_response");
+          setErrorDiagnostics({
+            requestId: data.requestId,
+            endpoint: "/api/professor-lesson-plan",
+            provider: data.provider,
+            model: data.model,
+            failureStage: "target_grounding",
+            responseStatus: res.status,
+            upstreamStatus: 200,
+            finishReason: null,
+          });
           setStatus("error");
           return;
         }
@@ -195,6 +240,8 @@ export function useProfessorLesson({
         });
         setLessonPlan(plan);
         setErrorMessage(null);
+        setErrorCode(null);
+        setErrorDiagnostics(null);
         setStatus("success");
 
         // Production-safe — counts and timing only, never label/narration text.
@@ -202,21 +249,36 @@ export function useProfessorLesson({
           ...diagnosticIds,
           nodeScriptCount: grounded.nodeScripts.length,
           sceneActionCount: plan.actions.length,
+          requestId: data.requestId,
+          provider: data.provider,
+          model: data.model,
+          responseStatus: res.status,
           durationMs: Date.now() - startedAt,
         });
 
-        const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId });
+        const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
         saveProfessorLessonPlan(cacheKey, plan).catch(() => {});
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
-        console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { ...diagnosticIds, message: err?.message ?? String(err), durationMs: Date.now() - startedAt });
+        const clientRequestId = newRequestId();
+        console.error("[PROFESSOR_LESSON_CLIENT_ERROR]", { ...diagnosticIds, requestId: clientRequestId, message: err?.message ?? String(err), durationMs: Date.now() - startedAt });
         setErrorMessage(GENERIC_ERROR_MESSAGE);
         setErrorCode("network_error");
+        setErrorDiagnostics({
+          requestId: clientRequestId,
+          endpoint: "/api/professor-lesson-plan",
+          provider: "openai",
+          model: null,
+          failureStage: "network_error",
+          responseStatus: null,
+          upstreamStatus: null,
+          finishReason: null,
+        });
         setStatus("error");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, reanalyzeCount]);
 
-  return { lessonPlan, status, errorMessage, errorCode, reanalyze };
+  return { lessonPlan, status, errorMessage, errorCode, errorDiagnostics, reanalyze };
 }

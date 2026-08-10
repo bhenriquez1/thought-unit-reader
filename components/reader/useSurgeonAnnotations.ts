@@ -7,7 +7,8 @@ const DEV = process.env.NODE_ENV === "development";
 // resolution and drawing — this hook never touches coordinates.
 //
 // Modeled on useTeachingSynthesis.ts's Effect A/B split:
-//   Effect A (deps: [pageTruthKey]) — reset state, try the IDB cache first so
+//   Effect A (deps: [pageTruthKey, pageContentHash, documentId]) — reset state,
+//     try the IDB cache first so
 //     cached annotations are visible before any network call, abort in-flight
 //     requests only on real page navigation.
 //   Effect B (deps: [pageTruthKey, domain, semanticPack.id, enabled, hasPageText])
@@ -128,13 +129,18 @@ export interface UseSurgeonAnnotationsResult {
    *  assigned to the most recent attempt — privacy-safe, carries no page
    *  content, safe to show in a UI or support ticket. */
   annotationRequestId: string | null;
+  /** Non-secret OpenAI model id returned by the API for the most recent
+   *  request, so a production failure can be correlated without server-log access. */
+  annotationModel: string | null;
   /** Explicit "reanalyze page" — bypasses the cache-hit check, always fetches fresh. */
   reanalyze: () => void;
 }
 
 interface UseSurgeonAnnotationsArgs {
   pageTruthKey: string;
-  bookId: string;
+  /** Collision-resistant identity from resolveDocumentIdentity — never a
+   * filename/bookId grouping label. */
+  documentId: string;
   pageNumber: number;  // 1-based — for the API, HighlightTarget.page, AND the cache key (see annotationPlanCache.ts's RC7 note)
   pageText: string;
   pageImageDataUrl: string | null;
@@ -239,7 +245,7 @@ export function resolveAnnotationTier(args: {
 
 export function useSurgeonAnnotations({
   pageTruthKey,
-  bookId,
+  documentId,
   pageNumber,
   pageText,
   pageImageDataUrl,
@@ -258,6 +264,7 @@ export function useSurgeonAnnotations({
   const [annotationErrorMessage, setAnnotationErrorMessage] = useState<string | null>(null);
   const [annotationFailureStage, setAnnotationFailureStage] = useState<ClientFailureStage | null>(null);
   const [annotationRequestId, setAnnotationRequestId]       = useState<string | null>(null);
+  const [annotationModel, setAnnotationModel]               = useState<string | null>(null);
   const [reanalyzeCount,   setReanalyzeCount]   = useState(0);
 
   const abortRef          = useRef<AbortController | null>(null);
@@ -283,15 +290,21 @@ export function useSurgeonAnnotations({
   const previousPageTextRef      = useRef(previousPageText);
   const nextPageTextRef          = useRef(nextPageText);
   const existingCanonicalUnitsRef = useRef(existingCanonicalUnits);
-  const bookIdRef                = useRef(bookId);
+  const documentIdRef            = useRef(documentId);
   const pageNumberRef            = useRef(pageNumber);
   pageTextRef.current              = pageText;
   pageImageDataUrlRef.current      = pageImageDataUrl;
   previousPageTextRef.current      = previousPageText;
   nextPageTextRef.current          = nextPageText;
   existingCanonicalUnitsRef.current = existingCanonicalUnits;
-  bookIdRef.current                = bookId;
+  documentIdRef.current            = documentId;
   pageNumberRef.current            = pageNumber;
+
+  const pageContentHash = computePageContentHash(
+    documentId,
+    pageNumber,
+    cleanActivePageText(pageText),
+  );
 
   const reanalyze = useCallback(() => {
     forceRefetchRef.current = true;
@@ -309,14 +322,16 @@ export function useSurgeonAnnotations({
     setAnnotationErrorMessage(null);
     setAnnotationFailureStage(null);
     setAnnotationRequestId(null);
+    setAnnotationModel(null);
     startedKeyRef.current = null;
     displayedKeyRef.current = null;
 
     let cancelled = false;
     (async () => {
       const cacheKey = buildAnnotationCacheKey({
-        bookId:         bookIdRef.current,
+        documentId:     documentIdRef.current,
         pageNumber:     pageNumberRef.current,
+        pageContentHash,
         semanticPackId: semanticPack.id,
       });
       try {
@@ -345,7 +360,7 @@ export function useSurgeonAnnotations({
           const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
           const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current, sentenceMap);
           const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRole);
-          const targets = groundedAnnotationsToHighlightTargets(grounded, bookIdRef.current, pageNumberRef.current);
+          const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
           setGroundedAnnotations(grounded);
@@ -353,14 +368,14 @@ export function useSurgeonAnnotations({
           setStatus("success");
           // Mark this (page, domain, pack) combination as already satisfied so
           // Effect B doesn't immediately re-fetch what we just loaded from cache.
-          startedKeyRef.current = `${pageTruthKey}|${domain}|${semanticPack.id}`;
+          startedKeyRef.current = `${pageTruthKey}|${pageContentHash}|${domain}|${semanticPack.id}`;
           displayedKeyRef.current = startedKeyRef.current;
           if (DEV) console.log("[SURGEON_PLAN_CACHE_HIT]", { pageTruthKey, cacheKey, annotationCount: targets.length });
           // Production-safe (no DEV gate, no annotation text) — the first two
           // stages of the pipeline trace SmartPDFViewer's [SURGEON_PIPELINE_DIAGNOSTIC]
           // continues (geometryResolvedCount/renderedAnnotationCount).
           console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
-            documentIdHash: hashDocumentId(bookIdRef.current),
+            documentIdHash: hashDocumentId(documentIdRef.current),
             pageTruthKey,
             stage: "cache-hit",
             returnedAnnotationCount: stored.plan.annotations.length,
@@ -380,7 +395,7 @@ export function useSurgeonAnnotations({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey]);
+  }, [pageTruthKey, pageContentHash, documentId]);
 
   // ── Effect B: fetch when first-open, or domain/pack changed for this page ──
   // No abort in this effect's cleanup — enabled/text flicker must not kill a run.
@@ -402,7 +417,7 @@ export function useSurgeonAnnotations({
       return;
     }
 
-    const compositeKey = `${pageTruthKey}|${domain}|${semanticPack.id}`;
+    const compositeKey = `${pageTruthKey}|${pageContentHash}|${domain}|${semanticPack.id}`;
     if (startedKeyRef.current === compositeKey && !forceRefetchRef.current) {
       return; // already satisfied (cache hit or prior fetch) for this exact combination
     }
@@ -454,7 +469,7 @@ export function useSurgeonAnnotations({
         // the OpenAI call below, so a real page navigation cancels both.
         const visualContext = await resolveVisualContext({
           pageImageDataUrl: pageImageDataUrlRef.current,
-          documentId:       bookIdRef.current,
+          documentId:       documentIdRef.current,
           pageNumber:       pageNumberRef.current,
           pageTruthKey,
           signal:           ctrl.signal,
@@ -463,7 +478,7 @@ export function useSurgeonAnnotations({
 
         const input = buildSurgeonAnnotationInput({
           pageTruthKey,
-          documentId:       bookIdRef.current,
+          documentId:       documentIdRef.current,
           pageNumber:       pageNumberRef.current,
           pageImageDataUrl: pageImageDataUrlRef.current,
           pageText:         pageTextRef.current,
@@ -486,10 +501,22 @@ export function useSurgeonAnnotations({
         if (ctrl.signal.aborted) return;
 
         if (!data.ok) {
-          console.warn("[SURGEON_PLAN_DEGRADED]", { pageTruthKey, code: data.code, requestId: data.requestId, message: data.error });
+          console.warn("[SURGEON_PLAN_DEGRADED]", {
+            endpoint: "/api/page-annotation-plan",
+            responseStatus: res.status,
+            pageTruthKey,
+            code: data.code,
+            requestId: data.requestId,
+            provider: data.provider,
+            model: data.model,
+            upstreamStatus: data.upstreamStatus,
+            finishReason: data.finishReason,
+            message: data.error,
+          });
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
           setAnnotationFailureStage(data.code);
           setAnnotationRequestId(data.requestId);
+          setAnnotationModel(data.model);
           setStatus("error");
           return; // keep whatever plan/highlightTargets were already set (cache or none)
         }
@@ -502,6 +529,7 @@ export function useSurgeonAnnotations({
           console.warn("[SURGEON_PLAN_PAGE_IDENTITY_MISMATCH]", { expected: pageTruthKey, received: data.plan.pageTruthKey, requestId: data.requestId });
           setAnnotationFailureStage("page_identity");
           setAnnotationRequestId(data.requestId);
+          setAnnotationModel(data.model);
           return;
         }
 
@@ -511,7 +539,7 @@ export function useSurgeonAnnotations({
         // reject a response computed against different underlying text (e.g. a
         // re-extraction produced a different result for the same page slot).
         const currentContentHash = computePageContentHash(
-          bookIdRef.current,
+          documentIdRef.current,
           pageNumberRef.current,
           cleanActivePageText(pageTextRef.current),
         );
@@ -519,6 +547,7 @@ export function useSurgeonAnnotations({
           console.warn("[SURGEON_PLAN_CONTENT_HASH_MISMATCH]", { pageTruthKey, expected: currentContentHash, received: data.pageContentHash, requestId: data.requestId });
           setAnnotationFailureStage("page_identity");
           setAnnotationRequestId(data.requestId);
+          setAnnotationModel(data.model);
           return;
         }
 
@@ -529,7 +558,7 @@ export function useSurgeonAnnotations({
         const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
         const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current, sentenceMap);
         const grounded = limitAnnotationDensity(wholePage, data.plan.pageRole);
-        const targets = groundedAnnotationsToHighlightTargets(grounded, bookIdRef.current, pageNumberRef.current);
+        const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed client-side sentence grounding —
           // degraded, not a hard error, but a distinct stage from the
@@ -537,6 +566,7 @@ export function useSurgeonAnnotations({
           setAnnotationErrorMessage(DEGRADED_MESSAGE);
           setAnnotationFailureStage("sentence_grounding");
           setAnnotationRequestId(data.requestId);
+          setAnnotationModel(data.model);
           setStatus("error");
           return;
         }
@@ -548,19 +578,21 @@ export function useSurgeonAnnotations({
         setAnnotationErrorMessage(null);
         setAnnotationFailureStage(null);
         setAnnotationRequestId(data.requestId);
+        setAnnotationModel(data.model);
         setStatus("success");
         displayedKeyRef.current = compositeKey;
 
         const cacheKey = buildAnnotationCacheKey({
-          bookId:         bookIdRef.current,
+          documentId:     documentIdRef.current,
           pageNumber:     pageNumberRef.current,
+          pageContentHash,
           semanticPackId: semanticPack.id,
         });
-        saveSurgeonAnnotationPlan(bookIdRef.current, pageNumberRef.current, cacheKey, data.plan).catch(() => {});
+        saveSurgeonAnnotationPlan(documentIdRef.current, pageNumberRef.current, cacheKey, data.plan).catch(() => {});
 
         if (DEV) console.log("[SURGEON_PLAN_OK]", { pageTruthKey, annotationCount: targets.length });
         console.log("[SURGEON_PIPELINE_DIAGNOSTIC]", {
-          documentIdHash: hashDocumentId(bookIdRef.current),
+          documentIdHash: hashDocumentId(documentIdRef.current),
           pageTruthKey,
           stage: "fetch",
           returnedAnnotationCount: data.plan.annotations.length,
@@ -577,11 +609,12 @@ export function useSurgeonAnnotations({
         setAnnotationErrorMessage(DEGRADED_MESSAGE);
         setAnnotationFailureStage("network_error");
         setAnnotationRequestId(clientRequestId);
+        setAnnotationModel(null);
         setStatus("error");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, domain, semanticPack.id, enabled, pageText, reanalyzeCount]);
+  }, [pageTruthKey, pageContentHash, domain, semanticPack.id, enabled, pageText, reanalyzeCount]);
 
   const tiered = resolveAnnotationTier({
     aiHighlightTargets:    highlightTargets,
@@ -602,6 +635,7 @@ export function useSurgeonAnnotations({
     annotationErrorMessage,
     annotationFailureStage,
     annotationRequestId,
+    annotationModel,
     reanalyze,
   };
 }

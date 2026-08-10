@@ -19,7 +19,7 @@ describe("pages/api/professor-lesson-plan.ts — Professor Lesson Planner endpoi
     expect(src).not.toMatch(/model:\s*"gpt-5\.5"/);
     expect(src).toMatch(/import \{ resolveTeachingModel \} from "@\/lib\/insights\/resolveOpenAIModel"/);
     expect(src).toMatch(/const model = await resolveTeachingModel\(client\)/);
-    expect(src).toMatch(/callOpenAI\(client, model, userContent, PLAN_TIMEOUT_MS\)/);
+    expect(src).toMatch(/callOpenAI\(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens\)/);
   });
 
   it("uses real OpenAI Structured Outputs (strict JSON schema), not loose json_object mode — OpenAI is never asked to emit tldraw records, only ProfessorLessonScript", () => {
@@ -39,7 +39,9 @@ describe("pages/api/professor-lesson-plan.ts — Professor Lesson Planner endpoi
   });
 
   it("returns the structured degraded envelope on every failure path, never a bare error", () => {
-    expect(src).toMatch(/ok:\s*false,\s*error:\s*message,\s*code/);
+    expect(src).toMatch(/ok:\s*false,/);
+    expect(src).toMatch(/error:\s*message,/);
+    expect(src).toMatch(/code,/);
     expect(src).toMatch(/fallbackAllowed:\s*true/);
   });
 
@@ -161,6 +163,19 @@ describe("pages/api/professor-lesson-plan.ts — required production diagnostics
     expect(block).toMatch(/edgeCount:\s*Array\.isArray\(body\?\.edges\) \? body\.edges\.length : null,/);
   });
 
+  it("returns requestId/provider/model/failureStage/upstream status for every degraded production response", () => {
+    expect(src).toMatch(/interface ProfessorFailureDiagnostics/);
+    for (const field of ["requestId", "provider", "model", "failureStage", "upstreamStatus", "finishReason"]) {
+      expect(src).toMatch(new RegExp(field));
+    }
+  });
+
+  it("classifies an empty completion distinctly and records finish reason/token usage", () => {
+    expect(src).toMatch(/finishReason === "length" \? "OUTPUT_TOKEN_LIMIT" : "EMPTY_RESPONSE"/);
+    expect(src).toMatch(/reasoningTokens:/);
+    expect(src).toMatch(/completionTokens:/);
+  });
+
   it("the success log runs unconditionally (production-safe), not DEV-gated", () => {
     const idx = src.indexOf('console.log("[PROFESSOR_LESSON_OK]"');
     expect(idx).toBeGreaterThan(-1);
@@ -168,19 +183,20 @@ describe("pages/api/professor-lesson-plan.ts — required production diagnostics
   });
 });
 
-describe("pages/api/professor-lesson-plan.ts — max_completion_tokens, not the deprecated max_tokens", () => {
+describe("pages/api/professor-lesson-plan.ts — node-scaled completion budget, not deprecated max_tokens", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
-  it("REQUIRED: uses max_completion_tokens — resolveTeachingModel can dynamically select a reasoning-family model (o-series/gpt-5.x) that REJECTS max_tokens with HTTP 400", () => {
-    expect(src).toMatch(/maxCompletionTokens:\s*2000/);
-    expect(src).not.toMatch(/max_tokens:\s*2000,/);
+  it("REQUIRED: uses a bounded node-scaled max_completion_tokens budget — reasoning tokens and visible JSON share this budget", () => {
+    expect(src).toMatch(/function professorCompletionBudget/);
+    expect(src).toMatch(/MIN_COMPLETION_TOKENS \+ boundedCount \* TOKENS_PER_NODE/);
+    expect(src).toMatch(/maxCompletionTokens/);
     expect(src).not.toMatch(/\bmax_tokens:/);
   });
 
   it("REQUIRED: temperature/max_completion_tokens are built through the shared buildChatCompletionTuning helper, never hardcoded directly on the request — the same model can also reject a custom temperature (HTTP 400)", () => {
     expect(src).toMatch(/import \{ buildChatCompletionTuning \} from "@\/lib\/insights\/openaiChatParams"/);
-    const idx = src.indexOf("...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens: 2000 }),");
+    const idx = src.indexOf("...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens }),");
     expect(idx).toBeGreaterThan(-1);
     expect(src).not.toMatch(/temperature:\s*0\.4,\n/);
   });

@@ -9,11 +9,9 @@ import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import dynamic from "next/dynamic";
 const TldrawCanvas = dynamic(() => import("@/components/whiteboard/TldrawCanvas"), { ssr: false });
-import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
-import { deriveNoteCardsFromStudyModel } from "@/lib/notelab/deriveNoteCards";
 import {
-  computeVSGState, noteCardsToCanonicalEntries, pageRoleToWhiteboardGrammar,
+  computeVSGState, pageRoleToWhiteboardGrammar,
   type VSGState,
 } from "@/lib/whiteboard/visualSceneGraph";
 import type { CanonicalEntryInput } from "@/lib/whiteboard/canonicalRelationshipGraph";
@@ -70,12 +68,9 @@ type Props = {
    *  lib/insights/resolveDocumentIdentity.ts) — used for Learning State
    *  writes and Whiteboard lesson snapshot persistence (Phase B3), so two
    *  different PDFs sharing a filename never collide there the way bookId
-   *  alone could. Falls back to bookId when not passed (older call sites).
-   *  Deliberately NOT threaded into the `documentId` prop passed to the
-   *  TldrawCanvas element below — that prop drives the Professor Lesson Planner's
-   *  own cache key and canvas storage key, a pre-existing, out-of-B3-scope
-   *  quirk that still uses bookId; changing it would regenerate/invalidate
-   *  every cached lesson plan, which is not what B3 asked for. */
+   *  alone could. Falls back to bookId only for older call sites. This same
+   *  resolved identity is threaded into TldrawCanvas and every Professor
+   *  cache/storage key; there is no split identity. */
   resolvedDocumentId?: string;
   bookTitle?: string;
   pageTitle?: string | null;
@@ -96,10 +91,12 @@ type Props = {
   pageTeachingType?: string | null;
   /**
    * Canonical thought units for this page.
-   * When provided, the VSG is built directly from these; otherwise the panel
-   * falls back to deriving them from noteCards in the study model.
+   * The VSG is built only from these. Missing evidence stays empty and never
+   * falls back to noteCards from the separate study-model pipeline.
    */
   canonicalEntries?: CanonicalEntryInput[];
+  canonicalStatus?: "idle" | "loading" | "success" | "error";
+  onReanalyzeCanonical?: () => void;
   /** Opens Chief Resident modal for the current page — wires the "🩺 Teach" button. */
   onOpenChiefResident?: () => void;
 };
@@ -122,16 +119,11 @@ export default function WhiteboardPanel({
   whiteboardGrammar,
   pageTeachingType,
   canonicalEntries,
+  canonicalStatus,
+  onReanalyzeCanonical,
   onOpenChiefResident,
 }: Props) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-
-  const teachNoteCards = useMemo((): NoteCard[] => {
-    const sm = studyModel as any;
-    if (!sm) return [];
-    if (Array.isArray(sm.noteCards) && sm.noteCards.length > 0) return sm.noteCards as NoteCard[];
-    try { return deriveNoteCardsFromStudyModel(sm as CurrentPageStudyModel); } catch { return []; }
-  }, [studyModel]);
 
   // "What kind of page is this?" — decided fresh from the current page by
   // the same classifier that shapes highlight selection (pageRole), not a
@@ -145,12 +137,13 @@ export default function WhiteboardPanel({
   // Same canonical thought-unit entries feed both the VSG (below) and the
   // Phase B3 Learning State / snapshot identity's thoughtUnitIds — computed
   // once so the two can never silently diverge.
+  // The Professor is allowed to teach only the current page's canonical
+  // Surgeon evidence. An empty/failed Surgeon plan stays empty and produces a
+  // truthful retry state upstream; it must never be replaced with NoteCards
+  // from the separate study-model analysis pipeline.
   const resolvedCanonicalEntries = useMemo(
-    () =>
-      canonicalEntries && canonicalEntries.length > 0
-        ? canonicalEntries
-        : noteCardsToCanonicalEntries(teachNoteCards),
-    [canonicalEntries, teachNoteCards],
+    () => canonicalEntries ?? [],
+    [canonicalEntries],
   );
 
   const vsgState = useMemo((): VSGState => {
@@ -160,6 +153,10 @@ export default function WhiteboardPanel({
   }, [resolvedCanonicalEntries, effectiveGrammar, currentPage]);
 
   const thoughtUnitIds = useMemo(() => resolvedCanonicalEntries.map(e => e.id), [resolvedCanonicalEntries]);
+
+  // The resolved, collision-resistant document id owns EVERY Professor cache,
+  // storage, event, and snapshot key. bookId remains display/grouping metadata.
+  const effectiveLearningDocumentId = resolvedDocumentId ?? bookId ?? "unknown-document";
 
   // Stable key for tldraw's own IndexedDB canvas persistence — keyed by
   // pageTruthKey (documentId + pageNumber + text-ready flag), not just
@@ -172,32 +169,28 @@ export default function WhiteboardPanel({
   // the gap at the storage-key level too, not just the render level.)
   // Falls back to the same bookId::pageNumber synthetic key already used
   // for the pageTruthKey prop below when a real pageTruthKey isn't passed.
-  const effectivePageTruthKey = pageTruthKey ?? (bookId && currentPage != null ? buildPageTruthKey(bookId, currentPage) : undefined);
-  const canvasStorageKey = bookId && effectivePageTruthKey
-    ? `${bookId}_${effectivePageTruthKey}`
+  const effectivePageTruthKey = pageTruthKey ?? (currentPage != null ? buildPageTruthKey(effectiveLearningDocumentId, currentPage) : undefined);
+  const canvasStorageKey = effectivePageTruthKey
+    ? `${effectiveLearningDocumentId}_${effectivePageTruthKey}`
     : undefined;
 
   // ── Phase B3-2/B3-3: Learning State + snapshot identity ──────────────────
   // The RESOLVED documentId (never bookId — see the resolvedDocumentId prop's
   // doc comment) is what every Learning State write and snapshot save below
-  // is keyed on, so two different books sharing a filename can never collide
-  // here even though TldrawCanvas's OWN internal plan cache still keys on
-  // bookId (a separate, pre-existing, out-of-scope concern — see above).
-  const effectiveLearningDocumentId = resolvedDocumentId ?? bookId ?? "unknown-document";
-
+  // is keyed on, so two different books sharing a filename can never collide.
   // Same identity formula TldrawCanvas uses internally for its own cache key
   // (buildProfessorLessonCacheKey), but computed here from the RESOLVED
   // documentId — this is the canonical identity for every Learning State
-  // event and the B3-3 snapshot store, deliberately independent of whatever
-  // TldrawCanvas's onLessonCompleted callback itself reports.
+  // event, cache, canvas, and the B3-3 snapshot store.
   const lessonId = useMemo(() => {
-    if (!effectivePageTruthKey) return null;
+    if (!effectivePageTruthKey || vsgState.status !== "ready") return null;
     return buildProfessorLessonCacheKey({
       documentId: effectiveLearningDocumentId,
       pageTruthKey: effectivePageTruthKey,
       activeCanonicalUnitId: knowledgeNodeId ?? null,
+      vsgId: vsgState.vsg.id,
     });
-  }, [effectiveLearningDocumentId, effectivePageTruthKey, knowledgeNodeId]);
+  }, [effectiveLearningDocumentId, effectivePageTruthKey, knowledgeNodeId, vsgState]);
 
   // Fires professor-lesson-started at most once per distinct lessonId within
   // this mount (Restart/replay of the SAME lesson doesn't re-fire it) — a new
@@ -286,7 +279,7 @@ export default function WhiteboardPanel({
   // Whiteboard content. Falling back to studyModel.pageThesis before pageTitle
   // was the mechanism behind the Whiteboard showing an unrelated single
   // sentence as its title instead of the page's real subject.
-  const effectiveTopic = pageTitle || (studyModel as any)?.pageThesis || lessonTitle;
+  const effectiveTopic = pageTitle || lessonTitle;
 
   /** Save to NoteLab — reuses the existing ultraNoteStore save path, sourced
    *  from studyModel (the shared page-understanding object), never from a
@@ -380,8 +373,19 @@ export default function WhiteboardPanel({
               and its own no-fallback failure state (clean retry, never stale
               content from another page); nothing here substitutes for that. */}
           {vsgState.status === "empty" ? (
-            <div style={{ padding: "24px 16px", textAlign: "center", color: "#64748b", fontSize: 13 }}>
-              {vsgState.reason}
+            <div style={{ padding: "48px 16px", textAlign: "center", color: "#94a3b8", fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <span>
+                {canonicalStatus === "loading"
+                  ? "Reading the current page before building the lesson…"
+                  : canonicalStatus === "error"
+                  ? "Current-page evidence is unavailable, so Professor will not teach from a fallback source."
+                  : vsgState.reason}
+              </span>
+              {canonicalStatus === "error" && onReanalyzeCanonical && (
+                <button onClick={onReanalyzeCanonical} className="text-xs px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">
+                  Retry current-page analysis
+                </button>
+              )}
             </div>
           ) : (
             <div style={{ position: "relative" }}>
@@ -392,14 +396,14 @@ export default function WhiteboardPanel({
               )}
               <div style={{ height: 520 }}>
                 <TldrawCanvas
-                  noteCards={teachNoteCards}
-                  pageTitle={pageTitle ?? (studyModel as any)?.pageThesis ?? lessonTitle ?? null}
+                  noteCards={[]}
+                  pageTitle={pageTitle ?? lessonTitle ?? null}
                   onAnchorClick={onAnchorStep ?? undefined}
                   activeAnchorId={activeAnchorId}
                   whiteboardGrammar={effectiveGrammar}
                   vsg={vsgState.status === "ready" ? vsgState.vsg : undefined}
                   storageKey={canvasStorageKey}
-                  documentId={bookId}
+                  documentId={effectiveLearningDocumentId}
                   pageTruthKey={effectivePageTruthKey}
                   activeCanonicalUnitId={knowledgeNodeId ?? null}
                   pageTeachingType={pageTeachingType ?? null}

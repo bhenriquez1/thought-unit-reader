@@ -1,7 +1,7 @@
 // tests/insights/resolveOpenAIModel.test.ts
 // Pure-function tests for the ranking logic behind resolveTeachingModel —
-// "use the strongest model this account actually has, never assume/hardcode
-// one that might not exist yet." pickBestModel takes the live model list as
+// "use the best structured-output model this account actually has, never
+// assume/hardcode one that might not exist yet." pickBestModel takes the live model list as
 // a plain array so this needs no network/API key to test.
 
 import { pickBestModel, PREFERENCE_ORDER, FALLBACK_MODEL } from "../../lib/insights/resolveOpenAIModel";
@@ -17,8 +17,13 @@ describe("pickBestModel — never invents a model, only confirms live availabili
     expect(pickBestModel(live)).not.toBe("gpt-5.5");
   });
 
-  it("selects gpt-5.5 when — and only when — the live list confirms it exists", () => {
+  it("prefers the stable structured-output model over a reasoning-first model when both are live", () => {
     const live = ["gpt-5.5-2026-01-01", "gpt-4o-2024-08-06"];
+    expect(pickBestModel(live)).toBe("gpt-4o-2024-08-06");
+  });
+
+  it("still selects gpt-5.5 when no preferred GPT-4 structured-output model is available", () => {
+    const live = ["gpt-5.5-2026-01-01", "text-embedding-3-small"];
     expect(pickBestModel(live)).toBe("gpt-5.5-2026-01-01");
   });
 
@@ -39,6 +44,11 @@ describe("pickBestModel — never invents a model, only confirms live availabili
     expect(pickBestModel(["gpt-4o"])).toBe("gpt-4o");
   });
 
+  it("does not mistake a mini/nano family variant for the preferred full model", () => {
+    const live = ["gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-2024-08-06"];
+    expect(pickBestModel(live)).toBe("gpt-4o-2024-08-06");
+  });
+
   it("excludes non-chat model variants even if they share a preferred prefix", () => {
     const live = ["gpt-4o-realtime-preview", "gpt-4o-transcribe", "gpt-4-turbo"];
     expect(pickBestModel(live)).toBe("gpt-4-turbo");
@@ -56,8 +66,10 @@ describe("pickBestModel — never invents a model, only confirms live availabili
 });
 
 describe("PREFERENCE_ORDER", () => {
-  it("lists gpt-5.5 as a wishlist entry — allowed to prefer it, never assumed available", () => {
+  it("keeps gpt-5.5 as a fallback wishlist entry, after the bounded structured-output models", () => {
     expect(PREFERENCE_ORDER).toContain("gpt-5.5");
+    expect(PREFERENCE_ORDER.indexOf("gpt-4.1")).toBeLessThan(PREFERENCE_ORDER.indexOf("gpt-5.5"));
+    expect(PREFERENCE_ORDER.indexOf("gpt-4o")).toBeLessThan(PREFERENCE_ORDER.indexOf("gpt-5.5"));
   });
 
   it("includes the long-stable fallback model somewhere in the list", () => {
