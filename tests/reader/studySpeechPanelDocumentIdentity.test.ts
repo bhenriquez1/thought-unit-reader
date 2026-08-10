@@ -43,16 +43,16 @@ describe("StudySpeechPanel.tsx — audio cache is scoped to the resolved documen
     expect(block).not.toMatch(/\}, \[bookId\]\);/);
   });
 
-  it("REQUIRED: both fetchTTS and fetchAndPlayAudio build their cache key via buildSpeechCacheKey(speechIdentity, ...), not a bare `${voice}::${text}` string", () => {
-    const fetchIdx = src.indexOf("function fetchTTS(text: string)");
+  it("REQUIRED: both fetchTTS and fetchAndPlayAudio scope cache keys by identity, voice, content role, and text", () => {
+    const fetchIdx = src.indexOf("function fetchTTS(");
     expect(fetchIdx).toBeGreaterThan(-1);
-    const fetchBlock = src.slice(fetchIdx, fetchIdx + 300);
-    expect(fetchBlock).toMatch(/const cacheKey = buildSpeechCacheKey\(speechIdentity, `\$\{voice\}::\$\{text\}`\);/);
+    const fetchBlock = src.slice(fetchIdx, fetchIdx + 450);
+    expect(fetchBlock).toMatch(/const cacheKey = buildSpeechCacheKey\(speechIdentity, `\$\{voice\}::\$\{contentRole\}::\$\{text\}`\);/);
 
     const playIdx = src.indexOf("async function fetchAndPlayAudio(");
     expect(playIdx).toBeGreaterThan(-1);
-    const playBlock = src.slice(playIdx, playIdx + 300);
-    expect(playBlock).toMatch(/const cacheKey = buildSpeechCacheKey\(speechIdentity, `\$\{voice\}::\$\{text\}`\);/);
+    const playBlock = src.slice(playIdx, playIdx + 500);
+    expect(playBlock).toMatch(/const cacheKey = buildSpeechCacheKey\(speechIdentity, `\$\{voice\}::\$\{contentRole\}::\$\{text\}`\);/);
   });
 
   it("imports the shared identity helpers rather than reimplementing the key format inline", () => {

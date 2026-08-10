@@ -2,11 +2,13 @@
 const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 
 type Body = {
   script?: string;
   voice?: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
   format?: "mp3" | "wav" | "ogg";
+  contentRole?: SpeechContentRole;
 };
 
 const FORMAT_TO_MIME: Record<NonNullable<Body["format"]>, string> = {
@@ -89,7 +91,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { script, voice = "alloy", format = "mp3" } = (req.body || {}) as Body;
+  const {
+    script,
+    voice = "alloy",
+    format = "mp3",
+    contentRole = "PROFESSOR_EXPLANATION",
+  } = (req.body || {}) as Body;
 
   if (!script || typeof script !== "string" || !script.trim()) {
     return res.status(400).json({ error: "Bad request: 'script' must be a non-empty string." });
@@ -114,7 +121,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       voice,
     });
 
-    const processedScript = preprocessForBrowserTTS(script);
+    const processedScript = contentRole === "SOURCE_VERBATIM"
+      ? script
+      : preprocessForBrowserTTS(script);
     DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: processedScript.length,
@@ -141,7 +150,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     DEV && console.log("[OPENAI_SPEECH_START]", { scriptChars: script.length, voice, format: fmt });
 
-    const ttsInput = preprocessForTTS(script);
+    const ttsInput = contentRole === "SOURCE_VERBATIM"
+      ? script
+      : preprocessForTTS(script);
     DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: ttsInput.length,
@@ -192,7 +203,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     DEV && console.error("TTS API error:", err?.message || err);
 
-    const processedScript = preprocessForBrowserTTS(script);
+    const processedScript = contentRole === "SOURCE_VERBATIM"
+      ? script
+      : preprocessForBrowserTTS(script);
     DEV && console.log("[SPEECH_TEXT_PREPROCESSED]", {
       inputChars: script.length,
       outputChars: processedScript.length,

@@ -4,11 +4,8 @@
 //   RC5 — pressing Pause while a segment's TTS was still fetching was a
 //         silent no-op; playback began unconditionally once the fetch
 //         resolved. A pauseRequestedRef now defers playback until Resume.
-//   RC6 — the OCR-repair fetch effect re-fires for the SAME page whenever
-//         activePageText refines, with no abort of its OWN previous
-//         in-flight request (only page/book-change triggers an abort via
-//         stopAudio()) — an older repair response could resolve after a
-//         newer one and silently overwrite fpSentences with stale content.
+//   RC6 — superseded by Phase 2's stronger Current Page contract: source
+//         text is never sent through AI/OCR repair at all.
 //   RC7 — the browser-speech fallback discarded the server's
 //         preprocessForBrowserTTS-cleaned script and re-spoke the original,
 //         un-preprocessed client text instead.
@@ -45,7 +42,7 @@ describe("StudySpeechPanel.tsx — RC5: pause-during-fetch defers playback inste
   it("REQUIRED: fetchAndPlayAudio's audio.play() is gated behind a pauseRequestedRef check inside the Promise executor", () => {
     const idx = src.indexOf("async function fetchAndPlayAudio(");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 3800);
+    const block = src.slice(idx, idx + 5200);
     const pauseCheckIdx = block.indexOf("if (pauseRequestedRef.current) {");
     const playCallIdx = block.indexOf("audio.play().catch((e)");
     expect(pauseCheckIdx).toBeGreaterThan(-1);
@@ -62,22 +59,20 @@ describe("StudySpeechPanel.tsx — RC5: pause-during-fetch defers playback inste
   });
 });
 
-describe("StudySpeechPanel.tsx — RC6: OCR-repair effect aborts its own previous in-flight request on every re-run", () => {
+describe("StudySpeechPanel.tsx — RC6: Current Page source is never rewritten by AI OCR repair", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
-  it("REQUIRED: repairAbortRef.current is aborted immediately before a new AbortController is created, not only via stopAudio()'s page/book-change path", () => {
-    const idx = src.indexOf("if (corruptionScore > 0.08 && mode === \"fullPage\") {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 900);
-    const selfAbortIdx = block.indexOf("repairAbortRef.current?.abort();");
-    const newControllerIdx = block.indexOf("const ocrRepairController = new AbortController();");
-    expect(selfAbortIdx).toBeGreaterThan(-1);
-    expect(newControllerIdx).toBeGreaterThan(-1);
-    expect(selfAbortIdx).toBeLessThan(newControllerIdx);
+  it("REQUIRED: the panel builds Current Page segments with the pure source-preserving builder", () => {
+    expect(src).toMatch(/buildCurrentPageSpeechSegments\(activePageText\)/);
   });
 
-  it("this effect still runs on activePageText refining for the SAME page (dependency array unchanged) — the fix must not require a page change to take effect", () => {
+  it("REQUIRED: the live panel never calls the AI speech-preprocess route", () => {
+    expect(src).not.toContain("/api/speech-preprocess");
+    expect(src).not.toContain("repairAbortRef");
+  });
+
+  it("rebuilds the source script whenever extracted page text refines", () => {
     expect(src).toMatch(/\}, \[activePageText, pageNumber\]\);/);
   });
 });
@@ -103,15 +98,15 @@ describe("StudySpeechPanel.tsx — RC7: browser-speech fallback uses the server'
   });
 
   it("REQUIRED: all three explicit-fallback call sites (fullPage/highlights/segment loops) pass result.script to playBrowserSpeech, not the loop's own ttsText/ttsHText/ttsSegText", () => {
-    const calls = [...src.matchAll(/if \(result !== "done"\) \{\s*\n\s*await new Promise<void>\(\(resolve\) => playBrowserSpeech\(result\.script, resolve, session\)\);/g)];
+    const calls = [...src.matchAll(/if \(result !== "done"\) \{\s*\n\s*await new Promise<void>\(\(resolve\) => playBrowserSpeech\(result\.script, resolve, session, [^)]+\)\);/g)];
     expect(calls.length).toBe(3);
   });
 
   it("the catch-block (genuine fetch failure, not an explicit useBrowserSpeech signal) still correctly falls back using the loop's own local text — no server script exists in that failure mode", () => {
     // Exactly 3 catch-block fallbacks remain using the loop-local text variables.
-    const ttsTextCatch = (src.match(/await new Promise<void>\(\(resolve\) => playBrowserSpeech\(ttsText, resolve, session\)\);/g) ?? []).length;
-    const ttsHTextCatch = (src.match(/await new Promise<void>\(\(resolve\) => playBrowserSpeech\(ttsHText, resolve, session\)\);/g) ?? []).length;
-    const ttsSegTextCatch = (src.match(/await new Promise<void>\(\(resolve\) => playBrowserSpeech\(ttsSegText, resolve, session\)\);/g) ?? []).length;
+    const ttsTextCatch = (src.match(/playBrowserSpeech\(ttsText, resolve, session, "SOURCE_VERBATIM"\)/g) ?? []).length;
+    const ttsHTextCatch = (src.match(/playBrowserSpeech\(ttsHText, resolve, session, seg\.contentRole\)/g) ?? []).length;
+    const ttsSegTextCatch = (src.match(/playBrowserSpeech\(ttsSegText, resolve, session, seg\.contentRole\)/g) ?? []).length;
     expect(ttsTextCatch).toBe(1);
     expect(ttsHTextCatch).toBe(1);
     expect(ttsSegTextCatch).toBe(1);

@@ -715,7 +715,8 @@ export function buildSpeechScript(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mode metadata for UI
+// Legacy mode metadata retained for low-level compatibility and tests. The
+// live Reader UI intentionally exposes only Current Page and Professor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ModeInfo {

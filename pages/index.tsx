@@ -719,7 +719,6 @@ export default function ThoughtUnitReader() {
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
-  const [activeParagraphText, setActiveParagraphText] = useState<string | null>(null);
   // Render counter — temporary diagnostic for React #185 investigation.
   const renderCountRef = useRef(0);
   renderCountRef.current++;
@@ -3571,8 +3570,6 @@ export default function ThoughtUnitReader() {
     // the new page so any viewport-center calculation would hit stale content.
     if (syncFrozenRef.current) return;
 
-    setActiveParagraphText(snippet);
-
     const store = insightsPanelStoreRef.current;
     store.setActiveVisibleText(snippet);
 
@@ -5475,7 +5472,6 @@ export default function ThoughtUnitReader() {
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 presetId={sharedPresetId}
                 highlightedAnchorTexts={highlightedAnchorTexts}
-                activeParagraphText={activeParagraphText}
                 speechPanelRef={speechPanelRef}
                 onSpeechSnippetFocus={handleSpeechSnippetFocus}
                 onSpeechPlayStateChange={handleSpeechPlayStateChange}

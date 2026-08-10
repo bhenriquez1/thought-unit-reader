@@ -606,24 +606,15 @@ interface RightPanelProps {
   onOpenThoughtUnit?: (anchorId: string) => void;
   /** Extracted page text — feeds the inline Study Speech "Listen to this page" action */
   activePageText?: string;
-  /** Effective domain preset id resolved by the LeftPanel (PureReaderView) — including
-   *  any manual override — so RightPanel's visualAnchors ranking and Guided speech
-   *  order agree with what the left panel is actually showing. Falls back to
-   *  RightPanel's own auto-detection when the left panel hasn't reported one yet. */
+  /** Effective domain preset id resolved by the LeftPanel (PureReaderView). */
   presetId?: string;
   /** Forwarded to the inline StudySpeechPanel so callers (e.g. PDF text-click) can trigger playback */
   speechPanelRef?: React.Ref<StudySpeechPanelHandle>;
   onSpeechSnippetFocus?: (snippet: string | null) => void;
   onSpeechPlayStateChange?: (isReading: boolean) => void;
-  /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
-   *  paint-budgeted effectiveHighlightTargets) — forwarded to the inline
-   *  StudySpeechPanel so "Highlight Only" mode reads only what's visible. */
+  /** Legacy internal speech input retained until the compatibility audit removes it. */
   highlightedAnchorTexts?: string[];
-  /** First visible paragraph text from the PDF viewport — forwarded to
-   *  StudySpeechPanel so Current Page playback starts at the sentence the
-   *  reader is currently looking at, not always at page top. */
-  activeParagraphText?: string | null;
-  /** Guided teach-loop "💬 Explain" button — fires with the paused segment's evidenceRefId. */
+  /** Legacy internal speech callback retained until the compatibility audit removes it. */
   onSpeechExplainSegment?: (id: string) => void;
   /** Study Tools column triggers — Whiteboard / Chief Resident are rendered by the caller. */
   onOpenWhiteboard?: () => void;
@@ -893,7 +884,6 @@ export function RightPanel({
   onSpeechSnippetFocus,
   onSpeechPlayStateChange,
   highlightedAnchorTexts,
-  activeParagraphText,
   onSpeechExplainSegment,
   onOpenWhiteboard,
   onOpenChiefResident,
@@ -1744,7 +1734,7 @@ export function RightPanel({
             onPlayStateChange={onSpeechPlayStateChange}
             onExplainSegment={onSpeechExplainSegment}
             highlightedAnchorTexts={highlightedAnchorTexts}
-            currentViewportText={activeParagraphText}
+            onOpenProfessor={onOpenWhiteboard}
             thoughtUnits={canonicalLeftPanelUnits}
             selectedUnitId={focusedEvidenceId ?? null}
             primary

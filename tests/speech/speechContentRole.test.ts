@@ -1,7 +1,6 @@
 // tests/speech/speechContentRole.test.ts
-// Phase B3 — SOURCE_VERBATIM vs PROFESSOR_EXPLANATION is now explicit on
-// every spoken segment, on both surfaces, rather than implicit in which
-// role string happens to be "checkpoint".
+// SOURCE_VERBATIM vs PROFESSOR_EXPLANATION stays explicit even in legacy
+// low-level speech builders, which remain during the removal-safety audit.
 
 import { contentRoleForSegmentRole, buildSpeechTimeline } from "../../lib/speech/studySpeechEngine";
 import type { ExpertAnchor } from "../../lib/insights/canonicalLeftPanel";

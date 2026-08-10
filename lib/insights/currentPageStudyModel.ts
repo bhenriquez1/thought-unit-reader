@@ -68,7 +68,7 @@ export type VisualAnchor = {
   proceduralImportance?: number;
   /** Conceptual connection strength to the rest of the page (0–1). */
   connectionStrength?: number;
-  /** Combined speech priority — lower values surface earlier in all 6 speech modes. */
+  /** Combined priority retained for legacy internal speech builders. */
   speechPriority?: number;
 };
 

@@ -85,4 +85,35 @@ describe("pages/api/tts.ts — handler behavior with OPENAI_API_KEY fully unset 
     expect(typeof res.jsonBody.script).toBe("string");
     expect(res.jsonBody.script.length).toBeGreaterThan(0);
   });
+
+  it("REQUIRED: SOURCE_VERBATIM browser fallback returns the source script unchanged", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const handler = require("../../pages/api/tts").default;
+    const script = "e.g. A & B; Fig. 2 — exact source.";
+    const { req, res } = mockReqRes({
+      script,
+      voice: "alloy",
+      format: "mp3",
+      contentRole: "SOURCE_VERBATIM",
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.script).toBe(script);
+  });
+
+  it("keeps explanatory preprocessing for Professor narration", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const handler = require("../../pages/api/tts").default;
+    const { req, res } = mockReqRes({
+      script: "See Fig. 2. e.g. compare the result.",
+      contentRole: "PROFESSOR_EXPLANATION",
+    });
+
+    await handler(req, res);
+
+    expect(res.jsonBody.script).toContain("Figure 2");
+    expect(res.jsonBody.script).toContain("for example");
+  });
 });

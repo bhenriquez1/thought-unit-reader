@@ -11,15 +11,15 @@ import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/current
 import {
   buildSpeechScript,
   buildSpeechTimeline,
-  STUDY_SPEECH_MODES,
   formulaToSpeech,
   type StudySpeechMode,
   type SpeechSegment,
 } from "@/lib/speech/studySpeechEngine";
 import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
-import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
 import { renderStars } from "@/lib/insights/importanceTiers";
+import { buildCurrentPageSpeechSegments } from "@/lib/speech/currentPageSpeech";
+import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 import {
   tokenizeWords,
   estimateWordWeights,
@@ -45,76 +45,24 @@ import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 
 const SPEECH_OWNER = "study-speech" as const;
 
-// ── Header / footer / caption detector ───────────────────────────────────────
-// Returns true for text blocks that should be skipped by the eye guide:
-// page numbers, running headers, footers, figure captions, section titles.
-function isHeaderOrFooter(text: string): boolean {
-  const t = text.trim();
-  if (t.length < 4) return true;
-  if (/^\d+$/.test(t)) return true;                                     // bare page number
-  if (/^(page|pg\.?)\s*\d+$/i.test(t)) return true;                   // "Page 12"
-  if (/^(figure|fig\.|table|appendix)\s*[\d.]+/i.test(t)) return true; // "Figure 2.3"
-  if (/^(chapter|unit|section|module)\s*[\d.]+/i.test(t)) return true; // "Chapter 4"
-  if (t === t.toUpperCase() && t.length < 80 && /[A-Z]/.test(t)) return true; // ALL CAPS heading
-  if (/copyright|all rights reserved|cengage|pearson|mcgraw|elsevier|wiley|isbn/i.test(t)) return true;
-  return false;
-}
+type VisibleSpeechMode = "currentPage" | "professor";
 
-// ── Sentence splitter ────────────────────────────────────────────────────────
-const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
-
-function splitIntoSentences(text: string): string[] {
-  if (!text.trim()) return [];
-  const raw = text.split(/(?<=[.!?])\s+/);
-  const merged: string[] = [];
-  for (const fragment of raw) {
-    const trimmed = fragment.trim();
-    if (!trimmed) continue;
-    const prev = merged[merged.length - 1];
-    if (prev && (ABBREV_RE.test(prev) || /^[a-z"''']/.test(trimmed))) {
-      merged[merged.length - 1] = prev + " " + trimmed;
-    } else {
-      merged.push(trimmed);
-    }
-  }
-  return merged.filter(s => s.length >= 15);
-}
-
-// ── Quick page-text → sentence splitter (used by Current Page mode + Read From Click) ──
-const QUICK_ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
-
-function buildQuickSentences(activePageText: string): string[] {
-  if (!activePageText) return [];
-  const pipeStripped = activePageText.replace(/\s*\|\s*/g, " ");
-  const rawLines = pipeStripped.split("\n").map(l => l.trim()).filter(Boolean);
-  const bodyLines = rawLines.filter(line => !isHeaderOrFooter(line));
-  // Do NOT apply normalizeDropCaps here — the raw sentences must match the PDF text-layer
-  // span concatenation verbatim (e.g. "A common trap" must stay "A common" not "Acommon"),
-  // so computeActiveWordRect's indexOf search succeeds. naturalizeDropCaps is applied
-  // separately by computeSpeechText → naturalizeSpeech before the TTS call.
-  const quickCleaned = bodyLines.join(" ");
-
-  const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
-  const merged: string[] = [];
-  for (const chunk of rawChunks) {
-    const t = chunk.trim();
-    if (!t) continue;
-    // A split right after an abbreviation ("Fig.", "Dr.", "approx.") is never a
-    // real sentence end and must always rejoin, regardless of how the next chunk
-    // starts. Otherwise, only rejoin when the next chunk looks like a false split
-    // (starts lowercase/digit/quote — real sentences start capitalized).
-    const prevEndsInAbbrev = merged.length > 0 && QUICK_ABBREV_RE.test(merged[merged.length - 1]);
-    const looksLikeContinuation = /^[a-z"'(0-9]/.test(t);
-    if (merged.length > 0 && (prevEndsInAbbrev || looksLikeContinuation)) {
-      merged[merged.length - 1] += " " + t;
-    } else {
-      merged.push(t);
-    }
-  }
-  // Drop short strings and any heading fragments that survived line-level filtering
-  // (e.g. "CONCEPT 2.1" inline in a long paragraph): apply isHeaderOrFooter post-split.
-  return merged.filter((s) => s.length >= 10 && !isHeaderOrFooter(s));
-}
+const VISIBLE_SPEECH_MODES: ReadonlyArray<{
+  id: VisibleSpeechMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "currentPage",
+    label: "Current Page",
+    description: "Read the current page from beginning to end using source-faithful text.",
+  },
+  {
+    id: "professor",
+    label: "Professor",
+    description: "Open the synchronized Professor Lesson and Whiteboard experience.",
+  },
+];
 
 // ── "Read From Click" — find the sentence that best matches a clicked snippet ──
 function findBestSentenceIndex(sentences: string[], snippet: string): number {
@@ -246,31 +194,25 @@ interface Props {
    *  breaks an existing call site — but every live call site should pass it. */
   documentId?: string;
   activePageText?: string;
-  /** Effective domain preset id — same value LeftPanel (PureReaderView) is grouping/ordering
-   *  its thought units by, so Guided mode's groupThoughtUnits() call agrees with it exactly. */
+  /** Effective domain preset id retained for the legacy internal speech builder. */
   presetId?: string;
-  /** Called when the reader clicks "💬 Explain" during a Guided teach-loop pause —
-   *  opens Explain This Step seeded with that segment's evidence. */
+  /** Legacy internal speech callback retained until the compatibility audit removes it. */
   onExplainSegment?: (evidenceRefId: string) => void;
-  /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
+  /** Called in Current Page mode with the current sentence text — drives focusSnippet scroll. */
   onSnippetFocus?: (snippet: string | null) => void;
   /** Fires whenever active read-aloud playback starts/stops — drives the persistent
    *  reading highlight in the PDF (focusHighlightPersist). */
   onPlayStateChange?: (isReading: boolean) => void;
-  /** Text of the first paragraph visible in the PDF viewport — used to find the
-   *  right start sentence when the user presses Play in Current Page mode without
-   *  an explicit clicked sentence. Comes from onActiveParagraphChange. */
-  currentViewportText?: string | null;
+  /** Opens the existing Professor Lesson / Whiteboard engine. */
+  onOpenProfessor?: () => void;
   /** Render as the promoted primary Study Tools action ("▶ Listen to this page"),
    *  open by default, instead of the compact collapsed header. */
   primary?: boolean;
-  /** Verbatim text of anchors currently painted on the PDF (PureReaderView's
-   *  paint-budgeted effectiveHighlightTargets) — forwarded to buildSpeechScript
-   *  so "Highlight Only" mode reads only what's actually visible on the page. */
+  /** Legacy internal speech input retained until the compatibility audit removes it. */
   highlightedAnchorTexts?: string[];
-  /** Canonical LeftPanel units — preferred source for every non-Current-Page speech mode. */
+  /** Canonical LeftPanel units used to synchronize Current Page tracking. */
   thoughtUnits?: ExpertAnchor[];
-  /** Focused/selected unit, promoted to the front of non-Full timelines. */
+  /** Focused/selected unit used by legacy internal speech compatibility code. */
   selectedUnitId?: string | null;
 }
 
@@ -288,7 +230,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, documentId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, currentViewportText = null },
+  { studyModel, pageNumber, bookId, documentId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, onOpenProfessor, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null },
   ref,
 ) {
   // Render counter — diagnostic for React render-loop investigation.
@@ -315,7 +257,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const lastPlayStateWriteRef = useRef(0);
 
   const [open, setOpen]       = useState(primary);
-  const [mode, setMode]       = useState<StudySpeechMode>("study");
+  const [visibleMode, setVisibleMode] = useState<VisibleSpeechMode>("currentPage");
+  // The local reader now has one live playback contract. Legacy low-level mode
+  // builders remain below for compatibility until their removal audit is safe.
+  const mode: StudySpeechMode = "fullPage";
   const [voice, setVoice]     = useState<OAIVoice>(() => {
     if (typeof window === "undefined") return "alloy";
     try {
@@ -617,9 +562,6 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Pending play intent for fullPage mode: set when Play is pressed before page text
   // has been extracted. Cleared and auto-played once fpSentences populates.
   const pendingFullPagePlayRef = useRef<number | null>(null);
-  // AbortController for the background OCR repair fetch — canceled on page/book change
-  // to prevent stale sentences from landing on the wrong page (H2 fix).
-  const repairAbortRef = useRef<AbortController | null>(null);
   // Timeout ref for the pendingFullPagePlay auto-resume — canceled in stopAudio()
   // to prevent the unmounted-component state-update warning (M1 fix).
   const pendingFullPagePlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -679,13 +621,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   useEffect(() => { try { localStorage.setItem("speech_voice", voice); } catch { /* ignore */ } }, [voice]);
   useEffect(() => { try { localStorage.setItem("speech_speed", String(speed)); } catch { /* ignore */ } }, [speed]);
 
-  // Reset on mode switch — stops any currently playing audio so mode A's audio
-  // doesn't keep running while mode B's UI is shown.
+  // Stop local Current Page audio before handing control to Professor/Whiteboard.
   useEffect(() => {
     stopAudio();
     setSegIdx(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [visibleMode]);
 
   // Stop audio when the active thought unit changes — but only for user-initiated
   // selections. Speech itself advances selectedUnitId via setThoughtUnit() and stamps
@@ -698,200 +639,29 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUnitId]);
 
-  // Page sentences — built whenever activePageText changes, regardless of mode, so
-  // "Read From Click" can jump into Current Page playback from any mode.
+  // Build the strict, ordered Current Page script directly from extracted source.
+  // No heuristic block filtering and no AI/OCR rewrite are allowed on this path.
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
-    if (activePageText) {
-      if (DEV) console.log("[SPEECH_RAW_TEXT]", {
-        page:     pageNumber,
-        chars:    activePageText.length,
-        first200: activePageText.slice(0, 200),
-        source:   "activePageText prop",
-      });
+    const sourceSegments = buildCurrentPageSpeechSegments(activePageText);
+    setFpSentences(sourceSegments);
+    if (DEV) console.log("[CURRENT_PAGE_SOURCE_SCRIPT]", {
+      page: pageNumber,
+      sourceChars: activePageText.length,
+      segmentCount: sourceSegments.length,
+      firstSegment: sourceSegments[0]?.slice(0, 80) ?? null,
+    });
 
-      // ── Step 1: quick clean — strip pipes, drop-caps, filter headers ─────
-      const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
-
-      // Remove pipe characters used as column/header separators in OCR
-      const pipeStripped = activePageText.replace(/\s*\|\s*/g, " ");
-
-      const rawLines = pipeStripped.split("\n").map(l => l.trim()).filter(Boolean);
-      const bodyLines: string[] = [];
-      let removedHeaders = 0;
-      for (const line of rawLines) {
-        if (isHeaderOrFooter(line)) {
-          if (DEV) console.log("[SPEECH_HEADER_REMOVED]", { page: pageNumber, text: line.slice(0, 80) });
-          removedHeaders++;
-        } else {
-          bodyLines.push(line);
-        }
-      }
-      // Do NOT apply normalizeDropCaps here — raw sentences must match the PDF text-layer
-      // span concatenation so computeActiveWordRect's indexOf succeeds for karaoke.
-      // naturalizeSpeech (called by computeSpeechText) handles drop-cap merging for TTS.
-      const quickCleaned = bodyLines.join(" ");
-
-      const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
-      const merged: string[] = [];
-      for (const chunk of rawChunks) {
-        const t = chunk.trim();
-        if (!t) continue;
-        // Same rejoin rule as buildQuickSentences() above: an abbreviation
-        // ("Fig.", "Dr.", "approx.") never ends a real sentence, so always
-        // rejoin after one; otherwise rejoin only when the next chunk looks
-        // like a false split (starts lowercase/digit/quote).
-        const prevEndsInAbbrev = merged.length > 0 && ABBREV_RE.test(merged[merged.length - 1]);
-        const looksLikeContinuation = /^[a-z"'(0-9]/.test(t);
-        if (merged.length > 0 && (prevEndsInAbbrev || looksLikeContinuation)) {
-          merged[merged.length - 1] += " " + t;
-        } else {
-          merged.push(t);
-        }
-      }
-      // Drop short strings and any heading fragments that survived line-level filtering
-      // (e.g. "CONCEPT 2.1" inline in a paragraph): apply isHeaderOrFooter post-split.
-      const quickSents = merged.filter((s) => s.length >= 10 && !isHeaderOrFooter(s));
-      const firstBodyIdx = quickSents.findIndex(s => !isHeaderOrFooter(s));
-
-      if (DEV) console.log("[SPEECH_CLEANED_TEXT]", {
-        page:           pageNumber,
-        removedHeaders,
-        chars:          quickCleaned.length,
-        first200:       quickCleaned.slice(0, 200),
-      });
-      if (DEV) console.log("[SPEECH_SENTENCE_COUNT]", {
-        page:         pageNumber,
-        count:        quickSents.length,
-        firstBodyIdx,
-        firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
-        first4:       quickSents.slice(0, 4).map(s => s.slice(0, 60)),
-      });
-      if (DEV) console.log("[SPEECH_FULL_PAGE_STATE]", {
-        page:           pageNumber,
-        mode,
-        rawChars:       activePageText.length,
-        rawFirst80:     activePageText.slice(0, 80),
-        totalSentences: quickSents.length,
-        firstSentence:  quickSents[0]?.slice(0, 80) ?? null,
-        firstBodyIdx,
-        firstBodyText:  firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
-        sentences1to4:  quickSents.slice(0, 4).map(s => s.slice(0, 60)),
-      });
-      if (DEV) console.log("[OCR_TEXT_PREVIEW]", {
-        page:     pageNumber,
-        first500: activePageText.slice(0, 500),
-        source:   "activePageText prop from index.tsx pageTextByPage",
-      });
-      if (DEV) console.log("[EYE_GUIDE_TEXT_BLOCKS]", {
-        page:   pageNumber,
-        blocks: quickSents.slice(0, 8).map((s, i) => ({
-          idx:       i,
-          isSkipped: isHeaderOrFooter(s),
-          text:      s.slice(0, 80),
-        })),
-      });
-      if (DEV) console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
-        page:         pageNumber,
-        total:        quickSents.length,
-        firstBodyIdx,
-        firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
-        source:       "activePageText-top-to-bottom",
-      });
-      if (DEV) console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: quickSents.length, first: quickSents[0]?.slice(0, 80) });
-
-      // Set immediately with quick-cleaned result so playback can start
-      setFpSentences(quickSents);
-      if (DEV) console.log("[SPEECH_CONTEXT_READY]", { page: pageNumber, sentenceCount: quickSents.length });
-
-      // Auto-resume if Play was pressed before this page's text was extracted.
-      if (pendingFullPagePlayRef.current !== null && quickSents.length > 0) {
-        const idx = pendingFullPagePlayRef.current;
-        pendingFullPagePlayRef.current = null;
-        setErrorMsg(null);
-        // Store the timer ref so stopAudio() can cancel it on unmount/page-change (M1 fix).
-        pendingFullPagePlayTimerRef.current = setTimeout(() => {
-          pendingFullPagePlayTimerRef.current = null;
-          playRef.current(idx);
-        }, 16);
-      }
-
-      // ── Step 2: background OCR repair if corruption is detected ──────────
-      // Score = ratio of suspiciously short all-caps tokens (not common words)
-      const COMMON = new Set(["A", "I", "AN", "OF", "IN", "IS", "TO", "THE", "AND", "OR", "FOR", "ON", "AT", "BY", "BE"]);
-      const allTokens = quickCleaned.split(/\s+/);
-      const suspiciousTokens = allTokens.filter(tok => {
-        const t = tok.replace(/[^A-Za-z]/g, "");
-        return t.length >= 2 && t.length <= 4 && t === t.toUpperCase() && !COMMON.has(t);
-      });
-      const corruptionScore = allTokens.length > 0 ? suspiciousTokens.length / allTokens.length : 0;
-      if (DEV) console.log("[SPEECH_OCR_REPAIR]", {
-        page:             pageNumber,
-        corruptionScore:  Math.round(corruptionScore * 1000) / 1000,
-        suspiciousTokens: suspiciousTokens.slice(0, 10),
-        willRepair:       corruptionScore > 0.08,
-      });
-
-      if (corruptionScore > 0.08 && mode === "fullPage") {
-        const textToRepair = quickSents.join(" ").slice(0, 3000);
-        // Abort our own previous in-flight repair request before starting a
-        // new one. This effect re-runs on activePageText refining for the
-        // SAME page, not just on page/book change — stopAudio()'s abort
-        // (fired from the page-change reset effect) doesn't cover that
-        // same-page re-fire, so without this an older repair response
-        // resolving after a newer one could silently overwrite fpSentences
-        // with stale content (RC6, Speech Engine audit).
-        repairAbortRef.current?.abort();
-        // AbortController so a page turn cancels the in-flight repair and prevents
-        // stale sentences from overwriting the new page's content (H2 fix).
-        const ocrRepairController = new AbortController();
-        repairAbortRef.current = ocrRepairController;
-        fetch("/api/speech-preprocess", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: textToRepair }),
-          signal: ocrRepairController.signal,
-        })
-          .then(r => r.json())
-          .then((data: { cleaned: string; wasRepaired: boolean }) => {
-            if (!data.wasRepaired || !data.cleaned) return;
-            if (DEV) console.log("[SPEECH_OCR_REPAIR]", {
-              page:        pageNumber,
-              wasRepaired: true,
-              before:      textToRepair.slice(0, 100),
-              after:       data.cleaned.slice(0, 100),
-            });
-            // Re-split the AI-cleaned text into sentences
-            const reChunks = data.cleaned.split(/(?<=[.!?])\s+/);
-            const reMerged: string[] = [];
-            for (const chunk of reChunks) {
-              const t = chunk.trim();
-              if (!t) continue;
-              const isCont = reMerged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(reMerged[reMerged.length - 1]);
-              if (isCont) reMerged[reMerged.length - 1] += " " + t;
-              else reMerged.push(t);
-            }
-            const repairedSents = reMerged.filter(s => s.length >= 10);
-            if (repairedSents.length > 0) {
-              if (DEV) console.log("[SPEECH_SENTENCE_COUNT]", {
-                page:        pageNumber,
-                source:      "ai-repaired",
-                count:       repairedSents.length,
-                firstRepaired: repairedSents[0]?.slice(0, 80) ?? null,
-              });
-              setFpSentences(repairedSents);
-            }
-          })
-          .catch((err: unknown) => {
-            if (err instanceof Error && err.name === "AbortError") return;
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn("[SPEECH_OCR_REPAIR]", { page: pageNumber, error: message });
-          });
-      }
-    } else {
-      setFpSentences([]);
+    // Auto-resume if Play was pressed before this page's text was extracted.
+    if (pendingFullPagePlayRef.current !== null && sourceSegments.length > 0) {
+      const idx = pendingFullPagePlayRef.current;
+      pendingFullPagePlayRef.current = null;
+      setErrorMsg(null);
+      pendingFullPagePlayTimerRef.current = setTimeout(() => {
+        pendingFullPagePlayTimerRef.current = null;
+        playRef.current(idx);
+      }, 16);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mode is captured in the closure for OCR-repair gating but must not trigger a rebuild on tab switch; sentence content depends only on page text
   }, [activePageText, pageNumber]);
 
   // Rebuild segments when model or mode changes — without stopping audio.
@@ -984,8 +754,6 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     if (autoContinueTimerRef.current) { clearTimeout(autoContinueTimerRef.current); autoContinueTimerRef.current = null; }
     // Cancel pending auto-resume timer to prevent state updates on unmounted component (M1 fix).
     if (pendingFullPagePlayTimerRef.current) { clearTimeout(pendingFullPagePlayTimerRef.current); pendingFullPagePlayTimerRef.current = null; }
-    // Cancel any in-flight OCR repair fetch (H2 fix).
-    if (repairAbortRef.current) { repairAbortRef.current.abort(); repairAbortRef.current = null; }
     abortRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
@@ -1028,10 +796,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // ── TTS fetch helper — returns Promise<{blob,mimeType} | {browser,script}> ──
 
   // Fetches (and caches) the TTS audio for `text` without playing it. Repeated
-  // calls with the same text + voice reuse the in-flight/completed request, so
+  // calls with the same text + voice + content role reuse the request, so
   // prefetching the next segment ahead of time is just a fire-and-forget call.
-  function fetchTTS(text: string): Promise<{ blob: Blob; mimeType: string } | { browser: true; script: string }> {
-    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
+  function fetchTTS(
+    text: string,
+    contentRole: SpeechContentRole,
+  ): Promise<{ blob: Blob; mimeType: string } | { browser: true; script: string }> {
+    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${contentRole}::${text}`);
     const cached = audioCacheRef.current.get(cacheKey);
     if (cached) return cached;
 
@@ -1045,7 +816,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
+          body: JSON.stringify({ script: text, voice, format: "mp3", return: "json", contentRole }),
           signal: controller.signal,
         });
       } catch (err: unknown) {
@@ -1069,11 +840,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
       if (data.useBrowserSpeech) {
         if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
-        // The server already ran this text through preprocessForBrowserTTS
-        // (OCR/ligature/abbreviation cleanup + pause-softening) specifically
-        // for browser speechSynthesis — use it instead of re-speaking our own
-        // un-preprocessed text (RC7, Speech Engine audit). Falls back to the
-        // original text only if the server didn't include one.
+        // Use the server's role-aware fallback script. SOURCE_VERBATIM is
+        // returned unchanged; Professor narration may be speech-normalized.
         const script = typeof data.script === "string" && data.script.length > 0 ? data.script : text;
         return { browser: true, script };
       }
@@ -1088,14 +856,18 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // Kicks off a TTS fetch for the upcoming segment so it's ready by the time
   // playback reaches it. Safe to call with empty/undefined text.
-  function prefetchTTS(text: string | undefined | null) {
+  function prefetchTTS(text: string | undefined | null, contentRole: SpeechContentRole) {
     if (!text) return;
-    fetchTTS(text).catch(() => {}); // errors surface (again) when actually played
+    fetchTTS(text, contentRole).catch(() => {}); // errors surface when actually played
   }
 
-  async function fetchAndPlayAudio(text: string, session: number): Promise<"done" | { browser: true; script: string }> {
-    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${text}`);
-    const result = await fetchTTS(text);
+  async function fetchAndPlayAudio(
+    text: string,
+    session: number,
+    contentRole: SpeechContentRole,
+  ): Promise<"done" | { browser: true; script: string }> {
+    const cacheKey = buildSpeechCacheKey(speechIdentity, `${voice}::${contentRole}::${text}`);
+    const result = await fetchTTS(text, contentRole);
     audioCacheRef.current.delete(cacheKey); // one-shot — don't replay stale audio on reuse
 
     // A newer play() call superseded this request while the fetch was in
@@ -1159,7 +931,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
   // ── Browser speech fallback ─────────────────────────────────────────────────
 
-  function playBrowserSpeech(text: string, onDone?: () => void, session?: number) {
+  function playBrowserSpeech(
+    text: string,
+    onDone?: () => void,
+    session?: number,
+    contentRole: SpeechContentRole = "PROFESSOR_EXPLANATION",
+  ) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       updatePlayState("error");
       setErrorMsg("Speech not available in this browser.");
@@ -1172,13 +949,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       return;
     }
     providerRef.current = "browser";
-    // Normalize for browser TTS: replace period-space with comma-space to shorten
-    // inter-sentence pauses (browser SpeechSynthesis adds ~800ms at each period).
-    const normalized = text
-      .replace(/\.\s+/g, ", ")
-      .replace(/[!?]\s+/g, ", ")
-      .replace(/,\s*,/g, ",")
-      .trim();
+    // Current Page must remain source-faithful even in browser fallback.
+    // Professor narration may retain the pause-softening behavior.
+    const normalized = contentRole === "SOURCE_VERBATIM"
+      ? text
+      : text
+          .replace(/\.\s+/g, ", ")
+          .replace(/[!?]\s+/g, ", ")
+          .replace(/,\s*,/g, ",")
+          .trim();
     const utt = new SpeechSynthesisUtterance(normalized);
     utt.rate  = Math.min(speedRef.current * 1.05, 1.8); // uses ref so rate is correct after mid-playback speed change
     const token = globalTokenRef.current;
@@ -1261,13 +1040,10 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       sentence0:    sentences[0]?.slice(0, 80) ?? null,
       sentence1:    sentences[1]?.slice(0, 80) ?? null,
       sentence3:    sentences[3]?.slice(0, 80) ?? null, // sentence "4" (0-indexed 3)
-      isHeaderAt0:  sentences[0] ? isHeaderOrFooter(sentences[0]) : null,
-      isHeaderAt1:  sentences[1] ? isHeaderOrFooter(sentences[1]) : null,
-      isHeaderAt2:  sentences[2] ? isHeaderOrFooter(sentences[2]) : null,
     });
 
-    // Sentences are already pre-filtered in the fpSentences builder (isHeaderOrFooter per line).
-    // Start from fromIdx directly — no secondary skip loop that would push index to "sentence 4".
+    // Start from the explicit cursor. Default Play passes 0, so Current Page
+    // always begins at the first source segment.
     const effectiveFromIdx = fromIdx;
     // Tracks the most-recently matched thought unit so the left panel stays on the
     // "current chapter" even for body-text sentences (Spotify lyrics behaviour).
@@ -1284,17 +1060,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (isStale(session)) break;
       if (i === effectiveFromIdx && DEV) console.log("[SPEECH_PLAY_START]", { mode: "fullPage", fromIdx, totalSentences: sentences.length, page: pageNumber, first: sentences[i]?.slice(0, 80) });
       const raw = sentences[i];
-      const { hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
-      if (transformations > 0 && DEV) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
-      if (hasMath && DEV)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
-      if (hasScience && DEV) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
-      const text = computeSpeechText(raw);
       // seekWordStartRef MUST be reset to 0 at the top of every iteration (not just i>0)
       // so the clicked-word offset cannot leak from the first segment into later segments.
       // pendingSeekCursorRef was already nulled when consumed — this reset is the final guard.
       seekWordStartRef.current = 0;
-      let ttsText = text;
-      let eyeText = text.slice(0, 160);
+      let ttsText = raw;
+      let eyeText = raw.slice(0, 160);
       if (i === effectiveFromIdx) {
         const seekCursor = pendingSeekCursorRef.current;
         if (seekCursor) {
@@ -1306,8 +1077,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             const rawWords = tokenizeWords(raw);
             const wordIdx = Math.min(seekCursor.sourceWordIndex, Math.max(0, rawWords.length - 1));
             seekWordStartRef.current = wordIdx;
-            const slicedRaw = rawWords.slice(wordIdx).map((w: SyncWord) => w.word).join(" ");
-            ttsText = computeSpeechText(slicedRaw || raw);
+            const slicedRaw = rawWords[wordIdx] ? raw.slice(rawWords[wordIdx].start) : raw;
+            ttsText = slicedRaw || raw;
             eyeText = slicedRaw.slice(0, 160) || eyeText;
             if (DEV) console.log("[SPEECH_CURSOR_CONSUMED]", { mode: "fullPage", sentenceIdx: i, wordIdx, ttsPreview: ttsText.slice(0, 80) });
           }
@@ -1340,10 +1111,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         narrationPrefixOffset: 0, effectivePrefixOffset: 0,
         resultingPdfStartIndex: seekWordStartRef.current,
       });
-      // Pass raw (pre-TTS, full sentence) as the PDF search string — TTS-processed text has
-      // acronym expansions and symbol replacements that break text-layer indexOf matching.
-      // Use lastMatchedId when no exact match — keeps the LeftPanel card lit (Spotify karaoke).
-      beginKaraoke(eyeText, ttsText, matchedId ?? lastMatchedId, raw);
+      // Tokenize the complete spoken source segment; only the compact preview is
+      // visually truncated. This keeps word tracking valid beyond 160 characters.
+      beginKaraoke(ttsText, ttsText, matchedId ?? lastMatchedId, raw);
 
       if (DEV) console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: ttsText.length, totalSentences: sentences.length });
       if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsText.length, voice, mode: "fullPage" });
@@ -1360,13 +1130,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(focusId ?? null, "fullPage", 0));
 
       // Prefetch the next sentence's audio while this one plays.
-      if (i + 1 < sentences.length) prefetchTTS(computeSpeechText(sentences[i + 1]));
+      if (i + 1 < sentences.length) prefetchTTS(sentences[i + 1], "SOURCE_VERBATIM");
 
       try {
-        const result = await fetchAndPlayAudio(ttsText, session);
+        const result = await fetchAndPlayAudio(ttsText, session, "SOURCE_VERBATIM");
         if (isStale(session)) break;
         if (result !== "done") {
-          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session, "SOURCE_VERBATIM"));
         }
         if (!isStale(session) && i < sentences.length - 1) {
           await new Promise((r) => setTimeout(r, 150));
@@ -1376,7 +1146,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode: "fullPage" });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "fullPage", error: message });
-        await new Promise<void>((resolve) => playBrowserSpeech(ttsText, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsText, resolve, session, "SOURCE_VERBATIM"));
       }
     }
 
@@ -1459,13 +1229,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsHText.length, voice, evidenceRefId: seg.evidenceRefId });
 
       // Prefetch the next segment's audio while this one plays.
-      if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text));
+      if (i + 1 < segs.length) prefetchTTS(computeSpeechText(segs[i + 1].text), segs[i + 1].contentRole);
 
       try {
-        const result = await fetchAndPlayAudio(ttsHText, session);
+        const result = await fetchAndPlayAudio(ttsHText, session, seg.contentRole);
         if (isStale(session)) break; // user stopped, or a newer play() superseded this loop
         if (result !== "done") {
-          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session, seg.contentRole));
         }
         // Small pause between segments
         if (!isStale(session) && i < segs.length - 1) {
@@ -1477,7 +1247,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode: "highlights", error: message });
         if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsHText, resolve, session, seg.contentRole));
       }
     }
 
@@ -1494,7 +1264,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Page Brain hasn't synthesized yet, or has no anchors for this page) — instead
   // of surfacing an error and stopping, just read the raw page text.
   function fallbackToPageText(fromIdx: number, session: number, reason: string) {
-    const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
+    const sents = fpSentences.length > 0 ? fpSentences : buildCurrentPageSpeechSegments(activePageText);
     if (!sents.length) {
       setErrorMsg("No page text available.");
       updatePlayState("idle");
@@ -1525,10 +1295,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
-      // Use pre-computed fpSentences (two-pass splitter, includes header/footer
-      // filtering); fall back to the same canonical quick-splitter (not a
-      // degraded inline copy) if the mount-time effect hasn't populated it yet.
-      const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
+      // Use the pre-computed strict source script, or build the same script
+      // synchronously if extraction landed before the effect committed.
+      const sents = fpSentences.length > 0 ? fpSentences : buildCurrentPageSpeechSegments(activePageText);
       if (!sents.length) {
         if (!activePageText) {
           // PDF text extraction is async — text not yet available for this page.
@@ -1541,26 +1310,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         updatePlayState("idle");
         return;
       }
-      // When Play is pressed with no explicit sentence chosen (fromIdx === 0),
-      // use the first visible viewport paragraph to find the best start sentence
-      // so playback begins where the reader is looking, not at page top.
-      let startIdx: number;
-      if (fromIdx === 0 && currentViewportText) {
-        const viewportIdx = findBestSentenceIndex(sents, currentViewportText);
-        startIdx = Math.max(0, Math.min(viewportIdx, sents.length - 1));
-        const matchedUnit = studyModel?.visualAnchors
-          ? matchSentenceToAnchor(sents[startIdx] ?? "", studyModel.visualAnchors)
-          : null;
-        if (DEV) console.log("[CURRENT_PAGE_START_POSITION]", {
-          page: pageNumber,
-          startMode: "viewport",
-          sentenceIndex: startIdx,
-          sentencePreview: sents[startIdx]?.slice(0, 80) ?? null,
-          matchedThoughtUnitId: matchedUnit?.id ?? null,
-        });
-      } else {
-        startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
-      }
+      const startIdx = Math.max(0, Math.min(fromIdx, Math.max(0, sents.length - 1)));
+      if (DEV) console.log("[CURRENT_PAGE_START_POSITION]", {
+        page: pageNumber,
+        startMode: fromIdx === 0 ? "page-start" : "explicit-cursor",
+        sentenceIndex: startIdx,
+        sentencePreview: sents[startIdx]?.slice(0, 80) ?? null,
+      });
       if (DEV) console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx: startIdx, firstSentence: sents[startIdx]?.slice(0, 80) });
       if (DEV) console.log("[SPEECH_SOURCE]", {
         mode: "fullPage",
@@ -1680,13 +1436,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsSegText.length, voice });
 
       // Prefetch the next segment's audio while this one plays.
-      if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text));
+      if (i + 1 < segsToPlay.length) prefetchTTS(computeSpeechText(segsToPlay[i + 1].text), segsToPlay[i + 1].contentRole);
 
       try {
-        const result = await fetchAndPlayAudio(ttsSegText, session);
+        const result = await fetchAndPlayAudio(ttsSegText, session, seg.contentRole);
         if (isStale(session)) break;
         if (result !== "done") {
-          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session));
+          await new Promise<void>((resolve) => playBrowserSpeech(result.script, resolve, session, seg.contentRole));
         }
         if (!isStale(session) && i < segsToPlay.length - 1) {
           if (mode === "guided" && seg.requiresConfirm) {
@@ -1701,7 +1457,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
         console.warn("[SPEECH_ERROR]", { source: "openai", segIdx: i, mode, error: message });
         if (DEV) console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session));
+        await new Promise<void>((resolve) => playBrowserSpeech(ttsSegText, resolve, session, seg.contentRole));
       }
     }
 
@@ -1775,13 +1531,13 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Switch to Current Page mode and start reading from the sentence the reader
   // clicked on in the PDF.
   function playFromSnippet(snippet: string) {
-    const sents = fpSentences.length > 0 ? fpSentences : buildQuickSentences(activePageText);
+    const sents = fpSentences.length > 0 ? fpSentences : buildCurrentPageSpeechSegments(activePageText);
     if (!sents.length) return;
     const idx = findBestSentenceIndex(sents, snippet);
     if (DEV) console.log("[SPEECH_READ_FROM_CLICK]", { page: pageNumber, idx, total: sents.length, snippet: snippet.slice(0, 60), sentenceStart: sents[idx]?.slice(0, 120) ?? null });
     if (DEV) console.log("[CURRENT_PAGE_SPEECH_START]", { page: pageNumber, sentenceIndex: idx, wordIndex: 0, textPreview: sents[idx]?.slice(0, 120) ?? null });
     setOpen(true);
-    setMode("fullPage");
+    setVisibleMode("currentPage");
     stop();
     // Reset the starting guard so the next play attempt isn't blocked by stop()'s
     // side-effects — stop() doesn't reset isStartingRef.current (H1 / L1 fix).
@@ -1796,49 +1552,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   }
 
   // ── seekToCursor — prime resume refs from a PDF click cursor ─────────────────
-  // Does NOT start playback. Sets resumeAnchorIdRef / resumeSegIdxRef / resumeWordIndexRef
-  // so the next Play press starts from the clicked word. Uses the same 4-level cascade
-  // as the mode-switch remap, but applies to the current mode's segment list.
+  // Does NOT start playback. Current Page resolves directly against the ordered
+  // source segments because the legacy semantic segment list is intentionally empty.
   function seekToCursor(cursor: ReadingCursor) {
-    const segs = segmentsRef.current;
     const anchor = cursor.canonicalAnchorId;
-    let resolvedIdx = 0;
-    let strategy = "restart";
-
-    // Level 1: exact canonical ID match
-    if (anchor) {
-      const idx = segs.findIndex(s => s.evidenceRefId === anchor || s.id === anchor);
-      if (idx >= 0) { resolvedIdx = idx; strategy = "exact-id"; }
-    }
-
-    // Level 2: source-text 40-char prefix overlap (never matches Guided narration prefixes)
-    if (strategy === "restart" && cursor.sourceText) {
-      const needle = cursor.sourceText.slice(0, 60).toLowerCase();
-      const idx = segs.findIndex(s => {
-        const hay = (s.rawText ?? s.text).slice(0, 60).toLowerCase();
-        return hay.startsWith(needle.slice(0, 40)) || needle.startsWith(hay.slice(0, 40));
-      });
-      if (idx >= 0) { resolvedIdx = idx; strategy = "source-text"; }
-    }
-
-    // Level 3: nearest following anchor in thoughtUnits reading order
-    if (strategy === "restart" && anchor) {
-      const orderIdx = thoughtUnits.findIndex(u => u.evidenceRefId === anchor);
-      if (orderIdx >= 0) {
-        const followingIds = new Set(
-          thoughtUnits.slice(orderIdx + 1).map(u => u.evidenceRefId).filter(Boolean) as string[]
-        );
-        const idx = segs.findIndex(s => s.evidenceRefId && followingIds.has(s.evidenceRefId));
-        if (idx >= 0) { resolvedIdx = idx; strategy = "nearest-following"; }
-      }
-    }
-
-    // Level 4: Current Page text match by source text (canonicalAnchorId may be null)
-    if (strategy === "restart" && cursor.sourceText && mode === "fullPage") {
-      const needle = cursor.sourceText.slice(0, 40).toLowerCase();
-      const idx = segs.findIndex(s => s.text.toLowerCase().includes(needle));
-      if (idx >= 0) { resolvedIdx = idx; strategy = "current-page-text"; }
-    }
+    const sourceSegments = fpSentences.length > 0
+      ? fpSentences
+      : buildCurrentPageSpeechSegments(activePageText);
+    const resolvedIdx = cursor.sourceText
+      ? findBestSentenceIndex(sourceSegments, cursor.sourceText)
+      : 0;
+    const strategy = cursor.sourceText ? "current-page-source-text" : "page-start";
 
     resumeAnchorIdRef.current   = anchor;
     resumeSourceTextRef.current = cursor.sourceText;
@@ -1855,6 +1579,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
     // Open the panel if it's collapsed so the user can see the mode controls.
     setOpen(true);
+    setVisibleMode("currentPage");
     if (DEV) console.log("[PDF_CLICK_CURSOR_PREPARED]", {
       mode,
       canonicalAnchorId: anchor,
@@ -1878,10 +1603,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function triggerPlay() {
     const resumeIdx = resumeSegIdxRef.current;
     resumeSegIdxRef.current = 0;
+    if (visibleMode !== "currentPage") {
+      setVisibleMode("currentPage");
+      setTimeout(() => play(resumeIdx), 80);
+      return;
+    }
     play(resumeIdx);
   }
 
-  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments]);
+  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments, visibleMode]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1913,7 +1643,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         <span style={primary
           ? { fontSize: 13, fontWeight: 700, color: "#c7d2fe" }
           : { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#94a3b8", textTransform: "uppercase" }}>
-          {primary ? "Listen to this page" : "Study Speech"}
+          Speech
         </span>
         {isPlaying && (
           <span style={{ marginLeft: "auto", fontSize: 10, color: "#a5b4fc", fontWeight: 600 }}>▶ Playing…</span>
@@ -1932,21 +1662,31 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
 
           {/* Mode tabs */}
           <div style={{ display: "flex", gap: 4 }}>
-            {STUDY_SPEECH_MODES.map(m => (
+            {VISIBLE_SPEECH_MODES.map(m => (
               <button key={m.id} type="button" onClick={() => {
-                // Capture the current playback position before stopping so the new
-                // mode's play button can resume from the nearest matching segment.
-                resumeAnchorIdRef.current  = activeAnchorIdRef.current ?? lastMatchedIdRef.current;
-                resumeSourceTextRef.current = activeSentenceTextRef.current;
-                resumeWordIndexRef.current  = activeWordIdx;
-                setMode(m.id);
-                stop();
+                setVisibleMode(m.id);
               }} title={m.description}
-                style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                style={{ flex: 1, padding: "6px 0", borderRadius: 6, border: visibleMode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: visibleMode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: visibleMode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
               >{m.label}</button>
             ))}
           </div>
 
+          {visibleMode === "professor" ? (
+            <div style={{ borderRadius: 10, border: "1px solid rgba(129,140,248,0.25)", background: "rgba(99,102,241,0.07)", padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
+              <p style={{ margin: 0, color: "#cbd5e1", fontSize: 11, lineHeight: 1.55 }}>
+                Professor opens the Whiteboard teaching engine after loading the full current-page evidence. Narration and drawing stay synchronized throughout the lesson.
+              </p>
+              <button
+                type="button"
+                onClick={() => onOpenProfessor?.()}
+                disabled={!onOpenProfessor}
+                style={{ alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.45)", background: "rgba(99,102,241,0.16)", color: "#c7d2fe", fontSize: 11, fontWeight: 700, cursor: onOpenProfessor ? "pointer" : "not-allowed", opacity: onOpenProfessor ? 1 : 0.45 }}
+              >
+                Open Professor Whiteboard
+              </button>
+            </div>
+          ) : (
+          <>
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {isLoading ? (
@@ -2045,7 +1785,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: ec.text, boxShadow: `0 0 6px ${ec.text}`, animation: "eyePulse 1.2s ease-in-out infinite" }} />
                   <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: ec.text, textTransform: "uppercase" }}>
-                    {eyeRole === "fullPage" ? "Full Page" : eyeRole === "visualAnchor" ? "Reading" : eyeRole ?? "Reading"}
+                    {eyeRole === "fullPage" ? "Current Page" : eyeRole === "visualAnchor" ? "Reading" : eyeRole ?? "Reading"}
                   </span>
                   {eyeTier && (
                     <span style={{ fontSize: 9, color: ec.text, letterSpacing: "-0.02em" }} title={`${eyeTier.label} priority`} data-testid="speech-eye-tier-stars">
@@ -2153,8 +1893,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
           {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length === 0 && (
             <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>Preparing expert reading map…</p>
           )}
-          {segments.length === 0 && mode !== "fullPage" && thoughtUnits.length > 0 && (
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Building speech timeline…</p>
+          </>
           )}
         </div>
       )}

@@ -604,7 +604,7 @@ export default function TldrawCanvas({
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3" }),
+          body: JSON.stringify({ script: segment.text, voice: PROFESSOR_VOICE, format: "mp3", contentRole: "PROFESSOR_EXPLANATION" }),
         });
         const data = await res.json();
         let resolved: ResolvedNarrationAudio;
