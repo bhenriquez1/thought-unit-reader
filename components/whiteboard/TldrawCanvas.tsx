@@ -69,13 +69,33 @@ import {
   buildProfessorTldrawAgentRequest,
   requestProfessorTldrawAgent,
   verifyProfessorTldrawAgentResponse,
+  isNontrivialProfessorAgentAction,
+  ProfessorAgentRequestError,
+  resolveProfessorAgentFailure,
   type ProfessorAgentCanvasContext,
+  type ProfessorAgentFailureReason,
 } from "@/lib/whiteboard/professorTldrawAgent";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
 // falls back to browser speech automatically when OPENAI_API_KEY is unset.
 const PROFESSOR_VOICE = "onyx";
+const PROFESSOR_AGENT_MAX_PASSES = 3;
+const PROFESSOR_AGENT_STRICT = process.env.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT === "true";
+
+interface ProfessorAgentDiagnostic {
+  eligible: boolean; agentTriggered: boolean; currentPass: number;
+  executeActions: number; correctionActions: number; cameraCommands: number;
+  nontrivialVisualCount: number; fallbackUsed: boolean;
+  fallbackReason: ProfessorAgentFailureReason | null; agentDurationMs: number;
+  actualTldrawShapeDelta: number;
+}
+const EMPTY_AGENT_DIAGNOSTIC: ProfessorAgentDiagnostic = {
+  eligible: false, agentTriggered: false, currentPass: 0, executeActions: 0,
+  correctionActions: 0, cameraCommands: 0, nontrivialVisualCount: 0,
+  fallbackUsed: false, fallbackReason: null, agentDurationMs: 0,
+  actualTldrawShapeDelta: 0,
+};
 
 // ── Tier colors (unchanged semantics: red=danger/trap, gold=master, …) ─────
 const TIER_COLOR: Record<string, string> = {
@@ -422,6 +442,7 @@ export default function TldrawCanvas({
   const agentAbortRef = useRef<AbortController | null>(null);
   const agentSemanticRoleByShapeIdRef = useRef<Map<string, string>>(new Map());
   const [agentVisualStatus, setAgentVisualStatus] = useState<"idle" | "observing" | "drawing" | "inspecting" | "fallback">("idle");
+  const [agentDiagnostic, setAgentDiagnostic] = useState<ProfessorAgentDiagnostic>(EMPTY_AGENT_DIAGNOSTIC);
   const onAnchorClickRef = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const onProfessorSurfaceChangeRef = useRef(onProfessorSurfaceChange);
@@ -730,26 +751,39 @@ export default function TldrawCanvas({
     editor: Editor,
     stepId: number,
     nextActions: ProfessorTeachingAction[],
-  ) => {
-    if (nextActions.length === 0) return;
+  ): Promise<{ shapeDelta: number; nontrivialRendered: number; resultingShapeIds: string[] }> => {
+    if (nextActions.length === 0) return { shapeDelta: 0, nontrivialRendered: 0, resultingShapeIds: [] };
+    const beforeShapeIds = new Set(Array.from(editor.getCurrentPageShapeIds()).map(String));
     const existing = agentActionsByStepRef.current.get(stepId) ?? [];
     const start = existing.length;
     const combined = [...existing, ...nextActions];
     agentActionsByStepRef.current.set(stepId, combined);
     registerRuntimeAgentActions(nextActions);
     for (let i = 0; i < nextActions.length; i++) {
-      if (planRef.current == null) return;
+      if (planRef.current == null) return { shapeDelta: 0, nontrivialRendered: 0, resultingShapeIds: [] };
       agentRevealCountByStepRef.current.set(stepId, start + i + 1);
       applyStateAtStep(editor, stepIndexRef.current);
       const dwell = Math.min(280, Math.max(120, nextActions[i].durationMs));
       await new Promise<void>(resolve => window.setTimeout(resolve, dwell));
     }
+    const afterShapeIds = new Set(Array.from(editor.getCurrentPageShapeIds()).map(String));
+    const resultingShapeIds = nextActions.flatMap(action =>
+      "shapeId" in action && action.shapeId && afterShapeIds.has(action.shapeId) ? [action.shapeId] : [],
+    );
+    const nontrivialRendered = nextActions.filter(action =>
+      isNontrivialProfessorAgentAction(action)
+      && "shapeId" in action && Boolean(action.shapeId)
+      && afterShapeIds.has(String(action.shapeId)),
+    ).length;
+    return {
+      shapeDelta: Array.from(afterShapeIds).filter(id => !beforeShapeIds.has(id)).length,
+      nontrivialRendered,
+      resultingShapeIds: Array.from(new Set(resultingShapeIds)),
+    };
   }, [applyStateAtStep, registerRuntimeAgentActions]);
 
-  /** Runtime tldraw Agent loop, adapted from the official starter's core
-   * pattern: observe screenshot + structured shapes, execute a typed action
-   * batch progressively, inspect the updated canvas, apply at most one local
-   * correction batch, then return control to the deterministic timeline. */
+  /** Bounded observe/draw/inspect loop. Every pass sees the freshly rendered
+   * editor state; production falls back, strict development/test stops. */
   const ensureRuntimeAgentVisualStep = useCallback(async (editor: Editor, stepId: number) => {
     const plan = planRef.current;
     if (!plan || agentAttemptedStepIdsRef.current.has(stepId)) return;
@@ -759,74 +793,92 @@ export default function TldrawCanvas({
     agentAbortRef.current?.abort();
     const controller = new AbortController();
     agentAbortRef.current = controller;
-    // Two bounded passes are allowed: execute the current step, then inspect
-    // the updated canvas and make one local correction. Slow visual requests
-    // fall back to the deterministic Director board without stalling playback.
     let timedOut = false;
     const timeout = window.setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, 30_000);
     const planIdentity = buildProfessorLessonCacheKey(plan.sourceSnapshot);
+    const startedAt = performance.now();
+    const initialEditorShapeCount = editor.getCurrentPageShapeIds().size;
+    let executeActions = 0;
+    let correctionActions = 0;
+    let cameraCommands = 0;
+    let nontrivialVisualCount = 0;
+    let currentPass = 0;
+    setAgentDiagnostic({ ...EMPTY_AGENT_DIAGNOSTIC, eligible: true, agentTriggered: true });
 
     try {
-      setAgentVisualStatus("observing");
-      const initialCanvas = await captureAgentContext(editor);
-      const executeRequest = buildProfessorTldrawAgentRequest({
-        plan, stepId, pass: "execute", canvas: initialCanvas,
-      });
-      if (!executeRequest) throw new Error("agent_step_not_visual");
-      const executeResponse = await requestProfessorTldrawAgent(executeRequest, controller.signal);
-      if (buildProfessorLessonCacheKey(planRef.current?.sourceSnapshot ?? plan.sourceSnapshot) !== planIdentity) return;
-      const execute = verifyProfessorTldrawAgentResponse(executeRequest, executeResponse);
-      const hasIllustration = execute.actions.some(action =>
-        action.type === "draw-freehand" || action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write",
-      );
-      if (!hasIllustration) throw new Error("agent_returned_no_visual_primitives");
-      agentLocalIdsByStepRef.current.set(stepId, execute.localIds);
-      setAgentVisualStatus("drawing");
-      await revealRuntimeAgentActions(editor, stepId, execute.actions);
-
-      // The second request sees the UPDATED canvas, not the pre-computed
-      // scene. It may only correct this step's own agent shapes.
-      if (!controller.signal.aborted && planRef.current) {
-        setAgentVisualStatus("inspecting");
+      for (let passIndex = 0; passIndex < PROFESSOR_AGENT_MAX_PASSES; passIndex++) {
+        currentPass = passIndex + 1;
+        const pass = passIndex === 0 ? "execute" as const : "inspect" as const;
+        setAgentVisualStatus(pass === "execute" ? "observing" : "inspecting");
         const updatedCanvas = await captureAgentContext(editor);
-        const inspectRequest = buildProfessorTldrawAgentRequest({
-          plan, stepId, pass: "inspect", canvas: updatedCanvas,
+        const request = buildProfessorTldrawAgentRequest({
+          plan, stepId, pass, canvas: updatedCanvas,
           priorAgentLocalIds: agentLocalIdsByStepRef.current.get(stepId) ?? [],
         });
-        if (inspectRequest) {
-          const inspectResponse = await requestProfessorTldrawAgent(inspectRequest, controller.signal);
-          const correction = verifyProfessorTldrawAgentResponse(inspectRequest, inspectResponse);
-          const hasCorrection = correction.actions.some(action =>
-            action.type === "erase" || action.type === "draw-freehand" || action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write",
-          );
-          if (hasCorrection) {
-            agentLocalIdsByStepRef.current.set(stepId, [
-              ...(agentLocalIdsByStepRef.current.get(stepId) ?? []),
-              ...correction.localIds,
-            ]);
-            await revealRuntimeAgentActions(editor, stepId, correction.actions);
-          }
-          console.log("[PROFESSOR_VISUAL_AGENT_DIAGNOSTIC]", {
-            stepId,
-            pass: "inspect",
-            initialActionCount: execute.actions.length,
-            correctionActionCount: hasCorrection ? correction.actions.length : 0,
-            correctionRequested: inspectResponse.assessment.needsCorrection,
-            model: correction.model ?? execute.model,
+        if (!request) throw new ProfessorAgentRequestError("visual_needed_false");
+        const response = await requestProfessorTldrawAgent(request, controller.signal);
+        if (buildProfessorLessonCacheKey(planRef.current?.sourceSnapshot ?? plan.sourceSnapshot) !== planIdentity) {
+          throw new ProfessorAgentRequestError("aborted");
+        }
+        const verified = verifyProfessorTldrawAgentResponse(request, response);
+        if (response.actions.length > 0 && verified.actions.length === 0) {
+          throw new ProfessorAgentRequestError("verification_reject");
+        }
+        if (passIndex === 0) executeActions = verified.actions.length;
+        else correctionActions += verified.actions.length;
+        cameraCommands += verified.actions.filter(action => action.type === "move-camera").length;
+        agentLocalIdsByStepRef.current.set(stepId, [
+          ...(agentLocalIdsByStepRef.current.get(stepId) ?? []), ...verified.localIds,
+        ]);
+        if (verified.actions.length > 0) {
+          setAgentVisualStatus("drawing");
+          const rendered = await revealRuntimeAgentActions(editor, stepId, verified.actions);
+          nontrivialVisualCount += rendered.nontrivialRendered;
+          console.log("[PROFESSOR_VISUAL_AGENT_ACTIONS]", {
+            lessonId: request.identity.lessonId, stepId, pass: currentPass,
+            actionTypes: verified.actions.map(action => action.type),
+            actionIds: verified.actions.map(action => action.actionId),
+            resultingShapeIds: rendered.resultingShapeIds,
+            rejectedActionCount: verified.rejectedActionCount,
           });
         }
+        setAgentDiagnostic({
+          eligible: true, agentTriggered: true, currentPass, executeActions,
+          correctionActions, cameraCommands, nontrivialVisualCount,
+          fallbackUsed: false, fallbackReason: null,
+          agentDurationMs: Math.round(performance.now() - startedAt),
+          actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
+        });
+        if (passIndex === 0 && nontrivialVisualCount === 0) {
+          throw new ProfessorAgentRequestError("no_visual_actions");
+        }
+        if (verified.complete && !verified.needsCorrection) break;
       }
       setAgentVisualStatus("idle");
     } catch (error) {
-      if (planRef.current && (timedOut || !controller.signal.aborted)) {
+      const fallbackReason: ProfessorAgentFailureReason = timedOut ? "timeout"
+        : error instanceof ProfessorAgentRequestError ? error.reason
+          : controller.signal.aborted ? "aborted" : "network_error";
+      const failure = resolveProfessorAgentFailure(PROFESSOR_AGENT_STRICT, fallbackReason);
+      if (planRef.current) {
         setAgentVisualStatus("fallback");
-        console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
-          stepId,
-          reason: error instanceof Error ? error.message : String(error),
+        setAgentDiagnostic({
+          eligible: true, agentTriggered: true, currentPass, executeActions,
+          correctionActions, cameraCommands, nontrivialVisualCount,
+          fallbackUsed: failure.fallbackUsed, fallbackReason,
+          agentDurationMs: Math.round(performance.now() - startedAt),
+          actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
         });
+        console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
+          lessonId: planIdentity, stepId, reason: fallbackReason,
+        });
+        if (failure.shouldStopPlayback) {
+          setIsPlaying(false);
+          throw error;
+        }
       }
       // No verified visual actions means applyStateAtStep continues using
       // the existing deterministic layout; Professor playback never stalls.
@@ -1399,7 +1451,10 @@ export default function TldrawCanvas({
         && !agentAttemptedStepIdsRef.current.has(action.stepId),
       );
       if (editor && shouldRunAgent) {
-        void ensureRuntimeAgentVisualStep(editor, action.stepId).finally(() => {
+        void ensureRuntimeAgentVisualStep(editor, action.stepId).catch(() => {
+          // Strict mode already stops playback and exposes the classified
+          // failure in the diagnostic strip; prevent an unhandled rejection.
+        }).finally(() => {
           // Pause/manual navigation may happen while Claude is inspecting.
           // Only resume this exact autoplay pointer when it is still active.
           if (isPlayingRef.current && stepIndexRef.current === next) {
@@ -1408,6 +1463,14 @@ export default function TldrawCanvas({
         });
         return;
       }
+      const reason: ProfessorAgentFailureReason = !directorStep?.visualNeeded
+        ? "visual_needed_false" : "not_triggered";
+      setAgentDiagnostic({
+        ...EMPTY_AGENT_DIAGNOSTIC,
+        eligible: Boolean(directorStep?.visualNeeded && directorStep.focusBounds),
+        fallbackUsed: false,
+        fallbackReason: reason,
+      });
     }
 
     if (action.type === "speak") {
@@ -1660,6 +1723,14 @@ export default function TldrawCanvas({
         {DEV && stepDiagnostic && (
           <span style={{ fontSize: 10, color: "#64748b", fontFamily: "monospace", flexShrink: 0 }}>
             Step {stepDiagnostic.step}/{stepDiagnostic.total} · {stepDiagnostic.nodeCount} scene nodes · {stepDiagnostic.generated} generated shapes · {stepDiagnostic.visible} visible
+          </span>
+        )}
+        {DEV && (
+          <span data-testid="professor-agent-debug-strip" style={{ fontSize: 9, color: agentDiagnostic.fallbackReason ? "#fca5a5" : "#a7f3d0", fontFamily: "monospace", flexShrink: 0 }}>
+            agent eligible={String(agentDiagnostic.eligible)} triggered={String(agentDiagnostic.agentTriggered)} pass={agentDiagnostic.currentPass}/{PROFESSOR_AGENT_MAX_PASSES}
+            {" · "}exec={agentDiagnostic.executeActions} correct={agentDiagnostic.correctionActions} camera={agentDiagnostic.cameraCommands}
+            {" · "}nontrivial={agentDiagnostic.nontrivialVisualCount} shapeΔ={agentDiagnostic.actualTldrawShapeDelta}
+            {" · "}fallback={String(agentDiagnostic.fallbackUsed)} reason={agentDiagnostic.fallbackReason ?? "none"} duration={agentDiagnostic.agentDurationMs}ms
           </span>
         )}
         <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>

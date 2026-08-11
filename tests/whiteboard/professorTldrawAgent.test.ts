@@ -1,5 +1,7 @@
 import {
   buildProfessorTldrawAgentRequest,
+  isNontrivialProfessorAgentAction,
+  resolveProfessorAgentFailure,
   ProfessorTldrawAgentRequestSchema,
   verifyProfessorTldrawAgentResponse,
 } from "../../lib/whiteboard/professorTldrawAgent";
@@ -40,10 +42,26 @@ const CANVAS = {
 };
 
 describe("Professor tldraw Agent — visual context and current-step isolation", () => {
+  it("marks a grounded mechanism step as agent-eligible", () => {
+    const mechanismPlan: ProfessorLessonPlan = {
+      ...PLAN,
+      teachingStructures: ["mechanism-causal-process"],
+      directorSteps: [{
+        ...PLAN.directorSteps![0],
+        teachingStructure: "mechanism-causal-process",
+        visualIntent: "Show the grounded causal flow.",
+      }],
+    };
+    const request = buildProfessorTldrawAgentRequest({ plan: mechanismPlan, stepId: 1, pass: "execute", canvas: CANVAS });
+    expect(request).not.toBeNull();
+    expect(request?.step.teachingStructure).toBe("mechanism-causal-process");
+  });
+
   it("builds one current-step request with screenshot + structured shapes and never includes a future step", () => {
     const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS });
     expect(request).not.toBeNull();
     expect(request).toMatchObject({
+      identity: { documentId: "d", pageTruthKey: "d::1", stepId: 1, groundedConceptIds: ["source-one"] },
       pass: "execute",
       step: { stepId: 1, allowedLabels: ["Bilateral finger rests"], allowedSourceTargetIds: ["source-one"] },
       canvas: { screenshotBase64: "cG5n", shapes: [{ shapeId: "shape:prior" }] },
@@ -62,13 +80,17 @@ describe("Professor tldraw Agent — visual context and current-step isolation",
 });
 
 describe("Professor tldraw Agent — deterministic hands gate", () => {
+  it("stops strict development/test playback but preserves production fallback", () => {
+    expect(resolveProfessorAgentFailure(true, "timeout")).toEqual({ reason: "timeout", fallbackUsed: false, shouldStopPlayback: true });
+    expect(resolveProfessorAgentFailure(false, "timeout")).toEqual({ reason: "timeout", fallbackUsed: true, shouldStopPlayback: false });
+  });
   it("accepts freehand, pressure, exact labels and arrows while clamping geometry and dropping invented labels/facts", () => {
     const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
     const verified = verifyProfessorTldrawAgentResponse(request, {
       model: "claude-test", stepId: 1, pass: "execute", complete: true,
       assessment: { needsCorrection: false, issues: [] },
       actions: [
-        { tool: "drawAnatomySketch", localId: "tray-outline", sourceTargetId: "invented-source", points: [{ x: -999, y: -999, z: 0.1 }, { x: 999, y: 999, z: 0.9 }], color: "black", size: "m", dash: "draw", isPen: true, closed: false, fill: "none" },
+        { tool: "drawAnatomySketch", localId: "tray-outline", sourceTargetId: "source-one", points: [{ x: -999, y: -999, z: 0.1 }, { x: 999, y: 999, z: 0.9 }], color: "black", size: "m", dash: "draw", isPen: true, closed: false, fill: "none" },
         { tool: "drawPressureZone", localId: "pressure", sourceTargetId: "source-one", bounds: { x: 20, y: 20, w: 40, h: 20 }, color: "red", opacity: 0.2 },
         { tool: "writeLabel", localId: "valid-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
         { tool: "writeLabel", localId: "invented-label", sourceTargetId: "source-one", text: "Unsupported anatomy fact", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
@@ -77,7 +99,10 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
     });
     const stroke = verified.actions.find(action => action.type === "draw-freehand") as any;
     expect(stroke).toMatchObject({ shapeId: "shape:prof-agent-1-tray-outline", visualRole: "drawAnatomySketch" });
-    expect(stroke.targetId).toBeUndefined();
+    expect(stroke.targetId).toBe("source-one");
+    expect(stroke.agentGrounding).toMatchObject({
+      documentId: "d", pageTruthKey: "d::1", stepId: 1, conceptIds: ["source-one"],
+    });
     expect(stroke.points[0]).toEqual({ x: -120, y: -120, z: 0.1 });
     expect(stroke.points[1]).toEqual({ x: 240, y: 190, z: 0.9 });
     expect(verified.actions.some(action => action.type === "write" && action.text === "Bilateral finger rests")).toBe(true);
@@ -113,6 +138,28 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
       assessment: { needsCorrection: false, issues: [] }, actions: [],
     });
     expect(verified.actions).toEqual([]);
+  });
+
+  it("rejects a request whose page or step identity does not match its current context", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    expect(() => ProfessorTldrawAgentRequestSchema.parse({
+      ...request, identity: { ...request.identity, pageTruthKey: "another-page" },
+    })).toThrow("page_truth_mismatch");
+    expect(() => ProfessorTldrawAgentRequestSchema.parse({
+      ...request, identity: { ...request.identity, stepId: 2 },
+    })).toThrow("step_mismatch");
+  });
+
+  it("rejects ungrounded primitives and does not count a generic box as nontrivial", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [{ tool: "drawFreehandStroke", localId: "creative", sourceTargetId: null, points: [{ x: 0, y: 0 }, { x: 20, y: 20 }], color: "black", size: "m", dash: "draw", isPen: true, closed: false, fill: "none" }],
+    });
+    expect(verified.actions.filter(action => action.type !== "move-camera")).toEqual([]);
+    expect(verified.rejectedActionCount).toBe(1);
+    expect(isNontrivialProfessorAgentAction(DRAW)).toBe(false);
   });
 
   it("rejects oversized screenshots and invalid local ids at the request/response boundary", () => {
