@@ -94,7 +94,15 @@ export interface ProfessorFreehandPoint extends Point {
 // instead of by raw micro-action, and lets the playback scheduler know which
 // actions belong to the SAME step for draw-while-teaching interleaving. See
 // lib/whiteboard/professorTimelineEngine.ts's step-boundary helpers.
-export type ProfessorTeachingAction =
+export interface ProfessorAgentGrounding {
+  documentId: string;
+  pageTruthKey: string;
+  lessonId: string;
+  stepId: number;
+  conceptIds: string[];
+}
+
+export type ProfessorTeachingAction = (
   | { type: "write"; actionId: string; shapeId: string; targetId?: string; text: string; x: number; y: number; durationMs: number; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string }
   // bend: Phase B2 connector-obstacle-avoidance — a nonzero value curves
   // the arrow (tldraw's own native "bend" arc prop) around a third node's
@@ -125,7 +133,8 @@ export type ProfessorTeachingAction =
    *  clean version. Handled by computeCanvasStateAtStep exactly like every
    *  other action: state-at-step is recomputed from scratch, so an erase is
    *  just "this shapeId's entry doesn't exist for index >= this action's". */
-  | { type: "erase"; actionId: string; targetShapeId: string; durationMs: number; stepId: number };
+  | { type: "erase"; actionId: string; targetShapeId: string; durationMs: number; stepId: number }
+) & { agentGrounding?: ProfessorAgentGrounding };
 
 // ── NarrationSegment — the spoken teaching script, tightly linked to actions ─
 

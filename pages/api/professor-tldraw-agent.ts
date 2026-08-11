@@ -13,6 +13,8 @@ const SYSTEM_PROMPT = `You are the visual-execution agent for one current Profes
 
 OpenAI already authored and grounded the lesson. You are its hands and eyes, not a second planner. Use only the supplied teachingGoal, visualIntent, narration, relationships, allowedLabels, source ids, focusBounds, fallback visuals, structured canvas shapes, and canvas screenshot. Never add a fact, invent a label, reinterpret the textbook, expose a future step, or redraw the whole board.
 
+Every visual action must set sourceTargetId to one exact allowedSourceTargetId from the current grounded Thought Unit/concept set. Camera actions are grounded by the supplied active targets; erase actions may target only priorAgentLocalIds. An ungrounded visual is invalid even if it is decorative.
+
 Work like a professor drawing live. Prefer meaningful teaching illustration over box-only diagrams:
 - drawFreehandStroke: general sketch strokes, outlines and handwritten visual marks.
 - drawAnatomySketch / drawMuscle / drawBone / drawNerve: symbolic strokes only when the validated current step calls for that structure.
@@ -62,17 +64,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   const request = ProfessorTldrawAgentRequestSchema.safeParse(req.body);
   if (!request.success) {
-    res.status(400).json({ error: "invalid_request" });
+    res.status(400).json({ error: "invalid_request", reason: "schema_reject" });
     return;
   }
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    res.status(503).json({ error: "claude_not_configured" });
+    res.status(503).json({ error: "claude_not_configured", reason: "missing_key" });
     return;
   }
 
   const { screenshotBase64, ...canvasWithoutScreenshot } = request.data.canvas;
   const promptPayload = {
+    identity: request.data.identity,
     pass: request.data.pass,
     step: request.data.step,
     canvas: canvasWithoutScreenshot,
@@ -107,11 +110,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       || parsed.data.stepId !== request.data.step.stepId
       || parsed.data.pass !== request.data.pass
     ) {
-      res.status(502).json({ error: "invalid_agent_response" });
+      res.status(502).json({ error: "invalid_agent_response", reason: "schema_reject" });
       return;
     }
     res.status(200).json(parsed.data);
   } catch (error) {
+    const reason = error instanceof SyntaxError ? "schema_reject" : "network_error";
     console.error("[PROFESSOR_TLDRAW_AGENT_FAILED]", {
       pageTruthKey: request.data.pageTruthKey,
       stepId: request.data.step.stepId,
@@ -120,6 +124,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       screenshotPresent: Boolean(request.data.canvas.screenshotBase64),
       error: error instanceof Error ? error.message : String(error),
     });
-    res.status(502).json({ error: "agent_unavailable" });
+    res.status(502).json({ error: "agent_unavailable", reason });
   }
 }

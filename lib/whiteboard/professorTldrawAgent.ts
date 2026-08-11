@@ -142,6 +142,13 @@ const FallbackVisualSchema = z.object({
 });
 
 export const ProfessorTldrawAgentRequestSchema = z.object({
+  identity: z.object({
+    documentId: z.string().min(1).max(300),
+    pageTruthKey: z.string().min(1).max(300),
+    lessonId: z.string().min(1).max(500),
+    stepId: z.number().int().nonnegative(),
+    groundedConceptIds: z.array(z.string().min(1).max(160)).min(1).max(24),
+  }),
   pageTruthKey: z.string().min(1).max(300),
   pass: z.enum(["execute", "inspect"]),
   step: z.object({
@@ -169,6 +176,17 @@ export const ProfessorTldrawAgentRequestSchema = z.object({
     screenshotBase64: z.string().max(900_000).nullable(),
   }),
   priorAgentLocalIds: z.array(LocalIdSchema).max(32),
+}).superRefine((value, context) => {
+  if (value.identity.pageTruthKey !== value.pageTruthKey) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["identity", "pageTruthKey"], message: "page_truth_mismatch" });
+  }
+  if (value.identity.stepId !== value.step.stepId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["identity", "stepId"], message: "step_mismatch" });
+  }
+  const grounded = new Set(value.identity.groundedConceptIds);
+  if (value.step.allowedSourceTargetIds.some(id => !grounded.has(id))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["step", "allowedSourceTargetIds"], message: "ungrounded_source" });
+  }
 });
 export type ProfessorTldrawAgentRequest = z.infer<typeof ProfessorTldrawAgentRequestSchema>;
 
@@ -195,7 +213,36 @@ export interface VerifiedProfessorAgentPass {
   actions: ProfessorTeachingAction[];
   localIds: string[];
   needsCorrection: boolean;
+  complete: boolean;
+  rejectedActionCount: number;
   model: string | null;
+}
+
+export type ProfessorAgentFailureReason =
+  | "missing_key" | "not_triggered" | "visual_needed_false" | "timeout"
+  | "network_error" | "schema_reject" | "no_visual_actions"
+  | "verification_reject" | "aborted";
+
+export class ProfessorAgentRequestError extends Error {
+  constructor(public readonly reason: ProfessorAgentFailureReason, message = reason) {
+    super(message);
+    this.name = "ProfessorAgentRequestError";
+  }
+}
+
+export function resolveProfessorAgentFailure(strict: boolean, reason: ProfessorAgentFailureReason) {
+  return { reason, fallbackUsed: !strict, shouldStopPlayback: strict } as const;
+}
+
+export function isNontrivialProfessorAgentAction(action: ProfessorTeachingAction): boolean {
+  if (action.type === "draw-freehand" || action.type === "draw-arrow" || action.type === "emphasize") return true;
+  if (action.type === "draw-shape") {
+    if (action.shape !== "box") return true;
+    return action.visualRole === "drawPressureZone"
+      || action.visualRole === "highlightRegion"
+      || action.visualRole === "drawCallout";
+  }
+  return false;
 }
 
 function visualBounds(action: ProfessorTeachingAction): Bounds | null {
@@ -235,6 +282,7 @@ export function buildProfessorTldrawAgentRequest(args: {
     ...step.sourceEvidence.map(evidence => evidence.sourceId),
     ...stepActions.flatMap(action => "targetId" in action && action.targetId ? [action.targetId] : []),
   ]));
+  if (sourceTargets.length === 0) return null;
   const fallbackVisuals: Array<{
     type: "shape" | "arrow" | "label" | "freehand";
     shapeId: string;
@@ -250,6 +298,13 @@ export function buildProfessorTldrawAgentRequest(args: {
     else if (action.type === "write") fallbackVisuals.push({ type: "label", shapeId: action.shapeId, targetId: action.targetId ?? null, bounds: null, text: action.text });
   }
   return ProfessorTldrawAgentRequestSchema.parse({
+    identity: {
+      documentId: args.plan.sourceSnapshot.documentId,
+      pageTruthKey: args.plan.sourceSnapshot.pageTruthKey,
+      lessonId: `plesson:v${args.plan.sourceSnapshot.plannerVersion}:${args.plan.sourceSnapshot.documentId}:${args.plan.sourceSnapshot.pageTruthKey}:${args.plan.sourceSnapshot.activeCanonicalUnitId ?? "none"}:${args.plan.sourceSnapshot.vsgId}`,
+      stepId: step.stepId,
+      groundedConceptIds: sourceTargets,
+    },
     pageTruthKey: args.plan.sourceSnapshot.pageTruthKey,
     pass: args.pass,
     step: {
@@ -321,7 +376,7 @@ export function verifyProfessorTldrawAgentResponse(
   response: ProfessorTldrawAgentResponse,
 ): VerifiedProfessorAgentPass {
   if (response.stepId !== request.step.stepId || response.pass !== request.pass) {
-    return { actions: [], localIds: [], needsCorrection: false, model: response.model ?? null };
+    return { actions: [], localIds: [], needsCorrection: false, complete: false, rejectedActionCount: response.actions.length, model: response.model ?? null };
   }
   const region = expanded(request.step.focusBounds);
   const allowedLabels = new Set(request.step.allowedLabels);
@@ -336,6 +391,7 @@ export function verifyProfessorTldrawAgentResponse(
   const acceptedLocalIds: string[] = [];
   const stepId = request.step.stepId;
   let ordinal = 0;
+  let rejectedActionCount = 0;
 
   const push = (action: ProfessorTeachingAction) => actions.push(action);
   const actionId = (localId: string, suffix = "visual") => `agent-${stepId}-${localId}-${suffix}-${ordinal++}`;
@@ -348,13 +404,13 @@ export function verifyProfessorTldrawAgentResponse(
 
   for (const call of response.actions.slice(0, 20)) {
     if (call.tool === "eraseRegion") {
-      if (!priorLocalIds.has(call.targetLocalId)) continue;
+      if (!priorLocalIds.has(call.targetLocalId)) { rejectedActionCount++; continue; }
       push({ type: "erase", actionId: actionId(call.targetLocalId, "erase"), targetShapeId: stableShapeId(stepId, call.targetLocalId), durationMs: 140, stepId });
       continue;
     }
-    if (call.tool === "writeLabel" && !allowedLabels.has(call.text)) continue;
-    if (call.tool === "drawCallout" && !allowedLabels.has(call.label)) continue;
-    if (!acceptLocalId(call.localId)) continue;
+    if (call.tool === "writeLabel" && !allowedLabels.has(call.text)) { rejectedActionCount++; continue; }
+    if (call.tool === "drawCallout" && !allowedLabels.has(call.label)) { rejectedActionCount++; continue; }
+    if (!acceptLocalId(call.localId)) { rejectedActionCount++; continue; }
 
     if (call.tool === "moveCamera" || call.tool === "zoomTo" || call.tool === "panTo" || call.tool === "focusNode") {
       const focusBounds = clampBounds(call.bounds, region);
@@ -369,6 +425,17 @@ export function verifyProfessorTldrawAgentResponse(
         durationMs: 420,
         stepId,
       });
+      continue;
+    }
+
+    // Every visual primitive must be traceable to the current grounded
+    // Professor step. Camera actions are grounded by activeTargetIds above;
+    // erase actions are grounded by a prior accepted local id.
+    const groundedSourceTargetId = "sourceTargetId" in call ? call.sourceTargetId : null;
+    if (!groundedSourceTargetId || !allowedSources.has(groundedSourceTargetId)) {
+      rejectedActionCount++;
+      acceptedLocalIds.pop();
+      reservedLocalIds.delete(call.localId);
       continue;
     }
 
@@ -527,10 +594,25 @@ export function verifyProfessorTldrawAgentResponse(
     });
   }
 
+  const groundedActions = actions.map(action => ({
+    ...action,
+    agentGrounding: {
+      documentId: request.identity.documentId,
+      pageTruthKey: request.identity.pageTruthKey,
+      lessonId: request.identity.lessonId,
+      stepId,
+      conceptIds: "targetId" in action && action.targetId
+        ? [action.targetId]
+        : request.identity.groundedConceptIds,
+    },
+  } as ProfessorTeachingAction));
+
   return {
-    actions,
+    actions: groundedActions,
     localIds: acceptedLocalIds,
     needsCorrection: response.assessment.needsCorrection,
+    complete: response.complete,
+    rejectedActionCount,
     model: response.model ?? null,
   };
 }
@@ -545,8 +627,15 @@ export async function requestProfessorTldrawAgent(
     body: JSON.stringify(request),
     signal,
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const serverReason = payload?.reason;
+    const reason: ProfessorAgentFailureReason = serverReason === "missing_key" || serverReason === "schema_reject"
+      ? serverReason
+      : "network_error";
+    throw new ProfessorAgentRequestError(reason);
+  }
   const parsed = ProfessorTldrawAgentResponseSchema.safeParse(payload);
-  if (!response.ok || !parsed.success) throw new Error("invalid_professor_visual_agent_response");
+  if (!parsed.success) throw new ProfessorAgentRequestError("schema_reject");
   return parsed.data;
 }
