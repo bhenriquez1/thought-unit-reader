@@ -186,7 +186,7 @@ function normalizeForTarget(s: string): string {
 // limitAnnotationDensity() calls themselves so callers can feed the SAME
 // array into both this (PDF-facing, lossy) and groundedAnnotations state
 // (full-fidelity), guaranteeing the two can never drift apart.
-function groundedAnnotationsToHighlightTargets(
+export function groundedAnnotationsToHighlightTargets(
   grounded: GroundedSurgeonAnnotation[],
   documentId: string,
   pageNumber: number,
@@ -359,7 +359,7 @@ export function useSurgeonAnnotations({
           // with whatever list buildSurgeonAnnotationInput.ts sent the model.
           const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
           const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current, sentenceMap);
-          const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRole);
+          const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRoles ?? [stored.plan.pageRole]);
           const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
           setPlan(stored.plan);
           setHighlightTargets(targets);
@@ -557,7 +557,7 @@ export function useSurgeonAnnotations({
         // permanently unrenderable on the actual PDF.
         const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
         const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current, sentenceMap);
-        const grounded = limitAnnotationDensity(wholePage, data.plan.pageRole);
+        const grounded = limitAnnotationDensity(wholePage, data.plan.pageRoles ?? [data.plan.pageRole]);
         const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
         if (targets.length === 0 && data.plan.annotations.length > 0) {
           // Every proposed quote failed client-side sentence grounding —

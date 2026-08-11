@@ -58,7 +58,7 @@ export const SEMANTIC_PACK_VERSION = 1;
  *  v6: cache identity now uses resolved documentId plus pageContentHash, and
  *  structured-output model selection prefers bounded GPT-4.1/4o generation
  *  over reasoning-first models that can exhaust the completion budget. */
-export const MODEL_VERSION = 6;
+export const MODEL_VERSION = 7;
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
 

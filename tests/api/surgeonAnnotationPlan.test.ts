@@ -2,7 +2,7 @@
 // Regression guards for pages/api/page-annotation-plan.ts:
 //   - Vision-capable model call with a real image_url content part.
 //   - Missing-key / failure never returns a hard error to the client — always
-//     HTTP 200 with a { ok:false, code, error, fallbackAllowed:true } envelope,
+//     HTTP 200 with a classified { ok:false, code, error, fallbackAllowed:false } envelope,
 //     matching the pattern established in pages/api/claudeEnrichment.ts and
 //     pages/api/cohere-retrieval.ts this session.
 //   - Retry-with-backoff + request timeout around the upstream call.
@@ -41,7 +41,7 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
     expect(src).toMatch(/ok:\s*false,/);
     expect(src).toMatch(/error:\s*message,/);
     expect(src).toMatch(/code,/);
-    expect(src).toMatch(/fallbackAllowed:\s*true/);
+    expect(src).toMatch(/fallbackAllowed:\s*false/);
   });
 
   it("missing OPENAI_API_KEY logs unconditionally (not DEV-gated) and returns HTTP 200, not a hard error", () => {
@@ -65,7 +65,7 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
 
   it("does a lightweight plausibility check on quotes before returning ok:true", () => {
     expect(src).toMatch(/function quotesPlausible/);
-    expect(src).toMatch(/quotesPlausible\(result\.data, body\.pageText, validSentenceIds\)/);
+    expect(src).toMatch(/quotesPlausible\(finalPlan, body\.pageText, validSentenceIds\)/);
   });
 
   it("parses the response through SurgeonAnnotationPlanSchema, not the old canonicalUnitIds-based schema", () => {
@@ -109,27 +109,32 @@ describe("pages/api/page-annotation-plan.ts — pageRole (shared page classifier
   });
 });
 
-describe("pages/api/page-annotation-plan.ts — density guidance (soft, defense-in-depth alongside the hard client-side cap)", () => {
+describe("pages/api/page-annotation-plan.ts — page-adaptive density and coverage", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
 
-  it("prompt instructs at most one mechanism-or-procedure annotation total per page", () => {
-    expect(src).toMatch(/DENSITY/);
-    expect(src).toMatch(/ONE mechanism-or-procedure\s*\n?\s*annotation total/);
+  it("requires complete mechanisms and procedures instead of a one-item quota", () => {
+    expect(src).toMatch(/DENSITY IS PAGE-ADAPTIVE/);
+    expect(src).toMatch(/a mechanism must capture the complete causal chain/);
+    expect(src).toMatch(/a procedure every essential\s*\n?\s*step/);
   });
 
-  it("prompt instructs capping trap, comparison, decision, clinicalPearl, and example annotations at one each", () => {
-    expect(src).toMatch(/at most one trap\/warning, one/);
-    expect(src).toMatch(/comparison, one decision point, one\s*\n?\s*clinical pearl, and one supporting example/);
+  it("classifies pages with one or more domain-neutral instructional roles", () => {
+    for (const role of ["definition-heavy", "mechanism-causal", "procedure-sequence", "comparison", "worked-example", "equation-calculation", "anatomy-spatial", "clinical-diagnostic", "narrative-history", "argument-evidence", "table-figure-driven", "mixed"]) {
+      expect(src).toContain(role);
+    }
   });
 
-  it("prompt states an explicit 5-8 annotation target range for a dense page, and warns against under-annotating", () => {
-    expect(src).toMatch(/5 to 8 annotations total/);
-    expect(src).toMatch(/Under-annotating a dense page is as much a failure as over-annotating a sparse one/);
+  it("uses role-dependent density examples rather than one fixed count", () => {
+    expect(src).toMatch(/simple definition page may need\s*\n?\s*2-4 marks/);
+    expect(src).toMatch(/dense protocol may need 8-15/);
+    expect(src).toMatch(/Under-annotation is a failure when it drops an essential/);
   });
 
-  it("prompt tells the model the app enforces this with a hard cap after its response", () => {
-    expect(src).toMatch(/the app also enforces this with a hard cap after your/);
+  it("allows one bounded second planning pass when instructional coverage is incomplete", () => {
+    expect(src).toMatch(/assessAnnotationCoverage\(finalPlan\.annotations/);
+    expect(src).toMatch(/Coverage repair pass \(final pass\)/);
+    expect(src).toMatch(/callOpenAI\(client, model, repairContent, 12_000\)/);
   });
 });
 
@@ -210,8 +215,8 @@ describe("pages/api/page-annotation-plan.ts — required production diagnostics"
     const idx = src.indexOf('console.log("[SURGEON_PLAN_OK]"');
     expect(idx).toBeGreaterThan(-1);
     expect(src.slice(idx - 20, idx)).not.toMatch(/DEV\s*&&\s*$/);
-    const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/returnedAnnotationCount:\s*result\.data\.annotations\.length,/);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/returnedAnnotationCount:\s*finalPlan\.annotations\.length,/);
     expect(block).toMatch(/durationMs:\s*Date\.now\(\) - startedAt,/);
   });
 
@@ -325,7 +330,7 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
   });
 
   it("REQUIRED: requestId is present on the ok:true success response", () => {
-    expect(src).toMatch(/res\.status\(200\)\.json\(\{ ok: true, plan: result\.data, pageContentHash: body\.pageContentHash, requestId, provider: "openai", model \}\);/);
+    expect(src).toMatch(/res\.status\(200\)\.json\(\{ ok: true, plan: finalPlan, pageContentHash: body\.pageContentHash, requestId, provider: "openai", model \}\);/);
   });
 
   it("REQUIRED: requestId is present on every degraded (ok:false) response via the shared degraded() helper", () => {
@@ -336,7 +341,7 @@ describe("pages/api/page-annotation-plan.ts — requestId + exact failure-stage 
     expect(helper).toMatch(/ok: false,/);
     expect(helper).toMatch(/error: message,/);
     expect(helper).toMatch(/requestId,/);
-    expect(helper).toMatch(/fallbackAllowed: true,/);
+    expect(helper).toMatch(/fallbackAllowed: false,/);
     expect(helper).toMatch(/provider: "openai",/);
   });
 

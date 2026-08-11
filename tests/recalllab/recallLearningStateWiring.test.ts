@@ -14,7 +14,7 @@ import path from "path";
 const STORE_FILE       = path.resolve(__dirname, "../../lib/recalllab/recallStore.ts");
 const RIGHT_PANEL_FILE = path.resolve(__dirname, "../../components/reader/RightPanel.tsx");
 const INDEX_FILE       = path.resolve(__dirname, "../../pages/index.tsx");
-const RECALL_LAB_FILE  = path.resolve(__dirname, "../../components/recalllab/RecallLab.tsx");
+const RECALL_LAB_FILE  = path.resolve(__dirname, "../../components/recalllab/LegacyRecallLab.tsx");
 const RECALL2_SESSION_FILE = path.resolve(__dirname, "../../components/recalllab/Recall2Session.tsx");
 
 describe("recallStore.ts — RecallSet carries documentId, and buildRecallSetFromView threads opts through", () => {

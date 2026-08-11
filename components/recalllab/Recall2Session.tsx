@@ -265,7 +265,7 @@ export default function Recall2Session({
           <Stat label="Easy"     value={String(sessionEasy)} color="#10b981" />
           <Stat label="Missed"   value={String(sessionMissed)} color={sessionMissed > 0 ? "#f87171" : "#94a3b8"} />
         </div>
-        <button type="button" onClick={closeSession} style={btnStyle("#3b82f6")}>← Back to Recall 2.0</button>
+        <button type="button" onClick={closeSession} style={btnStyle("#3b82f6")}>← Back to Recall</button>
       </div>
     );
   }
@@ -313,7 +313,7 @@ export default function Recall2Session({
           ← Back
         </button>
         <div style={{ flex: 1, fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.55)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {topic ?? "Recall 2.0"}
+          {topic ?? "Recall"}
         </div>
         <div style={{ fontSize: 10, color: "rgba(148,163,184,0.4)", flexShrink: 0 }}>
           {idx + 1} / {queue.length}

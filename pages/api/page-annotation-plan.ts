@@ -32,9 +32,10 @@ import { hashDocumentId, newRequestId } from "@/lib/insights/requestDiagnostics"
 import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
 import { buildChatCompletionTuning } from "@/lib/insights/openaiChatParams";
 import { formatSentenceList, type PageSentence } from "@/lib/insights/segmentPageSentences";
+import { assessAnnotationCoverage } from "@/lib/highlights/assessAnnotationCoverage";
 
 export const config = {
-  maxDuration: 30,
+  maxDuration: 45,
   // A base64 JPEG page image easily runs 150-400kb — well above the old 32kb cap.
   api: { bodyParser: { sizeLimit: "4mb" } },
 };
@@ -79,7 +80,7 @@ export type AnnotationPlanResponse =
       error: string;
       code: ServerFailureStage;
       requestId: string;
-      fallbackAllowed: true;
+      fallbackAllowed: false;
       provider: "openai";
       model: string | null;
       upstreamStatus: number | null;
@@ -97,7 +98,7 @@ function degraded(
     error: message,
     code,
     requestId,
-    fallbackAllowed: true,
+    fallbackAllowed: false,
     provider: "openai",
     model: diagnostics.model ?? null,
     upstreamStatus: diagnostics.upstreamStatus ?? null,
@@ -156,9 +157,10 @@ full multi-sentence span — the app will still ground exactQuote normally for t
 Rules:
 1. Every exactQuote must be copied verbatim from the page text/image — same words, same
    order, same punctuation. Do not paraphrase, summarize, or fix typos in a quote.
-2. Prefer fewer, well-chosen annotations over many disconnected ones. Group a multi-step
-   mechanism or procedure into one annotation with the fullest verbatim span you can quote,
-   rather than five tiny fragments.
+2. Prefer complete instructional units. A mechanism/procedure may be one multi-sentence
+   annotation when it is one continuous source span, or several sequenced annotations when
+   its essential steps occur separately. Never collapse distinct required steps merely to
+   hit a fixed count, and never paint a whole paragraph unless all of it is instructional.
 3. Assign canonicalType:
    - definition   — a term is being defined
    - mechanism    — a causal chain / how-it-works explanation
@@ -196,6 +198,11 @@ Rules:
      more specific values above fits; these are the generic fallback classifications.
    Choose independently of pageThesis's content summary (e.g. a page can be primarily
    "pharmacology" even though its thesis describes one specific drug's clinical use).
+   ALSO return pageRoles: one or more domain-neutral instructional roles chosen from:
+   definition-heavy, mechanism-causal, procedure-sequence, comparison, worked-example,
+   equation-calculation, anatomy-spatial, clinical-diagnostic, narrative-history,
+   argument-evidence, table-figure-driven, mixed. A page may have multiple roles. These
+   roles control coverage and density; domain only influences vocabulary.
 8a. ADAPTIVE HIGHLIGHTING — let pageRole shape WHICH canonicalTypes you actually reach for on
     this page, instead of forcing every page through the same fixed checklist:
     - anatomy/histology pages: favor definition (structure/tissue identification) and
@@ -212,23 +219,15 @@ Rules:
       (rule 11) for the formula/final-answer terms themselves.
     This shapes emphasis, not a hard requirement — still ground every annotation in what the
     page actually contains (rule 1), never invent a category the page doesn't support.
-9. DENSITY — a well-annotated page should read like expert marginalia, not a diagnostic
-   overlay, AND not a page with only one or two highlights either. As a strong guideline
-   (the app also enforces this with a hard cap after your response, so exceeding it just
-   means your lower-priority picks get dropped): at most one definition annotation for the
-   page's core thesis plus up to two for supporting rules, at most ONE mechanism-or-procedure
-   annotation total for the page (never both a mechanism explanation and a procedure list as
-   separate annotations), at most one trap/warning, one comparison, one decision point, one
-   clinical pearl, and one supporting example. Do not annotate the same idea twice under
-   different canonicalTypes.
-   TARGET RANGE for a genuinely dense textbook page: 5 to 8 annotations total — roughly
-   2-3 primary/indispensable concepts, 2-4 structural annotations (a mechanism, procedure,
-   or comparison), and 1-2 traps or clinical-significance points. A page with a definition,
-   a five-step process, a contrast being drawn, AND a stated warning has FOUR distinct
-   learning targets, not one — do not stop after the first one or two things you notice.
-   Under-annotating a dense page is as much a failure as over-annotating a sparse one.
-10. Produce at most 10 annotations per page — this is a ceiling, not a target; see rule 9's
-    5-8 range for what a well-annotated dense page actually looks like.
+9. DENSITY IS PAGE-ADAPTIVE, never a universal count. A simple definition page may need
+   2-4 marks; a mechanism must capture the complete causal chain; a procedure every essential
+   step; a comparison both sides and distinguishing features; an equation the formula,
+   variable meanings and worked transformation; a dense protocol may need 8-15; a narrative
+   only events/evidence that materially support its teaching point. Do not annotate the same
+   idea twice under different types. Under-annotation is a failure when it drops an essential
+   instructional unit; over-annotation is a failure when it repeats or marks filler.
+10. Before finishing, check central idea, required definitions, every essential mechanism or
+    procedure step, meaningful traps/exceptions, teaching examples/evidence, and redundancy.
 11. SENTENCE BOUNDARIES — this is the most important rule for how the annotation actually
     looks on the page. Never quote a mid-sentence fragment. Set spanScope to control this:
       MUST run from the sentence's first meaningful word to its ending punctuation (. ; or :).
@@ -272,6 +271,7 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
   "pageTruthKey": "<string — copy from input>",
   "pageThesis": "<one-sentence string>",
   "pageRole": "<anatomy|physiology|pharmacology|diagnosis|histology|classification|decision-tree|workflow|mathematical-derivation|organic-chemistry-reaction|definition|procedure|mechanism|comparison|example>",
+  "pageRoles": ["<one or more domain-neutral instructional roles from rule 8>"],
   "annotations": [
     {
       "canonicalType": "<definition|mechanism|procedure|decision|comparison|trap|clinicalPearl|supportingEvidence>",
@@ -281,7 +281,14 @@ Respond ONLY with a JSON object matching this schema — no prose, no markdown f
       "treatment": "<definitionBar|mechanismBrace|procedureRail|decisionConnector|comparisonBracket|trapNotch|pearlMarker|evidenceUnderline>",
       "spanScope": "<fullSentence|entity — defaults to fullSentence>",
       "relationship": "<optional: {\"type\": \"sequence\"|\"cause-effect\"|\"comparison\"|\"supports\", \"targetIndex\": <number>} — see rule 13>",
-      "sentenceId": "<optional but PREFERRED for fullSentence scope — the id from the numbered pageSentences list below, e.g. \"S004\">"
+      "sentenceId": "<optional but PREFERRED for fullSentence scope — the id from the numbered pageSentences list below, e.g. \"S004\">",
+      "sourceQuote": "<same verbatim source span as exactQuote>",
+      "sourceSentenceId": "<sentence id or null>",
+      "conceptId": "<stable local concept id for this plan>",
+      "annotationType": "<core-concept|definition|mechanism|cause-effect|procedure-step|decision-point|comparison|formula-equation|worked-example-step|exception|common-trap|clinical-pearl|evidence-example|transition|high-yield-fact>",
+      "pedagogicalReason": "<why the learner needs this mark>",
+      "pageRoles": ["<the applicable pageRoles>"],
+      "sequenceIndex": "<zero-based step index or null>"
     }
   ]
 }`;
@@ -342,6 +349,17 @@ function quotesPlausible(plan: SurgeonAnnotationPlan, pageText: string, validSen
   // than the client's strict per-quote gate, just enough to catch a badly
   // hallucinated response before it's returned at all.
   return plan.annotations.length === 0 || plausible.length >= plan.annotations.length / 2;
+}
+
+function inferredInstructionalRoles(plan: SurgeonAnnotationPlan): NonNullable<SurgeonAnnotationPlan["pageRoles"]> {
+  if (plan.pageRoles?.length) return plan.pageRoles;
+  const map: Record<string, NonNullable<SurgeonAnnotationPlan["pageRoles"]>[number]> = {
+    definition: "definition-heavy", mechanism: "mechanism-causal", physiology: "mechanism-causal",
+    procedure: "procedure-sequence", workflow: "procedure-sequence", comparison: "comparison",
+    example: "worked-example", "mathematical-derivation": "equation-calculation",
+    anatomy: "anatomy-spatial", histology: "anatomy-spatial", diagnosis: "clinical-diagnostic",
+  };
+  return [map[plan.pageRole] ?? "mixed"];
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -543,10 +561,41 @@ export default async function handler(
   }
 
   const validSentenceIds = new Set(pageSentences.map(s => s.id));
-  if (!quotesPlausible(result.data, body.pageText, validSentenceIds)) {
+  let finalPlan: SurgeonAnnotationPlan = { ...result.data, pageRoles: inferredInstructionalRoles(result.data) };
+  if (!quotesPlausible(finalPlan, body.pageText, validSentenceIds)) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "sentence_grounding", durationMs: Date.now() - startedAt });
     res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
+  }
+
+  // One bounded coverage-repair pass. This is not a legacy/generic fallback:
+  // it receives the same complete current-page evidence plus the first plan
+  // and may only fill explicitly missing instructional categories.
+  const coverage = assessAnnotationCoverage(finalPlan.annotations, finalPlan.pageRoles ?? ["mixed"]);
+  if (!coverage.complete) {
+    try {
+      const repairContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+        ...userContent,
+        { type: "text", text: `Coverage repair pass (final pass). The first grounded plan missed: ${coverage.missing.join(", ") || "duplicate removal"}. Re-read the complete current page, preserve correct annotations, remove duplicates, and add only exact-source instructional units required to close those gaps. First plan: ${JSON.stringify(finalPlan)}` },
+      ];
+      const repairCompletion = await callOpenAI(client, model, repairContent, 12_000);
+      const repairRaw = repairCompletion.choices[0]?.message?.content;
+      if (repairRaw) {
+        const repairParsed = JSON.parse(repairRaw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim());
+        const repaired = SurgeonAnnotationPlanSchema.safeParse(repairParsed);
+        if (repaired.success) {
+          const candidate = { ...repaired.data, pageRoles: inferredInstructionalRoles(repaired.data) };
+          if (candidate.pageTruthKey === body.pageTruthKey && quotesPlausible(candidate, body.pageText, validSentenceIds)) {
+            finalPlan = candidate;
+          }
+        }
+      }
+    } catch (repairError) {
+      console.warn("[SURGEON_PLAN_COVERAGE_REPAIR_FAILED]", {
+        ...diagnosticIds, missingCount: coverage.missing.length,
+        reason: repairError instanceof Error ? repairError.name : "unknown",
+      });
+    }
   }
 
   // Production-safe — counts and timings only, never the annotation/quote text.
@@ -557,7 +606,8 @@ export default async function handler(
   // server has no visibility into either of those later stages.
   console.log("[SURGEON_PLAN_OK]", {
     ...diagnosticIds,
-    returnedAnnotationCount: result.data.annotations.length,
+    returnedAnnotationCount: finalPlan.annotations.length,
+    coverageRepairRequested: !coverage.complete,
     durationMs:              Date.now() - startedAt,
   });
 
@@ -565,5 +615,5 @@ export default async function handler(
   // the client's own fresh recomputation at response-apply time (against
   // whatever page is ACTUALLY on screen then) is the real check; this is
   // just carrying the request's identity through to that comparison.
-  res.status(200).json({ ok: true, plan: result.data, pageContentHash: body.pageContentHash, requestId, provider: "openai", model });
+  res.status(200).json({ ok: true, plan: finalPlan, pageContentHash: body.pageContentHash, requestId, provider: "openai", model });
 }

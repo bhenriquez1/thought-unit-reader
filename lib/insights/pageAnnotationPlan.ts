@@ -23,6 +23,22 @@ export const CanonicalTypeSchema = z.enum([
 
 export type CanonicalType = z.infer<typeof CanonicalTypeSchema>;
 
+export const InstructionalPageRoleSchema = z.enum([
+  "definition-heavy", "mechanism-causal", "procedure-sequence", "comparison",
+  "worked-example", "equation-calculation", "anatomy-spatial",
+  "clinical-diagnostic", "narrative-history", "argument-evidence",
+  "table-figure-driven", "mixed",
+]);
+export type InstructionalPageRole = z.infer<typeof InstructionalPageRoleSchema>;
+
+export const AnnotationTypeSchema = z.enum([
+  "core-concept", "definition", "mechanism", "cause-effect", "procedure-step",
+  "decision-point", "comparison", "formula-equation", "worked-example-step",
+  "exception", "common-trap", "clinical-pearl", "evidence-example",
+  "transition", "high-yield-fact",
+]);
+export type AnnotationType = z.infer<typeof AnnotationTypeSchema>;
+
 // ── Visual treatment ───────────────────────────────────────────────────────────
 // Each treatment corresponds to a distinct visual drawn by PdfEvidenceOverlay:
 //   definitionBar      — left-edge accent bar on a definition span
@@ -138,6 +154,16 @@ export const SurgeonAnnotationSchema = z.object({
    * fallback whenever sentenceId is absent or fails to resolve.
    */
   sentenceId:    z.string().optional(),
+  /** Page-adaptive annotation metadata. exactQuote/sentenceId remain the
+   * renderer's grounding authority; these fields make planning and coverage
+   * explicit without weakening verbatim PDF matching. */
+  sourceQuote: z.string().min(1).max(1400).optional(),
+  sourceSentenceId: z.string().nullable().optional(),
+  conceptId: z.string().min(1).max(160).optional(),
+  annotationType: AnnotationTypeSchema.optional(),
+  pedagogicalReason: z.string().min(1).max(300).optional(),
+  pageRoles: z.array(InstructionalPageRoleSchema).min(1).max(4).optional(),
+  sequenceIndex: z.number().int().nonnegative().nullable().optional(),
 });
 
 export type SurgeonAnnotation = z.infer<typeof SurgeonAnnotationSchema>;
@@ -172,6 +198,9 @@ export const SurgeonAnnotationPlanSchema = z.object({
     "classification", "decision-tree", "workflow",
     "mathematical-derivation", "organic-chemistry-reaction",
   ]),
+  /** Multi-role instructional classification used by annotation density and
+   * coverage. pageRole remains as the compatibility primary for Whiteboard. */
+  pageRoles: z.array(InstructionalPageRoleSchema).min(1).max(4).optional(),
   /** Ordered list of annotations derived from the current page. */
   annotations:  z.array(SurgeonAnnotationSchema),
 });
