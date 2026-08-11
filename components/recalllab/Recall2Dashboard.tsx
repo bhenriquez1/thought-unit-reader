@@ -149,7 +149,7 @@ export default function Recall2Dashboard({
       {/* ── Stats bar ───────────────────────────────────────────────── */}
       <div style={{ padding: "14px 14px 0", flexShrink: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)", marginBottom: 10, letterSpacing: "0.06em" }}>
-          RECALL 2.0
+          RECALL OVERVIEW
           {stats.total > 0 && (
             <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 400, color: "rgba(148,163,184,0.5)" }}>
               {stats.total} card{stats.total !== 1 ? "s" : ""}
@@ -275,7 +275,7 @@ export default function Recall2Dashboard({
           <div style={{ padding: "20px 0", textAlign: "center" }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>🃏</div>
             <div style={{ fontSize: 12, color: "rgba(148,163,184,0.65)", marginBottom: 14, lineHeight: 1.6 }}>
-              No Recall 2.0 cards yet.{"\n"}
+              No Recall cards yet.{"\n"}
               Import from your existing recall sets to get started.
             </div>
           </div>

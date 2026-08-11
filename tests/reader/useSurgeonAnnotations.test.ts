@@ -267,7 +267,7 @@ describe("useSurgeonAnnotations.ts — hands off HighlightTarget[], never comput
     const blocks = src.split("const wholePage = groundSurgeonQuotes(").slice(1);
     for (const block of blocks) {
       const nearby = block.slice(0, 400);
-      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRole\);/);
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRoles \?\? \[(?:stored\.plan|data\.plan)\.pageRole\]\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
     }
   });
@@ -427,7 +427,7 @@ describe("useSurgeonAnnotations.ts — groundedAnnotations: full-fidelity output
       // REQUIRED: pageRole is threaded through so density caps adapt to the
       // page's own classification (comparison/example/procedure pages get a
       // different budget than the base default) — see limitAnnotationDensity.ts.
-      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRole\);/);
+      expect(nearby).toMatch(/const grounded = limitAnnotationDensity\(wholePage,\s*(?:stored\.plan|data\.plan)\.pageRoles \?\? \[(?:stored\.plan|data\.plan)\.pageRole\]\);/);
       expect(nearby).toMatch(/groundedAnnotationsToHighlightTargets\(grounded,/);
       expect(nearby).toMatch(/setGroundedAnnotations\(grounded\)/);
       expect(nearby).toMatch(/setWholePageAnnotations\(wholePage\)/);

@@ -175,9 +175,34 @@ function selectMechanismOrProcedure(
 
 export function limitAnnotationDensity(
   grounded: GroundedSurgeonAnnotation[],
-  pageRole?: string | null,
+  pageRole?: string | string[] | null,
 ): GroundedSurgeonAnnotation[] {
   if (grounded.length === 0) return [];
+
+  // v7 page-adaptive path. Multi-role plans are coverage-first: preserve
+  // every grounded critical/high instructional unit, remove exact duplicates,
+  // and use role-specific safety ceilings only as a final readability guard.
+  // Older single-role callers retain the compatibility behavior below.
+  if (Array.isArray(pageRole)) {
+    const roles = new Set(pageRole);
+    const dense = roles.has("procedure-sequence") || roles.has("clinical-diagnostic");
+    const mixed = roles.has("mixed") || roles.size > 1;
+    const simple = roles.size === 1 && (roles.has("definition-heavy") || roles.has("narrative-history"));
+    const ceiling = dense ? 15 : mixed ? 12 : simple ? 4 : 10;
+    const seen = new Set<string>();
+    const deduped = grounded.filter(item => {
+      const key = item.groundedText.toLowerCase().replace(/\s+/g, " ").trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const essential = deduped.filter(item => item.importance !== "supporting");
+    const supporting = deduped.filter(item => item.importance === "supporting");
+    const selected = essential.length >= ceiling
+      ? essential
+      : [...essential, ...supporting.slice(0, ceiling - essential.length)];
+    return selected.sort((a, b) => deduped.indexOf(a) - deduped.indexOf(b));
+  }
 
   const indexed: IndexedEntry[] = grounded.map((item, index) => ({ item, index }));
 
