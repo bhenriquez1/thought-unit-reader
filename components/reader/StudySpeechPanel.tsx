@@ -214,6 +214,14 @@ interface Props {
   thoughtUnits?: ExpertAnchor[];
   /** Focused/selected unit used by legacy internal speech compatibility code. */
   selectedUnitId?: string | null;
+  /** True when the current page is classified as non-instructional (cover,
+   *  title page, copyright/front matter, table of contents, chapter/unit/
+   *  section opener, bibliography, index, or similar structural page) — the
+   *  SAME classification RightPanel already uses to suppress its own note/
+   *  synthesis views (see RightPanel.tsx's `pageBlocked`). Neither Current
+   *  Page reading nor Professor should trigger on a page with no
+   *  instructional content to read or teach. */
+  nonInstructionalPage?: boolean;
 }
 
 export interface StudySpeechPanelHandle {
@@ -230,7 +238,7 @@ export interface StudySpeechPanelHandle {
 // ── Main component ───────────────────────────────────────────────────────────
 
 const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function StudySpeechPanel(
-  { studyModel, pageNumber, bookId, documentId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, onOpenProfessor, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null },
+  { studyModel, pageNumber, bookId, documentId, activePageText = "", presetId = "universal", onExplainSegment, onSnippetFocus, onPlayStateChange, onOpenProfessor, primary = false, highlightedAnchorTexts, thoughtUnits = [], selectedUnitId = null, nonInstructionalPage = false },
   ref,
 ) {
   // Render counter — diagnostic for React render-loop investigation.
@@ -1618,7 +1626,11 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   const isPlaying  = playState === "playing";
   const isPaused   = playState === "paused";
   const isLoading  = playState === "loading";
-  const hasContent = segments.length > 0 || activePageText.length > 20;
+  // A non-instructional page (cover/title/copyright/TOC/chapter-opener/
+  // bibliography/etc.) has nothing worth reading or teaching, regardless of
+  // how much raw text PDF.js extracted from it (a copyright page can easily
+  // clear the 20-char floor below).
+  const hasContent = !nonInstructionalPage && (segments.length > 0 || activePageText.length > 20);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -1671,6 +1683,14 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
             ))}
           </div>
 
+          {nonInstructionalPage && (
+            <div style={{ borderRadius: 8, border: "1px solid rgba(148,163,184,0.15)", background: "rgba(148,163,184,0.05)", padding: "8px 10px" }}>
+              <p style={{ margin: 0, color: "#64748b", fontSize: 11, lineHeight: 1.5, fontStyle: "italic" }}>
+                No instructional content to read or teach on this page.
+              </p>
+            </div>
+          )}
+
           {visibleMode === "professor" ? (
             <div style={{ borderRadius: 10, border: "1px solid rgba(129,140,248,0.25)", background: "rgba(99,102,241,0.07)", padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
               <p style={{ margin: 0, color: "#cbd5e1", fontSize: 11, lineHeight: 1.55 }}>
@@ -1679,8 +1699,8 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
               <button
                 type="button"
                 onClick={() => { stopAudio(); onOpenProfessor?.(); }}
-                disabled={!onOpenProfessor}
-                style={{ alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.45)", background: "rgba(99,102,241,0.16)", color: "#c7d2fe", fontSize: 11, fontWeight: 700, cursor: onOpenProfessor ? "pointer" : "not-allowed", opacity: onOpenProfessor ? 1 : 0.45 }}
+                disabled={!onOpenProfessor || nonInstructionalPage}
+                style={{ alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.45)", background: "rgba(99,102,241,0.16)", color: "#c7d2fe", fontSize: 11, fontWeight: 700, cursor: (onOpenProfessor && !nonInstructionalPage) ? "pointer" : "not-allowed", opacity: (onOpenProfessor && !nonInstructionalPage) ? 1 : 0.45 }}
               >
                 ▶ Start Professor
               </button>
