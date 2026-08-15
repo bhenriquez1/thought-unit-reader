@@ -189,6 +189,79 @@ export function resolveTargetGeometry(
 }
 
 /**
+ * Resolve the bounding box of ONE WORD within a sentence, using the SAME
+ * token index (TextLayerRegistry) every other geometry resolver in this file
+ * reads from — not an independent DOM text-layer search. This is what lets
+ * the Reader's eye-follow/read-aloud word marker share exactly the same
+ * grounded PDF geometry as Surgeon highlighting, instead of maintaining its
+ * own separate text-matching implementation.
+ *
+ * Locates the sentence via the same bounded-prefix substring search
+ * resolveAnchorGeometryTracked's Strategy 3 uses, then finds the target
+ * word's own character range WITHIN that matched sentence text (mirroring
+ * how the sentence's own words are split, so a PDF.js text "item" spanning
+ * more or fewer characters than one English word never misaligns the
+ * result), and returns the bounding box of every token overlapping that
+ * word's character range, merged into one rect.
+ *
+ * @param pageIndex     0-based page index
+ * @param sentenceText  the verbatim sentence currently being spoken
+ * @param wordIndex     0-based index of the target word within sentenceText
+ *                      (split on whitespace) — clamped to a valid range
+ * @param viewportScale current effectiveZoom from react-pdf
+ * @returns a BoundingBox in the SAME "CSS pixels relative to the page
+ *          container top-left" space every other rect from this module
+ *          uses, or null if the page isn't indexed yet or the sentence
+ *          can't be located.
+ */
+export function resolveWordGeometry(
+  pageIndex: number,
+  sentenceText: string,
+  wordIndex: number,
+  viewportScale: number,
+): BoundingBox | null {
+  const textIndex = TextLayerRegistry.get(pageIndex);
+  if (!textIndex) return null;
+
+  const sentence = sentenceText.trim();
+  if (sentence.length < 4) return null;
+
+  const bodyNorm = textIndex.fullText.toLowerCase();
+  const sentenceNorm = sentence.toLowerCase();
+  const SEARCH_PREFIX_LEN = 60;
+  let pos = bodyNorm.indexOf(sentenceNorm.slice(0, SEARCH_PREFIX_LEN));
+  if (pos === -1 && sentenceNorm.length > 20) pos = bodyNorm.indexOf(sentenceNorm.slice(0, 20));
+  if (pos === -1) return null;
+
+  const words = sentence.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return null;
+  const idx = Math.min(Math.max(wordIndex, 0), words.length - 1);
+  let charOffset = 0;
+  for (let i = 0; i < idx; i++) charOffset += words[i].length + 1; // +1 for the inter-word space
+  const wordStart = pos + charOffset;
+  const wordEnd = wordStart + words[idx].length;
+
+  const overlapping = textIndex.tokens.filter(t => t.endChar > wordStart && t.startChar < wordEnd);
+  if (overlapping.length === 0) return null;
+
+  let top = Infinity, left = Infinity, bottom = -Infinity, right = -Infinity;
+  for (const t of overlapping) {
+    top = Math.min(top, t.bbox.y);
+    bottom = Math.max(bottom, t.bbox.y + t.bbox.h);
+    left = Math.min(left, t.bbox.x);
+    right = Math.max(right, t.bbox.x + t.bbox.w);
+  }
+  if (!isFinite(top) || !isFinite(left) || right <= left) return null;
+
+  return {
+    x: left * viewportScale,
+    y: top * viewportScale,
+    w: Math.max(3, (right - left) * viewportScale),
+    h: Math.max(10, (bottom - top) * viewportScale),
+  };
+}
+
+/**
  * Merge horizontally adjacent tokens on the same visual line into single rects.
  * Rects from different lines (or different columns) are kept separate.
  *
