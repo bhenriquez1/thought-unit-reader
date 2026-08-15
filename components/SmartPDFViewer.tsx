@@ -13,7 +13,7 @@ import { buildStructuredPageText } from "@/lib/pdf/structuredPageText";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
-import { resolveTargetGeometry } from "@/lib/pdf/resolveAnchorGeometry";
+import { resolveTargetGeometry, resolveWordGeometry } from "@/lib/pdf/resolveAnchorGeometry";
 import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
@@ -120,119 +120,14 @@ function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement 
   );
 }
 
-/**
- * Locates the on-page rect for a single word within an already-highlighted anchor's
- * text — drives the Speechify-style live word box. Re-measures spans fresh each call
- * (cheap — only runs on word-index changes, not full anchor re-matching) using the
- * same punctuation-stripped matching AI-highlight-anchor matching uses. When a span
- * batches multiple words, interpolates the word's box within that span's bounding
- * rect by character-width fraction. Returns null if the anchor text can't be located
- * or the word falls outside it — callers should fall back to the whole-anchor highlight.
- */
-function computeActiveWordRect(
-  textLayer: Element,
-  anchorText: string,
-  wordIndex: number,
-): { top: number; left: number; width: number; height: number } | null {
-  const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
-  const rawSpans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
-  if (!rawSpans.length) return null;
-  // Geometry-sort spans (top-to-bottom, left-to-right) to match buildStructuredPageText's
-  // Y-desc/X-asc item ordering. Without this, concatText follows PDF content-stream order,
-  // which on multi-column pages differs from visual reading order — causing indexOf to miss
-  // sentences that were correctly extracted by buildStructuredPageText.
-  // Precompute rects once to avoid repeated layout queries inside the sort comparator.
-  const rawRects = rawSpans.map(s => s.getBoundingClientRect());
-  const sortOrder = rawSpans
-    .map((_, i) => i)
-    .sort((a, b) => {
-      const yDiff = rawRects[a].top - rawRects[b].top;
-      if (Math.abs(yDiff) > 2) return yDiff; // ~2 viewport-px ≈ 3 PDF units at standard zoom
-      return rawRects[a].left - rawRects[b].left;
-    });
-  const spans = sortOrder.map(i => rawSpans[i]);
-  const sortedRects = sortOrder.map(i => rawRects[i]);
-
-  const spanNorm = spans.map((s) => stripPunctForMatch(s.textContent || ""));
-  const offsets: number[] = [];
-  let cursor = 0;
-  for (const t of spanNorm) { offsets.push(cursor); cursor += t.length + 1; }
-  const concatText = spanNorm.join(" ");
-
-  const baseText = stripPunctForMatch(anchorText);
-  if (baseText.length < 4) return null;
-  let startIdx = concatText.indexOf(baseText);
-  if (startIdx === -1) {
-    // Fallback 1: first 6 words — handles cases where the full anchor text
-    // runs slightly past what matched on this render pass.
-    const firstWords = baseText.split(" ").filter(Boolean).slice(0, 6).join(" ");
-    startIdx = firstWords.length >= 8 ? concatText.indexOf(firstWords) : -1;
-  }
-  if (startIdx === -1) {
-    // Fallback 2: drop-cap demerge — some PDFs render the initial capital as a
-    // separate span, so buildStructuredPageText produces "athe word" (merged)
-    // while spanNorm.join(" ") produces "a the word" (space-separated). Strip
-    // the merged prefix by inserting a space after the first char when it looks
-    // like a single-letter prefix fused onto the next word.
-    const demerged = baseText.replace(/^([a-z])([a-z]{3,})/, "$1 $2");
-    if (demerged !== baseText) startIdx = concatText.indexOf(demerged);
-  }
-  if (startIdx === -1) {
-    // Fallback 3: skip first token — finds sentence even when the drop cap
-    // was a separate word that doesn't appear in baseText at all.
-    const innerWords = baseText.split(" ").filter(Boolean).slice(1, 5).join(" ");
-    if (innerWords.length >= 10) {
-      const innerIdx = concatText.indexOf(innerWords);
-      if (innerIdx !== -1) {
-        // Walk back to the previous word boundary to approximate sentence start.
-        const before = concatText.lastIndexOf(" ", innerIdx - 2);
-        startIdx = before >= 0 ? before + 1 : innerIdx;
-      }
-    }
-  }
-  if (startIdx === -1) {
-    console.warn("[PDF_WORD_SYNC_MISS] sentence not found in PDF text layer", {
-      search: baseText.slice(0, 80),
-      layerChars: concatText.length,
-      spansCount: spans.length,
-    });
-    return null;
-  }
-  const endIdx = Math.min(startIdx + baseText.length, concatText.length);
-
-  const words = concatText.slice(startIdx, endIdx).split(" ").filter(Boolean);
-  if (!words.length) return null;
-  const idx = Math.min(Math.max(wordIndex, 0), words.length - 1);
-  let off = 0;
-  for (let i = 0; i < idx; i++) off += words[i].length + 1;
-  const wordStart = startIdx + off;
-  const wordEnd = wordStart + words[idx].length;
-
-  let top = Infinity, left = Infinity, bottom = -Infinity, right = -Infinity;
-  for (let i = 0; i < spans.length; i++) {
-    const sStart = offsets[i];
-    const sEnd = sStart + spanNorm[i].length;
-    if (sEnd <= wordStart || sStart >= wordEnd) continue;
-    const dr = sortedRects[i];
-    if (dr.width < 1 || dr.height < 1) continue;
-    const spanLen = Math.max(1, spanNorm[i].length);
-    const fracStart = Math.max(0, (wordStart - sStart) / spanLen);
-    const fracEnd = Math.min(1, (wordEnd - sStart) / spanLen);
-    const wLeft = dr.left + dr.width * fracStart;
-    const wRight = dr.left + dr.width * fracEnd;
-    top = Math.min(top, dr.top);
-    bottom = Math.max(bottom, dr.bottom);
-    left = Math.min(left, wLeft);
-    right = Math.max(right, wRight);
-  }
-  if (!isFinite(top) || !isFinite(left) || right <= left) return null;
-
-  return {
-    top: top - layerRect.top,
-    left: left - layerRect.left,
-    width: Math.max(3, right - left),
-    height: Math.max(10, bottom - top),
-  };
+/** True when `el` is already fully visible within `container`'s viewport —
+ *  used to gate auto-scroll so the reading marker doesn't yank the page on
+ *  every sentence tick when the active text is already on screen, only when
+ *  it has actually scrolled out of view. */
+function isFullyVisibleInContainer(el: HTMLElement, container: HTMLElement): boolean {
+  const elRect = el.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  return elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom;
 }
 
 /** Outline (TOC) shape bubbled up to the page */
@@ -463,16 +358,24 @@ async function resolveOutline(
 type WordRectState = { top: number; left: number; width: number; height: number } | null;
 
 function WordRectOverlay({
-  viewerRef,
   highlightTargets,
   currentPage,
-  overlayRects,
+  pageTruthKey,
+  viewportScale,
   pageRenderKey,
 }: {
-  viewerRef: React.RefObject<HTMLDivElement | null>;
   highlightTargets?: HighlightTarget[];
   currentPage: number;
-  overlayRects: OverlayRect[];
+  /** Reader stabilization fix #4 — the same page-identity key every other
+   *  page-scoped effect in this app keys on. Included in this effect's own
+   *  dependency array so a page change (i.e. a pageTruthKey change) tears
+   *  down any in-flight resolution via React's own cleanup-before-next-run
+   *  guarantee: the closure's `cancelled` flag flips true before a NEWER
+   *  effect instance (for the new page) can start, so a rect resolved
+   *  against the OLD page's geometry can never be applied after navigation —
+   *  "stale pageTruthKey rejects movement," without a separate ref check. */
+  pageTruthKey?: string;
+  viewportScale: number;
   pageRenderKey: number;
 }) {
   const activeAnchorId  = useReadingFocusStore(s => s.thoughtUnitId);
@@ -489,13 +392,6 @@ function WordRectOverlay({
 
   useEffect(() => {
     if (!activeSpokenWord) { setWordRect(null); return; }
-    console.log("[PDF_WORD_SYNC_RECEIVED]", {
-      anchorId: activeSpokenWord.anchorId,
-      word: activeSpokenWord.word,
-      wordIndex: activeSpokenWord.wordIndex,
-      hasSentenceText: !!activeSpokenWord.sentenceText,
-    });
-    const container = viewerRef.current;
     // Canonical-ID-first: resolve the HighlightTarget by canonicalAnchorId so the PDF
     // rect is always grounded in the same Thought Unit identity that drives LeftPanel and
     // Expert Brain. sentenceText (= verbatim rawText from the speech segment) is preferred
@@ -508,60 +404,32 @@ function WordRectOverlay({
         )
       : undefined;
     const searchText = activeSpokenWord.sentenceText ?? (target?.normalizedText || target?.text) ?? null;
-    console.log("[THOUGHT_UNIT_PDF_TARGET]", {
-      anchorId: activeSpokenWord.anchorId,
-      targetFound: !!target,
-      hasSentenceText: !!activeSpokenWord.sentenceText,
-      searchTextPreview: searchText ? searchText.slice(0, 60) : null,
-      searchTextSource: activeSpokenWord.sentenceText ? "sentenceText" : target ? "target.text" : "null",
-      highlightTargetCount: highlightTargets?.length ?? 0,
-    });
     if (!searchText) {
       console.warn("[PDF_WORD_SYNC_MISS] no search text", { anchorId: activeSpokenWord.anchorId });
       setWordRect(null); return;
     }
     const word = activeSpokenWord;
     const text = searchText as string;
+    const pageIndex = currentPage - 1;
     let cancelled = false;
     let retryTid: ReturnType<typeof setTimeout> | null = null;
+    // Grounded via resolveWordGeometry — the SAME TextLayerRegistry token
+    // index Surgeon highlighting resolves geometry from (lib/pdf/
+    // resolveAnchorGeometry.ts), not an independent DOM text-layer search.
+    // The registry is populated once per document load (lib/pdfjs-handler.ts),
+    // independent of react-pdf's own per-page text-layer DOM mount timing —
+    // this single short retry only covers the rare case the registry itself
+    // hasn't finished building yet, not a DOM-mount race.
     function runCompute(retryCount: number) {
       if (cancelled) return;
-      const textLayer = container?.querySelector('.react-pdf__Page__textContent, .textLayer');
-      if (!textLayer) {
-        if (retryCount < 3) { retryTid = setTimeout(() => runCompute(retryCount + 1), 150); }
-        else { console.warn("[PDF_WORD_SYNC_MISS] text layer not in DOM after retries"); setWordRect(null); }
-        return;
-      }
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const r = computeActiveWordRect(textLayer, text, word.wordIndex);
-        if (!r && retryCount < 2) { retryTid = setTimeout(() => runCompute(retryCount + 1), 200); return; }
-        if (r) {
-          console.log("[PDF_WORD_SYNC_RECT_RENDERED]", { anchorId: word.anchorId, word: word.word, wordIndex: word.wordIndex, rect: r });
-        } else {
-          console.warn("[PDF_WORD_SYNC_MISS] word not found after retries", { anchorId: word.anchorId, word: word.word });
-        }
-        setWordRect(r ?? null);
-        // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
-        // can report pdfWordRendered from observed state, not assumption.
-        useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
-        if (r) {
-          // Render-time confirmation — emitted after the rect actually paints, not at
-          // segment start. pdfAnchorRendered reads from the store written by the overlay
-          // paint that precedes word-tick. Correlate with [THOUGHT_UNIT_WORD_SYNC_REQUESTED]
-          // by canonicalAnchorId + sourceWordIndex.
-          const _rs = useReadingFocusStore.getState();
-          console.log("[THOUGHT_UNIT_WORD_SYNC_RENDERED]", {
-            canonicalAnchorId:  word.anchorId,
-            page:               currentPage,
-            sourceWordIndex:    word.wordIndex,
-            pdfAnchorRendered:  !!(word.anchorId && _rs.pdfRenderedAnchorIds.includes(word.anchorId)),
-            pdfWordRectRendered: true,
-            rect:               r,
-            renderGeneration:   pageRenderKey,
-          });
-        }
-      });
+      const r = resolveWordGeometry(pageIndex, text, word.wordIndex, viewportScale);
+      if (!r && retryCount < 2) { retryTid = setTimeout(() => runCompute(retryCount + 1), 150); return; }
+      if (cancelled) return;
+      if (!r) console.warn("[PDF_WORD_SYNC_MISS] word not found in TextLayerRegistry", { anchorId: word.anchorId, word: word.word });
+      setWordRect(r ? { top: r.y, left: r.x, width: r.w, height: r.h } : null);
+      // Publish the rendered word anchor to the focus store so [CANONICAL_SYNC]
+      // can report pdfWordRendered from observed state, not assumption.
+      useReadingFocusStore.getState().setPdfRenderedWordAnchor(r ? (word.anchorId ?? null) : null);
     }
     // Clear stale pre-zoom coordinates immediately so the word highlight doesn't
     // flicker at the wrong position for the duration of the recompute.
@@ -569,23 +437,30 @@ function WordRectOverlay({
     useReadingFocusStore.getState().setPdfRenderedWordAnchor(null);
     runCompute(0);
     return () => { cancelled = true; if (retryTid) clearTimeout(retryTid); };
-  }, [activeSpokenWord, currentPage, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSpokenWord, currentPage, pageTruthKey, viewportScale, pageRenderKey, highlightTargets]);
 
   if (!wordRect) return null;
+  // Underline-style marker, not a solid fill — it sits beside/under the
+  // active word instead of covering the glyphs.
   return (
     <div
       aria-hidden
       className="pointer-events-none absolute z-30 transition-all duration-100"
-      style={{
-        top: wordRect.top,
-        left: wordRect.left,
-        width: wordRect.width,
-        height: wordRect.height,
-        borderRadius: "3px",
-        background: "rgba(253,224,71,0.85)",
-        boxShadow: "0 0 6px rgba(253,224,71,0.6)",
-      }}
-    />
+      style={{ top: wordRect.top, left: wordRect.left, width: wordRect.width, height: wordRect.height }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: -3,
+          height: 3,
+          borderRadius: 2,
+          background: "rgba(253,224,71,0.9)",
+          boxShadow: "0 0 5px rgba(253,224,71,0.7)",
+        }}
+      />
+    </div>
   );
 }
 
@@ -836,7 +711,11 @@ export default function SmartPDFViewer({
     });
 
     if (!target) return;
-    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    // REQUIRED (Reader stabilization fix #4): auto-scroll only when the active
+    // text has actually left the viewport — not on every sentence tick.
+    if (!isFullyVisibleInContainer(target, container)) {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
     target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
 
     // While speech is actively reading (focusHighlightPersist), keep this sentence
@@ -1896,10 +1775,10 @@ export default function SmartPDFViewer({
 
               {/* Speechify-style live word box — isolated leaf subscriber keeps PDF canvas cold */}
               <WordRectOverlay
-                viewerRef={viewerRef}
                 highlightTargets={highlightTargets}
                 currentPage={currentPage}
-                overlayRects={overlayRects}
+                pageTruthKey={pageTruthKey}
+                viewportScale={effectiveZoom}
                 pageRenderKey={pageRenderKey}
               />
 

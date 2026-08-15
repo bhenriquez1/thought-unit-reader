@@ -1740,12 +1740,14 @@ export function RightPanel({
             onOpenProfessor={onStartProfessor ?? onOpenWhiteboard}
             thoughtUnits={canonicalLeftPanelUnits}
             selectedUnitId={focusedEvidenceId ?? null}
+            nonInstructionalPage={pageBlocked}
             primary
           />
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={onOpenWhiteboard}
-              disabled={!onOpenWhiteboard}
+              disabled={!onOpenWhiteboard || pageBlocked}
+              title={pageBlocked ? "No instructional content to teach on this page" : undefined}
               className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/3 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-white/8 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span>🎨</span> Whiteboard

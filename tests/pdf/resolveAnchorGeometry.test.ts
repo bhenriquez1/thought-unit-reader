@@ -17,7 +17,7 @@
 //  14.  Empty pdfTextItemIndexes list → falls through to char-offset strategy
 //  15.  Quote too short (< 10 chars) → not used in fallback
 
-import { resolveAnchorGeometry } from "../../lib/pdf/resolveAnchorGeometry";
+import { resolveAnchorGeometry, resolveWordGeometry } from "../../lib/pdf/resolveAnchorGeometry";
 import { TextLayerRegistry } from "../../lib/page-intelligence/textLayerIndex";
 import type { PageTextIndex } from "../../lib/page-intelligence/textLayerIndex";
 import type { ReaderAnchor } from "../../lib/canonical/types";
@@ -721,5 +721,77 @@ describe("resolveAnchorGeometry — tightly-aligned table columns", () => {
     // After 2× scale, x=20, w=150 (merged: 10+25+5+45=85 → ×2=170 from left, but merged w = 40+45-10=75, ×2=150)
     expect(rects[0].x).toBeCloseTo(20);
     expect(rects[0].w).toBeCloseTo(150); // (10+25+45+gap)*2 merged width
+  });
+});
+
+describe("resolveWordGeometry", () => {
+  it("resolves the Nth word's own token bbox within a sentence at the start of the page", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "The",          x: 0,   y: 100, w: 20, h: 12 },
+        { str: "mitochondria", x: 25,  y: 100, w: 90, h: 12 },
+        { str: "is",           x: 120, y: 100, w: 15, h: 12 },
+        { str: "the",          x: 140, y: 100, w: 20, h: 12 },
+        { str: "powerhouse",   x: 165, y: 100, w: 70, h: 12 },
+        { str: "of",           x: 240, y: 100, w: 15, h: 12 },
+        { str: "the",          x: 260, y: 100, w: 20, h: 12 },
+        { str: "cell",         x: 285, y: 100, w: 30, h: 12 },
+      ]),
+    );
+    const sentence = "The mitochondria is the powerhouse of the cell";
+
+    expect(resolveWordGeometry(0, sentence, 0, 1.0)).toMatchObject({ x: 0, y: 100, w: 20, h: 12 });
+    expect(resolveWordGeometry(0, sentence, 1, 1.0)).toMatchObject({ x: 25, y: 100, w: 90, h: 12 });
+    expect(resolveWordGeometry(0, sentence, 7, 1.0)).toMatchObject({ x: 285, y: 100, w: 30, h: 12 });
+  });
+
+  it("REQUIRED: locates the sentence even when it's offset deep in the page's fullText (bounded-prefix search, mirroring resolveAnchorGeometry's Strategy 3)", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "Introduction", x: 0,   y: 10, w: 60, h: 12 },
+        { str: "text",         x: 65,  y: 10, w: 25, h: 12 },
+        { str: "before",       x: 95,  y: 10, w: 35, h: 12 },
+        { str: "the",          x: 135, y: 10, w: 20, h: 12 },
+        { str: "sentence",     x: 160, y: 10, w: 45, h: 12 },
+        { str: "The",          x: 0,   y: 50, w: 20, h: 12 },
+        { str: "mitochondria", x: 500, y: 50, w: 90, h: 12 },
+        { str: "is",           x: 600, y: 50, w: 15, h: 12 },
+      ]),
+    );
+    const sentence = "The mitochondria is";
+    expect(resolveWordGeometry(0, sentence, 1, 1.0)).toMatchObject({ x: 500, y: 50, w: 90, h: 12 });
+  });
+
+  it("clamps an out-of-range wordIndex to the last word rather than returning null", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [
+        { str: "Short", x: 0,  y: 0, w: 40, h: 12 },
+        { str: "line",  x: 45, y: 0, w: 30, h: 12 },
+      ]),
+    );
+    expect(resolveWordGeometry(0, "Short line", 99, 1.0)).toMatchObject({ x: 45, w: 30 });
+    expect(resolveWordGeometry(0, "Short line", -5, 1.0)).toMatchObject({ x: 0, w: 40 });
+  });
+
+  it("scales the returned rect by viewportScale, matching resolveAnchorGeometry's own convention", () => {
+    TextLayerRegistry.set(
+      makeIndex(0, [{ str: "energy", x: 72, y: 600, w: 30, h: 10 }]),
+    );
+    const rect = resolveWordGeometry(0, "energy", 0, 2.0);
+    expect(rect).toMatchObject({ x: 144, y: 1200, w: 60, h: 20 });
+  });
+
+  it("returns null when the page has no TextLayerRegistry entry yet", () => {
+    expect(resolveWordGeometry(0, "Any sentence text here", 0, 1.0)).toBeNull();
+  });
+
+  it("returns null when the sentence cannot be located in the page's fullText", () => {
+    TextLayerRegistry.set(makeIndex(0, [{ str: "unrelated", x: 0, y: 0, w: 50, h: 12 }]));
+    expect(resolveWordGeometry(0, "Completely different sentence text", 0, 1.0)).toBeNull();
+  });
+
+  it("returns null for a sentence shorter than 4 characters", () => {
+    TextLayerRegistry.set(makeIndex(0, [{ str: "hi", x: 0, y: 0, w: 20, h: 12 }]));
+    expect(resolveWordGeometry(0, "hi", 0, 1.0)).toBeNull();
   });
 });
