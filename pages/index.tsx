@@ -2211,6 +2211,20 @@ export default function ThoughtUnitReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey]);
 
+  // CRITICAL: clear the Reading Focus Engine's eye-follow/word-sync state on every
+  // page change. clearFocus() resets thoughtUnitId/sentenceText/wordIndex/word/
+  // playbackState/pdfClickCursor/annotationRenderStage together — without this,
+  // the previous page's word marker (and its stale playbackState) could survive
+  // into the new page until the next speech tick happened to overwrite it,
+  // rather than disappearing immediately on navigation as the reading-focus
+  // contract requires (see lib/readingFocus/readingFocusStore.ts's clearFocus
+  // doc comment: "Clear all focus state (e.g. on page/book change)" — this was
+  // the one call site that contract was written for but never wired up).
+  useEffect(() => {
+    useReadingFocusStore.getState().clearFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageTruthKey]);
+
   // CRITICAL: close any open Explain It modal on page navigation. It captures
   // its page's context (pageNumber, pageText, canonicalEntries) once when
   // opened and is not keyed to pageTruthKey, so without this effect it would
