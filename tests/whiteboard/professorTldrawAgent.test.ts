@@ -1,6 +1,7 @@
 import {
   buildProfessorTldrawAgentRequest,
   isNontrivialProfessorAgentAction,
+  isGroundedLabelText,
   resolveProfessorAgentFailure,
   ProfessorTldrawAgentRequestSchema,
   verifyProfessorTldrawAgentResponse,
@@ -160,6 +161,80 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
     expect(verified.actions.filter(action => action.type !== "move-camera")).toEqual([]);
     expect(verified.rejectedActionCount).toBe(1);
     expect(isNontrivialProfessorAgentAction(DRAW)).toBe(false);
+  });
+
+  it("REQUIRED (label-grounding loosening): accepts a writeLabel/drawCallout whose text is NOT in allowedLabels but is copied directly from this step's own narration — lets the agent decompose one coarse deterministic label into the finer terms narration already names", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    // "stabilize pressure" appears verbatim in directorSteps[0].narration
+    // ("The two rests stabilize pressure on both sides.") but is NOT one of
+    // allowedLabels (["Bilateral finger rests"]) — this is exactly the kind
+    // of finer-grained, still-grounded sub-phrase the loosening is for.
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "narration-label", sourceTargetId: "source-one", text: "stabilize pressure", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+        { tool: "drawCallout", localId: "narration-callout", sourceTargetId: "source-one", bounds: { x: 0, y: 0, w: 160, h: 70 }, label: "both sides", color: "orange" },
+      ],
+    });
+    expect(verified.actions.some(action => action.type === "write" && action.text === "stabilize pressure")).toBe(true);
+    expect(verified.actions.some(action => action.type === "write" && action.text === "both sides")).toBe(true);
+    expect(verified.rejectedActionCount).toBe(0);
+  });
+
+  it("REQUIRED (label-grounding loosening): still rejects a writeLabel with text absent from allowedLabels AND absent from narration/relationships — widening the source of grounded vocabulary does not remove the grounding requirement", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "invented", sourceTargetId: "source-one", text: "Made-up clinical claim", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    expect(verified.actions.filter(action => action.type !== "move-camera")).toEqual([]);
+    expect(verified.rejectedActionCount).toBe(1);
+  });
+
+  it("REQUIRED (label-grounding loosening): a grounded relationship label is also accepted, matching the same rule as narration", () => {
+    const planWithRelationship: ProfessorLessonPlan = {
+      ...PLAN,
+      directorSteps: [{
+        ...PLAN.directorSteps![0],
+        relationships: [{ targetId: "n2", kind: "supports", label: "even pressure distribution" }],
+      }],
+    };
+    const request = buildProfessorTldrawAgentRequest({ plan: planWithRelationship, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "relationship-label", sourceTargetId: "source-one", text: "even pressure distribution", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    expect(verified.actions.some(action => action.type === "write" && action.text === "even pressure distribution")).toBe(true);
+  });
+
+  describe("isGroundedLabelText — the pure predicate directly", () => {
+    const allowed = new Set(["Reactants"]);
+    const blob = "reactants the ionic compound dissociates into sodium and chloride ions which conduct current";
+
+    it("accepts an exact allowedLabels match", () => {
+      expect(isGroundedLabelText("Reactants", allowed, blob)).toBe(true);
+    });
+
+    it("accepts a finer-grained term genuinely present in the grounded text blob (case/punctuation-insensitive)", () => {
+      expect(isGroundedLabelText("Na+ Cl-", allowed, blob)).toBe(false); // not literally present as written
+      expect(isGroundedLabelText("sodium and chloride ions", allowed, blob)).toBe(true);
+      expect(isGroundedLabelText("SODIUM AND CHLORIDE IONS", allowed, blob)).toBe(true);
+    });
+
+    it("rejects fabricated text not present anywhere in the grounded blob", () => {
+      expect(isGroundedLabelText("Potassium iodide forms a yellow crystal", allowed, blob)).toBe(false);
+    });
+
+    it("rejects a vacuous very-short match (guards against a stray 1-2 char token trivially substring-matching)", () => {
+      expect(isGroundedLabelText("io", allowed, blob)).toBe(false);
+    });
   });
 
   it("rejects oversized screenshots and invalid local ids at the request/response boundary", () => {

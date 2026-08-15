@@ -368,6 +368,44 @@ function sourceTarget(call: { sourceTargetId?: string | null }, allowed: Set<str
   return call.sourceTargetId && allowed.has(call.sourceTargetId) ? call.sourceTargetId : undefined;
 }
 
+// ── Label grounding ──────────────────────────────────────────────────────────
+// Loosened from a pure allowedLabels exact-match: a label/callout is grounded
+// if it's either (a) one of the deterministic plan's own pre-existing write-
+// action strings (the original, still-supported fast path), OR (b) a phrase
+// that genuinely occurs in this SAME step's own narration or relationship
+// labels — text OpenAI's Director already wrote as grounded teaching
+// language, just not separately promoted to a standalone shortLabel/explain
+// fragment. This is what lets Claude decompose one coarse deterministic label
+// (e.g. "Reactants") into the finer-grained sub-entities the narration
+// already names (e.g. "Na+", "Cl-", "forms precipitate") without opening the
+// door to inventing anything the Director never said. A candidate that
+// appears nowhere in allowedLabels/narration/relationships is still rejected
+// exactly as before — this widens the SOURCE of grounded vocabulary, it does
+// not remove the grounding requirement itself.
+function normalizeForGrounding(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9%+\-/() ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function buildGroundedTextBlob(step: ProfessorTldrawAgentRequest["step"]): string {
+  return normalizeForGrounding([
+    ...step.allowedLabels,
+    step.narration,
+    ...step.relationships.map(relationship => relationship.label ?? ""),
+  ].join(" "));
+}
+
+/** True when `text` is either an exact allowedLabels string, or a short
+ *  (>=3 normalized chars, so a stray single token can't vacuously match)
+ *  phrase that literally occurs in this step's own narration/relationship
+ *  labels. Exported for direct unit coverage, independent of the full
+ *  verification pass. */
+export function isGroundedLabelText(text: string, allowedLabels: Set<string>, groundedTextBlob: string): boolean {
+  if (allowedLabels.has(text)) return true;
+  const normalized = normalizeForGrounding(text);
+  if (normalized.length < 3) return false;
+  return groundedTextBlob.includes(normalized);
+}
+
 /** The deterministic "hands" gate. Claude tool calls do not reach tldraw
  * directly: ids, labels, coordinates, erases, source links and camera bounds
  * are all verified against the single current Director step. */
@@ -380,6 +418,7 @@ export function verifyProfessorTldrawAgentResponse(
   }
   const region = expanded(request.step.focusBounds);
   const allowedLabels = new Set(request.step.allowedLabels);
+  const groundedTextBlob = buildGroundedTextBlob(request.step);
   const allowedSources = new Set(request.step.allowedSourceTargetIds);
   const canvasShapeIds = new Set(request.canvas.shapes.map(shape => shape.shapeId));
   const priorLocalIds = new Set(request.priorAgentLocalIds);
@@ -408,8 +447,8 @@ export function verifyProfessorTldrawAgentResponse(
       push({ type: "erase", actionId: actionId(call.targetLocalId, "erase"), targetShapeId: stableShapeId(stepId, call.targetLocalId), durationMs: 140, stepId });
       continue;
     }
-    if (call.tool === "writeLabel" && !allowedLabels.has(call.text)) { rejectedActionCount++; continue; }
-    if (call.tool === "drawCallout" && !allowedLabels.has(call.label)) { rejectedActionCount++; continue; }
+    if (call.tool === "writeLabel" && !isGroundedLabelText(call.text, allowedLabels, groundedTextBlob)) { rejectedActionCount++; continue; }
+    if (call.tool === "drawCallout" && !isGroundedLabelText(call.label, allowedLabels, groundedTextBlob)) { rejectedActionCount++; continue; }
     if (!acceptLocalId(call.localId)) { rejectedActionCount++; continue; }
 
     if (call.tool === "moveCamera" || call.tool === "zoomTo" || call.tool === "panTo" || call.tool === "focusNode") {
