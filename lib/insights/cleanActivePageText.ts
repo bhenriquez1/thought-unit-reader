@@ -66,12 +66,37 @@ const CALLOUT_LABEL_RE =
  * Merge PDF drop-cap OCR artifacts where a lone capital letter appears as its own
  * text span, separated from the rest of the word.
  * Example: "T he cell cycle" → "The cell cycle", "C ellular respiration" → "Cellular respiration"
- * Excludes capital "I" (pronoun) to avoid merging "I love" → "Ilove".
+ *
+ * A genuine drop cap is only ever the ornamental FIRST letter of a paragraph/
+ * sentence, extracted as its own text span — never a letter appearing mid-
+ * sentence. Two safeguards keep this from colliding with ordinary prose that
+ * happens to contain an isolated capital letter (previously a real bug: "A
+ * patient with diabetes" -> "Apatient...", "Vitamin B complex" ->
+ * "Vitamin Bcomplex", "Group A streptococcus" -> "Group Astreptococcus" —
+ * these corrupted the text sent to the annotation model while grounding kept
+ * checking the ORIGINAL raw text, so a faithfully-quoted annotation would
+ * silently fail to ground and get dropped):
+ *  1. "A" is never merged (matching the existing "I" exclusion) — it is
+ *     already a complete, valid standalone word (the indefinite article)
+ *     whether or not it was drop-capped, so merging it can only ever be
+ *     wrong. This alone covers the article and the common classifier case
+ *     ("Group A ...", "Type A ...", "Grade A ...").
+ *  2. Every other letter is only merged at a genuine paragraph/sentence
+ *     start — the start of the text, immediately after a newline, or
+ *     immediately after sentence-ending punctuation — never after an
+ *     ordinary preceding word. This is what keeps single-letter classifiers
+ *     mid-sentence ("Vitamin B complex", "Type B diabetes", "Hepatitis C
+ *     infection") untouched: those letters are preceded by a plain
+ *     classifier word, not a sentence boundary.
  */
 export function normalizeDropCaps(text: string): string {
   if (!text) return text;
-  // Single capital (not I) + space + 2+ lowercase chars that together form a word
-  return text.replace(/(?<![A-Za-z])([A-HJ-Z]) ([a-z]{2,})(?![a-z])/g, (_, letter, rest) => letter + rest);
+  // Capital (not A, not I) + space + 2+ lowercase chars, only at a paragraph/
+  // sentence-start position, that together form a word.
+  return text.replace(
+    /(?<=^|\n|[.!?]["'’”]?\s)([B-HJ-Z]) ([a-z]{2,})(?![a-z])/g,
+    (_, letter, rest) => letter + rest,
+  );
 }
 
 /**
