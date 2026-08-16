@@ -5111,14 +5111,9 @@ export default function ThoughtUnitReader() {
   const renderContent = () => {
     // Elena Mode uses browser-local IndexedDB — no Firebase auth required
     if (activeShellTab === "elena") {
-      return (
-        <ElenaChildWorkspace
-          bookTitle={uploadedFile?.name}
-          currentPage={currentPage}
-          totalPages={pdfPageCount}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || undefined}
-        />
-      );
+      // Elena Mode owns its own upload/library/reading-position state (E2) —
+      // it no longer mirrors whatever the adult Reader tab has open.
+      return <ElenaChildWorkspace />;
     }
 
     // 🔐 All other tabs require sign-in

@@ -1,22 +1,24 @@
 // lib/elena/idbStore.ts
 // IndexedDB persistence for Elena Mode child profiles and progress.
-// DB: "avrrio-elena"  version 2
+// DB: "avrrio-elena"  version 3
 //
 // Stores:
 //   child-profiles  — ChildProfile records keyed by id
 //   progress        — ChildProgress keyed by childProfileId
 //   reward-state    — ChildRewardState keyed by childProfileId
 //   vocabulary      — VocabWord records keyed by id, indexed by childProfileId
+//   child-library   — ChildLibraryEntry records keyed by id, indexed by childProfileId
 
-import type { ChildProfile, ChildProgress, ChildRewardState } from "./types";
+import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry } from "./types";
 import type { VocabWord } from "./vocabulary";
 
 const DB_NAME        = "avrrio-elena";
-const DB_VERSION     = 2;
+const DB_VERSION     = 3;
 const STORE_PROFILES = "child-profiles";
 const STORE_PROGRESS = "progress";
 const STORE_REWARDS  = "reward-state";
 const STORE_VOCAB    = "vocabulary";
+const STORE_LIBRARY  = "child-library";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -35,6 +37,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_VOCAB)) {
         const vocabStore = db.createObjectStore(STORE_VOCAB, { keyPath: "id" });
         vocabStore.createIndex("byChild", "childProfileId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_LIBRARY)) {
+        const libraryStore = db.createObjectStore(STORE_LIBRARY, { keyPath: "id" });
+        libraryStore.createIndex("byChild", "childProfileId", { unique: false });
       }
     };
     req.onsuccess = () => {
@@ -175,6 +181,51 @@ export async function deleteVocabWord(id: string): Promise<void> {
   const db  = await openDb();
   const tx  = db.transaction(STORE_VOCAB, "readwrite");
   const req = tx.objectStore(STORE_VOCAB).delete(id);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/* ─── Child-owned library ────────────────────────────────────────────────────── */
+
+export async function saveChildLibraryEntry(entry: ChildLibraryEntry): Promise<void> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_LIBRARY, "readwrite");
+  const req = tx.objectStore(STORE_LIBRARY).put(entry);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+export async function listChildLibraryEntries(childProfileId: string): Promise<ChildLibraryEntry[]> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_LIBRARY, "readonly");
+  const idx = tx.objectStore(STORE_LIBRARY).index("byChild");
+  const req = idx.getAll(childProfileId);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve((req.result as ChildLibraryEntry[]) ?? []);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+export async function getChildLibraryEntry(childProfileId: string, documentId: string): Promise<ChildLibraryEntry | null> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_LIBRARY, "readonly");
+  const req = tx.objectStore(STORE_LIBRARY).get(`${childProfileId}::${documentId}`);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve((req.result as ChildLibraryEntry) ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+export async function deleteChildLibraryEntry(childProfileId: string, documentId: string): Promise<void> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_LIBRARY, "readwrite");
+  const req = tx.objectStore(STORE_LIBRARY).delete(`${childProfileId}::${documentId}`);
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);

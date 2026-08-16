@@ -67,7 +67,11 @@ function buildMessages(body: VocabExtractRequest): Anthropic.MessageParam[] {
   let ctx = `Age level: ${ageVocabLevel(body.ageRange)}\n\nExtract vocabulary words from this page`;
   if (body.bookTitle) ctx += ` of "${bookLabel}"`;
   if (body.currentPage) ctx += ` (page ${body.currentPage})`;
-  ctx += `:\n\n<page_content>\n${body.pageText}\n</page_content>`;
+  // Prefer the canonical-unit-grounded context (real CanonicalThoughtUnits,
+  // ranked by importance — see lib/elena/childTeachingAdapter.ts) over raw
+  // PDF text-layer output when it's available.
+  const pageContent = body.groundedContext || body.pageText;
+  ctx += `:\n\n<page_content>\n${pageContent}\n</page_content>`;
 
   return [
     { role: "user",      content: ctx },
@@ -82,6 +86,7 @@ const VALID_AGE_RANGES = new Set<string>(["3-4", "5-6", "7-8", "9-10", "11-12"])
 function sanitise(body: VocabExtractRequest): VocabExtractRequest {
   return {
     pageText:    (body.pageText ?? "").slice(0, 3000),
+    groundedContext: body.groundedContext ? body.groundedContext.slice(0, 3000) : undefined,
     ageRange:    VALID_AGE_RANGES.has(body.ageRange ?? "") ? body.ageRange : undefined,
     bookTitle:   body.bookTitle?.slice(0, 120),
     currentPage: typeof body.currentPage === "number" ? body.currentPage : undefined,

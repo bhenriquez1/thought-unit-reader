@@ -144,6 +144,31 @@ export type ChildRewardState = {
   updatedAt:       string;
 };
 
+/* ─── Child-owned library ─────────────────────────────────────────────────────
+ * A book a child has uploaded into their OWN Elena library. The PDF binary is
+ * stored via the shared lib/db/documentStore.ts (the SAME storage the adult
+ * Reader uses) — this record only tracks Elena-side identity and per-child
+ * reading position. documentId is the canonical id used to build pageTruthKey
+ * (lib/useActivePageIntelligence.ts's buildPageTruthKey), matching the rest
+ * of the app.
+ */
+
+export type ChildLibraryEntry = {
+  /** `${childProfileId}::${documentId}` — composite key, keeps reading position per child. */
+  id:              string;
+  childProfileId:  string;
+  /** Canonical document identity — key into lib/db/documentStore.ts and pageTruthKey. */
+  documentId:      string;
+  title:           string;
+  /** 0 until the viewer reports the real page count on first open. */
+  totalPages:      number;
+  /** 1-based, resumable reading position. */
+  currentPage:     number;
+  addedAt:         string;
+  updatedAt:       string;
+  lastOpenedAt:    string;
+};
+
 /* ─── Parent controls ────────────────────────────────────────────────────────── */
 
 export type ParentControlSettings = {

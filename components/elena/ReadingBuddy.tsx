@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import type { ChildProfile } from "@/lib/elena/types";
 import type { BuddyMessage } from "@/lib/elena/readingBuddy";
 import { QUICK_PROMPTS } from "@/lib/elena/readingBuddy";
+import { loadGroundedPageContext } from "@/lib/elena/childTeachingAdapter";
 
 /* ─── Props ──────────────────────────────────────────────────────────────────── */
 
@@ -15,6 +16,9 @@ interface ReadingBuddyProps {
   pageText?:        string;
   bookTitle?:       string;
   currentPage?:     number;
+  /** Canonical documentId — when present, replies ground themselves in this
+   *  page's real CanonicalThoughtUnits instead of raw pageText. */
+  documentId?:      string;
   /** Start in open state (used by AskPagePanel which controls open/close externally) */
   defaultOpen?:     boolean;
   /** Called when the close button is clicked in defaultOpen mode */
@@ -37,6 +41,7 @@ export default function ReadingBuddy({
   pageText,
   bookTitle,
   currentPage,
+  documentId,
   defaultOpen,
   onRequestClose,
 }: ReadingBuddyProps) {
@@ -101,6 +106,10 @@ export default function ReadingBuddy({
         .slice(-MAX_HISTORY)
         .map(m => ({ role: m.role, content: m.content }));
 
+      const groundedContext = documentId && currentPage
+        ? await loadGroundedPageContext(documentId, currentPage)
+        : null;
+
       const resp = await fetch("/api/elena-buddy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,6 +119,7 @@ export default function ReadingBuddy({
           ageRange:    profile.ageRange,
           childName:   profile.preferredName || profile.displayName,
           pageText,
+          groundedContext: groundedContext ?? undefined,
           bookTitle,
           currentPage,
         }),
@@ -133,7 +143,7 @@ export default function ReadingBuddy({
     } finally {
       setLoading(false);
     }
-  }, [loading, messages, profile, pageText, bookTitle, currentPage]);
+  }, [loading, messages, profile, pageText, bookTitle, currentPage, documentId]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

@@ -85,8 +85,13 @@ function buildContextMessages(body: ReadingBuddyRequest): Anthropic.MessageParam
   if (body.currentPage) {
     contextText += `\nCurrent page: ${body.currentPage}`;
   }
-  if (body.pageText) {
-    contextText += `\n\nPage content:\n<page_content>\n${body.pageText}\n</page_content>`;
+  // Prefer the canonical-unit-grounded context (real CanonicalThoughtUnits,
+  // ranked by importance — see lib/elena/childTeachingAdapter.ts) over raw
+  // PDF text-layer output when it's available; fall back to pageText when
+  // extraction hasn't completed for this page yet.
+  const pageContent = body.groundedContext || body.pageText;
+  if (pageContent) {
+    contextText += `\n\nPage content:\n<page_content>\n${pageContent}\n</page_content>`;
   }
 
   return [
@@ -108,6 +113,7 @@ function sanitise(body: ReadingBuddyRequest): ReadingBuddyRequest {
     childName:   (body.childName ?? "").slice(0, 50),
     bookTitle:   (body.bookTitle ?? "").slice(0, 120),
     pageText:    (body.pageText ?? "").slice(0, 3000),
+    groundedContext: body.groundedContext ? body.groundedContext.slice(0, 3000) : undefined,
     currentPage: typeof body.currentPage === "number" ? body.currentPage : undefined,
   };
 }

@@ -46,6 +46,10 @@ export type ReadingBuddyRequest = {
   childName?: string;
   /** Raw text of the current PDF page (max 3 000 chars) */
   pageText?:  string;
+  /** Grounded context built from this page's real CanonicalThoughtUnits
+   *  (lib/elena/childTeachingAdapter.ts) — preferred over pageText when
+   *  present; the server falls back to pageText when it's absent. */
+  groundedContext?: string;
   /** Title of the book being read */
   bookTitle?: string;
   /** 1-indexed page number */
