@@ -163,6 +163,15 @@ export const ProfessorTldrawAgentRequestSchema = z.object({
     retainContextTargetIds: z.array(z.string().max(160)).max(12),
     allowedLabels: z.array(z.string().min(1).max(120)).max(24),
     allowedSourceTargetIds: z.array(z.string().min(1).max(160)).max(24),
+    // Stabilization item 4B: the current step's own canonical current-page
+    // evidence (ProfessorDirectorStep.sourceEvidence's exactText, already
+    // grounded upstream to a real VSG node/Thought Unit via sourceId) — NOT
+    // previously threaded into the agent request at all. Widens what counts
+    // as grounded label vocabulary beyond this step's own spoken narration
+    // (e.g. a page whose evidence names "nurses," "anesthesia," "residents"
+    // even if the narration only says "the surgical team") without ever
+    // letting the agent draw a label absent from the real page text.
+    sourceEvidenceText: z.array(z.string().min(1).max(2000)).max(6).default([]),
     relationships: z.array(z.object({
       targetId: z.string().max(160),
       kind: z.string().max(40),
@@ -319,6 +328,7 @@ export function buildProfessorTldrawAgentRequest(args: {
       retainContextTargetIds: camera?.type === "move-camera" ? (camera.retainContextTargetIds ?? []) : [],
       allowedLabels: labels,
       allowedSourceTargetIds: sourceTargets,
+      sourceEvidenceText: step.sourceEvidence.map(evidence => evidence.exactText.slice(0, 2000)),
       relationships: step.relationships.map(relationship => ({
         targetId: relationship.targetId,
         kind: relationship.kind,
@@ -372,16 +382,20 @@ function sourceTarget(call: { sourceTargetId?: string | null }, allowed: Set<str
 // Loosened from a pure allowedLabels exact-match: a label/callout is grounded
 // if it's either (a) one of the deterministic plan's own pre-existing write-
 // action strings (the original, still-supported fast path), OR (b) a phrase
-// that genuinely occurs in this SAME step's own narration or relationship
-// labels — text OpenAI's Director already wrote as grounded teaching
-// language, just not separately promoted to a standalone shortLabel/explain
-// fragment. This is what lets Claude decompose one coarse deterministic label
-// (e.g. "Reactants") into the finer-grained sub-entities the narration
-// already names (e.g. "Na+", "Cl-", "forms precipitate") without opening the
-// door to inventing anything the Director never said. A candidate that
-// appears nowhere in allowedLabels/narration/relationships is still rejected
-// exactly as before — this widens the SOURCE of grounded vocabulary, it does
-// not remove the grounding requirement itself.
+// that genuinely occurs in this SAME step's own narration, relationship
+// labels, or canonical current-page source evidence — text OpenAI's Director
+// already wrote (narration/relationships) or that is literally present on
+// the page and already grounded to a real VSG node/Thought Unit via sourceId
+// (sourceEvidenceText — see ProfessorDirectorStep.sourceEvidence). This is
+// what lets Claude decompose one coarse deterministic label (e.g.
+// "Reactants") into the finer-grained sub-entities the narration OR the
+// source page already names (e.g. "Na+", "Cl-", "Nurses", "Anesthesia" —
+// real entities the narration summarized as "the surgical team" but the
+// page's own text names individually) without opening the door to inventing
+// anything neither the Director nor the source page ever said. A candidate
+// that appears nowhere in allowedLabels/narration/relationships/source
+// evidence is still rejected exactly as before — this widens the SOURCE of
+// grounded vocabulary, it does not remove the grounding requirement itself.
 function normalizeForGrounding(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9%+\-/() ]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -391,14 +405,15 @@ function buildGroundedTextBlob(step: ProfessorTldrawAgentRequest["step"]): strin
     ...step.allowedLabels,
     step.narration,
     ...step.relationships.map(relationship => relationship.label ?? ""),
+    ...step.sourceEvidenceText,
   ].join(" "));
 }
 
 /** True when `text` is either an exact allowedLabels string, or a short
  *  (>=3 normalized chars, so a stray single token can't vacuously match)
- *  phrase that literally occurs in this step's own narration/relationship
- *  labels. Exported for direct unit coverage, independent of the full
- *  verification pass. */
+ *  phrase that literally occurs in this step's own narration, relationship
+ *  labels, or canonical source evidence text. Exported for direct unit
+ *  coverage, independent of the full verification pass. */
 export function isGroundedLabelText(text: string, allowedLabels: Set<string>, groundedTextBlob: string): boolean {
   if (allowedLabels.has(text)) return true;
   const normalized = normalizeForGrounding(text);

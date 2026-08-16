@@ -181,6 +181,81 @@ describe("buildProfessorTeachingActions — Director camera follows each active 
   });
 });
 
+describe("buildProfessorTeachingActions — item 4B: edge focusBounds fallback when one endpoint isn't drawn", () => {
+  function makeEdgeFallbackVsg(): VisualSceneGraph {
+    return {
+      id: "vsg_edge_fallback", grammar: "flow", drawType: "flow",
+      nodes: [
+        { id: "n1", label: "n1", body: "n1 body", canonicalType: "definition", importanceLevel: "critical", tier: "master", role: "step", position: { x: 85, y: 22 }, size: { w: 290, h: 52 }, sourceId: "src-n1" },
+        { id: "n2", label: "n2", body: "n2 body", canonicalType: "definition", importanceLevel: "high", tier: "step", role: "step", position: { x: 85, y: 200 }, size: { w: 290, h: 52 }, sourceId: "src-n2" },
+      ],
+      // n2 deliberately has NO nodeScripts entry below — never narrated,
+      // never drawn — simulating a VSG node the AI's script doesn't mention
+      // (or one that carries visualNeeded:false).
+      edges: [{ id: "e1", fromId: "n1", toId: "n2", kind: "causation", label: "leads to" }],
+      canvas: { width: 460, height: 300 }, builtAt: 0,
+    };
+  }
+
+  it("REQUIRED: an edge whose target was never drawn still gets a real focusBounds anchored on the drawn source — the concrete fix for a relationship-heavy step reaching the runtime agent with nothing to focus on", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Team leader", narration: "The surgeon leads the team.", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "Strong leadership drives team communication.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(makeEdgeFallbackVsg(), grounded, SNAPSHOT);
+
+    const edgeStep = plan.directorSteps!.find(step => step.targetId === "e1");
+    expect(edgeStep).toBeDefined();
+    expect(edgeStep!.focusBounds).not.toBeNull();
+
+    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
+    const fallbackCamera = plan.actions.find(a => a.type === "move-camera" && (a as any).stepId === edgeStep!.stepId) as any;
+    expect(fallbackCamera).toBeDefined();
+    expect(fallbackCamera.targetIds).toEqual([n1Shape]);
+    expect(fallbackCamera.focusBounds).toEqual(edgeStep!.focusBounds);
+
+    // No deterministic arrow was drawn — n2 was never on screen to connect to.
+    expect(plan.actions.some(a => a.type === "draw-arrow" && (a as any).targetId === "e1")).toBe(false);
+  });
+
+  it("an edge whose BOTH endpoints were never drawn gets no focusBounds and no move-camera — nothing safe to anchor on, so it stays genuinely ineligible rather than inventing coordinates", () => {
+    const vsg = makeEdgeFallbackVsg();
+    const grounded = makeGrounded({
+      nodeScripts: [
+        // Neither n1 nor n2 has its own entry — both unnarrated.
+        { targetId: "e1", shortLabel: "Leads to", narration: "Strong leadership drives team communication.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+
+    const edgeStep = plan.directorSteps!.find(step => step.targetId === "e1");
+    expect(edgeStep).toBeDefined();
+    expect(edgeStep!.focusBounds).toBeNull();
+    expect(plan.actions.some(a => a.type === "move-camera" && (a as any).stepId === edgeStep!.stepId)).toBe(false);
+  });
+
+  it("an edge whose both endpoints ARE drawn is unaffected by the fallback — same focusBounds/camera/arrow as before", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Team leader", narration: "n1", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "n2", shortLabel: "Communication", narration: "n2", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+        { targetId: "e1", shortLabel: "Leads to", narration: "Strong leadership drives team communication.", tone: "connect", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(makeEdgeFallbackVsg(), grounded, SNAPSHOT);
+
+    const edgeStep = plan.directorSteps!.find(step => step.targetId === "e1");
+    expect(edgeStep!.focusBounds).not.toBeNull();
+    expect(plan.actions.some(a => a.type === "draw-arrow" && (a as any).targetId === "e1")).toBe(true);
+    const cameraAction = plan.actions.find(a => a.type === "move-camera" && (a as any).stepId === edgeStep!.stepId) as any;
+    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
+    const n2Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).shapeId;
+    expect(cameraAction.targetIds).toEqual([n1Shape, n2Shape]);
+  });
+});
+
 describe("buildProfessorTeachingActions — group-aware geometry: no overlap, real measured sizing", () => {
   function makeFiveNodeVsg(): VisualSceneGraph {
     return {

@@ -728,25 +728,54 @@ export function buildProfessorTeachingActions(
     const edge = vsg.edges.find(e => e.id === entry.targetId);
     if (edge) {
       // Bounds are now precomputed for every drawn VSG node regardless of
-      // script order (see the pre-pass above) — the guard that matters here
-      // is different: does EACH endpoint actually get a visible draw-shape
-      // action at some point in this timeline? An edge pointing at a node
-      // the AI chose to skip narrating (rule 1 allows skipping "a couple of
-      // nodes") would otherwise draw an arrow to/from an invisible box.
-      if (!drawnNodeIds.has(edge.fromId) || !drawnNodeIds.has(edge.toId)) {
+      // script order (see the pre-pass above), but a DETERMINISTIC arrow
+      // still needs both endpoints to already be ON SCREEN at this exact
+      // point in the timeline — an edge pointing at a node the AI chose to
+      // skip narrating (rule 1 allows skipping "a couple of nodes"), or one
+      // whose own turn simply hasn't come up yet, would otherwise draw an
+      // arrow to/from an invisible box. `revealedNodeIds` is the source of
+      // truth for "already visible" — it can only contain an id whose
+      // nodeBoundsById entry is also real, so checking it alone is
+      // equivalent to (and replaces) separately checking drawnNodeIds.
+      const revealedFromBounds = revealedNodeIds.includes(edge.fromId) ? nodeBoundsById.get(edge.fromId) : undefined;
+      const revealedToBounds   = revealedNodeIds.includes(edge.toId)   ? nodeBoundsById.get(edge.toId)   : undefined;
+
+      if (!revealedFromBounds || !revealedToBounds) {
+        // Stabilization item 4B: a literal box-to-box arrow can't be drawn
+        // deterministically here, but the runtime visual agent doesn't need
+        // one — it can draw the missing side of the relationship itself.
+        // Give it a safe focus region anchored on whichever endpoint(s) ARE
+        // already on screen (never inventing coordinates for a node with no
+        // known ON-SCREEN bounds — see nodeBoundsById's own scope). Without
+        // this, a relationship-heavy step whose one side is "spoken but
+        // never boxed" (e.g. a teamwork/communication idea the AI didn't
+        // give its own shape) silently produced NO focus region at all, so
+        // the runtime agent never even got a chance to draw it.
+        const fallbackBounds = revealedFromBounds && revealedToBounds
+          ? mergeLayoutBounds([revealedFromBounds, revealedToBounds])
+          : revealedFromBounds ?? revealedToBounds ?? null;
+        const fallbackTargetIds = [
+          revealedFromBounds ? nodeShapeId(edge.fromId) : null,
+          revealedToBounds ? nodeShapeId(edge.toId) : null,
+        ].filter((id): id is string => Boolean(id));
+        if (fallbackBounds && fallbackTargetIds.length > 0) {
+          directorFocusBounds = fallbackBounds;
+          push({
+            type: "move-camera", actionId: nextActionId(),
+            targetIds: fallbackTargetIds,
+            retainContextTargetIds: [],
+            focusBounds: fallbackBounds,
+            cameraIntent,
+            durationMs: CAMERA_DURATION_MS,
+          });
+        }
         pushSegment(entry.narration, entry.tone, entry.pace, []);
         if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
         finishDirectorStep();
         continue;
       }
-      const from = nodeBoundsById.get(edge.fromId);
-      const to   = nodeBoundsById.get(edge.toId);
-      if (!from || !to || !revealedNodeIds.includes(edge.fromId) || !revealedNodeIds.includes(edge.toId)) {
-        pushSegment(entry.narration, entry.tone, entry.pace, []);
-        if (entry.checkpoint) pushSegment(entry.checkpoint, "question", "slow", []);
-        finishDirectorStep();
-        continue;
-      }
+      const from = revealedFromBounds;
+      const to   = revealedToBounds;
 
       directorFocusBounds = mergeLayoutBounds([from, to]);
       push({
