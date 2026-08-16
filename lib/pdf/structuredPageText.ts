@@ -128,6 +128,69 @@ function detectColumnSplit(items: PdfTextItem[]): number | null {
   return relPos >= 0.25 && relPos <= 0.75 ? gapMid : null;
 }
 
+// ── Shared reading-order sequencing ──────────────────────────────────────────
+//
+// The SAME column-detection + sort logic that decides paragraph text order
+// here is also what lib/page-intelligence/textLayerIndex.ts's
+// buildPageTextIndex() must use to build its token index — otherwise the two
+// registries built from the SAME raw PDF.js items (one used to build/verify
+// a highlight quote, the other used to LOCATE that quote's geometry) can
+// disagree on ordering on a real two-column page, since PDF.js's own item
+// array order depends on the source PDF's content stream and is not
+// guaranteed to already be in left-column-then-right-column reading order.
+// orderItemsForReading() is the ONE place this ordering decision is made;
+// buildColumnFull() below and buildPageTextIndex() both consume its output
+// instead of independently re-deriving (or, previously in
+// buildPageTextIndex's case, never deriving) reading order.
+
+export interface OrderedReadingItems<T> {
+  /** All non-empty items, reordered into final reading order: column 1
+   *  (left, or the whole page when no split is detected) fully before
+   *  column 2, each column sorted top-to-bottom then left-to-right. */
+  items: T[];
+  /** `items.slice(0, columnBoundary)` is column 1; `items.slice(columnBoundary)`
+   *  is column 2. Equals `items.length` when no column split was detected
+   *  (the whole page is one column). */
+  columnBoundary: number;
+  /** True when a two-column layout was detected. */
+  hasColumnSplit: boolean;
+}
+
+function sortReadingOrder<T extends { transform?: number[] }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const ay = a.transform?.[5] ?? 0;
+    const by = b.transform?.[5] ?? 0;
+    const yDiff = by - ay;
+    if (Math.abs(yDiff) > Y_TOLERANCE) return yDiff;
+    return (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0);
+  });
+}
+
+/**
+ * Filters out empty items and reorders the rest into final reading order —
+ * column split (if any) detected the same way buildStructuredPageText
+ * always has, each column sorted top-to-bottom then left-to-right. Does NOT
+ * do any text assembly (line grouping, paragraph breaks, hyphenation) —
+ * just decides visitation order, so every consumer that needs "the same
+ * order the reader would read this page in" gets it from one place.
+ */
+export function orderItemsForReading<T extends { str?: string; transform?: number[] }>(
+  items: T[],
+): OrderedReadingItems<T> {
+  const filtered = items.filter(it => typeof it.str === "string" && it.str.trim().length > 0);
+  if (filtered.length === 0) return { items: [], columnBoundary: 0, hasColumnSplit: false };
+
+  const columnSplit = detectColumnSplit(filtered);
+  if (columnSplit === null) {
+    const sorted = sortReadingOrder(filtered);
+    return { items: sorted, columnBoundary: sorted.length, hasColumnSplit: false };
+  }
+
+  const left  = sortReadingOrder(filtered.filter(it => (it.transform?.[4] ?? 0) <  columnSplit));
+  const right = sortReadingOrder(filtered.filter(it => (it.transform?.[4] ?? 0) >= columnSplit));
+  return { items: [...left, ...right], columnBoundary: left.length, hasColumnSplit: true };
+}
+
 // Internal result type for the full column builder.
 interface ColumnResult {
   text: string;
@@ -136,19 +199,14 @@ interface ColumnResult {
 }
 
 /**
- * Reconstruct reading-order text from items in one column (or the full page).
+ * Reconstruct reading-order text from items in one column (or the full page),
+ * ALREADY sorted into reading order by orderItemsForReading — this function
+ * only does line grouping, paragraph-break detection, and hyphenation
+ * merging; it does not sort.
  * Returns both the text and a per-paragraph record of which PDF.js item indexes
  * contributed — used by buildStructuredPageTextFull() to assemble the bridge.
  */
-function buildColumnFull(items: PdfTextItem[]): ColumnResult {
-  const sorted = [...items].sort((a, b) => {
-    const ay = a.transform?.[5] ?? 0;
-    const by = b.transform?.[5] ?? 0;
-    const yDiff = by - ay;
-    if (Math.abs(yDiff) > Y_TOLERANCE) return yDiff;
-    return (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0);
-  });
-
+function buildColumnFull(sorted: PdfTextItem[]): ColumnResult {
   const lines: { y: number; text: string; itemIdxs: number[] }[] = [];
   for (const item of sorted) {
     const y = item.transform?.[5] ?? 0;
@@ -225,22 +283,21 @@ function buildColumn(items: PdfTextItem[]): string {
  * and preventing sentence-order jumps in Current Page speech playback.
  */
 export function buildStructuredPageText(items: PdfTextItem[]): string {
-  const filtered = items.filter(it => typeof it.str === "string" && it.str.trim().length > 0);
-  if (filtered.length === 0) return "";
+  const { items: ordered, columnBoundary, hasColumnSplit } = orderItemsForReading(items);
+  if (ordered.length === 0) return "";
 
-  const columnSplit = detectColumnSplit(filtered);
-  if (columnSplit !== null) {
+  if (hasColumnSplit) {
     // Two-column layout: process each column independently then concatenate.
     // Full-width items (chapter headings, captions) typically start near the
     // left margin and fall into the "left" group, appearing first — correct.
-    const left  = filtered.filter(it => (it.transform?.[4] ?? 0) <  columnSplit);
-    const right = filtered.filter(it => (it.transform?.[4] ?? 0) >= columnSplit);
+    const left  = ordered.slice(0, columnBoundary);
+    const right = ordered.slice(columnBoundary);
     const leftText  = buildColumn(left).trim();
     const rightText = buildColumn(right).trim();
     return [leftText, rightText].filter(Boolean).join("\n\n").replace(/[ \t]+/g, " ").trim();
   }
 
-  return buildColumn(filtered).replace(/[ \t]+/g, " ").trim();
+  return buildColumn(ordered).replace(/[ \t]+/g, " ").trim();
 }
 
 // ── Bridge computation helpers ────────────────────────────────────────────────
@@ -284,17 +341,15 @@ function buildBridgeFromText(text: string, allParagraphItems: number[][]): Struc
  * empty itemIndexes arrays — callers treat that as a "fuzzy" grounding.
  */
 export function buildStructuredPageTextFull(items: PdfTextItem[]): { text: string; bridge: StructuredPageBridge } {
-  const filtered = items.filter(it => typeof it.str === "string" && it.str.trim().length > 0);
-  if (filtered.length === 0) return { text: "", bridge: { paragraphMappings: [] } };
-
-  const columnSplit = detectColumnSplit(filtered);
+  const { items: ordered, columnBoundary, hasColumnSplit } = orderItemsForReading(items);
+  if (ordered.length === 0) return { text: "", bridge: { paragraphMappings: [] } };
 
   let text: string;
   let allParagraphItems: number[][];
 
-  if (columnSplit !== null) {
-    const left  = filtered.filter(it => (it.transform?.[4] ?? 0) <  columnSplit);
-    const right = filtered.filter(it => (it.transform?.[4] ?? 0) >= columnSplit);
+  if (hasColumnSplit) {
+    const left  = ordered.slice(0, columnBoundary);
+    const right = ordered.slice(columnBoundary);
     const leftResult  = buildColumnFull(left);
     const rightResult = buildColumnFull(right);
     const leftText  = leftResult.text.trim();
@@ -302,7 +357,7 @@ export function buildStructuredPageTextFull(items: PdfTextItem[]): { text: strin
     text = [leftText, rightText].filter(Boolean).join("\n\n").replace(/[ \t]+/g, " ").trim();
     allParagraphItems = [...leftResult.paragraphItems, ...rightResult.paragraphItems];
   } else {
-    const result = buildColumnFull(filtered);
+    const result = buildColumnFull(ordered);
     text = result.text.replace(/[ \t]+/g, " ").trim();
     allParagraphItems = result.paragraphItems;
   }

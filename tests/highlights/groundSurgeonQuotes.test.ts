@@ -392,3 +392,40 @@ describe("buildSurgeonEvidenceId", () => {
     expect(buildSurgeonEvidenceId("doc-a", 5, 0)).not.toBe(buildSurgeonEvidenceId("doc-b", 5, 0));
   });
 });
+
+describe("groundSurgeonQuotes — sourceCharStart/sourceCharEnd diagnostics (stabilization item 3)", () => {
+  it("REQUIRED: Stage 1 (exact match) reports the real char span of groundedText within pageText", () => {
+    const result = groundSurgeonQuotes([makeAnnotation()], PAGE_TEXT);
+    const [g] = result;
+    expect(g.sourceCharStart).toBeDefined();
+    expect(g.sourceCharEnd).toBeDefined();
+    expect(PAGE_TEXT.slice(g.sourceCharStart!, g.sourceCharEnd!)).toBe(g.groundedText);
+  });
+
+  it("REQUIRED: Stage 2 (normalized match) also reports a real char span", () => {
+    // A case-only difference is the common real-world reason a match is
+    // normalized-but-not-exact (per this file's own header comment on the
+    // caseInsensitivePos fallback) — reliably locatable via case-insensitive
+    // search, unlike a ligature/dash difference which can genuinely change
+    // the string and fall back to an unknown (-1) position.
+    const annotation = makeAnnotation({
+      exactQuote: "glycolysis converts glucose into pyruvate in the cytosol.",
+    });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("normalized");
+    expect(result[0].sourceCharStart).toBeDefined();
+    expect(result[0].sourceCharEnd).toBeDefined();
+    expect(result[0].sourceCharStart).not.toBe(-1);
+    expect(PAGE_TEXT.slice(result[0].sourceCharStart!, result[0].sourceCharEnd!)).toBe(result[0].groundedText);
+  });
+
+  it("Stage 0 (sentenceId) reports the char span from the sentence's real position in pageText", () => {
+    const sentencesById = new Map([["S001", "Glycolysis converts glucose into pyruvate in the cytosol."]]);
+    const annotation = makeAnnotation({ sentenceId: "S001" });
+    const result = groundSurgeonQuotes([annotation], PAGE_TEXT, sentencesById);
+    expect(result).toHaveLength(1);
+    expect(result[0].groundingState).toBe("sentenceId");
+    expect(PAGE_TEXT.slice(result[0].sourceCharStart!, result[0].sourceCharEnd!)).toBe(result[0].groundedText);
+  });
+});

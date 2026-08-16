@@ -50,6 +50,14 @@ export type GroundedSurgeonAnnotation = SurgeonAnnotationPlan["annotations"][num
   groundedText: string;
   groundingState: "sentenceId" | "exact" | "normalized";
   confidence: number;
+  /** Character offsets of groundedText within the pageText it was grounded
+   *  against — development diagnostics only (see HighlightTarget's own
+   *  sourceCharStart/sourceCharEnd doc comment for why these matter).
+   *  Optional so existing fixtures/tests constructing a GroundedSurgeonAnnotation
+   *  by hand for unrelated purposes don't need updating; every real call site
+   *  in groundSurgeonQuotes() always sets both. */
+  sourceCharStart?: number;
+  sourceCharEnd?: number;
   /** This annotation's index in the ORIGINAL annotations[] array passed in —
    *  preserved through rejection/dedup so a surviving annotation.relationship
    *  .targetIndex (also an index into that same original array) can still be
@@ -197,7 +205,11 @@ export function groundSurgeonQuotes(
           }
           groundedText = pageText.slice(startIdx, end);
         }
-        grounded.push({ ...annotation, groundedText, groundingState: "sentenceId", confidence: 1.0, originalIndex });
+        const sourceCharEnd = startIdx + groundedText.length;
+        grounded.push({
+          ...annotation, groundedText, groundingState: "sentenceId", confidence: 1.0, originalIndex,
+          sourceCharStart: startIdx, sourceCharEnd,
+        });
         continue;
       }
       // sentenceId was set but doesn't resolve against this pageText (stale
@@ -208,13 +220,13 @@ export function groundSurgeonQuotes(
     // ── Stage 1: exact substring match ──────────────────────────────────────
     const exactPos = pageText.indexOf(quote);
     if (exactPos !== -1) {
-      const groundedText = isEntity
-        ? quote
+      const [groundedText, sourceCharStart, sourceCharEnd] = isEntity
+        ? [quote, exactPos, exactPos + quote.length] as const
         : (() => {
             const { start, end } = expandToSentenceBoundaries(pageText, exactPos, exactPos + quote.length);
-            return pageText.slice(start, end);
+            return [pageText.slice(start, end), start, end] as const;
           })();
-      grounded.push({ ...annotation, groundedText, groundingState: "exact", confidence: 1.0, originalIndex });
+      grounded.push({ ...annotation, groundedText, groundingState: "exact", confidence: 1.0, originalIndex, sourceCharStart, sourceCharEnd });
       continue;
     }
 
@@ -225,15 +237,16 @@ export function groundSurgeonQuotes(
       // the common reason a match is normalized-but-not-exact. When the raw
       // position can't be located (e.g. a ligature/dash difference genuinely
       // changed the string), fall back to the original quote unexpanded —
-      // still a correct, verified highlight, just not boundary-widened.
+      // still a correct, verified highlight, just not boundary-widened. -1
+      // marks the position as genuinely unknown in that fallback case.
       const caseInsensitivePos = pageText.toLowerCase().indexOf(quote.toLowerCase());
-      const groundedText = isEntity || caseInsensitivePos === -1
-        ? quote
+      const [groundedText, sourceCharStart, sourceCharEnd] = isEntity || caseInsensitivePos === -1
+        ? [quote, caseInsensitivePos, caseInsensitivePos === -1 ? -1 : caseInsensitivePos + quote.length] as const
         : (() => {
             const { start, end } = expandToSentenceBoundaries(pageText, caseInsensitivePos, caseInsensitivePos + quote.length);
-            return pageText.slice(start, end);
+            return [pageText.slice(start, end), start, end] as const;
           })();
-      grounded.push({ ...annotation, groundedText, groundingState: "normalized", confidence: 0.95, originalIndex });
+      grounded.push({ ...annotation, groundedText, groundingState: "normalized", confidence: 0.95, originalIndex, sourceCharStart, sourceCharEnd });
       continue;
     }
 

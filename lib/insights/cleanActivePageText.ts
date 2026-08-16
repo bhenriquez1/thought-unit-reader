@@ -99,16 +99,36 @@ export function normalizeDropCaps(text: string): string {
   );
 }
 
+export interface CleanActivePageTextOptions {
+  /**
+   * Strip Figure/Table/Photo/Illustration caption fragments. Default true —
+   * the existing behavior for synthesis input and left-panel anchor
+   * grounding, where a caption fragment surfacing as a "thesis" would be
+   * wrong. Current Page speech passes false: a figure or table caption can
+   * carry real instructional content (a clinically relevant description, a
+   * data table) and should be read aloud, not silently dropped just
+   * because it's structurally a caption.
+   */
+  stripFigureCaptions?: boolean;
+}
+
 /**
- * Clean a single active page's raw text for synthesis or anchor grounding.
- * Strips page numbers, UNIT/chapter/title running headers, and copyright/footer debris.
- * Keeps body paragraphs, section headings, and equation/math lines.
+ * Clean a single active page's raw text for synthesis, anchor grounding, or
+ * read-aloud. Strips page numbers, UNIT/chapter/title running headers, and
+ * copyright/footer debris. Keeps body paragraphs, section headings, and
+ * equation/math lines.
  *
- * @param raw   the raw extracted page text
- * @param tag   optional source tag for the [TEXT_CLEANED] log (e.g. "synth", "ground")
+ * @param raw     the raw extracted page text
+ * @param tag     optional source tag for the [TEXT_CLEANED] log (e.g. "synth", "ground")
+ * @param options see CleanActivePageTextOptions
  */
-export function cleanActivePageText(raw: string | undefined | null, tag?: string): string {
+export function cleanActivePageText(
+  raw: string | undefined | null,
+  tag?: string,
+  options: CleanActivePageTextOptions = {},
+): string {
   if (!raw) return "";
+  const { stripFigureCaptions = true } = options;
 
   const original = raw;
 
@@ -139,10 +159,12 @@ export function cleanActivePageText(raw: string | undefined | null, tag?: string
   // appear inline after PDF text joining. Collect removed spans for diagnostics.
   const rejectedFragments: Array<{ reason: string; fragment: string }> = [];
 
-  t = t.replace(FIGURE_CAPTION_RE, (match) => {
-    rejectedFragments.push({ reason: "figure/table caption", fragment: match.slice(0, 80) });
-    return " ";
-  });
+  if (stripFigureCaptions) {
+    t = t.replace(FIGURE_CAPTION_RE, (match) => {
+      rejectedFragments.push({ reason: "figure/table caption", fragment: match.slice(0, 80) });
+      return " ";
+    });
+  }
 
   t = t.replace(CHECKPOINT_MARKER_RE, (match) => {
     rejectedFragments.push({ reason: "checkpoint/review marker", fragment: match.slice(0, 80) });

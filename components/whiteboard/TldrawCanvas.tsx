@@ -52,7 +52,8 @@ import {
   computeCanvasStateAtStep, resolveCameraActionAtStep, resolveProfessorSurfaceAtStep, resolveActiveSegmentIdAtStep,
   nextStepIndex, previousStepIndex, resolveStepIdAtStep, totalTeachingSteps,
   stepStartIndex, stepEndIndex, stepMisconceptionLabel,
-  type ShapeVisualState,
+  shouldAdvanceImmediatelyOnNarrationEnd, resolveSpeakArrivalAction,
+  type ShapeVisualState, type ProfessorSurfaceReason,
 } from "@/lib/whiteboard/professorTimelineEngine";
 import { buildProfessorLessonCacheKey } from "@/lib/whiteboard/professorLessonPlan";
 import type { ProfessorTeachingAction, NarrationSegment, Bounds, ProfessorLessonPlan, ProfessorSurface } from "@/lib/whiteboard/professorLessonPlan";
@@ -143,8 +144,11 @@ interface Props {
    * controls unchanged. */
   autoStartProfessor?:      boolean;
   /** Lets the Reader keep the mounted playback session alive while returning
-   * visual attention to the PDF for source/verbal phases. */
-  onProfessorSurfaceChange?: (surface: ProfessorSurface, info: { stepId: number; visualNeeded: boolean }) => void;
+   * visual attention to the PDF for source/verbal phases. `reason` is a more
+   * granular phase signal than `surface` alone (see ProfessorSurfaceReason) —
+   * added for stabilization item 2's diagnosability requirement, additive to
+   * the existing surface/stepId/visualNeeded fields. */
+  onProfessorSurfaceChange?: (surface: ProfessorSurface, info: { stepId: number; visualNeeded: boolean; reason: ProfessorSurfaceReason }) => void;
   /** Phase B2 — stable extension points for Phase B3's Learning State
    *  wiring. Fired at the obvious moments (a teaching step begins/ends
    *  during autoplay, the lesson reaches its end) but INTENTIONALLY do
@@ -646,6 +650,7 @@ export default function TldrawCanvas({
       onProfessorSurfaceChangeRef.current?.(surfaceState.surface, {
         stepId: surfaceState.stepId,
         visualNeeded: directorStep?.visualNeeded ?? surfaceState.surface === "whiteboard",
+        reason: surfaceState.reason,
       });
     }
 
@@ -1102,7 +1107,7 @@ export default function TldrawCanvas({
         // leave it be — its own arrival (advanceForPlayback) will see
         // "done" in stepNarrationRef and continue immediately on its own,
         // with nothing left to wait for.
-        if (stepIndexRef.current >= index) advanceForPlaybackRef.current();
+        if (shouldAdvanceImmediatelyOnNarrationEnd(true, stepIndexRef.current, index)) advanceForPlaybackRef.current();
         return;
       }
       advanceForPlaybackRef.current();
@@ -1477,13 +1482,14 @@ export default function TldrawCanvas({
       const segment = plan.segments.find(s => s.id === action.segmentId);
       if (segment) {
         const narrationState = stepNarrationRef.current.get(segment.id);
-        if (narrationState === "done") {
+        const arrivalAction = resolveSpeakArrivalAction(narrationState);
+        if (arrivalAction === "advance-immediately") {
           // Already finished early — the drawing simply took longer than
           // the narration this time. Nothing left to wait for.
           advanceForPlaybackRef.current();
           return;
         }
-        if (narrationState === "pending") {
+        if (arrivalAction === "wait-for-narration") {
           // Already playing (started early) — do NOT create a second Audio
           // element for the same segment. Its own onNaturalEnd (the
           // earlyStart branch in playSegmentThenAdvance) will notice the

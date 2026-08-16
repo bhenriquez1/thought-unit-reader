@@ -81,3 +81,25 @@ describe("cleanActivePageText — end-to-end: the reported bug examples survive 
     expect(cleanActivePageText(raw)).toContain("The mitochondria is the powerhouse");
   });
 });
+
+describe("cleanActivePageText — stripFigureCaptions option", () => {
+  const raw = "Figure 3.2 The ATP synthase complex spans the membrane. Additional prose follows.";
+
+  it("REQUIRED: strips figure captions by default (unchanged existing behavior for synthesis/grounding callers)", () => {
+    expect(cleanActivePageText(raw)).not.toContain("Figure 3.2");
+  });
+
+  it("REQUIRED: keeps figure captions intact when stripFigureCaptions is false — used by Current Page speech, which may not silently drop instructional caption content", () => {
+    const cleaned = cleanActivePageText(raw, undefined, { stripFigureCaptions: false });
+    expect(cleaned).toContain("Figure 3.2");
+    expect(cleaned).toContain("The ATP synthase complex spans the membrane.");
+  });
+
+  it("stripFigureCaptions:false does not disable any other stripping stage (headers/footers/page numbers still stripped)", () => {
+    const withHeader = "30 UNIT ONE The Chemistry of Life Figure 3.2 A caption here. Cells are alive.";
+    const cleaned = cleanActivePageText(withHeader, undefined, { stripFigureCaptions: false });
+    expect(cleaned).not.toMatch(/UNIT ONE/);
+    expect(cleaned).toContain("Figure 3.2");
+    expect(cleaned).toContain("Cells are alive.");
+  });
+});

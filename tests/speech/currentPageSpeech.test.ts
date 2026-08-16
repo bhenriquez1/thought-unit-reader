@@ -2,25 +2,57 @@ import {
   buildCurrentPageSpeechSegments,
   normalizeSourceWhitespace,
 } from "../../lib/speech/currentPageSpeech";
+import { cleanActivePageText } from "../../lib/insights/cleanActivePageText";
 
-describe("Current Page speech source fidelity", () => {
-  it("preserves headings, captions, pipes, short lines, and reading order", () => {
-    const source = [
-      "CHAPTER 4",
-      "A | B",
-      "Fig. 2. A short caption.",
-      "Go.",
-      "Copyright 2026 Example Press.",
-      "The final paragraph stays last.",
-    ].join("\n");
+// Stabilization item 1: Current Page now strips page furniture (running
+// headers, page numbers, copyright/publisher debris, checkpoint/callout
+// section labels) before segmenting, reusing lib/insights/cleanActivePageText.ts
+// rather than building a second matcher — but it must NEVER drop
+// instructional content (body prose, figure/table captions, equations),
+// and every surviving word must be spoken verbatim, in source order.
 
-    const segments = buildCurrentPageSpeechSegments(source);
+describe("Current Page speech — page-furniture stripping", () => {
+  it("REQUIRED: strips a leading UNIT/CHAPTER running header glued to the body, keeps the body verbatim", () => {
+    const source = "30 UNIT ONE The Chemistry of Life Cells are the basic unit of all living things.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/UNIT ONE/);
+    expect(spoken).toContain("Cells are the basic unit of all living things.");
+  });
 
-    expect(segments.join(" ")).toBe(normalizeSourceWhitespace(source));
-    expect(segments.join(" ")).toContain("CHAPTER 4");
-    expect(segments.join(" ")).toContain("A | B");
-    expect(segments.join(" ")).toContain("Fig. 2. A short caption.");
-    expect(segments.join(" ")).toContain("Go.");
+  it("REQUIRED: strips a trailing bare page number", () => {
+    const source = "The cell membrane regulates transport. 42";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).toBe("The cell membrane regulates transport.");
+  });
+
+  it("REQUIRED: strips copyright/publisher footer debris wherever it appears, keeping the body on both sides", () => {
+    const source = "Enzymes speed up reactions. Copyright 2026 Example Press. Substrates bind at the active site.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/Copyright/);
+    expect(spoken).toContain("Enzymes speed up reactions.");
+    expect(spoken).toContain("Substrates bind at the active site.");
+  });
+
+  it("REQUIRED: does NOT strip figure/table captions — they can carry real instructional content, unlike the synthesis path", () => {
+    const source = "Figure 3.2 The ATP synthase complex spans the inner mitochondrial membrane. It rotates to generate ATP.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).toContain("Figure 3.2");
+    expect(spoken).toContain("The ATP synthase complex spans the inner mitochondrial membrane.");
+  });
+
+  it("strips checkpoint/review section labels, keeping the surrounding instructional content", () => {
+    const source = "The Krebs cycle produces NADH. Check Your Understanding. Explain how NADH is used.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/Check Your Understanding/);
+    expect(spoken).toContain("The Krebs cycle produces NADH.");
+    expect(spoken).toContain("Explain how NADH is used.");
+  });
+
+  it("REQUIRED: never paraphrases or reorders surviving text — output matches cleanActivePageText's own text exactly, just re-segmented", () => {
+    const source = "12 CHAPTER 2 Cell Structure Mitochondria produce ATP through respiration.";
+    const cleaned = cleanActivePageText(source, undefined, { stripFigureCaptions: false });
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).toBe(normalizeSourceWhitespace(cleaned));
   });
 
   it("does not treat common abbreviations as a sentence boundary", () => {
