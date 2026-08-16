@@ -34,7 +34,7 @@ describe("examBuilder.ts — canonicalQuestionMapper is wired into the live path
 
   it("sourceThoughtUnitIds still comes from the same canonical-unit fetch — no duplicate IDB read introduced", () => {
     const idx = SRC.indexOf("export async function buildExam(");
-    const block = SRC.slice(idx, idx + 3000);
+    const block = SRC.slice(idx, idx + 3500);
     // Exactly one getCanonicalUnitsByPage call site — units are fetched once and reused for both ids and stems.
     const matches = block.match(/getCanonicalUnitsByPage\(/g) ?? [];
     expect(matches.length).toBe(1);

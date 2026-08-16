@@ -83,6 +83,20 @@ export interface EngineQuestion {
   /** IDs of CanonicalThoughtUnits this question was generated from.
    *  Enables "View Source in Reader" navigation. */
   sourceThoughtUnitIds?: string[];
+  /** Canonical page identity (`${documentId}::${pageNumber}::${textReady}`)
+   *  this question was generated from — same buildPageTruthKey convention
+   *  used everywhere else in the app. */
+  pageTruthKey?: string;
+  /** Verbatim excerpt(s) from the source concept text the server verified
+   *  this question is actually grounded in — the X2 provenance/rejection
+   *  gate's audit trail (see pages/api/exam-question-gen.ts). A question
+   *  whose claimed quote does not appear in the source text is rejected
+   *  before it ever reaches this array. */
+  sourceEvidence?: string[];
+  /** Version of the generation+grounding-rejection pipeline that produced
+   *  this question — bump in pages/api/exam-question-gen.ts when the
+   *  rejection algorithm changes. */
+  generatorVersion?: number;
 
   stem: string;
   choices: string[];

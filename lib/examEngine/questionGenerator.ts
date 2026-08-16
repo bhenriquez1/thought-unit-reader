@@ -6,6 +6,7 @@
 // book never re-calls the AI for concepts already covered.
 
 import type { DifficultyLevel, EngineQuestion, QuestionType } from "@/lib/examEngine/types";
+import { linkQuestionToUnit } from "@/lib/canonical/store";
 
 const IDB_DB_NAME = "avrrio_exam_engine_v1";
 const IDB_STORE_NAME = "questionCache";
@@ -19,6 +20,8 @@ export interface GenerateQuestionsOptions {
   topic?: string;
   section?: string;
   sourcePageNumber?: number;
+  /** Canonical page identity — threaded onto EngineQuestion.pageTruthKey. */
+  pageTruthKey?: string;
   /** CanonicalThoughtUnit IDs this question was generated from. */
   sourceThoughtUnitIds?: string[];
   questionType: QuestionType;
@@ -98,6 +101,7 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
         topic: opts.topic,
         section: opts.section,
         sourcePageNumber: opts.sourcePageNumber,
+        pageTruthKey: opts.pageTruthKey,
         questionType: opts.questionType,
         difficulty: opts.difficulty,
         count: need,
@@ -121,6 +125,18 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
     if (generated.length > 0) {
       const merged = [...cached, ...generated];
       await idbPutCached(key, merged);
+
+      // X2 — make CanonicalThoughtUnit.questionIds real: every generated
+      // question that survived the server's grounding/rejection gate gets
+      // linked back to the unit(s) it was generated from. Best-effort and
+      // fire-and-forget — a link failure never blocks returning questions
+      // to the caller.
+      for (const q of generated) {
+        for (const unitId of q.sourceThoughtUnitIds ?? []) {
+          linkQuestionToUnit(unitId, q.id).catch(() => {});
+        }
+      }
+
       return merged.slice(0, opts.count);
     }
   } catch (e) {

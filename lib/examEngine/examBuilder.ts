@@ -180,6 +180,11 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
         topic: note.topic,
         section,
         sourcePageNumber: note.pageNumber,
+        // Same buildPageTruthKey convention used everywhere else in the app
+        // (`${documentId}::${pageNumber}::${textReady}`) — inlined rather
+        // than importing lib/useActivePageIntelligence.ts's hook module for
+        // one string builder.
+        pageTruthKey: `${opts.bookId}::${note.pageNumber}::t`,
         sourceThoughtUnitIds: units.map((u) => u.id),
         questionType,
         difficulty: opts.difficulty,
