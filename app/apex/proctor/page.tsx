@@ -13,6 +13,8 @@ import type { DatAttempt } from "@/lib/datApex/types";
 import type { DatSectionId } from "@/lib/datApex/blueprint";
 import { scoreDatAttempt } from "@/lib/datApex/scoring";
 import { updateReadinessAfterAttempt } from "@/lib/datApex/readinessUpdater";
+import { recordDatAttemptLearningState } from "@/lib/datApex/datLearningState";
+import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 
 /* ─── Section display metadata ───────────────────────────────────────────────── */
 
@@ -176,7 +178,7 @@ export default function ExamProctorPage() {
 
     const results = {
       id:                   attemptId,
-      userId:               "demo-user",
+      userId:               getCurrentApexUserId(),
       examConfigId:         s.exam.id,
       startTime:            s.startTime,
       endTime,
@@ -241,7 +243,12 @@ export default function ExamProctorPage() {
         // Save result back onto the attempt
         saveAttempt({ ...attempt, result }).catch(() => {});
         // Update rolling readiness state
-        updateReadinessAfterAttempt("demo-user", result).catch(() => {});
+        updateReadinessAfterAttempt(getCurrentApexUserId(), result).catch(() => {});
+        // X3 — additionally write grounded (AI-generated) questions' outcomes
+        // into the shared Learning State engine. No-ops per-question for
+        // legacy static-bank questions, which carry no canonical grounding.
+        const allQuestions = s.sections.flatMap((sg) => sg.questions);
+        recordDatAttemptLearningState(allQuestions, attempt.responses, endTime).catch(() => {});
       })
       .catch(() => { /* non-fatal — results are in localStorage */ });
 

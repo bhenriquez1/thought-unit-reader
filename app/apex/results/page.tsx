@@ -15,6 +15,7 @@ import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
 import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
 import { useTocStore } from '@/lib/stores/tocStore';
 import { chapterForPage } from '@/lib/apex/bookCatalogue';
+import { getCurrentApexUserId } from '@/lib/apex/currentApexUserId';
 import { writeViewSourceLink } from '@/lib/canonical/viewSourceLink';
 
 const DEV = process.env.NODE_ENV === "development";
@@ -240,7 +241,7 @@ export default function ExamResultsPage() {
 
         // Log mistakes for spaced repetition
         try {
-          const userId = 'demo-user'; // In a real app, get from auth
+          const userId = getCurrentApexUserId();
           mistakeLogger.logMistakesFromAttempt(userId, attempt, exam.questions);
         } catch (mistakeError) {
           DEV && console.error('Failed to log mistakes:', mistakeError);

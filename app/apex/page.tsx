@@ -11,6 +11,7 @@ import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprin
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import { generateWeakTopicsPracticeExam, generateFullSimulationExam } from "@/lib/examEngine/profileGeneration";
 import { savePendingExam } from "@/lib/db/examStore";
+import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 import { safeSetItem } from "@/lib/storage/safeStorage";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 
@@ -543,7 +544,7 @@ function ReadinessTab() {
 
   useEffect(() => {
     let alive = true;
-    loadReadinessState("default")
+    loadReadinessState(getCurrentApexUserId())
       .then(s => { if (alive) setIdbState(s); })
       .catch(() => { if (alive) setIdbState(null); })
       .finally(() => { if (alive) setLoading(false); });

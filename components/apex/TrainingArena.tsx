@@ -17,6 +17,7 @@ import type { DatReadinessState } from "@/lib/datApex/types";
 import ChiefResidentPanel from "@/components/apex/ChiefResidentPanel";
 import { blueprintFromShort } from "@/lib/datApex/sectionIdBridge";
 import type { ShortSectionId } from "@/lib/datApex/sectionIdBridge";
+import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 
 // Training Arena has no real uploaded book — pattern modules are AI-grounded
 // directly from their own pattern/decisionRule/mechanism/trap text instead.
@@ -740,7 +741,7 @@ export default function TrainingArena() {
     if (!expanded) return;
     let alive = true;
     import("@/lib/datApex/idbStore").then(({ loadReadinessState }) => {
-      loadReadinessState("demo-user")
+      loadReadinessState(getCurrentApexUserId())
         .then(s => { if (alive) setReadiness(s); })
         .catch(() => {});
     });
