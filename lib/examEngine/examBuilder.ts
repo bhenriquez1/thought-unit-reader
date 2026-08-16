@@ -11,6 +11,7 @@ import { getOrGenerateQuestions } from "@/lib/examEngine/questionGenerator";
 import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from "@/lib/examEngine/types";
 import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
+import { canonicalUnitsToDatStubs } from "@/lib/datApex/canonicalQuestionMapper";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -72,8 +73,12 @@ function deduplicateQuestions(questions: EngineQuestion[]): EngineQuestion[] {
 }
 
 /** Aggregates one UltraNote's teaching content into grounding text for the
- *  AI question generator — never a static/copyrighted question bank. */
-function buildConceptText(note: UltraNote): string {
+ *  AI question generator — never a static/copyrighted question bank.
+ *  `groundedStems`, when present, come from canonicalQuestionMapper's
+ *  DatQuestionStubs — question angles derived directly from this page's
+ *  CanonicalThoughtUnits, giving the generator a second, independently
+ *  grounded signal alongside the note's own teaching content. */
+function buildConceptText(note: UltraNote, groundedStems: string[] = []): string {
   const parts: string[] = [];
   if (note.pageThesis) parts.push(note.pageThesis);
   if (note.coreIdea) parts.push(note.coreIdea);
@@ -85,6 +90,9 @@ function buildConceptText(note: UltraNote): string {
   }
   for (const nc of note.noteCards ?? []) {
     parts.push(nc.body);
+  }
+  if (groundedStems.length > 0) {
+    parts.push(`Grounded question angles from the source passage: ${groundedStems.join(" | ")}`);
   }
   return parts.join("\n\n");
 }
@@ -141,15 +149,17 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   // types so coverage isn't biased toward one type.
   const perConcept = Math.max(1, Math.ceil(opts.questionCount / pool.length));
 
-  // Look up canonical unit IDs per page (best-effort, one IDB read per note).
+  // Look up canonical units per page (best-effort, one IDB read per note).
   // Canonical units are stored under bookId == documentId used during extraction.
-  const canonicalIdsByNote = await Promise.all(
+  // Feeds two things: the sourceThoughtUnitIds provenance stamp, and — via
+  // canonicalQuestionMapper — grounded question stems derived independently
+  // of the note's own teaching content.
+  const canonicalUnitsByNote = await Promise.all(
     pool.map(async (note) => {
       try {
-        const units = await getCanonicalUnitsByPage(opts.bookId, note.pageNumber - 1);
-        return units.map((u) => u.id);
+        return await getCanonicalUnitsByPage(opts.bookId, note.pageNumber - 1);
       } catch {
-        return [] as string[];
+        return [];
       }
     }),
   );
@@ -158,16 +168,19 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
     pool.map((note, i) => {
       const questionType = questionTypes[i % questionTypes.length];
       const section = matchSection(note, opts.profile);
+      const units = canonicalUnitsByNote[i];
+      const groundedStems = canonicalUnitsToDatStubs(units, { sourceBookId: opts.bookId, maxStubs: 3 })
+        .map((stub) => stub.questionStem);
       return getOrGenerateQuestions({
         examProfileId: opts.profile.id,
         bookId: opts.bookId,
         bookTitle: opts.bookTitle,
         conceptId: note.id,
-        conceptText: buildConceptText(note),
+        conceptText: buildConceptText(note, groundedStems),
         topic: note.topic,
         section,
         sourcePageNumber: note.pageNumber,
-        sourceThoughtUnitIds: canonicalIdsByNote[i],
+        sourceThoughtUnitIds: units.map((u) => u.id),
         questionType,
         difficulty: opts.difficulty,
         count: perConcept,

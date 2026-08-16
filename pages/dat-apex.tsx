@@ -8,5 +8,5 @@ export default function DatApexRedirect() {
     router.replace("/apex");
   }, [router]);
 
-  return <div className="min-h-screen bg-slate-950 text-white p-6">Redirecting to DAT Apex…</div>;
+  return <div className="min-h-screen bg-slate-950 text-white p-6">Redirecting to Avrrio Exam Forge…</div>;
 }

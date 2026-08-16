@@ -12,3 +12,4 @@ export * from "./blueprintTopology";
 export * from "./scoring";
 export * from "./readinessUpdater";
 export * from "./adaptivePlanner";
+export * from "./canonicalQuestionMapper";

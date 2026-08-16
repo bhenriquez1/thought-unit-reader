@@ -9,7 +9,7 @@ import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import { totalBlueprintItems, totalTestingMinutes } from "@/lib/datApex/blueprint";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
-import { ExamGenerator, examGeneratorUtils } from "@/lib/apex/examGenerator";
+import { generateWeakTopicsPracticeExam, generateFullSimulationExam } from "@/lib/examEngine/profileGeneration";
 import { savePendingExam } from "@/lib/db/examStore";
 import { safeSetItem } from "@/lib/storage/safeStorage";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
@@ -63,14 +63,13 @@ function TodayTab() {
     if (!currentRecommendation) return;
     setLaunching(true);
     try {
-      const gen = await ExamGenerator.fromQuestionBank();
-      if (cancelRef.current) return;
-      const baseOpts = examGeneratorUtils.createWeakTopicsPractice(
+      const exam = await generateWeakTopicsPracticeExam(
         patterns,
         currentRecommendation.targetPatterns,
         20,
+        adaptiveDifficulty,
       );
-      const exam = gen.generateExam({ ...baseOpts, difficulty: adaptiveDifficulty });
+      if (cancelRef.current) return;
       const examId = `recommended-${Date.now()}`;
       await savePendingExam(examId, exam);
       if (cancelRef.current) return;
@@ -336,9 +335,8 @@ function FullExamsTab() {
     setSeeding(true);
     setSeedError(null);
     try {
-      const gen  = await ExamGenerator.fromQuestionBank();
+      const exam = await generateFullSimulationExam();
       if (cancelRef.current) return;
-      const exam = gen.generateExam(examGeneratorUtils.createFullDAT());
       const examId = `simulation-${Date.now()}`;
       await savePendingExam(examId, exam);
       if (cancelRef.current) return;
@@ -760,7 +758,7 @@ export default function DatApexPage() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white">🎯 DAT Apex</h1>
+            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio Exam Forge <span className="text-blue-300 font-bold">— DAT</span></h1>
             <p className="text-xs text-blue-200 mt-0.5">
               Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
             </p>
