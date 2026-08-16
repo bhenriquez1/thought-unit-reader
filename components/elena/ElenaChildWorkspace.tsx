@@ -11,7 +11,9 @@ import MemoryMatch     from "@/components/elena/MemoryMatch";
 import WordScramble    from "@/components/elena/WordScramble";
 import AdventureMap    from "@/components/elena/AdventureMap";
 import ParentDashboard from "@/components/elena/ParentDashboard";
-import { getChildDisplayCopy } from "@/lib/elena/displayCopy";
+import ChildProfileSwitcher from "@/components/elena/ChildProfileSwitcher";
+import ChildReaderTab   from "@/components/elena/ChildReaderTab";
+import { getAvatarEmoji } from "@/lib/elena/avatar";
 import {
   saveChildProfile,
   loadChildProfile,
@@ -23,11 +25,20 @@ import {
   loadVocabWords,
   deleteVocabWord,
 } from "@/lib/elena/idbStore";
+import {
+  uploadChildBook,
+  loadChildBookFileUrl,
+  recordBookOpened,
+  updateBookProgress,
+  listChildLibraryEntries,
+  pickMostRecentEntry,
+} from "@/lib/elena/childBooks";
 import type {
   ChildProfile,
   ChildAgeRange,
   ChildRewardState,
   ChildProgress,
+  ChildLibraryEntry,
 } from "@/lib/elena/types";
 import type { VocabWord, VocabStatus } from "@/lib/elena/vocabulary";
 import { VOCAB_STATUS_META } from "@/lib/elena/vocabulary";
@@ -123,7 +134,7 @@ function awardStar(prev: ChildRewardState): ChildRewardState {
 
 /* ─── Setup form ─────────────────────────────────────────────────────────────── */
 
-function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
+export function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void }) {
   const [displayName,   setDisplayName]   = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [ageRange,      setAgeRange]      = useState<ChildAgeRange | "">("");
@@ -310,9 +321,13 @@ interface HomeTabProps {
   profile:      ChildProfile;
   rewards:      ChildRewardState;
   progress:     ChildProgress | null;
+  activeBook:   ChildLibraryEntry | null;
   onReset:      () => void;
   onLogSession: () => Promise<void>;
   onNav:        (tab: ElenaTab) => void;
+  onContinueReading: () => void;
+  onUploadClick:     () => void;
+  onSwitchProfile:   () => void;
 }
 
 function TodayAdventureCard({
@@ -388,73 +403,108 @@ function TodayAdventureCard({
   );
 }
 
-function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: HomeTabProps) {
-  const copy       = getChildDisplayCopy(profile);
+function HomeTab({
+  profile, rewards, progress, activeBook, onReset, onLogSession, onNav,
+  onContinueReading, onUploadClick, onSwitchProfile,
+}: HomeTabProps) {
   const earned     = ACHIEVEMENTS.filter(a => a.test(rewards));
   const nextUp     = ACHIEVEMENTS.find(a => !a.test(rewards));
   const level      = progress?.currentLevel ?? "developing";
   const levelInfo  = LEVEL_INFO[level] ?? LEVEL_INFO.developing;
   const readToday  = rewards.updatedAt.split("T")[0] === isoToday() && rewards.totalStars > 0;
+  const bookPct    = activeBook && activeBook.totalPages > 0
+    ? Math.round((activeBook.currentPage / activeBook.totalPages) * 100)
+    : null;
 
-  const QUICK_NAV: { tab: ElenaTab; icon: string; label: string; color: string }[] = [
-    { tab: "reading",      icon: "📖", label: "Continue Reading", color: "from-blue-600/30 to-blue-700/20 border-blue-500/30"       },
-    { tab: "today",        icon: "⭐", label: "Today's Goal",     color: "from-yellow-600/30 to-amber-700/20 border-yellow-500/30"  },
-    { tab: "achievements", icon: "🏆", label: "My Badges",        color: "from-purple-600/30 to-purple-700/20 border-purple-500/30" },
-    { tab: "vocabulary",   icon: "🔤", label: "My Words",         color: "from-teal-600/30 to-teal-700/20 border-teal-500/30"      },
-    { tab: "games",        icon: "🧠", label: "Memory Games",     color: "from-green-600/30 to-emerald-700/20 border-green-500/30" },
+  const EXPLORE_NAV: { tab: ElenaTab; icon: string; label: string; color: string }[] = [
+    { tab: "reading",      icon: "📚", label: "My Books",         color: "from-blue-600/30 to-blue-700/20 border-blue-500/30"       },
+    { tab: "today",        icon: "⭐", label: "Today's Learning", color: "from-yellow-600/30 to-amber-700/20 border-yellow-500/30"  },
+    { tab: "vocabulary",   icon: "🔤", label: "Vocabulary",       color: "from-teal-600/30 to-teal-700/20 border-teal-500/30"      },
+    { tab: "games",        icon: "🧠", label: "Practice",         color: "from-green-600/30 to-emerald-700/20 border-green-500/30" },
+    { tab: "achievements", icon: "🏆", label: "Progress",         color: "from-purple-600/30 to-purple-700/20 border-purple-500/30" },
     { tab: "adventures",   icon: "🗺",  label: "Adventures",       color: "from-rose-600/30 to-pink-700/20 border-rose-500/30"      },
   ];
 
   return (
     <div className="h-full overflow-auto p-5">
-      {/* Header */}
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-white">{copy.workspaceTitle}</h1>
-          <p className="text-indigo-300 text-sm mt-0.5">{copy.welcomeGreeting}</p>
+      <p className="text-[11px] font-bold tracking-[0.15em] text-indigo-400/70 uppercase mb-3">
+        {(profile.preferredName || profile.displayName)}'s Learning Space
+      </p>
+
+      {/* Child identity — large, unmistakably the top of the page */}
+      <div className="mb-4 flex items-center gap-4 rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/12 to-purple-500/8 p-4">
+        <button
+          onClick={onSwitchProfile}
+          className="text-5xl leading-none flex-shrink-0 w-16 h-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/15 transition-colors"
+          aria-label="Switch learner"
+          title="Switch learner"
+        >
+          {getAvatarEmoji(profile.id)}
+        </button>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold text-white truncate">{profile.preferredName || profile.displayName}</h1>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-base">{levelInfo.icon}</span>
+            <span className={`text-sm font-semibold ${levelInfo.color}`}>{levelInfo.label}</span>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-3 py-1.5">
-            <span className="text-lg">⭐</span>
-            <span className="text-yellow-200 font-bold text-lg tabular-nums">{rewards.totalStars}</span>
+          <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-2.5 py-1">
+            <span className="text-sm">⭐</span>
+            <span className="text-yellow-200 font-bold text-sm tabular-nums">{rewards.totalStars}</span>
           </div>
           {rewards.currentStreak > 0 && (
-            <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2.5 py-1">
-              <span className="text-sm">🔥</span>
-              <span className="text-orange-200 font-semibold text-sm">{rewards.currentStreak}d streak</span>
+            <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2 py-0.5">
+              <span className="text-xs">🔥</span>
+              <span className="text-orange-200 font-semibold text-xs">{rewards.currentStreak}d</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Level badge */}
-      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-purple-400/25 bg-purple-500/8 px-4 py-3">
-        <span className="text-2xl">{levelInfo.icon}</span>
-        <div>
-          <div className={`text-sm font-bold ${levelInfo.color}`}>{levelInfo.label}</div>
-          <div className="text-[11px] text-indigo-400/70">{levelInfo.desc}</div>
-        </div>
-      </div>
-
-      {/* Log session CTA */}
-      <div className="mb-5 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <span className="text-2xl">📖</span>
-          <div>
-            <p className="text-white font-semibold">{copy.readingLabel}</p>
-            <p className="text-indigo-300 text-xs mt-0.5">Open the Reader, then log your session here.</p>
+      {/* Current book */}
+      <div className="mb-4 rounded-2xl border border-blue-400/25 bg-blue-500/8 p-4">
+        {activeBook ? (
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl flex-shrink-0">📘</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-white font-semibold text-sm truncate">{activeBook.title}</p>
+              <p className="text-blue-300/70 text-xs mt-0.5">
+                {activeBook.totalPages > 0 ? `Page ${activeBook.currentPage} of ${activeBook.totalPages}` : "Ready to open"}
+              </p>
+            </div>
           </div>
-          {readToday && (
-            <span className="ml-auto text-xs bg-green-500/20 text-green-300 border border-green-500/30 px-2 py-0.5 rounded-full whitespace-nowrap">
-              ✓ Read today!
-            </span>
-          )}
+        ) : (
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl flex-shrink-0 opacity-40">📖</span>
+            <p className="text-blue-300/70 text-sm">No book open yet — upload one to get started.</p>
+          </div>
+        )}
+        {bookPct !== null && (
+          <div className="mb-3">
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all" style={{ width: `${bookPct}%` }} />
+            </div>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={onContinueReading}
+            className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-400 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
+          >
+            {activeBook ? "📖 Continue Reading" : "📖 Start Reading"}
+          </button>
+          <button
+            onClick={onUploadClick}
+            className="flex-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
+          >
+            📤 Upload a Book
+          </button>
         </div>
-        <LogSessionButton onLog={onLogSession} />
       </div>
 
-      {/* Quick stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      {/* Today's Goal + Progress — compact stats */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
         {[
           { icon: "⭐", value: String(rewards.totalStars),           label: "Stars"    },
           { icon: "🔥", value: String(rewards.currentStreak),        label: "Streak"   },
@@ -468,14 +518,19 @@ function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: H
         ))}
       </div>
 
-      {/* Today's Adventure */}
       <TodayAdventureCard rewards={rewards} progress={progress} readToday={readToday} onNav={onNav} />
 
-      {/* Quick nav grid */}
+      {!readToday && (
+        <div className="mb-4">
+          <LogSessionButton onLog={onLogSession} compact />
+        </div>
+      )}
+
+      {/* Explore grid — My Books / Today's Learning / Vocabulary / Practice / Progress */}
       <div className="mb-5">
         <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-3">Explore</h2>
         <div className="grid grid-cols-2 gap-3">
-          {QUICK_NAV.map(({ tab, icon, label, color }) => (
+          {EXPLORE_NAV.map(({ tab, icon, label, color }) => (
             <button
               key={tab}
               onClick={() => onNav(tab)}
@@ -524,83 +579,6 @@ function HomeTab({ profile, rewards, progress, onReset, onLogSession, onNav }: H
       >
         Reset profile
       </button>
-    </div>
-  );
-}
-
-/* ─── Continue Reading tab ───────────────────────────────────────────────────── */
-
-function ContinueReadingTab({
-  profile,
-  bookTitle,
-  currentPage,
-  totalPages,
-  pageText,
-  progress,
-  onLogSession,
-}: {
-  profile:      ChildProfile;
-  bookTitle?:   string;
-  currentPage?: number;
-  totalPages?:  number;
-  pageText?:    string;
-  progress:     ChildProgress | null;
-  onLogSession: () => Promise<void>;
-}) {
-  const pct = currentPage && totalPages && totalPages > 0
-    ? Math.round((currentPage / totalPages) * 100)
-    : null;
-
-  return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Book context strip */}
-      <div className="flex-shrink-0 p-4 pb-3">
-        {bookTitle ? (
-          <div className="rounded-2xl border border-blue-400/30 bg-blue-500/10 p-4">
-            <div className="flex items-start gap-3 mb-3">
-              <span className="text-3xl">📘</span>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-white font-bold text-base leading-tight truncate">{bookTitle}</h3>
-                {currentPage && totalPages ? (
-                  <p className="text-blue-300 text-sm mt-0.5">Page {currentPage} of {totalPages}</p>
-                ) : (
-                  <p className="text-blue-300/60 text-sm mt-0.5">Open in Reader to track your page</p>
-                )}
-              </div>
-              <LogSessionButton onLog={onLogSession} compact />
-            </div>
-            {pct !== null && (
-              <div>
-                <div className="flex justify-between text-[11px] text-blue-300/70 mb-1.5">
-                  <span>Reading progress</span><span>{pct}%</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-white/10 bg-white/3 p-5 text-center">
-            <div className="text-4xl mb-2">📚</div>
-            <h3 className="text-white font-bold text-base mb-1">No book open yet</h3>
-            <p className="text-slate-400 text-sm">Switch to the Reader tab and open a PDF to start reading.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Reading Buddy — fills remaining height */}
-      <div className="flex-1 min-h-0 px-4 pb-4">
-        <ReadingBuddy
-          profile={profile}
-          pageText={pageText}
-          bookTitle={bookTitle}
-          currentPage={currentPage}
-        />
-      </div>
     </div>
   );
 }
@@ -812,38 +790,62 @@ function AchievementsTab({
 
 /* ─── Library tab ────────────────────────────────────────────────────────────── */
 
-function LibraryTab({ profile, progress }: { profile: ChildProfile; progress: ChildProgress | null }) {
+function LibraryTab({
+  profile, progress, library, onOpenBook, onUploadClick,
+}: {
+  profile:  ChildProfile;
+  progress: ChildProgress | null;
+  library:  ChildLibraryEntry[];
+  onOpenBook: (entry: ChildLibraryEntry) => void;
+  onUploadClick: () => void;
+}) {
   const booksCompleted = progress?.booksCompleted ?? 0;
   const totalSessions  = progress?.totalSessions ?? 0;
-  const BOOK_EMOJIS    = ["📘", "📗", "📙", "📕", "📔", "📒", "📓"];
 
   return (
     <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-4">📚 My Library</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-white">📚 My Books</h2>
+        <button
+          onClick={onUploadClick}
+          className="text-xs bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/30 text-indigo-200 rounded-xl px-3 py-2 transition-colors"
+        >
+          📤 Upload a Book
+        </button>
+      </div>
 
-      {/* Bookshelf */}
+      {/* Real, per-book shelf — the SAME documentId each entry points at also
+          backs the adult Reader's PDF storage (lib/db/documentStore.ts). */}
       <div className="mb-5">
-        <p className="text-indigo-300 text-sm mb-3">
-          {booksCompleted === 0
-            ? "Open the Reader to start your first book!"
-            : `${booksCompleted} ${booksCompleted === 1 ? "book" : "books"} completed!`}
-        </p>
-        <div className="flex flex-wrap gap-2 min-h-[48px] rounded-2xl border border-indigo-400/20 bg-indigo-500/5 p-3">
-          {booksCompleted === 0 ? (
-            <span className="text-indigo-400/40 text-sm italic self-center">Your bookshelf is empty — start reading!</span>
-          ) : (
-            Array.from({ length: Math.min(booksCompleted, 14) }).map((_, i) => (
-              <span key={i} className="text-3xl leading-none" title={`Book ${i + 1}`}>
-                {BOOK_EMOJIS[i % BOOK_EMOJIS.length]}
-              </span>
-            ))
-          )}
-          {booksCompleted > 14 && (
-            <span className="text-indigo-300 text-sm self-center font-semibold">+{booksCompleted - 14} more</span>
-          )}
-        </div>
+        {library.length === 0 ? (
+          <div className="rounded-2xl border border-indigo-400/20 bg-indigo-500/5 p-5 text-center">
+            <span className="text-indigo-400/50 text-sm italic">Your bookshelf is empty — upload a book to get started!</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {library.map(entry => {
+              const pct = entry.totalPages > 0 ? Math.round((entry.currentPage / entry.totalPages) * 100) : null;
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => onOpenBook(entry)}
+                  className="w-full flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/8 px-3.5 py-3 text-left transition-colors"
+                >
+                  <span className="text-2xl flex-shrink-0">📘</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white text-sm font-semibold truncate">{entry.title}</div>
+                    <div className="text-slate-500 text-[11px]">
+                      {pct !== null ? `Page ${entry.currentPage} of ${entry.totalPages} · ${pct}%` : "Not started yet"}
+                    </div>
+                  </div>
+                  <span className="text-slate-500 text-sm flex-shrink-0">▶</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {booksCompleted > 0 && (
-          <p className="text-[11px] text-indigo-400/60 mt-1.5 text-right">{totalSessions} reading sessions total</p>
+          <p className="text-[11px] text-indigo-400/60 mt-2 text-right">{totalSessions} reading sessions total</p>
         )}
       </div>
 
@@ -1324,15 +1326,15 @@ function makeDefaultProgress(childProfileId: string): ChildProgress {
 
 /* ─── Main workspace ─────────────────────────────────────────────────────────── */
 
-interface ElenaChildWorkspaceProps {
-  bookTitle?:    string;
-  currentPage?:  number;
-  totalPages?:   number;
-  /** Raw text of the current PDF page — passed to Vocabulary Builder and Reading Buddy */
-  pageText?:     string;
-}
+// Elena owns her own document identity now — she no longer mirrors whatever
+// the adult Reader tab happens to have open. Her book comes from her own
+// upload/library, keyed by the same documentId/pageTruthKey infrastructure
+// the adult Reader uses (lib/elena/childBooks.ts, lib/db/documentStore.ts).
+interface ElenaChildWorkspaceProps {}
 
-export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages, pageText }: ElenaChildWorkspaceProps) {
+const PARENT_ACCOUNT_ID = "local";
+
+export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   const [profile,     setProfile]     = useState<ChildProfile | null>(null);
   const [rewards,     setRewards]     = useState<ChildRewardState | null>(null);
   const [progress,    setProgress]    = useState<ChildProgress | null>(null);
@@ -1342,6 +1344,16 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
   const [loadAttempt,        setLoadAttempt]        = useState(0);
   const [activeTab,          setActiveTab]          = useState<ElenaTab>("home");
   const [showParent,         setShowParent]         = useState(false);
+  const [showSwitcher,       setShowSwitcher]       = useState(false);
+
+  const [library,     setLibrary]     = useState<ChildLibraryEntry[]>([]);
+  const [activeBook,  setActiveBook]  = useState<ChildLibraryEntry | null>(null);
+  const [bookFileUrl, setBookFileUrl] = useState<string | null>(null);
+  const [bookPageTexts, setBookPageTexts] = useState<Map<number, string>>(new Map());
+  const [uploading,   setUploading]   = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const bookFileUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1379,6 +1391,108 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
     return () => { cancelled = true; };
   }, [loadAttempt]);
 
+  // Load this child's OWN library whenever the active profile changes —
+  // switching learners must not leak one child's books into another's shelf.
+  useEffect(() => {
+    if (!profile) { setLibrary([]); return; }
+    let cancelled = false;
+    listChildLibraryEntries(profile.id).then(entries => {
+      if (!cancelled) setLibrary(entries);
+    }).catch(() => { if (!cancelled) setLibrary([]); });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
+
+  // Revoke the previous blob: URL whenever it's replaced or the component unmounts.
+  useEffect(() => { bookFileUrlRef.current = bookFileUrl; }, [bookFileUrl]);
+  useEffect(() => () => { if (bookFileUrlRef.current) URL.revokeObjectURL(bookFileUrlRef.current); }, []);
+
+  const resetBookState = useCallback(() => {
+    if (bookFileUrlRef.current) URL.revokeObjectURL(bookFileUrlRef.current);
+    setBookFileUrl(null);
+    setActiveBook(null);
+    setBookPageTexts(new Map());
+    setUploadError(null);
+  }, []);
+
+  const openBook = useCallback(async (entry: ChildLibraryEntry) => {
+    setUploadError(null);
+    try {
+      const url = await loadChildBookFileUrl(entry.documentId);
+      if (!url) {
+        setUploadError("Couldn't find that book's file. Try uploading it again.");
+        return;
+      }
+      if (bookFileUrlRef.current) URL.revokeObjectURL(bookFileUrlRef.current);
+      setBookFileUrl(url);
+      setBookPageTexts(new Map());
+      const opened = await recordBookOpened(entry);
+      setActiveBook(opened);
+      setLibrary(prev => prev.map(e => (e.id === opened.id ? opened : e)));
+      setActiveTab("reading");
+    } catch {
+      setUploadError("Couldn't open that book. Please try again.");
+    }
+  }, []);
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!profile) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const entry = await uploadChildBook(file, profile.id);
+      setLibrary(prev => [...prev, entry]);
+      await openBook(entry);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Couldn't upload that file. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  }, [profile, openBook]);
+
+  const triggerUpload = useCallback(() => { fileInputRef.current?.click(); }, []);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void handleUpload(file);
+  }, [handleUpload]);
+
+  const handleContinueReading = useCallback(() => {
+    if (activeBook) { setActiveTab("reading"); return; }
+    const mostRecent = pickMostRecentEntry(library);
+    if (mostRecent) void openBook(mostRecent);
+    else triggerUpload();
+  }, [activeBook, library, openBook, triggerUpload]);
+
+  const handleBookPageChange = useCallback((page: number) => {
+    setActiveBook(prev => {
+      if (!prev || prev.currentPage === page) return prev;
+      const updated = { ...prev, currentPage: page };
+      updateBookProgress(prev, { currentPage: page }).catch(() => {});
+      setLibrary(list => list.map(e => (e.id === updated.id ? updated : e)));
+      return updated;
+    });
+  }, []);
+
+  const handleBookPageCount = useCallback((total: number) => {
+    setActiveBook(prev => {
+      if (!prev || prev.totalPages === total) return prev;
+      const updated = { ...prev, totalPages: total };
+      updateBookProgress(prev, { totalPages: total }).catch(() => {});
+      setLibrary(list => list.map(e => (e.id === updated.id ? updated : e)));
+      return updated;
+    });
+  }, []);
+
+  const handleBookPageTextExtracted = useCallback((page: number, text: string) => {
+    setBookPageTexts(prev => {
+      if (prev.get(page) === text) return prev;
+      const next = new Map(prev);
+      next.set(page, text);
+      return next;
+    });
+  }, []);
+
   const handleSave = useCallback(async (p: ChildProfile) => {
     // Write the active profile ID so the next mount can load it.
     safeSetItem(STORAGE_KEY, p.id);
@@ -1391,6 +1505,8 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
     setIdbError(null);
     setPersistenceWarning(null);
     setActiveTab("home");
+    resetBookState();
+    setShowSwitcher(false);
 
     // Persist profile + rewards in the background.
     // Both writes are independent; a failure is non-blocking but visible.
@@ -1408,12 +1524,25 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
           : "Your profile is open but couldn't be saved to storage. It will not persist after a refresh.",
       );
     }
-  }, []);
+  }, [resetBookState]);
+
+  const handleSwitchProfile = useCallback((p: ChildProfile) => {
+    if (p.id === profile?.id) { setShowSwitcher(false); return; }
+    safeSetItem(STORAGE_KEY, p.id);
+    setProfile(null);
+    setRewards(null);
+    setProgress(null);
+    setActiveTab("home");
+    resetBookState();
+    setShowSwitcher(false);
+    setLoadAttempt(a => a + 1);
+  }, [profile, resetBookState]);
 
   const handleReset = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setProfile(null); setRewards(null); setProgress(null);
-  }, []);
+    resetBookState();
+  }, [resetBookState]);
 
   const handleAwardStar = useCallback(async () => {
     if (!profile || !rewards) return;
@@ -1462,6 +1591,15 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
 
   return (
     <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 overflow-hidden">
+      {/* Hidden file input — shared by every "Upload a Book" entry point */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
       {/* Parent Dashboard overlay */}
       {showParent && (
         <ParentDashboard
@@ -1472,15 +1610,30 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         />
       )}
 
+      {/* Profile switcher overlay */}
+      {showSwitcher && (
+        <ChildProfileSwitcher
+          parentAccountId={PARENT_ACCOUNT_ID}
+          activeProfileId={profile.id}
+          onSelect={handleSwitchProfile}
+          onClose={() => setShowSwitcher(false)}
+          renderAddForm={(onSave) => <SetupForm onSave={onSave} />}
+        />
+      )}
+
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/8 bg-slate-950/40 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xl leading-none">✨</span>
-          <div>
-            <div className="text-white font-bold text-sm leading-tight">Elena Mode</div>
-            <div className="text-indigo-400 text-[10px] leading-tight">{profile.displayName}</div>
+        <button
+          onClick={() => setShowSwitcher(true)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          aria-label="Switch learner"
+        >
+          <span className="text-xl leading-none">{getAvatarEmoji(profile.id)}</span>
+          <div className="text-left">
+            <div className="text-white font-bold text-sm leading-tight">{profile.preferredName || profile.displayName}</div>
+            <div className="text-indigo-400 text-[10px] leading-tight">Tap to switch learner</div>
           </div>
-        </div>
+        </button>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
             <span>⭐</span>
@@ -1521,16 +1674,28 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
         <div className="h-full max-w-2xl mx-auto w-full px-4 py-4">
           {activeTab === "home" && (
             <HomeTab
-              profile={profile} rewards={rewards} progress={progress}
+              profile={profile} rewards={rewards} progress={progress} activeBook={activeBook}
               onReset={handleReset} onLogSession={handleLogSession}
               onNav={setActiveTab}
+              onContinueReading={handleContinueReading}
+              onUploadClick={triggerUpload}
+              onSwitchProfile={() => setShowSwitcher(true)}
             />
           )}
           {activeTab === "reading" && (
-            <ContinueReadingTab
+            <ChildReaderTab
               profile={profile}
-              bookTitle={bookTitle} currentPage={currentPage} totalPages={totalPages}
-              pageText={pageText} progress={progress} onLogSession={handleLogSession}
+              activeBook={activeBook}
+              bookFileUrl={bookFileUrl}
+              library={library}
+              uploading={uploading}
+              uploadError={uploadError}
+              pageText={activeBook ? bookPageTexts.get(activeBook.currentPage) : undefined}
+              onUploadClick={triggerUpload}
+              onOpenBook={openBook}
+              onPageChange={handleBookPageChange}
+              onPageCount={handleBookPageCount}
+              onPageTextExtracted={handleBookPageTextExtracted}
             />
           )}
           {activeTab === "today" && (
@@ -1538,11 +1703,17 @@ export default function ElenaChildWorkspace({ bookTitle, currentPage, totalPages
           )}
           {activeTab === "adventures"   && <AdventuresTab rewards={rewards} progress={progress} />}
           {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
-          {activeTab === "library"      && <LibraryTab profile={profile} progress={progress} />}
+          {activeTab === "library"      && (
+            <LibraryTab
+              profile={profile} progress={progress} library={library}
+              onOpenBook={openBook} onUploadClick={triggerUpload}
+            />
+          )}
           {activeTab === "vocabulary"   && (
             <VocabularyTab
-              profile={profile} pageText={pageText}
-              bookTitle={bookTitle} currentPage={currentPage}
+              profile={profile}
+              pageText={activeBook ? bookPageTexts.get(activeBook.currentPage) : undefined}
+              bookTitle={activeBook?.title} currentPage={activeBook?.currentPage}
             />
           )}
           {activeTab === "games"        && (
