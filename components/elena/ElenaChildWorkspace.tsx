@@ -42,6 +42,10 @@ import type {
 } from "@/lib/elena/types";
 import type { VocabWord, VocabStatus } from "@/lib/elena/vocabulary";
 import { VOCAB_STATUS_META } from "@/lib/elena/vocabulary";
+import { extractChildPageCanonicalUnits } from "@/lib/elena/childCanonicalExtraction";
+import { loadGroundedPageContext } from "@/lib/elena/childTeachingAdapter";
+import { recordChildPageExposure } from "@/lib/elena/childLearningState";
+import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 
@@ -901,11 +905,15 @@ function VocabularyTab({
   pageText,
   bookTitle,
   currentPage,
+  documentId,
 }: {
   profile:      ChildProfile;
   pageText?:    string;
   bookTitle?:   string;
   currentPage?: number;
+  /** Canonical documentId — when present, extracted words ground themselves
+   *  in this page's real CanonicalThoughtUnits instead of raw pageText. */
+  documentId?:  string;
 }) {
   const [words,     setWords]     = useState<VocabWord[]>([]);
   const [flippedId, setFlippedId] = useState<string | null>(null);
@@ -929,10 +937,17 @@ function VocabularyTab({
     abortRef.current = new AbortController();
 
     try {
+      const groundedContext = documentId && currentPage
+        ? await loadGroundedPageContext(documentId, currentPage)
+        : null;
+
       const resp = await fetch("/api/elena-vocab", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ pageText, ageRange: profile.ageRange, bookTitle, currentPage }),
+        body:    JSON.stringify({
+          pageText, groundedContext: groundedContext ?? undefined,
+          ageRange: profile.ageRange, bookTitle, currentPage,
+        }),
         signal:  abortRef.current.signal,
       });
       const data = await resp.json();
@@ -964,7 +979,7 @@ function VocabularyTab({
     } finally {
       setLoading(false);
     }
-  }, [pageText, loading, words, profile, bookTitle, currentPage]);
+  }, [pageText, loading, words, profile, bookTitle, currentPage, documentId]);
 
   const advanceStatus = useCallback(async (word: VocabWord) => {
     const next = nextStatus(word.status);
@@ -1491,7 +1506,14 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
       next.set(page, text);
       return next;
     });
-  }, []);
+    // E3 — build real CanonicalThoughtUnits for this page, the SAME shared
+    // record every other product reads from. Best-effort: a failure here
+    // never blocks reading; it only means the buddy/vocab/Learning State
+    // wiring falls back to raw pageText for this page.
+    if (activeBook && text.trim()) {
+      extractChildPageCanonicalUnits(activeBook.documentId, activeBook.title, page - 1, text).catch(() => {});
+    }
+  }, [activeBook]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
     // Write the active profile ID so the next mount can load it.
@@ -1562,7 +1584,20 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
       : { ...makeDefaultProgress(profile.id), totalSessions: 1, lastActiveAt: now };
     await saveChildProgress(updatedProgress);
     setProgress(updatedProgress);
-  }, [profile, rewards, progress]);
+
+    // E3 — logging a reading session is Elena's existing "I did some
+    // reading" signal (it's what already earns a star/streak day); reuse
+    // that same moment to write a page-read exposure event into the SHARED
+    // Learning State Engine, scoped under a child-namespaced nodeId so it
+    // never collides with the adult Reader's own progress on the same
+    // canonical unit (see lib/elena/childLearningState.ts). Best-effort —
+    // a failure here never blocks the reward/progress write above.
+    if (activeBook) {
+      getCanonicalUnitsByPage(activeBook.documentId, activeBook.currentPage - 1)
+        .then((units) => recordChildPageExposure(profile.id, activeBook.documentId, units, now))
+        .catch(() => {});
+    }
+  }, [profile, rewards, progress, activeBook]);
 
   if (loading) {
     return (
@@ -1714,6 +1749,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
               profile={profile}
               pageText={activeBook ? bookPageTexts.get(activeBook.currentPage) : undefined}
               bookTitle={activeBook?.title} currentPage={activeBook?.currentPage}
+              documentId={activeBook?.documentId}
             />
           )}
           {activeTab === "games"        && (

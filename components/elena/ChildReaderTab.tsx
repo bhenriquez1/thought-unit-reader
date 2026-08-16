@@ -139,6 +139,7 @@ export default function ChildReaderTab({
           pageText={pageText}
           bookTitle={activeBook.title}
           currentPage={activeBook.currentPage}
+          documentId={activeBook.documentId}
         />
       </div>
     </div>

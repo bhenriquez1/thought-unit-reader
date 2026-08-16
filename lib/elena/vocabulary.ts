@@ -35,6 +35,10 @@ export type VocabWord = {
 
 export type VocabExtractRequest = {
   pageText:      string;
+  /** Grounded context built from this page's real CanonicalThoughtUnits
+   *  (lib/elena/childTeachingAdapter.ts) — preferred over pageText when
+   *  present; the server falls back to pageText when it's absent. */
+  groundedContext?: string;
   ageRange?:     ChildAgeRange;
   bookTitle?:    string;
   currentPage?:  number;
