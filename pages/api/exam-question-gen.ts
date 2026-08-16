@@ -16,13 +16,14 @@ const DEV = process.env.NODE_ENV === "development";
 import type { NextApiRequest, NextApiResponse } from "next";
 import Anthropic from "@anthropic-ai/sdk";
 import type { DifficultyLevel, EngineQuestion, QuestionType } from "@/lib/examEngine/types";
+import { QUESTION_GENERATOR_VERSION, normalizeForGrounding, isGroundedQuote } from "@/lib/examEngine/questionGrounding";
 
 export const config = {
   maxDuration: 60,
   api: { bodyParser: { sizeLimit: "1mb" } },
 };
 
-type RequestBody = {
+export type RequestBody = {
   examProfileId: string;
   bookId: string;
   bookTitle?: string;
@@ -31,12 +32,15 @@ type RequestBody = {
   topic?: string;
   section?: string;
   sourcePageNumber?: number;
+  /** Canonical page identity — stamped onto surviving questions for
+   *  provenance (see lib/examEngine/types.ts's EngineQuestion.pageTruthKey). */
+  pageTruthKey?: string;
   questionType: QuestionType;
   difficulty: DifficultyLevel;
   count?: number;        // default 5
 };
 
-type RawQuestion = {
+export type RawQuestion = {
   stem: string;
   choices: string[];
   correctIndex: number;
@@ -49,6 +53,11 @@ type RawQuestion = {
   unit?: string;
   subtopic?: string;
   concept?: string;
+  /** A short VERBATIM quote copied from the concept source text — the
+   *  provenance/rejection gate's evidence. A question whose claimed quote
+   *  cannot actually be found in the source text is dropped before it ever
+   *  reaches the client (see groundAndNormalizeQuestions). */
+  sourceQuote?: string;
 };
 
 const SKILL_MAP_SYSTEM_PROMPT = `You are an exam-content analyst. Read the provided study-note content for ONE concept and extract the testable skills and common misconceptions it supports.
@@ -70,6 +79,7 @@ For each question:
 - "skillTested": the specific skill this question exercises.
 - "misconceptionTested": the misconception a wrong answer reveals, if applicable.
 - "subject", "unit", "subtopic", "concept": short labels categorizing this question, derived from the concept text and topic hint.
+- "sourceQuote": REQUIRED — a short (under 200 characters) quote copied EXACTLY, word-for-word, from the concept source text below — the specific sentence or phrase this question's core fact is drawn from. Copy it verbatim; do not paraphrase it. Every question that cannot be traced to a real quote from the source text will be discarded.
 
 Match the requested question type:
 - "recognition": identify which pattern/concept applies to a described scenario.
@@ -85,7 +95,7 @@ Match the requested difficulty:
 
 OUTPUT FORMAT — return ONLY valid JSON matching this exact schema:
 {
-  "questions": [ { "stem": "string", "choices": ["string","string","string","string"], "correctIndex": 0, "whyCorrect": "string", "whyWrong": ["string","string","string","string"], "trapType": "string", "skillTested": "string", "misconceptionTested": "string", "subject": "string", "unit": "string", "subtopic": "string", "concept": "string" } ]
+  "questions": [ { "stem": "string", "choices": ["string","string","string","string"], "correctIndex": 0, "whyCorrect": "string", "whyWrong": ["string","string","string","string"], "trapType": "string", "skillTested": "string", "misconceptionTested": "string", "subject": "string", "unit": "string", "subtopic": "string", "concept": "string", "sourceQuote": "string" } ]
 }
 Return ONLY the JSON object — no markdown fences, no explanation outside the JSON.`;
 
@@ -141,17 +151,35 @@ function genId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function normalizeQuestions(
+/**
+ * Shape-validates and grounds each raw question, in that order — shape
+ * first (cheap, no dependency on conceptText), then the provenance/
+ * rejection gate (X2): a question survives only if its claimed sourceQuote
+ * is a real, verifiable substring of the concept text it was supposedly
+ * generated from. Returns both the surviving questions and how many were
+ * dropped, so the caller can log rejection visibility without silently
+ * eating the signal.
+ */
+export function groundAndNormalizeQuestions(
   raw: unknown,
   req: RequestBody,
   fallbackCount: number,
-): EngineQuestion[] {
+): { questions: EngineQuestion[]; rejectedCount: number } {
   const arr = Array.isArray((raw as any)?.questions) ? (raw as any).questions as RawQuestion[] : [];
+  const conceptTextBlob = normalizeForGrounding(req.conceptText);
   const out: EngineQuestion[] = [];
+  let rejectedCount = 0;
+
   for (const q of arr) {
     if (!q || typeof q.stem !== "string") continue;
     const choices = Array.isArray(q.choices) ? q.choices.filter((o): o is string => typeof o === "string") : [];
     if (choices.length !== 4) continue;
+
+    if (typeof q.sourceQuote !== "string" || !isGroundedQuote(q.sourceQuote, conceptTextBlob)) {
+      rejectedCount += 1;
+      continue;
+    }
+
     const correctIndex = Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex < 4 ? q.correctIndex : 0;
     const whyWrong = Array.isArray(q.whyWrong)
       ? [0, 1, 2, 3].map((i) => (typeof q.whyWrong[i] === "string" ? q.whyWrong[i] : ""))
@@ -173,6 +201,9 @@ function normalizeQuestions(
       sourceStudyModelId: req.conceptId,
       sourceBookId: req.bookId,
       sourcePageNumber: req.sourcePageNumber,
+      pageTruthKey: req.pageTruthKey,
+      sourceEvidence: [q.sourceQuote.slice(0, 200)],
+      generatorVersion: QUESTION_GENERATOR_VERSION,
       stem: q.stem,
       choices,
       correctIndex,
@@ -182,7 +213,7 @@ function normalizeQuestions(
       createdAt: new Date().toISOString(),
     });
   }
-  return out.slice(0, Math.max(fallbackCount, 1));
+  return { questions: out.slice(0, Math.max(fallbackCount, 1)), rejectedCount };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -263,14 +294,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    const questions = normalizeQuestions(parsed, body, count);
+    const { questions, rejectedCount } = groundAndNormalizeQuestions(parsed, body, count);
+    if (rejectedCount > 0) {
+      DEV && console.warn("[EXAM_QUESTION_GEN_REJECTED]", { rejectedCount, bookId: body.bookId, conceptId: body.conceptId });
+    }
     if (questions.length === 0) {
-      res.status(200).json({ questions: [], provider: "fallback", error: "No valid questions returned" });
+      res.status(200).json({
+        questions: [], provider: "fallback",
+        error: rejectedCount > 0 ? "No questions passed the grounding check" : "No valid questions returned",
+      });
       return;
     }
 
     const provider = skillMap ? "openai+claude" : "openai";
-    DEV && console.log("[EXAM_QUESTION_GEN_SUCCESS]", { count: questions.length, bookId: body.bookId, conceptId: body.conceptId, provider });
+    DEV && console.log("[EXAM_QUESTION_GEN_SUCCESS]", { count: questions.length, rejectedCount, bookId: body.bookId, conceptId: body.conceptId, provider });
     res.status(200).json({ questions, provider });
   } catch (err) {
     clearTimeout(timeout);

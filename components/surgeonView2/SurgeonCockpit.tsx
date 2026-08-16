@@ -1134,7 +1134,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* DAT Apex Toggle */}
+        {/* Exam Forge Toggle */}
         <button
           onClick={() => expertView.toggleDatApex()}
           className={`
@@ -1144,7 +1144,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               : 'bg-gray-700 text-gray-400 border border-gray-600'}
           `}
         >
-          DAT Apex
+          Exam Forge
         </button>
 
         {/* Advanced Filters Toggle */}

@@ -10,38 +10,23 @@ import type { CanonicalSemanticType } from "../semantic/types";
 
 // ────────────────────────────────────────────────────────────────────────────
 // DAT classification
+//
+// DatSection/DatTopic/DatUnitType/ClassificationSource now live in
+// lib/examEngine/datClassification.ts — the exam-engine layer, not the
+// shared canonical layer, owns DAT's vocabulary. Re-exported here so every
+// existing `import { DatSection } from "@/lib/canonical/types"` keeps
+// working unchanged; the CanonicalThoughtUnit fields below still carry
+// these values directly (see the note on CanonicalThoughtUnit itself).
 // ────────────────────────────────────────────────────────────────────────────
 
-/** ADA DAT test section this unit maps to. */
-export type DatSection =
-  | 'biology'
-  | 'general_chemistry'
-  | 'organic_chemistry'
-  | 'perceptual_ability'
-  | 'reading_comprehension'
-  | 'quantitative_reasoning'
-  | 'none';
-
-/** How this unit was classified. */
-export type ClassificationSource =
-  | 'title_keyword'      // classifyBook() on book title/id
-  | 'content_lexicon'    // page-text lexicon scan
-  | 'user_override'      // explicit user choice
-  | 'unclassified';
-
-/** DAT Blueprint topic string (maps to ExamProfile.topicBlueprint entries). */
-export type DatTopic = string;
-
-/** Broad role of this unit in DAT prep. */
-export type DatUnitType =
-  | 'definition'
-  | 'mechanism'
-  | 'clinical_application'
-  | 'formula'
-  | 'example'
-  | 'contrast'
-  | 'fact'
-  | 'unknown';
+export type {
+  DatSection,
+  ClassificationSource,
+  DatTopic,
+  DatUnitType,
+} from "../examEngine/datClassification";
+export { datSectionFromSubject } from "../examEngine/datClassification";
+import type { DatSection, DatTopic, DatUnitType, ClassificationSource } from "../examEngine/datClassification";
 
 /**
  * Semantic highlight label — marks what kind of learning value this unit carries.
@@ -260,16 +245,4 @@ export function buildCanonicalId(
   unitIndex: number,
 ): string {
   return `${documentId}:${pageIndex}:${unitIndex}`;
-}
-
-/** Classify a DAT section from book-level classification result. */
-export function datSectionFromSubject(
-  subject: 'Biology' | 'General Chemistry' | 'Organic Chemistry' | 'Other',
-): DatSection {
-  switch (subject) {
-    case 'Biology':           return 'biology';
-    case 'General Chemistry': return 'general_chemistry';
-    case 'Organic Chemistry': return 'organic_chemistry';
-    default:                  return 'none';
-  }
 }
