@@ -199,18 +199,86 @@ export function resolveCameraActionAtStep(
   return null;
 }
 
+/** Why the surface is what it is at this step — carried straight through
+ *  from the plan's own set-surface.reason (see professorLessonPlan.ts),
+ *  which buildProfessorTeachingActions.ts already assigns per action but
+ *  which no runtime consumer read before stabilization item 2: a real,
+ *  more granular phase signal than the bare pdf/whiteboard surface value,
+ *  without inventing a new state machine or changing how the plan is built. */
+export type ProfessorSurfaceReason = "source-passage" | "visual-lesson" | "return-to-source" | "summary";
+
 export function resolveProfessorSurfaceAtStep(
   actions: ProfessorTeachingAction[],
   stepIndex: number,
-): { surface: ProfessorSurface; actionId: string; stepId: number } | null {
+): { surface: ProfessorSurface; actionId: string; stepId: number; reason: ProfessorSurfaceReason } | null {
   const ceiling = Math.min(stepIndex, actions.length - 1);
   for (let i = ceiling; i >= 0; i--) {
     const action = actions[i];
     if (action.type === "set-surface") {
-      return { surface: action.surface, actionId: action.actionId, stepId: action.stepId };
+      return { surface: action.surface, actionId: action.actionId, stepId: action.stepId, reason: action.reason };
     }
   }
   return null;
+}
+
+// ── Stabilization item 2: stepNarrationRef decision logic, extracted ───────
+// TldrawCanvas.tsx's playSegmentThenAdvance/advanceForPlayback coordinate an
+// early-started narration (Phase B2 draw-while-teaching) against the
+// timeline pointer's own arrival at the same "speak" action through a
+// Map<segmentId, "pending" | "done"> (stepNarrationRef). Both branches of
+// that coordination are pure decisions over small, already-known values —
+// pulling them out here makes them independently testable without jsdom,
+// and is the exact "harden the early-start narration path" fix for
+// stabilization item 2, not a rewrite of the advance loop itself (the call
+// sites in TldrawCanvas.tsx still own all the React/audio side effects).
+
+/** True narration state as tracked in stepNarrationRef.current; undefined
+ *  means the segment was never early-started (or was cleared by
+ *  stopNarration on navigation). */
+export type StepNarrationState = "pending" | "done" | undefined;
+
+/**
+ * Called from playSegmentThenAdvance's onNaturalEnd when a segment that was
+ * started via earlyStart finishes playing. Returns true when the timeline
+ * pointer has already arrived at the segment's own action index (the
+ * drawing finished before the narration did) and so onNaturalEnd should
+ * advance the pointer itself right now; false when the pointer hasn't
+ * caught up yet, in which case recording "done" is enough — the pointer's
+ * own arrival (resolveSpeakArrivalAction, below) will see "done" and
+ * continue immediately with nothing left to wait for.
+ *
+ * A non-early-started segment (earlyStart: false) always advances
+ * immediately on its own natural end — this mirrors the original
+ * unconditional `advanceForPlaybackRef.current()` call for that case.
+ */
+export function shouldAdvanceImmediatelyOnNarrationEnd(
+  earlyStart: boolean,
+  currentPointerIndex: number,
+  narrationActionIndex: number,
+): boolean {
+  if (!earlyStart) return true;
+  return currentPointerIndex >= narrationActionIndex;
+}
+
+/**
+ * Called from advanceForPlayback when the pointer arrives at a "speak"
+ * action, given that action's segment's current stepNarrationRef entry.
+ * Three-way branch, exactly mirroring the original inline logic:
+ *   - "done": the early-started narration already finished (drawing simply
+ *     took longer) — nothing left to wait for, advance right now.
+ *   - "wait-for-narration": the early-started narration is still playing —
+ *     do NOT start a second audio element for the same segment; its own
+ *     onNaturalEnd will notice the pointer has caught up and advance.
+ *   - "start-narration": this segment was never early-started (a step with
+ *     zero/multiple speak actions, or narration was off when the step
+ *     began) — fall back to the original on-arrival playback.
+ */
+export function resolveSpeakArrivalAction(
+  narrationState: StepNarrationState,
+): "advance-immediately" | "wait-for-narration" | "start-narration" {
+  if (narrationState === "done") return "advance-immediately";
+  if (narrationState === "pending") return "wait-for-narration";
+  return "start-narration";
 }
 
 /** The most recent `speak` action's segmentId at or before stepIndex — used

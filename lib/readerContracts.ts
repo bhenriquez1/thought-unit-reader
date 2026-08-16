@@ -141,6 +141,21 @@ export interface HighlightTarget {
   treatment?: import("./insights/pageAnnotationPlan").Treatment;
   /** SurgeonAnnotationPlan canonical type — carried through for diagnostics/labels. */
   canonicalType?: import("./insights/pageAnnotationPlan").CanonicalType;
+  /** Stable per-sentence id (lib/insights/segmentPageSentences.ts) this
+   *  highlight was grounded against, when grounding resolved via Stage 0's
+   *  guaranteed-exact sentenceId lookup (lib/highlights/groundSurgeonQuotes.ts).
+   *  Undefined for entity-scope or string-matched (exact/normalized) grounding,
+   *  which don't go through sentence segmentation. Development diagnostics only. */
+  sourceSentenceId?: string;
+  /** Character offsets of groundedText within the page text it was grounded
+   *  against — development diagnostics only, not used for geometry lookup
+   *  (resolveTargetGeometry re-locates by quote search; see
+   *  lib/pdf/resolveAnchorGeometry.ts's own diagnostics for the RESOLVED
+   *  position, which can differ from these if the page's fullText ordering
+   *  disagrees with pageText's — exactly the divergence these fields help
+   *  surface). */
+  sourceCharStart?: number;
+  sourceCharEnd?: number;
 }
 
 export interface ParagraphSignal {

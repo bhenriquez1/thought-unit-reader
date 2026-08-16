@@ -207,6 +207,9 @@ export function groundedAnnotationsToHighlightTargets(
       treatment:             g.treatment,
       canonicalType:         g.canonicalType,
       groundingState:        g.groundingState,
+      sourceSentenceId:      g.groundingState === "sentenceId" ? g.sentenceId : undefined,
+      sourceCharStart:       g.sourceCharStart,
+      sourceCharEnd:         g.sourceCharEnd,
     };
   });
 }

@@ -1028,10 +1028,21 @@ export default function SmartPDFViewer({
         );
         if (anchorGeo.rects.length > 0) {
           geometryResolvedCount++;
+          // Development diagnostics for per-highlight fidelity — see
+          // lib/pdf/resolveAnchorGeometry.ts's GeometryResolutionDiagnostics.
+          // Never persisted, never surfaced in UI.
           console.log("[GEOMETRY_RESOLUTION]", {
             id: target.evidenceRefId,
             source: anchorGeo.source,
+            resolutionStrategy: anchorGeo.source,
             rects: anchorGeo.rects.length,
+            geometryRectCount: anchorGeo.geometryRectCount,
+            expectedWordCount: anchorGeo.expectedWordCount,
+            matchedWordCount: anchorGeo.matchedWordCount,
+            boundaryComplete: anchorGeo.boundaryComplete,
+            sourceSentenceId: target.sourceSentenceId ?? null,
+            sourceCharStart: target.sourceCharStart ?? null,
+            sourceCharEnd: target.sourceCharEnd ?? null,
           });
           anchorGeo.rects.forEach((b, bIdx) => {
             rects.push({
@@ -1050,6 +1061,20 @@ export default function SmartPDFViewer({
           });
           return;
         }
+        // Anchor-driven resolution did not produce a COMPLETE, verified match —
+        // most commonly unresolvedReason "incomplete-match" (a candidate quote
+        // was found via the bounded-prefix search but didn't verify word-for-word
+        // at that position — see resolveAnchorGeometry.ts). Logged before the
+        // DOM fallback below so a partial-match rejection is visible even when
+        // the fallback later succeeds and would otherwise mask it.
+        console.log("[GEOMETRY_RESOLUTION_UNRESOLVED]", {
+          id: target.evidenceRefId,
+          resolutionStrategy: anchorGeo.source,
+          unresolvedReason: anchorGeo.unresolvedReason,
+          expectedWordCount: anchorGeo.expectedWordCount,
+          matchedWordCount: anchorGeo.matchedWordCount,
+          boundaryComplete: anchorGeo.boundaryComplete,
+        });
         // Fall through to DOM-based matching (logged as "legacy-dom" below).
         // Use normForConcat (not normForMatch) so the anchor matches concatText format:
         // both strip punctuation with [^\w\s]->" ", ensuring "substance." matches "substance".

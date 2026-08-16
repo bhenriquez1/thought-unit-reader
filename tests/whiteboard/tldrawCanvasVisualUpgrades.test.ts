@@ -137,25 +137,26 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
     expect(block).toMatch(/if \(stepNarrationRef\.current\.has\(segment\.id\)\) return;/);
   });
 
-  it("REQUIRED: when the pointer's own arrival reaches the speak action, it consults stepNarrationRef instead of blindly calling playSegmentThenAdvance — 'done' advances immediately, 'pending' waits without starting a second Audio element", () => {
+  it("REQUIRED: when the pointer's own arrival reaches the speak action, it consults stepNarrationRef (via the pure resolveSpeakArrivalAction decision, see professorTimelineEngine.ts) instead of blindly calling playSegmentThenAdvance — 'advance-immediately' advances now, 'wait-for-narration' waits without starting a second Audio element", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
     const block = src.slice(idx, idx + 5200);
     const speakIdx = block.indexOf('if (action.type === "speak") {');
     const speakBlock = block.slice(speakIdx, speakIdx + 900);
-    expect(speakBlock).toMatch(/narrationState === "done"/);
-    expect(speakBlock).toMatch(/narrationState === "pending"/);
-    // The "pending" branch must NOT call playSegmentThenAdvance again.
-    const pendingIdx = speakBlock.indexOf('narrationState === "pending"');
+    expect(speakBlock).toMatch(/resolveSpeakArrivalAction\(narrationState\)/);
+    expect(speakBlock).toMatch(/arrivalAction === "advance-immediately"/);
+    expect(speakBlock).toMatch(/arrivalAction === "wait-for-narration"/);
+    // The "wait-for-narration" branch must NOT call playSegmentThenAdvance again.
+    const pendingIdx = speakBlock.indexOf('arrivalAction === "wait-for-narration"');
     const pendingBlock = speakBlock.slice(pendingIdx, pendingIdx + 300);
     expect(pendingBlock).not.toMatch(/playSegmentThenAdvance\(/);
   });
 
-  it("REQUIRED: the earlyStart completion path in playSegmentThenAdvance records 'done' and only advances if the pointer has already caught up (stepIndexRef.current >= index)", () => {
+  it("REQUIRED: the earlyStart completion path in playSegmentThenAdvance records 'done' and only advances if the pure shouldAdvanceImmediatelyOnNarrationEnd decision says the pointer has already caught up", () => {
     const idx = src.indexOf("if (opts?.earlyStart) {");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 700);
     expect(block).toMatch(/stepNarrationRef\.current\.set\(segment\.id, "done"\);/);
-    expect(block).toMatch(/if \(stepIndexRef\.current >= index\) advanceForPlaybackRef\.current\(\);/);
+    expect(block).toMatch(/if \(shouldAdvanceImmediatelyOnNarrationEnd\(true, stepIndexRef\.current, index\)\) advanceForPlaybackRef\.current\(\);/);
   });
 
   it("REQUIRED: stopNarration (the single choke point for every navigation action) clears stepNarrationRef — no stale early-start bookkeeping survives a Next/Previous/Restart/rebuild", () => {

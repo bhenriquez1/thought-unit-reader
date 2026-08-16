@@ -60,6 +60,115 @@ export type GeometryResolutionSource =
   | "legacy-dom"
   | "none";
 
+/**
+ * Why a candidate highlight was classified unresolved rather than rendered.
+ * Development diagnostics only — never surfaced in UI, never persisted.
+ */
+export type UnresolvedReason =
+  | "no-registry"          // TextLayerRegistry has no entry for this page
+  | "synthetic"             // groundingState was "synthetic" — no PDF geometry ever existed
+  | "no-candidate"          // none of the 3 strategies found ANY candidate tokens
+  | "incomplete-match"      // a candidate was found but the full quote didn't verify against it
+  | null;                   // resolved successfully — no reason needed
+
+/**
+ * Per-candidate diagnostics for a resolved (or rejected) highlight. Every
+ * field here is development-only instrumentation — see the stabilization
+ * spec's requirement for auditable per-highlight fidelity, never persisted
+ * or surfaced to the reader.
+ */
+export interface GeometryResolutionDiagnostics {
+  rects: BoundingBox[];
+  source: GeometryResolutionSource;
+  /** Number of words in the anchor's own quote/normalizedSourceText. */
+  expectedWordCount: number;
+  /** Number of those words actually verified present, in order, at the
+   *  resolved position — equals expectedWordCount only for a complete match. */
+  matchedWordCount: number;
+  /** Number of merged geometry rects produced (one per visual line/column). */
+  geometryRectCount: number;
+  /** True only when the FULL quote was verified at the resolved position —
+   *  never true for a prefix-only or partial match. */
+  boundaryComplete: boolean;
+  unresolvedReason: UnresolvedReason;
+}
+
+/** One word matched against the expected sequence, with its ABSOLUTE
+ *  character range in the original (unmodified) body string. */
+interface VerifiedWordMatch {
+  start: number;
+  end: number;
+}
+
+/**
+ * Walks forward from `pos`, matching `expectedWords` one at a time against
+ * whatever word actually sits at that position in `bodyLower` — stops at
+ * the first mismatch (or once every expected word is matched) and returns
+ * only the VERIFIED leading run. This is the shared core both
+ * verifyFullQuoteMatch (does the whole quote check out?) and
+ * resolveWordGeometry (is word N actually where the arithmetic says it is?)
+ * build on, so "trust a bounded-prefix search, then blindly compute the
+ * rest by string-length arithmetic" — the root cause of both the
+ * fragment-highlight bug and the eye-follow-word-drifts-off-target bug —
+ * happens in exactly one place, not two independent copies.
+ *
+ * Deliberately does NOT strip punctuation or otherwise re-normalize the
+ * body text: `pos` and every returned offset are into the UNMODIFIED
+ * `bodyLower` string (the same one the caller's prefix search already
+ * used), and `TextToken.startChar`/`endChar` are offsets into that same
+ * unmodified string — any length-changing transform would silently
+ * invalidate them. Word comparison is case-insensitive (both sides already
+ * lowercased) and tolerant of whitespace-LENGTH differences between the
+ * expected text and the reconstructed page text (a paragraph break can
+ * legitimately render as "\n\n" in one and a single space in the other)
+ * without tolerating a genuinely different word.
+ */
+function matchWordsFrom(
+  expectedWords: string[],
+  bodyLower: string,
+  pos: number,
+  windowChars: number,
+): VerifiedWordMatch[] {
+  const windowEnd = Math.min(bodyLower.length, pos + windowChars);
+  const windowText = bodyLower.slice(pos, windowEnd);
+  const candidates = [...windowText.matchAll(/\S+/g)];
+
+  const verified: VerifiedWordMatch[] = [];
+  for (let i = 0; i < expectedWords.length && i < candidates.length; i++) {
+    if (candidates[i][0] !== expectedWords[i]) break;
+    const start = pos + (candidates[i].index as number);
+    verified.push({ start, end: start + candidates[i][0].length });
+  }
+  return verified;
+}
+
+/** Slack added to the search window beyond the expected text's own length,
+ *  to tolerate whitespace-length differences without cutting off a
+ *  genuinely-matching trailing word. */
+const MATCH_WINDOW_SLACK = 80;
+
+/**
+ * Verifies that the FULL quote — not just the bounded search prefix used to
+ * locate it — actually appears at the candidate position, word by word.
+ */
+function verifyFullQuoteMatch(
+  quote: string,
+  bodyLower: string,
+  pos: number,
+): { boundaryComplete: boolean; expectedWordCount: number; matchedWordCount: number; matchEnd: number } {
+  const expectedWords = quote.toLowerCase().split(/\s+/).filter(Boolean);
+  const expectedWordCount = expectedWords.length;
+  if (expectedWordCount === 0) {
+    return { boundaryComplete: false, expectedWordCount: 0, matchedWordCount: 0, matchEnd: pos };
+  }
+
+  const verified = matchWordsFrom(expectedWords, bodyLower, pos, quote.length + MATCH_WINDOW_SLACK);
+  const matchedWordCount = verified.length;
+  const matchEnd = matchedWordCount > 0 ? verified[matchedWordCount - 1].end : pos;
+
+  return { boundaryComplete: matchedWordCount === expectedWordCount, expectedWordCount, matchedWordCount, matchEnd };
+}
+
 // ── Core resolver ─────────────────────────────────────────────────────────────
 
 /**
@@ -71,16 +180,39 @@ export type GeometryResolutionSource =
 export function resolveAnchorGeometryTracked(
   anchor: ReaderAnchor,
   viewportScale: number,
-): { rects: BoundingBox[]; source: GeometryResolutionSource } {
+): GeometryResolutionDiagnostics {
+  return resolveAnchorGeometryDiagnostic(anchor, viewportScale);
+}
+
+/**
+ * Full-diagnostics version of resolveAnchorGeometryTracked — same
+ * resolution logic, plus the per-candidate fidelity fields the
+ * stabilization spec calls for (sourceCharStart/sourceCharEnd live on the
+ * ReaderAnchor itself already; this adds the resolution-time fields that
+ * only exist once geometry is actually attempted).
+ */
+export function resolveAnchorGeometryDiagnostic(
+  anchor: ReaderAnchor,
+  viewportScale: number,
+): GeometryResolutionDiagnostics {
+  const emptyDiag = (source: GeometryResolutionSource, unresolvedReason: UnresolvedReason): GeometryResolutionDiagnostics => ({
+    rects: [], source, expectedWordCount: 0, matchedWordCount: 0, geometryRectCount: 0,
+    boundaryComplete: false, unresolvedReason,
+  });
+
   if (anchor.groundingState === "synthetic") {
-    return { rects: [], source: "none" };
+    return emptyDiag("none", "synthetic");
   }
 
   const textIndex = TextLayerRegistry.get(anchor.pageIndex);
-  if (!textIndex) return { rects: [], source: "none" };
+  if (!textIndex) return emptyDiag("none", "no-registry");
 
   let tokens: TextToken[] = [];
   let source: GeometryResolutionSource = "none";
+  let expectedWordCount = 0;
+  let matchedWordCount = 0;
+  let boundaryComplete = true; // strategies 1/2 are exact by construction — no quote to verify
+  let unresolvedReason: UnresolvedReason = "no-candidate";
 
   // ── Strategy 1: exact itemIndex lookup ────────────────────────────────────
   if (anchor.pdfTextItemIndexes && anchor.pdfTextItemIndexes.length > 0) {
@@ -102,11 +234,14 @@ export function resolveAnchorGeometryTracked(
   }
 
   // ── Strategy 3: quote substring search ───────────────────────────────────
-  // Search using a bounded prefix (robust against a stray mismatch far into a long
-  // quote), but the highlighted range covers the FULL quote length, not just the
-  // search prefix — otherwise a sentence-expanded or multi-sentence
-  // SurgeonAnnotationPlan quote (can run several hundred characters) would only
-  // ever get its first ~60 chars highlighted, clipping the rest of the sentence(s).
+  // Search using a bounded prefix (robust against a stray mismatch far into a
+  // long quote, and necessary to locate a quote that sits deep in the page's
+  // fullText past unrelated leading content) — but ACCEPT the match only
+  // after verifying the FULL quote, not just that prefix, actually appears
+  // at the found position. A prefix-only match that diverges partway
+  // through (e.g. because a column-ordering mismatch put unrelated text
+  // where the rest of the quote should be) is classified unresolved rather
+  // than rendered as a geometrically-wrong-but-present highlight.
   if (tokens.length === 0) {
     const quote = (anchor.normalizedSourceText ?? anchor.quote ?? "").trim();
     if (quote.length >= 10) {
@@ -115,16 +250,33 @@ export function resolveAnchorGeometryTracked(
       const bodyNorm  = textIndex.fullText.toLowerCase();
       const pos = bodyNorm.indexOf(queryNorm);
       if (pos !== -1) {
-        const end = pos + quote.length; // full quote length — not queryNorm.length
-        tokens = textIndex.tokens.filter(
-          t => t.endChar > pos && t.startChar < end,
-        );
-        if (tokens.length > 0) source = "quote";
+        const verify = verifyFullQuoteMatch(quote, bodyNorm, pos);
+        expectedWordCount = verify.expectedWordCount;
+        matchedWordCount = verify.matchedWordCount;
+        boundaryComplete = verify.boundaryComplete;
+        if (verify.boundaryComplete) {
+          const candidateTokens = textIndex.tokens.filter(
+            t => t.endChar > pos && t.startChar < verify.matchEnd,
+          );
+          if (candidateTokens.length > 0) {
+            tokens = candidateTokens;
+            source = "quote";
+          } else {
+            unresolvedReason = "no-candidate";
+          }
+        } else {
+          unresolvedReason = "incomplete-match";
+        }
       }
     }
   }
 
-  if (tokens.length === 0) return { rects: [], source: "none" };
+  if (tokens.length === 0) {
+    return {
+      rects: [], source, expectedWordCount, matchedWordCount, geometryRectCount: 0,
+      boundaryComplete, unresolvedReason,
+    };
+  }
 
   const scaled: BoundingBox[] = tokens.map(t => ({
     x: t.bbox.x * viewportScale,
@@ -132,8 +284,17 @@ export function resolveAnchorGeometryTracked(
     w: t.bbox.w * viewportScale,
     h: t.bbox.h * viewportScale,
   }));
+  const rects = mergeLineRects(scaled);
 
-  return { rects: mergeLineRects(scaled), source };
+  return {
+    rects,
+    source,
+    expectedWordCount,
+    matchedWordCount,
+    geometryRectCount: rects.length,
+    boundaryComplete,
+    unresolvedReason: null,
+  };
 }
 
 /**
@@ -173,7 +334,7 @@ export function resolveTargetGeometry(
   viewportScale: number,
   pdfTextItemIndexes?: number[],
   groundingState?: string,
-): { rects: BoundingBox[]; source: GeometryResolutionSource } {
+): GeometryResolutionDiagnostics {
   const anchor: ReaderAnchor = {
     pageIndex,
     startChar: 0,
@@ -185,7 +346,7 @@ export function resolveTargetGeometry(
     ...(pdfTextItemIndexes && pdfTextItemIndexes.length > 0 && { pdfTextItemIndexes }),
     ...(groundingState && { groundingState: groundingState as ReaderAnchor["groundingState"] }),
   };
-  return resolveAnchorGeometryTracked(anchor, viewportScale);
+  return resolveAnchorGeometryDiagnostic(anchor, viewportScale);
 }
 
 /**
@@ -236,10 +397,19 @@ export function resolveWordGeometry(
   const words = sentence.split(/\s+/).filter(Boolean);
   if (words.length === 0) return null;
   const idx = Math.min(Math.max(wordIndex, 0), words.length - 1);
-  let charOffset = 0;
-  for (let i = 0; i < idx; i++) charOffset += words[i].length + 1; // +1 for the inter-word space
-  const wordStart = pos + charOffset;
-  const wordEnd = wordStart + words[idx].length;
+
+  // Verify every word from the sentence start up through the target index
+  // actually sits where the search found it — the words a plain
+  // length-arithmetic offset would previously compute WITHOUT ever
+  // confirming they match what's really at that position in fullText. If
+  // the page's fullText has diverged from the sentence at any point before
+  // the target word (e.g. leftover column-ordering skew, an extraction gap
+  // this page's PDF stream introduced), the mismatch is caught here instead
+  // of quietly pointing the eye-follow marker at the wrong word.
+  const expectedWords = words.slice(0, idx + 1).map(w => w.toLowerCase());
+  const verified = matchWordsFrom(expectedWords, bodyNorm, pos, sentence.length + MATCH_WINDOW_SLACK);
+  if (verified.length <= idx) return null;
+  const { start: wordStart, end: wordEnd } = verified[idx];
 
   const overlapping = textIndex.tokens.filter(t => t.endChar > wordStart && t.startChar < wordEnd);
   if (overlapping.length === 0) return null;
