@@ -634,6 +634,54 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
     expect(drawAction.shape).toBe("diamond");
   });
 
+  it("REQUIRED: drawingIntent 'chain' and 'sequence' — a mechanism/process step — draw a circle instead of falling through to a generic box", () => {
+    const chainGrounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Na+ mobile ion", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "chain", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const chainPlan = buildProfessorTeachingActions(makeVsg(), chainGrounded, SNAPSHOT);
+    const chainDraw = chainPlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(chainDraw.shape).toBe("circle");
+
+    const sequenceGrounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Dissolves", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "sequence", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const sequencePlan = buildProfessorTeachingActions(makeVsg(), sequenceGrounded, SNAPSHOT);
+    const sequenceDraw = sequencePlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(sequenceDraw.shape).toBe("circle");
+  });
+
+  it("drawingIntent 'definition' and 'plain' still draw a box — a stated definition genuinely reads best as a box, and 'plain' is the true no-opinion case", () => {
+    const definitionGrounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Definition", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "definition", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const definitionPlan = buildProfessorTeachingActions(makeVsg(), definitionGrounded, SNAPSHOT);
+    const definitionDraw = definitionPlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(definitionDraw.shape).toBe("box");
+  });
+
+  it("tier/role-derived shape rules still win over drawingIntent 'chain' — a danger-tier node stays a hexagon even mid-mechanism", () => {
+    const vsg = makeVsg();
+    (vsg.nodes[0] as any).tier = "danger";
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "X", narration: "n", tone: "warn", pace: "slow", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "chain", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    expect(drawAction.shape).toBe("hexagon");
+  });
+
   it("tier/role-derived shape rules still win over drawingIntent — a danger-tier node stays a hexagon even with drawingIntent:'contrast'", () => {
     const vsg = makeVsg();
     (vsg.nodes[0] as any).tier = "danger";
