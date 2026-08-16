@@ -70,12 +70,20 @@ interface PDFTextItem {
  *
  * @param pageIndex 0-based page index
  * @param textContent - the PDF.js textContent returned by page.getTextContent()
- * @param viewport - the PDF.js viewport (used for coordinate transforms)
+ * @param viewport - the PDF.js viewport (used for coordinate transforms).
+ *   `transform` is PDF.js's own real PageViewport.transform 6-tuple
+ *   [a,b,c,d,e,f] (an affine matrix mapping PDF user-space points to
+ *   viewport/canvas-space points) — pass it whenever a real PDF.js page
+ *   object is available; it already folds in page rotation, crop-box/
+ *   media-box origin offset, and the y-axis flip, none of which the
+ *   `height`/`scale`-only fallback below can reconstruct on its own.
+ *   `height`/`scale` remain for callers (and tests) that only have a
+ *   plain, unrotated, zero-offset page and want the simple formula.
  */
 export function buildPageTextIndex(
   pageIndex: number,
   textContent: { items: PDFTextItem[] },
-  viewport?: { height: number; scale: number },
+  viewport?: { height: number; scale: number; transform?: number[] },
 ): PageTextIndex {
   const tagged = textContent.items.map((item, i) => ({ ...item, itemIndex: i }));
   const { items: ordered } = orderItemsForReading(tagged);
@@ -92,18 +100,48 @@ export function buildPageTextIndex(
     const startChar = cursor;
     const endChar = cursor + str.length;
 
-    // Compute bounding box from PDF.js transform matrix [a,b,c,d,e,f]
-    // transform[4] = tx (x), transform[5] = ty (y)
+    // Compute bounding box from the item's own PDF-space origin/size
+    // (transform[4]/[5] = tx/ty, plus width/height), mapped into
+    // viewport/canvas space.
     let x = 0, y = 0, w = 0, h = 0;
     if (item.transform && item.transform.length >= 6) {
       const [, , , , tx, ty] = item.transform;
-      const scale = viewport?.scale ?? 1;
-      const vH = viewport?.height ?? 800;
-      // PDF coordinates: origin bottom-left; canvas: origin top-left
-      x = tx * scale;
-      y = vH - ty * scale;
-      w = (item.width ?? str.length * 7) * scale;
-      h = (item.height ?? 12) * scale;
+      const itemW = item.width ?? str.length * 7;
+      const itemH = item.height ?? 12;
+
+      if (viewport?.transform && viewport.transform.length >= 6) {
+        // Real PDF.js PageViewport.transform — an affine matrix already
+        // folding in page rotation, crop-box/media-box origin offset, and
+        // the PDF-bottom-left -> canvas-top-left y-flip. Map all 4 corners
+        // of the item's PDF-space box through it and take the axis-aligned
+        // bounding box of the result: for 0/180deg rotation this reduces to
+        // the same "translate + flip" the old formula did; for 90/270deg
+        // it correctly swaps which axis width/height land on, which a
+        // height-only formula can never do.
+        const [a, b, c, d, e, f] = viewport.transform;
+        const apply = (px: number, py: number): [number, number] => [a * px + c * py + e, b * px + d * py + f];
+        const corners = [
+          apply(tx, ty), apply(tx + itemW, ty),
+          apply(tx, ty + itemH), apply(tx + itemW, ty + itemH),
+        ];
+        const xs = corners.map(p => p[0]);
+        const ys = corners.map(p => p[1]);
+        x = Math.min(...xs);
+        y = Math.min(...ys);
+        w = Math.max(...xs) - x;
+        h = Math.max(...ys) - y;
+      } else {
+        // Fallback for callers with only a plain {height, scale} — correct
+        // ONLY for an unrotated page with a zero-origin crop box; no real
+        // production call site should hit this once pdfjs-handler.ts passes
+        // the real viewport transform (see call sites).
+        const scale = viewport?.scale ?? 1;
+        const vH = viewport?.height ?? 800;
+        x = tx * scale;
+        y = vH - ty * scale;
+        w = itemW * scale;
+        h = itemH * scale;
+      }
     }
 
     tokens.push({

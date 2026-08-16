@@ -22,14 +22,17 @@
 // device pixels. The canvas internally uses physical pixels but that is invisible
 // to the overlay positioning which only sees CSS pixels.
 //
-// Page rotation note: buildPageTextIndex stores raw transform[4]/[5] values;
-// on rotated pages the origin handling changes and simple y-flip may be incorrect.
-// Callers should fall back to legacy-dom for pages with rotation != 0 until a
-// rotation-aware transform is added to buildPageTextIndex.
-//
-// Crop-box note: PDF.js's getViewport({scale:1}) accounts for crop boxes in the
-// reported page height. Text item transforms are in the uncropped PDF coordinate
-// space, so stored bboxes are already aligned to the rendered crop-box viewport.
+// Page rotation / crop-box note (stabilization item 4A): buildPageTextIndex
+// now maps every token's PDF-space corners through PDF.js's own real
+// PageViewport.transform (passed in by pdfjs-handler.ts as
+// `viewport.transform`), not a hand-rolled no-rotation formula — so page
+// rotation and any crop-box/media-box origin offset are both already
+// correctly folded in by the time a bbox reaches this file. This file's own
+// `viewportScale` multiplication below stays a simple scalar because
+// PageViewport.transform is linear in `scale` for a fixed rotation — the
+// scale=1 transform already has rotation/offset baked in, so scaling its
+// output by the current effectiveZoom reproduces the same relative geometry
+// PDF.js would compute by calling getViewport at that zoom directly.
 //
 // Resolution priority:
 //   1. pdfTextItemIndexes present  → exact PDF.js item lookup  (best quality)
