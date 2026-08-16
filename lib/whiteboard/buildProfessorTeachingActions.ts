@@ -163,9 +163,23 @@ function normalizedCameraIntent(entry: GroundedProfessorLessonScript["nodeScript
 // always read as a hexagon, regardless of what the AI thought this point's
 // "drawing intent" was). drawingIntent only breaks the tie for the ordinary
 // case that would otherwise always fall through to a plain box.
+//
+// "chain"/"sequence" (a causal-mechanism link or an ordered step — e.g. one
+// stage of "NaCl dissolves -> mobile ions -> conductivity") previously fell
+// through to the same plain box as an ordinary definition, so a whole page
+// of mechanism steps rendered as an undifferentiated row of rectangles.
+// They read as "circle" instead — the same connector-node convention this
+// file already uses for a hub concept (role === "hub", above) — which is
+// exactly right for a process/flow step and still leaves "box" meaning
+// "this is a stated definition/concept," not "this is any old idea."
+// "definition"/"plain" deliberately stay unmapped (implicit box): a
+// definition genuinely reads best as a box, and "plain" is the true
+// no-opinion case with nothing worth overriding.
 const SHAPE_FOR_DRAWING_INTENT: Partial<Record<DrawingIntent, "circle" | "box" | "diamond" | "hexagon" | "cloud">> = {
   contrast: "diamond",
   callout:  "cloud",
+  chain:    "circle",
+  sequence: "circle",
 };
 
 function shapeKindForNode(node: VSGNode, drawingIntent?: DrawingIntent): "circle" | "box" | "diamond" | "hexagon" | "cloud" {
