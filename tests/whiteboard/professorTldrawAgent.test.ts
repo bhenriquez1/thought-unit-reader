@@ -214,6 +214,53 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
     expect(verified.actions.some(action => action.type === "write" && action.text === "even pressure distribution")).toBe(true);
   });
 
+  it("REQUIRED (item 4B: source-evidence grounding): accepts a writeLabel whose text appears ONLY in this step's canonical source evidence — not in allowedLabels, narration, or relationships — the concrete fix for entity names the narration summarized but the page names individually", () => {
+    const planWithEvidence: ProfessorLessonPlan = {
+      ...PLAN,
+      directorSteps: [{
+        ...PLAN.directorSteps![0],
+        // Narration only says "the team" — it never names each role. The
+        // source page's own evidence text is the ONLY place "anesthesiologist"
+        // and "residents" actually appear.
+        narration: "The team works together to keep the patient safe.",
+        sourceEvidence: [{ targetId: "n1", sourceId: "source-one", exactText: "The surgeon, nurses, anesthesiologist, and residents each play a distinct role." }],
+      }],
+    };
+    const request = buildProfessorTldrawAgentRequest({ plan: planWithEvidence, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    expect(request.step.sourceEvidenceText).toEqual(["The surgeon, nurses, anesthesiologist, and residents each play a distinct role."]);
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "evidence-label-1", sourceTargetId: "source-one", text: "anesthesiologist", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+        { tool: "writeLabel", localId: "evidence-label-2", sourceTargetId: "source-one", text: "residents", x: 40, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    expect(verified.actions.filter(a => a.type === "write").map(a => (a as any).text).sort()).toEqual(["anesthesiologist", "residents"]);
+    expect(verified.rejectedActionCount).toBe(0);
+  });
+
+  it("REQUIRED (item 4B: source-evidence grounding): still rejects a label absent from allowedLabels, narration, relationships, AND source evidence — widening the source does not remove the requirement", () => {
+    const planWithEvidence: ProfessorLessonPlan = {
+      ...PLAN,
+      directorSteps: [{
+        ...PLAN.directorSteps![0],
+        narration: "The team works together to keep the patient safe.",
+        sourceEvidence: [{ targetId: "n1", sourceId: "source-one", exactText: "The surgeon, nurses, anesthesiologist, and residents each play a distinct role." }],
+      }],
+    };
+    const request = buildProfessorTldrawAgentRequest({ plan: planWithEvidence, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "invented", sourceTargetId: "source-one", text: "hospital administrator", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    expect(verified.actions.filter(action => action.type !== "move-camera")).toEqual([]);
+    expect(verified.rejectedActionCount).toBe(1);
+  });
+
   describe("isGroundedLabelText — the pure predicate directly", () => {
     const allowed = new Set(["Reactants"]);
     const blob = "reactants the ionic compound dissociates into sodium and chloride ions which conduct current";
