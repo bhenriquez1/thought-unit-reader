@@ -15,7 +15,7 @@
 // server-side failure signal (the server's own plausibility check compares
 // against the same corrupted text, so it looks fine there).
 
-import { normalizeDropCaps, cleanActivePageText } from "../../lib/insights/cleanActivePageText";
+import { normalizeDropCaps, cleanActivePageText, classifyLineRole } from "../../lib/insights/cleanActivePageText";
 
 describe("normalizeDropCaps — genuine drop-cap repair still works", () => {
   it("merges a drop-capped first letter at the start of the text", () => {
@@ -101,5 +101,58 @@ describe("cleanActivePageText — stripFigureCaptions option", () => {
     expect(cleaned).not.toMatch(/UNIT ONE/);
     expect(cleaned).toContain("Figure 3.2");
     expect(cleaned).toContain("Cells are alive.");
+  });
+});
+
+describe("classifyLineRole — stabilization item 4C-1: region-role tagging", () => {
+  it("classifies ordinary body prose as 'body'", () => {
+    expect(classifyLineRole("The mitochondria produce ATP through cellular respiration.")).toBe("body");
+  });
+
+  it("classifies a checkpoint/review marker distinctly from a generic heading", () => {
+    expect(classifyLineRole("Check Your Understanding: explain the process.")).toBe("checkpoint-review");
+  });
+
+  it("classifies a callout/sidebar label distinctly", () => {
+    expect(classifyLineRole("KEY CONCEPTS")).toBe("callout-label");
+  });
+
+  it("classifies a full figure/table caption sentence distinctly from a bare structural label", () => {
+    expect(classifyLineRole("Figure 3.2 The ATP synthase complex spans the membrane.")).toBe("figure-table-caption");
+    // A bare label with no caption sentence, and no Figure/Table/Photo/
+    // Illustration keyword, falls to the coarser 'heading' bucket instead —
+    // STRUCTURAL_LABEL_RE matches "Concept"/"Example"/etc. prefixes that
+    // FIGURE_CAPTION_RE's keyword list doesn't cover at all.
+    expect(classifyLineRole("Concept 2.2")).toBe("heading");
+  });
+
+  it("classifies a chapter/unit keyword header and a section-number heading as 'heading'", () => {
+    expect(classifyLineRole("CHAPTER 4 Acid-Base Equilibrium")).toBe("heading");
+    expect(classifyLineRole("2.1 Limits of Sequences")).toBe("heading");
+  });
+
+  it("classifies page furniture (bare page number, footer/copyright line) as 'page-furniture'", () => {
+    expect(classifyLineRole("42")).toBe("page-furniture");
+    expect(classifyLineRole("All rights reserved. Copyright 2024 Pearson Education.")).toBe("page-furniture");
+  });
+
+  it("classifies empty/whitespace-only text as 'page-furniture' rather than throwing or defaulting to 'body'", () => {
+    expect(classifyLineRole("")).toBe("page-furniture");
+    expect(classifyLineRole("   ")).toBe("page-furniture");
+  });
+
+  it("REQUIRED: repeated calls never drift due to global-regex lastIndex state — FIGURE_CAPTION_RE/CHECKPOINT_MARKER_RE/CALLOUT_LABEL_RE all carry the 'g' flag for their original replace() use, which makes RegExp.test() stateful across calls on the SAME object; classifyLineRole must be immune since it's called once per sentence on a page, many times per page", () => {
+    const figureCaption = "Figure 3.2 The ATP synthase complex spans the membrane.";
+    const checkpoint = "Check Your Understanding: explain the process.";
+    const callout = "KEY CONCEPTS";
+    // Interleaved, repeated calls — a stateful lastIndex bug would make a
+    // LATER call against the SAME matching text silently return false
+    // because the regex resumed searching past the first match position.
+    for (let i = 0; i < 5; i++) {
+      expect(classifyLineRole(figureCaption)).toBe("figure-table-caption");
+      expect(classifyLineRole(checkpoint)).toBe("checkpoint-review");
+      expect(classifyLineRole(callout)).toBe("callout-label");
+      expect(classifyLineRole(figureCaption)).toBe("figure-table-caption");
+    }
   });
 });

@@ -40,25 +40,30 @@ const MAX_SENTENCE_LEN = 500;
  *  prompt payload; the model is never shown more than this many candidates. */
 const DEFAULT_MAX_SENTENCES = 80;
 
+/** A sentence-like span with its exact char offsets into the rawPageText it
+ *  was found in — `rawPageText.slice(start, end) === text` always holds. */
+export interface RawSentenceSpan {
+  start: number;
+  end: number;
+  text: string;
+}
+
 /**
- * Split rawPageText into an ordered list of ID'd sentence-like spans.
- * Skips spans that look like running headers/footers/page numbers/captions
- * (reusing the SAME heuristic cleanActivePageText.ts uses to reject header
- * lines from thesis/anchor candidates) and spans that are implausibly short
- * or long to be a real teaching-worthy sentence — those are simply omitted
- * from the numbered list, never merged into a neighboring sentence.
+ * Walks rawPageText and returns EVERY sentence-like span in order, with NO
+ * length/header filtering and no cap — the shared boundary-finding core both
+ * segmentPageSentences() (candidate list for LLM grounding — filters and
+ * ID's a SUBSET) and lib/pdf/canonicalPageMap.ts's buildCanonicalPageMap()
+ * (retains and role-classifies EVERY span, filtering nothing) build on, so
+ * the two callers can never silently disagree about where a sentence
+ * boundary falls. Pure function, same input always produces the same spans.
  */
-export function segmentPageSentences(
-  rawPageText: string | null | undefined,
-  maxSentences: number = DEFAULT_MAX_SENTENCES,
-): PageSentence[] {
+export function findSentenceSpans(rawPageText: string | null | undefined): RawSentenceSpan[] {
   if (!rawPageText) return [];
   const n = rawPageText.length;
-  const sentences: PageSentence[] = [];
+  const spans: RawSentenceSpan[] = [];
   let cursor = 0;
-  let seq = 0;
 
-  while (cursor < n && sentences.length < maxSentences) {
+  while (cursor < n) {
     while (cursor < n && /\s/.test(rawPageText[cursor])) cursor++;
     if (cursor >= n) break;
 
@@ -79,12 +84,42 @@ export function segmentPageSentences(
     if (i >= n) end = n;
     cursor = end;
 
-    const trimmed = rawPageText.slice(start, end).trim();
-    if (trimmed.length < MIN_SENTENCE_LEN || trimmed.length > MAX_SENTENCE_LEN) continue;
-    if (isLikelyHeaderLine(trimmed)) continue;
+    // `start` already points past all leading whitespace (the skip-loop
+    // above), so slice(start, end).trim() can only have shed TRAILING
+    // whitespace — the trimmed text's own length is enough to compute its
+    // real end offset without re-scanning.
+    const raw = rawPageText.slice(start, end);
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) continue;
+    spans.push({ start, end: start + trimmed.length, text: trimmed });
+  }
+
+  return spans;
+}
+
+/**
+ * Split rawPageText into an ordered list of ID'd sentence-like spans.
+ * Skips spans that look like running headers/footers/page numbers/captions
+ * (reusing the SAME heuristic cleanActivePageText.ts uses to reject header
+ * lines from thesis/anchor candidates) and spans that are implausibly short
+ * or long to be a real teaching-worthy sentence — those are simply omitted
+ * from the numbered list, never merged into a neighboring sentence.
+ */
+export function segmentPageSentences(
+  rawPageText: string | null | undefined,
+  maxSentences: number = DEFAULT_MAX_SENTENCES,
+): PageSentence[] {
+  if (!rawPageText) return [];
+  const sentences: PageSentence[] = [];
+  let seq = 0;
+
+  for (const span of findSentenceSpans(rawPageText)) {
+    if (sentences.length >= maxSentences) break;
+    if (span.text.length < MIN_SENTENCE_LEN || span.text.length > MAX_SENTENCE_LEN) continue;
+    if (isLikelyHeaderLine(span.text)) continue;
 
     seq++;
-    sentences.push({ id: `S${String(seq).padStart(3, "0")}`, text: trimmed });
+    sentences.push({ id: `S${String(seq).padStart(3, "0")}`, text: span.text });
   }
 
   return sentences;

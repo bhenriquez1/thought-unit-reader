@@ -3,7 +3,7 @@
 // SurgeonAnnotationPlan's sentenceId-based grounding (see
 // lib/highlights/groundSurgeonQuotes.ts's Stage 0).
 
-import { segmentPageSentences, sentencesById, formatSentenceList } from "../../lib/insights/segmentPageSentences";
+import { segmentPageSentences, sentencesById, formatSentenceList, findSentenceSpans } from "../../lib/insights/segmentPageSentences";
 
 describe("segmentPageSentences — basic segmentation", () => {
   it("returns [] for empty/null/undefined input", () => {
@@ -73,5 +73,44 @@ describe("sentencesById / formatSentenceList", () => {
     const formatted = formatSentenceList(sentences);
     expect(formatted).toMatch(/^S001: First sentence goes right here for the test\./);
     expect(formatted).toContain("S002: Second sentence goes right here too.");
+  });
+});
+
+describe("findSentenceSpans — the shared boundary core (item 4C-1)", () => {
+  it("REQUIRED: every span's offsets are exact — rawPageText.slice(start, end) === text always holds", () => {
+    const text = "First sentence here for the test. Second sentence follows right after that one. Third one too.";
+    const spans = findSentenceSpans(text);
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) {
+      expect(text.slice(span.start, span.end)).toBe(span.text);
+    }
+  });
+
+  it("REQUIRED: retains every span with no length/header filtering — segmentPageSentences filters this same input down, findSentenceSpans does not", () => {
+    const text = "CHAPTER 4 Acid-Base Equilibrium\n\nOk.\n\nBuffer solutions resist changes in pH through a weak acid and its conjugate base.";
+    const spans = findSentenceSpans(text);
+    const filtered = segmentPageSentences(text);
+    expect(spans.length).toBeGreaterThan(filtered.length);
+    expect(spans.some(s => s.text.startsWith("CHAPTER 4"))).toBe(true);
+    expect(spans.some(s => s.text === "Ok.")).toBe(true);
+  });
+
+  it("REQUIRED: segmentPageSentences' filtered output is a subsequence of findSentenceSpans' text, in the same order — the refactor shares one boundary algorithm, not two independently-drifting ones", () => {
+    const text = "CHAPTER 4 Acid-Base Equilibrium\n\nBuffer solutions resist changes in pH through a weak acid and its conjugate base. A common trap students fall into is assuming buffer capacity is unlimited.";
+    const spans = findSentenceSpans(text);
+    const filtered = segmentPageSentences(text);
+    const spanTexts = spans.map(s => s.text);
+    let cursor = -1;
+    for (const s of filtered) {
+      const idx = spanTexts.indexOf(s.text, cursor + 1);
+      expect(idx).toBeGreaterThan(cursor);
+      cursor = idx;
+    }
+  });
+
+  it("returns [] for empty/null/undefined input", () => {
+    expect(findSentenceSpans("")).toEqual([]);
+    expect(findSentenceSpans(null)).toEqual([]);
+    expect(findSentenceSpans(undefined)).toEqual([]);
   });
 });
