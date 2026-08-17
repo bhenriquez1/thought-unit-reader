@@ -94,9 +94,14 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
       // BEFORE the map below narrows each item to {str, transform} only.
       // Scale=1 keeps coordinates in PDF-point space; Phase 2 applies the
       // render-time viewport transform when drawing overlays.
+      // vp.transform is PDF.js's real affine transform for this page at
+      // scale=1 — it already folds in page rotation and any crop-box/
+      // media-box origin offset (both of which {height, scale} alone cannot
+      // reconstruct). See textLayerIndex.ts's buildPageTextIndex doc comment
+      // for why this must be the real transform, not a hand-rolled substitute.
       const vp = page.getViewport({ scale: 1.0 });
       TextLayerRegistry.set(
-        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1, transform: vp.transform }),
         textEpoch,
       );
 
@@ -235,9 +240,14 @@ export async function extractPageTextsIncremental(
       const content = await page.getTextContent();
 
       // Preserve full PDF.js provenance before items are narrowed.
+      // vp.transform is PDF.js's real affine transform for this page at
+      // scale=1 — it already folds in page rotation and any crop-box/
+      // media-box origin offset (both of which {height, scale} alone cannot
+      // reconstruct). See textLayerIndex.ts's buildPageTextIndex doc comment
+      // for why this must be the real transform, not a hand-rolled substitute.
       const vp = page.getViewport({ scale: 1.0 });
       TextLayerRegistry.set(
-        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1 }),
+        buildPageTextIndex(i - 1, content as { items: any[] }, { height: vp.height, scale: 1, transform: vp.transform }),
         textEpoch,
       );
 
