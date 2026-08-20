@@ -28,39 +28,22 @@
 //   2. Carries exact char offsets into the canonical pageText, not just
 //      text — segmentPageSentences only needs exact-substring lookup by id,
 //      not composable offsets.
+//
+// Types and the registry itself live in canonicalPageMapRegistry.ts (split
+// out for item 4C-3) — re-exported here so existing imports of this file
+// (pdfjs-handler.ts, tests) keep working unchanged.
 
 import { findSentenceSpans } from "../insights/segmentPageSentences";
-import { classifyLineRole, type RegionRole } from "../insights/cleanActivePageText";
+import { classifyLineRole } from "../insights/cleanActivePageText";
+import {
+  CanonicalPageMapRegistry,
+  type CanonicalSentence,
+  type CanonicalPageMap,
+  type RegionRole,
+} from "./canonicalPageMapRegistry";
 
-export type { RegionRole };
-
-export interface CanonicalSentence {
-  /** Stable within one CanonicalPageMap build: "S001", "S002", ... in
-   *  reading order — same format segmentPageSentences already uses, so a
-   *  later migration (item 4C-3) doesn't also have to change id shape. */
-  id: string;
-  pageIndex: number;
-  /** Exact substring of the CanonicalPageMap's own `fullText`:
-   *  fullText.slice(charStart, charEnd) === text always holds. */
-  text: string;
-  charStart: number;
-  charEnd: number;
-  regionRole: RegionRole;
-}
-
-export interface CanonicalPageMap {
-  pageIndex: number;
-  /** Bumped whenever the segmentation/classification algorithm changes, so
-   *  a cached map built under an older version can be detected and rebuilt
-   *  rather than silently trusted. Not a content hash — two different pages
-   *  built under the same algorithm share the same structureVersion. */
-  structureVersion: string;
-  /** The exact canonical pageText this map was built from (verbatim
-   *  reference) — every sentence's charStart/charEnd is an offset into
-   *  THIS string, not into any other page-text reconstruction. */
-  fullText: string;
-  sentences: CanonicalSentence[];
-}
+export { CanonicalPageMapRegistry };
+export type { CanonicalSentence, CanonicalPageMap, RegionRole };
 
 /** Bump when findSentenceSpans/classifyLineRole's behavior changes in a way
  *  that would change a page's sentence boundaries or region roles. */
@@ -102,38 +85,3 @@ export function buildCanonicalPageMap(pageIndex: number, pageText: string): Cano
     sentences,
   };
 }
-
-// ── Registry ─────────────────────────────────────────────────────────────
-// Mirrors TextLayerRegistry/PageBridgeRegistry's epoch-guarded Map exactly
-// (see pageBridgeRegistry.ts's header comment for the cross-document race
-// this closes) — a late write from a superseded document extraction, still
-// stamped with its own now-stale epoch, is silently dropped instead of
-// contaminating the registry a newer extraction is actively populating.
-const canonicalPageMapRegistry = new Map<number, CanonicalPageMap>();
-let epoch = 0;
-
-export const CanonicalPageMapRegistry = {
-  /** forEpoch, when passed, must match the CURRENT epoch or this write is
-   *  silently dropped — see PageBridgeRegistry.set()'s doc comment for the
-   *  race this closes. Omitting it skips the check. */
-  set(map: CanonicalPageMap, forEpoch?: number): void {
-    if (forEpoch !== undefined && forEpoch !== epoch) return;
-    canonicalPageMapRegistry.set(map.pageIndex, map);
-  },
-
-  get(pageIndex: number): CanonicalPageMap | undefined {
-    return canonicalPageMapRegistry.get(pageIndex);
-  },
-
-  /** Clears all entries and starts a new epoch — see set()'s doc comment.
-   *  Returns the new epoch for the caller to stamp its own set() calls with. */
-  clear(): number {
-    canonicalPageMapRegistry.clear();
-    epoch += 1;
-    return epoch;
-  },
-
-  currentEpoch(): number {
-    return epoch;
-  },
-};

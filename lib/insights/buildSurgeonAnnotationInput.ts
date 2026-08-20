@@ -144,6 +144,11 @@ export function buildSurgeonAnnotationInput(args: {
     // sentenceId must resolve against the same raw text groundSurgeonQuotes.ts
     // grounds against downstream, or the id-based lookup would reintroduce
     // exactly the cleaned-vs-raw mismatch this whole design exists to avoid.
-    pageSentences:          segmentPageSentences(args.pageText),
+    // pageNumber - 1: CanonicalPageMapRegistry is 0-based (item 4C-3) — lets
+    // this reuse the already-built canonical map's stable ids when it's
+    // available and its own fullText matches args.pageText exactly; falls
+    // back to fresh computation otherwise (see segmentPageSentences' own
+    // doc comment for the full safety argument).
+    pageSentences:          segmentPageSentences(args.pageText, undefined, args.pageNumber - 1),
   };
 }

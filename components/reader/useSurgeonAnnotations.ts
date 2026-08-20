@@ -360,7 +360,7 @@ export function useSurgeonAnnotations({
           // Re-segmented fresh against the SAME raw text every grounding pass
           // — segmentPageSentences is a pure function, so this always agrees
           // with whatever list buildSurgeonAnnotationInput.ts sent the model.
-          const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
+          const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current, undefined, pageNumberRef.current - 1));
           const wholePage = groundSurgeonQuotes(stored.plan.annotations, pageTextRef.current, sentenceMap);
           const grounded = limitAnnotationDensity(wholePage, stored.plan.pageRoles ?? [stored.plan.pageRole]);
           const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
@@ -558,7 +558,7 @@ export function useSurgeonAnnotations({
         // branch above for why: grounding must search the same text basis
         // geometry resolution will search, or a "grounded" quote can end up
         // permanently unrenderable on the actual PDF.
-        const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current));
+        const sentenceMap = buildSentencesById(segmentPageSentences(pageTextRef.current, undefined, pageNumberRef.current - 1));
         const wholePage = groundSurgeonQuotes(data.plan.annotations, pageTextRef.current, sentenceMap);
         const grounded = limitAnnotationDensity(wholePage, data.plan.pageRoles ?? [data.plan.pageRole]);
         const targets = groundedAnnotationsToHighlightTargets(grounded, documentIdRef.current, pageNumberRef.current);
