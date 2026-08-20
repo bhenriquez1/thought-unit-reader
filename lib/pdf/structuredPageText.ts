@@ -364,3 +364,71 @@ export function buildStructuredPageTextFull(items: PdfTextItem[]): { text: strin
 
   return { text, bridge: buildBridgeFromText(text, allParagraphItems) };
 }
+
+// ── Per-item offsets — stabilization item 4C-2 ──────────────────────────────
+// buildBridgeFromText above gives PARAGRAPH-granularity provenance
+// (paragraph char range -> contributing item indexes). textLayerIndex.ts's
+// buildPageTextIndex needs finer, per-ITEM char ranges (one PDF.js text item
+// -> its own [start,end) in the canonical text) so it can attach real
+// geometry to a specific char range instead of a whole paragraph. Retrofitting
+// exact offset math through buildColumnFull's line-grouping/paragraph-break/
+// hyphenation-merge transforms is exactly the kind of "a second, subtly
+// different reimplementation of the same algorithm" this stabilization work
+// keeps finding bugs in — so this instead takes the ALREADY-CORRECT, already
+//-assembled canonical text as ground truth and locates each item's own
+// contribution within it via sequential forward search, the same "search
+// forward from where we left off, never guess" pattern
+// lib/pdf/resolveAnchorGeometry.ts's matchWordsFrom already uses safely for
+// the equivalent word-level problem.
+
+export interface ItemTextOffset {
+  itemIndex: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Locates each item's own text within `text` (assumed to be
+ * buildStructuredPageText(Full)'s output built from these SAME items in
+ * this SAME order), via forward search from a monotonically advancing
+ * cursor. Items are visited in the given order — pass the SAME
+ * orderItemsForReading() output used to build `text` so search order
+ * matches assembly order.
+ *
+ * An item whose text was partly consumed by hyphenation merging (its
+ * trailing "-" was stripped and the next line glued on with no separator —
+ * see buildColumnFull's hyphenation branch) is located via a fallback
+ * search without the trailing hyphen. An item that still can't be found
+ * (should not happen for real PDF.js output, but stay defensive) is simply
+ * omitted — never guessed at, matching this codebase's "unresolved rather
+ * than a wrong answer" rule elsewhere (resolveAnchorGeometry.ts).
+ */
+export function locateItemOffsetsInText(
+  text: string,
+  orderedItems: PdfTextItem[],
+): ItemTextOffset[] {
+  const offsets: ItemTextOffset[] = [];
+  let cursor = 0;
+
+  for (const item of orderedItems) {
+    if (item.itemIndex === undefined) continue;
+    const raw = (item.str ?? "").replace(/\s+/g, " ").trim();
+    if (!raw) continue;
+
+    let idx = text.indexOf(raw, cursor);
+    let matched = raw;
+    if (idx === -1) {
+      const withoutHyphen = raw.replace(/-$/, "");
+      if (withoutHyphen && withoutHyphen !== raw) {
+        idx = text.indexOf(withoutHyphen, cursor);
+        matched = withoutHyphen;
+      }
+    }
+    if (idx === -1) continue;
+
+    offsets.push({ itemIndex: item.itemIndex, start: idx, end: idx + matched.length });
+    cursor = idx + matched.length;
+  }
+
+  return offsets;
+}
