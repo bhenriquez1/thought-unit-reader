@@ -5,7 +5,7 @@
 // for scroll-to-highlight and TTS cursor positioning.
 
 import type { SourceRef } from './types';
-import { orderItemsForReading } from '../pdf/structuredPageText';
+import { orderItemsForReading, buildStructuredPageTextFull, locateItemOffsetsInText } from '../pdf/structuredPageText';
 
 // ============================================================================
 // Types
@@ -54,19 +54,27 @@ interface PDFTextItem {
  * Build a PageTextIndex from a PDF.js textContent object.
  * Call this once per page when the text layer loads.
  *
- * Items are visited in READING order (orderItemsForReading — the same
- * column-detection + top-to-bottom/left-to-right sort
- * lib/pdf/structuredPageText.ts uses), not raw textContent.items array
- * order. This matters: pageText (what quotes are built from and verified
- * against — see lib/pdf/structuredPageText.ts) is already reading-order-
- * correct via that same function. Before this, buildPageTextIndex walked
- * items in whatever order the source PDF's content stream happened to emit
- * them, which is not guaranteed to already be left-column-then-right-column
- * on a two-column page — so this index's fullText could disagree with
- * pageText's ordering, and a quote built from one and located in the other
- * could resolve to the wrong position or fail to resolve as a complete
- * match. Reusing the same ordering function keeps them in sync by
- * construction instead of by coincidence.
+ * Stabilization item 4C-2: `fullText` is now buildStructuredPageTextFull's
+ * own output — literally the same function call Highlight/Current Page
+ * speech/CanonicalPageMap already build their text from — not a second,
+ * independently-assembled flat single-space join. Before this, the two
+ * were only guaranteed to agree on item ORDERING (via orderItemsForReading,
+ * see below), not on the actual text bytes: buildPageTextIndex's own join
+ * never inserted paragraph breaks or merged hyphenated line-wraps, and
+ * never separated two-column text with "\n\n" the way buildColumnFull
+ * does. A quote or word position resolved correctly against pageText could
+ * therefore still fail to resolve — or resolve to the wrong place — when
+ * searched against this index's DIFFERENT fullText. Calling
+ * buildStructuredPageTextFull directly makes byte-identity structural
+ * (guaranteed by construction), not just similar by two algorithms
+ * happening to agree.
+ *
+ * Per-item char offsets (needed to attach this specific item's geometry to
+ * its own char range, not just know the whole page's text) are recovered
+ * from that SAME text via locateItemOffsetsInText's sequential forward
+ * search — see that function's header comment for why this is safer than
+ * retrofitting exact offset math through buildColumnFull's line/paragraph/
+ * hyphenation transforms.
  *
  * @param pageIndex 0-based page index
  * @param textContent - the PDF.js textContent returned by page.getTextContent()
@@ -87,18 +95,16 @@ export function buildPageTextIndex(
 ): PageTextIndex {
   const tagged = textContent.items.map((item, i) => ({ ...item, itemIndex: i }));
   const { items: ordered } = orderItemsForReading(tagged);
+  const { text: fullText } = buildStructuredPageTextFull(tagged);
+  const itemOffsets = locateItemOffsetsInText(fullText, ordered);
+  const itemByIndex = new Map(ordered.map(item => [item.itemIndex, item]));
 
   const tokens: TextToken[] = [];
-  let cursor = 0;
-  let fullText = '';
 
-  for (let i = 0; i < ordered.length; i++) {
-    const item = ordered[i];
-    const str = item.str ?? '';
-    if (!str) continue;
-
-    const startChar = cursor;
-    const endChar = cursor + str.length;
+  for (const { itemIndex, start: startChar, end: endChar } of itemOffsets) {
+    const item = itemByIndex.get(itemIndex);
+    const str = item?.str ?? '';
+    if (!item || !str) continue;
 
     // Compute bounding box from the item's own PDF-space origin/size
     // (transform[4]/[5] = tx/ty, plus width/height), mapped into
@@ -149,23 +155,12 @@ export function buildPageTextIndex(
       startChar,
       endChar,
       bbox: { x, y, w, h },
-      // Original position in textContent.items — NOT `i` (position in
-      // reading order) — pdfTextItemIndexes elsewhere in the app (Strategy 1
-      // in resolveAnchorGeometry.ts, StructuredPageBridge.itemIndexes) refer
+      // Original position in textContent.items — NOT position in reading
+      // order — pdfTextItemIndexes elsewhere in the app (Strategy 1 in
+      // resolveAnchorGeometry.ts, StructuredPageBridge.itemIndexes) refer
       // to the original array position, so this must too.
-      itemIndex: item.itemIndex,
+      itemIndex,
     });
-
-    fullText += str;
-    cursor = endChar;
-
-    // PDF.js items don't include whitespace between words; add a space
-    // if the next item IN READING ORDER exists and doesn't start with punctuation
-    const next = ordered[i + 1];
-    if (next && next.str && !/^[,.);\]}'"]/.test(next.str)) {
-      fullText += ' ';
-      cursor += 1;
-    }
   }
 
   return { pageIndex, fullText, tokens };
