@@ -697,6 +697,33 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
     expect(drawAction.spatialIntent).toBe("warning-aside");
   });
 
+  it("REQUIRED (item 4C-4): a VSG node's sourceSentenceId is carried through onto its directorStep's sourceEvidence entry", () => {
+    const vsg = makeVsg();
+    (vsg.nodes[0] as any).sourceSentenceId = "S042";
+    const grounded = makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Rapid assessment", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    });
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const step = plan.directorSteps!.find(s => s.targetId === "n1");
+    expect(step).toBeDefined();
+    expect(step!.sourceEvidence).toHaveLength(1);
+    expect(step!.sourceEvidence[0]).toMatchObject({ sourceId: "src-n1", sourceSentenceId: "S042" });
+  });
+
+  it("a VSG node with no sourceSentenceId (e.g. an exact/normalized-grounded highlight, not a sentenceId one) produces sourceEvidence with sourceSentenceId undefined, not a fabricated value", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded({
+      nodeScripts: [{
+        targetId: "n1", shortLabel: "Rapid assessment", narration: "n", tone: "explain", pace: "normal", emphasize: false,
+        teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [],
+      }],
+    }), SNAPSHOT);
+    const step = plan.directorSteps!.find(s => s.targetId === "n1");
+    expect(step!.sourceEvidence[0].sourceSentenceId).toBeUndefined();
+  });
+
   it("REQUIRED: drawingIntent influences shape choice for a plain (non-tier-locked) node — 'contrast' draws a diamond", () => {
     const grounded = makeGrounded({
       nodeScripts: [{

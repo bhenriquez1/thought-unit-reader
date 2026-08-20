@@ -362,7 +362,10 @@ export function buildProfessorTeachingActions(
     (entry.sourceEvidence ?? [entry.targetId])
       .map(targetId => vsg.nodes.find(node => node.id === targetId))
       .filter((node): node is VSGNode => Boolean(node))
-      .map(node => ({ targetId: node.id, sourceId: node.sourceId, exactText: node.body.trim() }))
+      .map(node => ({
+        targetId: node.id, sourceId: node.sourceId, exactText: node.body.trim(),
+        sourceSentenceId: node.sourceSentenceId,
+      }))
       .filter(evidence => evidence.exactText.length > 0);
 
   const sourcePassagesForEntry = (entry: GroundedProfessorLessonScript["nodeScripts"][number]) => {

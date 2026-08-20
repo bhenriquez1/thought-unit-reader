@@ -56,6 +56,16 @@ export interface RelationshipNode {
    *  Planner has more than a bare quote to teach from. */
   reason?: string;
   relatesTo?: EntryRelatesTo;
+  /** Stabilization item 4C-4: the canonical sentence id (lib/pdf/
+   *  canonicalPageMap.ts's stable "S00N" ids, see item 4C-1/4C-3) this
+   *  entry's evidence resolved to — only ever set when the ORIGINATING
+   *  GroundedSurgeonAnnotation's own groundingState was "sentenceId"
+   *  (see visualSceneGraph.ts's surgeonAnnotationsToCanonicalEntries),
+   *  the same "only when it's provably the id that actually resolved this
+   *  match" rule useSurgeonAnnotations.ts already applies for
+   *  HighlightTarget.sourceSentenceId. Development/cross-reference
+   *  metadata only — not used by layout or grounding here. */
+  sourceSentenceId?: string;
 }
 
 export interface RelationshipEdge {
@@ -174,6 +184,8 @@ export interface CanonicalEntryInput {
   reason?: string;
   /** See RelationshipNode.relatesTo. */
   relatesTo?: EntryRelatesTo;
+  /** See RelationshipNode.sourceSentenceId. */
+  sourceSentenceId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +238,7 @@ export function buildRelationshipGraph(
     page:           e.page,
     reason:         e.reason,
     relatesTo:      e.relatesTo,
+    sourceSentenceId: e.sourceSentenceId,
   }));
 
   // Group nodes by canonicalType for rule matching.
