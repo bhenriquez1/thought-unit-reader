@@ -274,3 +274,67 @@ export function isLikelyHeaderLine(text: string): boolean {
 
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// Region-role classification — stabilization item 4C-1 (Canonical Page Map
+// foundation). Everything above this point answers "keep or strip" (binary).
+// classifyLineRole() answers "what IS this line" for a per-sentence span,
+// so a caller can retain non-body spans (tagged, not deleted) instead of
+// silently dropping them — exactly what lib/pdf/canonicalPageMap.ts needs to
+// enumerate a full page (a future Highlight Coverage Auditor must be able to
+// say "this sentence is a figure caption, correctly not highlighted," not
+// just "this sentence disappeared somewhere").
+//
+// Reuses the SAME regexes above rather than inventing a second taxonomy —
+// this is a naming/retention pass over already-proven detection logic, not
+// new heuristics. FIGURE_CAPTION_RE/CHECKPOINT_MARKER_RE/CALLOUT_LABEL_RE/
+// FOOTER_DEBRIS_RE all carry the `g` flag (needed for their original
+// replace() use above) — RegExp.test() on a `g`-flagged regex is STATEFUL
+// (it advances lastIndex and resumes from there on the next call), so
+// reusing those exact objects for repeated per-sentence test() calls would
+// silently give wrong answers after the first match. Each gets a
+// non-global clone, built once at module load from the same .source, so
+// there is exactly one place that ever needs to change if the pattern does.
+// ---------------------------------------------------------------------------
+
+function nonGlobal(re: RegExp): RegExp {
+  return new RegExp(re.source, re.flags.replace("g", ""));
+}
+
+const FIGURE_CAPTION_TEST_RE = nonGlobal(FIGURE_CAPTION_RE);
+const CHECKPOINT_MARKER_TEST_RE = nonGlobal(CHECKPOINT_MARKER_RE);
+const CALLOUT_LABEL_TEST_RE = nonGlobal(CALLOUT_LABEL_RE);
+
+export type RegionRole =
+  | "body"
+  | "heading"
+  | "figure-table-caption"
+  | "checkpoint-review"
+  | "callout-label"
+  | "page-furniture";
+
+/**
+ * Classifies a single sentence-like span (trimmed text, no surrounding
+ * context) into a RegionRole. Order matters: the more specific, distinctly-
+ * tagged categories are checked before the coarser isLikelyHeaderLine
+ * catch-all, so e.g. a full "Figure 4.2 The ATP structure." caption is
+ * tagged figure-table-caption rather than falling into the generic
+ * "heading" bucket merely because a bare structural-label pattern would
+ * also match its "Figure 4.2" prefix.
+ *
+ * Page-level classification (is this WHOLE PAGE a table of contents / front
+ * matter?) is a different granularity and already has its own AI-assigned
+ * system (InstructionalPageRole in lib/insights/pageAnnotationPlan.ts) —
+ * out of scope here by design, not an oversight.
+ */
+export function classifyLineRole(text: string): RegionRole {
+  const t = (text ?? "").trim();
+  if (!t) return "page-furniture";
+
+  if (CHECKPOINT_MARKER_TEST_RE.test(t)) return "checkpoint-review";
+  if (CALLOUT_LABEL_TEST_RE.test(t)) return "callout-label";
+  if (FIGURE_CAPTION_TEST_RE.test(t)) return "figure-table-caption";
+  if (KEYWORD_HEADER_RE.test(t) || SECTION_NUMBER_HEADING_RE.test(t) || STRUCTURAL_LABEL_RE.test(t)) return "heading";
+  if (isLikelyHeaderLine(t)) return "page-furniture";
+  return "body";
+}

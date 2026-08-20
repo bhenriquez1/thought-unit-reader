@@ -4,6 +4,7 @@
 import { buildStructuredPageTextFull } from "@/lib/pdf/structuredPageText";
 import { buildPageTextIndex, TextLayerRegistry } from "@/lib/page-intelligence/textLayerIndex";
 import { PageBridgeRegistry } from "@/lib/page-intelligence/pageBridgeRegistry";
+import { buildCanonicalPageMap, CanonicalPageMapRegistry } from "@/lib/pdf/canonicalPageMap";
 
 /**
  * Public API
@@ -70,6 +71,10 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
   // registry. See pageBridgeRegistry.ts's header comment for the race this closes.
   const textEpoch = TextLayerRegistry.clear();
   const bridgeEpoch = PageBridgeRegistry.clear();
+  // Stabilization item 4C-1: additive only — nothing reads CanonicalPageMapRegistry
+  // yet. Populated here (not lazily) so it's available from the same moment
+  // TextLayerRegistry/PageBridgeRegistry are, once a future consumer needs it.
+  const canonicalEpoch = CanonicalPageMapRegistry.clear();
 
   // ✅ Process pages with progress tracking and early text detection
   for (let i = 1; i <= doc.numPages; i++) {
@@ -119,6 +124,7 @@ async function extractPageTexts(file: File, options?: ExtractOptions): Promise<s
       }));
       const { text: pageText, bridge } = buildStructuredPageTextFull(normalizedItems);
       PageBridgeRegistry.set(i - 1, bridge, bridgeEpoch);
+      CanonicalPageMapRegistry.set(buildCanonicalPageMap(i - 1, pageText), canonicalEpoch);
 
       pages.push(pageText);
       totalCharsExtracted += pageText.length;
@@ -228,6 +234,10 @@ export async function extractPageTextsIncremental(
   // in extractPageTexts() above for the cross-document race this closes.
   const textEpoch = TextLayerRegistry.clear();
   const bridgeEpoch = PageBridgeRegistry.clear();
+  // Stabilization item 4C-1: additive only — nothing reads CanonicalPageMapRegistry
+  // yet. Populated here (not lazily) so it's available from the same moment
+  // TextLayerRegistry/PageBridgeRegistry are, once a future consumer needs it.
+  const canonicalEpoch = CanonicalPageMapRegistry.clear();
 
   async function extractOnePage(i: number): Promise<{ pageIndex: number; text: string }> {
     try {
@@ -261,6 +271,7 @@ export async function extractPageTextsIncremental(
       }));
       const { text, bridge } = buildStructuredPageTextFull(normalizedItems);
       PageBridgeRegistry.set(i - 1, bridge, bridgeEpoch);
+      CanonicalPageMapRegistry.set(buildCanonicalPageMap(i - 1, text), canonicalEpoch);
       return { pageIndex: i, text };
     } catch {
       return { pageIndex: i, text: '' };
