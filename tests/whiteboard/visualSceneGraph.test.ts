@@ -726,6 +726,32 @@ describe("surgeonAnnotationsToCanonicalEntries", () => {
   });
 });
 
+describe("surgeonAnnotationsToCanonicalEntries — item 4C-4: sourceSentenceId threading", () => {
+  it("REQUIRED: threads sourceSentenceId through when groundingState is 'sentenceId'", () => {
+    const g = makeGrounded({ groundingState: "sentenceId", sentenceId: "S007" });
+    const [entry] = surgeonAnnotationsToCanonicalEntries([g], "doc-1", 3);
+    expect(entry.sourceSentenceId).toBe("S007");
+  });
+
+  it("REQUIRED: omits sourceSentenceId when groundingState is 'exact' or 'normalized', even if the annotation's own sentenceId field happens to be set — it was NOT what actually resolved this match, so it must not be threaded through as if it were", () => {
+    const exactMatch = makeGrounded({ groundingState: "exact", sentenceId: "S003" });
+    const [exactEntry] = surgeonAnnotationsToCanonicalEntries([exactMatch], "doc-1", 3);
+    expect(exactEntry.sourceSentenceId).toBeUndefined();
+
+    const normalizedMatch = makeGrounded({ groundingState: "normalized", sentenceId: "S003" });
+    const [normalizedEntry] = surgeonAnnotationsToCanonicalEntries([normalizedMatch], "doc-1", 3);
+    expect(normalizedEntry.sourceSentenceId).toBeUndefined();
+  });
+
+  it("REQUIRED end-to-end: sourceSentenceId survives all the way through buildVSG onto the real VSGNode", () => {
+    const g = makeGrounded({ groundingState: "sentenceId", sentenceId: "S012", originalIndex: 0 });
+    const entries = surgeonAnnotationsToCanonicalEntries([g], "doc-1", 5);
+    const vsg = buildVSG(entries, "flow", { pageNumber: 5 });
+    expect(vsg.nodes).toHaveLength(1);
+    expect(vsg.nodes[0].sourceSentenceId).toBe("S012");
+  });
+});
+
 describe("pageRoleToWhiteboardGrammar — the shared page classifier picks the Whiteboard's teaching grammar", () => {
   it("maps anatomy to the anatomy (hub-spoke) grammar", () => {
     expect(pageRoleToWhiteboardGrammar("anatomy")).toBe("anatomy");

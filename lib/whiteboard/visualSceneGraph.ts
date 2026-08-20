@@ -119,6 +119,10 @@ export const VSGNodeSchema = z.object({
    *  ProfessorLessonNodeInput.reason so the teaching AI knows WHY, not just
    *  what the quoted text says. */
   reason:          z.string().optional(),
+  /** Stabilization item 4C-4 — see CanonicalEntryInput.sourceSentenceId's
+   *  doc comment in canonicalRelationshipGraph.ts for the full provenance
+   *  and the "only when provably correct" rule. */
+  sourceSentenceId: z.string().optional(),
 });
 export type VSGNode = z.infer<typeof VSGNodeSchema>;
 
@@ -371,6 +375,7 @@ export function buildVSG(
       page:            n.page,
       sourceId:        n.id,
       reason:          n.reason,
+      sourceSentenceId: n.sourceSentenceId,
     });
   });
 
@@ -596,6 +601,13 @@ export function surgeonAnnotationsToCanonicalEntries(
       page:          pageNumber,
       reason:        g.reason,
       relatesTo,
+      // Item 4C-4: same "only when it's provably the id that actually
+      // resolved this match" rule useSurgeonAnnotations.ts's own
+      // HighlightTarget.sourceSentenceId conversion already applies — a
+      // Stage 1/2 (exact/normalized string match) grounding's inherited
+      // g.sentenceId is whatever the model proposed, not verified as
+      // correct, so it must not be threaded through as if it were.
+      sourceSentenceId: g.groundingState === "sentenceId" ? g.sentenceId : undefined,
     };
   });
 }

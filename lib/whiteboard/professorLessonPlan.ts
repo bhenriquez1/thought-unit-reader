@@ -477,6 +477,13 @@ export interface ProfessorSourceEvidence {
   targetId: string;
   sourceId: string;
   exactText: string;
+  /** Stabilization item 4C-4 — the canonical sentence id (lib/pdf/
+   *  canonicalPageMap.ts's stable "S00N" ids) this evidence resolved to,
+   *  when the originating Highlight grounding's groundingState was
+   *  "sentenceId" (see VSGNode.sourceSentenceId's doc comment for the
+   *  full provenance chain). Development/cross-reference metadata only —
+   *  not used by lesson-plan generation or grounding here. */
+  sourceSentenceId?: string;
 }
 
 export interface ProfessorDirectorStep {
