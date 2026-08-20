@@ -4,6 +4,8 @@
 // lib/highlights/groundSurgeonQuotes.ts's Stage 0).
 
 import { segmentPageSentences, sentencesById, formatSentenceList, findSentenceSpans } from "../../lib/insights/segmentPageSentences";
+import { buildCanonicalPageMap } from "../../lib/pdf/canonicalPageMap";
+import { CanonicalPageMapRegistry } from "../../lib/pdf/canonicalPageMapRegistry";
 
 describe("segmentPageSentences — basic segmentation", () => {
   it("returns [] for empty/null/undefined input", () => {
@@ -112,5 +114,75 @@ describe("findSentenceSpans — the shared boundary core (item 4C-1)", () => {
     expect(findSentenceSpans("")).toEqual([]);
     expect(findSentenceSpans(null)).toEqual([]);
     expect(findSentenceSpans(undefined)).toEqual([]);
+  });
+});
+
+describe("segmentPageSentences — item 4C-3: canonical-map-backed ids when available and consistent", () => {
+  beforeEach(() => {
+    CanonicalPageMapRegistry.clear();
+  });
+
+  it("REQUIRED: uses the canonical map's stable ids when pageIndex is given and the registry's fullText matches exactly", () => {
+    const text = "The cell is the basic unit of life. Mitochondria produce ATP through respiration.";
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(3, text));
+    const result = segmentPageSentences(text, 80, 3);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ id: "S001", text: "The cell is the basic unit of life." });
+    expect(result[1]).toEqual({ id: "S002", text: "Mitochondria produce ATP through respiration." });
+  });
+
+  it("REQUIRED: the SAME candidate set (text-wise) is produced whether or not the canonical map is used — a pure infrastructure migration, not a content change", () => {
+    const text = "CHAPTER 4 Acid-Base Equilibrium\n\nBuffer solutions resist changes in pH through a weak acid and its conjugate base.";
+    const withoutCanonical = segmentPageSentences(text); // no pageIndex -> fallback path
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(5, text));
+    const withCanonical = segmentPageSentences(text, 80, 5);
+    expect(withCanonical.map(s => s.text)).toEqual(withoutCanonical.map(s => s.text));
+  });
+
+  it("REQUIRED: canonical-path ids are not guaranteed contiguous (they reflect position in the FULL unfiltered enumeration), but every id still resolves correctly via sentencesById", () => {
+    // "CHAPTER 4..." is S001 in the canonical map (retained, tagged
+    // page-furniture/heading) but filtered OUT of the candidate list here —
+    // so the single surviving body sentence is S002, not S001.
+    const text = "CHAPTER 4 Acid-Base Equilibrium\n\nBuffer solutions resist changes in pH through a weak acid and its conjugate base.";
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(7, text));
+    const result = segmentPageSentences(text, 80, 7);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("S002");
+    const map = sentencesById(result);
+    expect(map.get("S002")).toBe(result[0].text);
+  });
+
+  it("REQUIRED: the same sentence keeps the SAME id across repeated calls against the same cached canonical map — the actual id-stability benefit over the always-fresh-and-contiguous fallback", () => {
+    const text = "CHAPTER 4 Acid-Base Equilibrium\n\nBuffer solutions resist changes in pH through a weak acid and its conjugate base.";
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(9, text));
+    const first = segmentPageSentences(text, 80, 9);
+    const second = segmentPageSentences(text, 80, 9);
+    expect(first).toEqual(second);
+  });
+
+  it("falls back to fresh computation when no canonical map exists yet for that pageIndex (extraction still running)", () => {
+    const text = "The cell is the basic unit of life. Mitochondria produce ATP through respiration.";
+    // Registry deliberately left empty for pageIndex 11.
+    const result = segmentPageSentences(text, 80, 11);
+    expect(result[0].id).toBe("S001"); // contiguous fallback numbering
+    expect(result[0].text).toBe("The cell is the basic unit of life.");
+  });
+
+  it("REQUIRED: falls back to fresh computation, never trusting a stale/different-content canonical map, when the registry's fullText does not match rawPageText", () => {
+    const staleText = "This is completely different page content from a stale cached entry.";
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(13, staleText));
+    const currentText = "The cell is the basic unit of life. Mitochondria produce ATP through respiration.";
+    const result = segmentPageSentences(currentText, 80, 13);
+    // Fallback contiguous numbering over the CURRENT text, not anything
+    // derived from the stale cached map.
+    expect(result[0]).toEqual({ id: "S001", text: "The cell is the basic unit of life." });
+    expect(result.every(s => s.text !== staleText)).toBe(true);
+  });
+
+  it("respects maxSentences on the canonical path exactly like the fallback path", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `This is test sentence number ${i} with enough length to count.`).join(" ");
+    CanonicalPageMapRegistry.set(buildCanonicalPageMap(17, many));
+    const result = segmentPageSentences(many, 5, 17);
+    expect(result).toHaveLength(5);
   });
 });
