@@ -33,6 +33,8 @@ import { resolveVisualContext } from "@/lib/insights/resolveVisualContext";
 import { groundSurgeonQuotes, buildSurgeonEvidenceId, type GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import { segmentPageSentences, sentencesById as buildSentencesById } from "@/lib/insights/segmentPageSentences";
 import { limitAnnotationDensity } from "@/lib/highlights/limitAnnotationDensity";
+import { computeHighlightCoverage } from "@/lib/highlights/highlightCoverage";
+import { CanonicalPageMapRegistry } from "@/lib/pdf/canonicalPageMapRegistry";
 import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
 import { computePageContentHash } from "@/lib/insights/pageContentHash";
 import { buildAnnotationCacheKey } from "@/lib/insights/annotationPlanCache";
@@ -210,7 +212,33 @@ export function groundedAnnotationsToHighlightTargets(
       sourceSentenceId:      g.groundingState === "sentenceId" ? g.sentenceId : undefined,
       sourceCharStart:       g.sourceCharStart,
       sourceCharEnd:         g.sourceCharEnd,
+      spanScope:             g.spanScope,
     };
+  });
+}
+
+// Item 4C-5a: DEV-only diagnostic. Logs which of this page's canonical body
+// sentences the final, density-limited highlight set actually accounts
+// for. Never throws, never blocks — computeHighlightCoverage returns null
+// (silently skipped) when the canonical map isn't available/consistent
+// yet for this exact pageText, e.g. extraction still running.
+//
+// Takes pageNumber (1-based, this file's only page-identity convention)
+// and adjusts to CanonicalPageMapRegistry's 0-based registry key
+// internally, the same -1 done inline at this file's other two
+// segmentPageSentences() call sites — never stored as a separate field.
+function logHighlightCoverage(pageNumber: number, pageText: string, targets: HighlightTarget[]): void {
+  if (!DEV) return;
+  const report = computeHighlightCoverage(CanonicalPageMapRegistry.get(pageNumber - 1), pageText, targets);
+  if (!report) return;
+  console.log("[HIGHLIGHT_COVERAGE]", {
+    pageNumber,
+    auditedSentenceCount: report.auditedSentenceCount,
+    highlightedCount: report.highlightedCount,
+    unaccountedCount: report.unaccountedCount,
+    unaccounted: report.sentences
+      .filter(s => s.status === "unaccounted")
+      .map(s => ({ id: s.sentenceId, text: s.text.slice(0, 80) })),
   });
 }
 
@@ -384,6 +412,7 @@ export function useSurgeonAnnotations({
             returnedAnnotationCount: stored.plan.annotations.length,
             groundedCount: targets.length,
           });
+          logHighlightCoverage(pageNumberRef.current, pageTextRef.current, targets);
         }
       } catch {
         // IDB unavailable or lookup failed — not fatal, Effect B will fetch fresh.
@@ -602,6 +631,7 @@ export function useSurgeonAnnotations({
           groundedCount: targets.length,
           hasVisualContext: visualContext !== null,
         });
+        logHighlightCoverage(pageNumberRef.current, pageTextRef.current, targets);
       } catch (err: any) {
         if (ctrl.signal.aborted) return;
         // No HTTP response ever arrived — the failure never reached the

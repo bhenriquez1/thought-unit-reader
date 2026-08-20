@@ -156,6 +156,13 @@ export interface HighlightTarget {
    *  surface). */
   sourceCharStart?: number;
   sourceCharEnd?: number;
+  /** SurgeonAnnotationPlan span scope — "fullSentence" (the default) covers
+   *  a whole proposition; "entity" is a deliberate sub-sentence fragment
+   *  (a single term/formula/drug name). Item 4C-5a's coverage auditor uses
+   *  this to avoid counting an entity fragment as covering its whole
+   *  containing sentence. Undefined for targets from the older
+   *  highlightAnchors/ExpertAnchor pipeline, which never set it. */
+  spanScope?: import("./insights/pageAnnotationPlan").SpanScope;
 }
 
 export interface ParagraphSignal {
