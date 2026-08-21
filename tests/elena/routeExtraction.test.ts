@@ -69,7 +69,7 @@ describe("pages/index.tsx — Elena shell-tab wiring is fully removed", () => {
     expect(line).not.toMatch(/"elena"/);
   });
 
-  it("REQUIRED: the nav-elena button navigates to the real /elena route, mirroring the Exam Forge button's router.push pattern, not a shell-tab switch", () => {
+  it("REQUIRED: the nav-elena button navigates to the real /elena route, mirroring the TestLab button's router.push pattern, not a shell-tab switch", () => {
     const idx = src.indexOf('data-testid="nav-elena"');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(Math.max(0, idx - 300), idx);

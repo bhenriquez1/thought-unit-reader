@@ -368,7 +368,7 @@ export default function ExamResultsPage() {
       <div className="bg-gray-800/90 border-b border-gray-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-blue-400">📊 Avrrio Exam Forge Results</h1>
+            <h1 className="text-2xl font-bold text-blue-400">📊 Avrrio TestLab Results</h1>
             <p className="text-gray-300 text-sm mt-1">
               Completed: {new Date(results.attempt.endTime || '').toLocaleString()}
             </p>

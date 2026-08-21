@@ -6112,13 +6112,13 @@ export default function ThoughtUnitReader() {
               ) : null}
               <div className="rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/50 to-slate-900/60 p-5 text-center">
                 <div className="text-3xl mb-3">🎯</div>
-                <div className="text-sm font-semibold text-slate-200">Avrrio Exam Forge — Practice Exams</div>
+                <div className="text-sm font-semibold text-slate-200">Avrrio TestLab — Practice Exams</div>
                 <div className="text-xs text-slate-500 mt-1">Full-length simulations with section scoring</div>
                 <button
                   onClick={() => { router.push("/apex"); }}
                   className="mt-4 px-5 py-2 rounded-lg bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 text-xs font-semibold hover:bg-indigo-600/60 transition-colors"
                 >
-                  Open Exam Forge →
+                  Open TestLab →
                 </button>
               </div>
             </div>
@@ -6426,15 +6426,15 @@ export default function ThoughtUnitReader() {
           <button
             onClick={() => {
               if (focusSoftLock && focusState.running) {
-                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for Exam Forge?");
+                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for TestLab?");
                 if (!ok) return;
               }
               router.push("/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
-            title="Open Exam Forge"
+            title="Open Avrrio TestLab"
           >
-            🎯 Exam Forge
+            🎯 TestLab
           </button>
           <button
             onClick={() => {

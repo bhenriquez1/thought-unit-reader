@@ -1,5 +1,5 @@
 // lib/examEngine/profileGeneration.ts
-// Seam between the Exam Forge/TestLab dashboard and its question source.
+// Seam between the TestLab dashboard and its question source.
 //
 // Product-split Phase 1, item 1: this wrapper used to delegate to the legacy
 // static question bank (lib/apex/examGenerator.ts, public/questions.json) —

@@ -795,7 +795,7 @@ export default function DatApexPage() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio Exam Forge <span className="text-blue-300 font-bold">— DAT</span></h1>
+            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio TestLab <span className="text-blue-300 font-bold">— DAT</span></h1>
             <p className="text-xs text-blue-200 mt-0.5">
               Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
             </p>
