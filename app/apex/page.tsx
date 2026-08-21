@@ -13,7 +13,26 @@ import { generateWeakTopicsPracticeExam, generateFullSimulationExam } from "@/li
 import { savePendingExam } from "@/lib/db/examStore";
 import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 import { safeSetItem } from "@/lib/storage/safeStorage";
+import { getUserBookCatalogue } from "@/lib/apex/bookCatalogue";
+import type { CatalogueBook } from "@/lib/apex/bookCatalogue";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
+
+/** Loads the student's book catalogue (books with Reader notes) and returns
+ *  the "primary" one (most notes) to generate from, or null if none exist
+ *  yet — used by both TodayTab and FullExamsTab to gate book-grounded
+ *  generation, mirroring app/apex/generator/page.tsx's own catalogue load. */
+function usePrimaryApexBook(): { primaryBook: CatalogueBook | null; loaded: boolean } {
+  const [books, setBooks] = useState<CatalogueBook[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getUserBookCatalogue()
+      .then((b) => { if (alive) { setBooks(b); setLoaded(true); } })
+      .catch(() => { if (alive) { setBooks([]); setLoaded(true); } });
+    return () => { alive = false; };
+  }, []);
+  return { primaryBook: books[0] ?? null, loaded };
+}
 
 /* ─── Tab config ──────────────────────────────────────────────────────────── */
 
@@ -59,12 +78,15 @@ function TodayTab() {
     cancelRef.current = false;
     return () => { cancelRef.current = true; };
   }, []);
+  const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
 
   const handleStartRecommended = useCallback(async () => {
-    if (!currentRecommendation) return;
+    if (!currentRecommendation || !primaryBook) return;
     setLaunching(true);
     try {
       const exam = await generateWeakTopicsPracticeExam(
+        primaryBook.bookId,
+        primaryBook.bookTitle,
         patterns,
         currentRecommendation.targetPatterns,
         20,
@@ -79,7 +101,7 @@ function TodayTab() {
     } catch {
       if (!cancelRef.current) setLaunching(false);
     }
-  }, [currentRecommendation, patterns, adaptiveDifficulty, router]);
+  }, [currentRecommendation, primaryBook, patterns, adaptiveDifficulty, router]);
 
   const bp         = ACTIVE_DAT_BLUEPRINT;
   const totalItems = totalBlueprintItems(bp);
@@ -168,12 +190,18 @@ function TodayTab() {
                 )}
                 <button
                   onClick={handleStartRecommended}
-                  disabled={launching}
+                  disabled={launching || !primaryBook}
+                  title={!primaryBook && booksLoaded ? "Open a PDF in the Reader and let it synthesize a few pages first" : undefined}
                   className="ml-auto px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors"
                 >
                   {launching ? "Loading…" : "Start Now"}
                 </button>
               </div>
+              {!primaryBook && booksLoaded && (
+                <p className="text-xs text-gray-400 mt-2">
+                  No book with notes yet — questions are generated from your own book. Open a PDF in the Reader and let it synthesize a few pages, then come back.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -326,6 +354,7 @@ function FullExamsTab() {
     cancelRef.current = false;
     return () => { cancelRef.current = true; };
   }, []);
+  const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
 
   // Check if there's a paused exam in localStorage
   useEffect(() => {
@@ -333,10 +362,11 @@ function FullExamsTab() {
   }, []);
 
   const handleStartSimulation = useCallback(async (prometric: boolean) => {
+    if (!primaryBook) return;
     setSeeding(true);
     setSeedError(null);
     try {
-      const exam = await generateFullSimulationExam();
+      const exam = await generateFullSimulationExam(primaryBook.bookId, primaryBook.bookTitle);
       if (cancelRef.current) return;
       const examId = `simulation-${Date.now()}`;
       await savePendingExam(examId, exam);
@@ -349,7 +379,7 @@ function FullExamsTab() {
         setSeeding(false);
       }
     }
-  }, [router]);
+  }, [primaryBook, router]);
 
   const handleResume = useCallback(() => {
     const progress = localStorage.getItem("examProgress");
@@ -421,17 +451,23 @@ function FullExamsTab() {
 
         {seedError && <p className="mb-3 text-sm text-red-400">{seedError}</p>}
 
+        {!primaryBook && booksLoaded && (
+          <p className="mb-3 text-sm text-gray-400">
+            No book with notes yet — questions are generated from your own book, never a generic bank. Open a PDF in the Reader and let it synthesize a few pages, then come back.
+          </p>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={() => handleStartSimulation(false)}
-            disabled={seeding}
+            disabled={seeding || !primaryBook}
             className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
           >
             {seeding ? "⏳ Preparing…" : "Start Practice Simulation"}
           </button>
           <button
             onClick={() => handleStartSimulation(true)}
-            disabled={seeding}
+            disabled={seeding || !primaryBook}
             title="No pausing, section-locked — mirrors the real DAT testing center"
             className="flex-1 py-3 bg-gradient-to-r from-red-700 to-rose-700 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
           >
