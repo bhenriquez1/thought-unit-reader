@@ -9,7 +9,7 @@ import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
 import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
-import { buildUltraPageView, adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
+import { buildUltraPageView, adaptPageInsightModel, isValidCoreParagraph, type UltraPageView } from "@/lib/insights/buildUltraPageView";
 import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
@@ -55,6 +55,13 @@ export type ActivePageIntelligenceSnapshot = {
   priorityHighlights: ExtractPriorityHighlightsResult;
   normResult: ClinicalNormalizationResult | null;
   pageRole?: string; // from detectPageRole: "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy"
+  /** Heuristic-only page view (no AI synthesis) — the same computation RightPanel.tsx
+   *  makes for the reader tab, exposed unconditionally so callers outside the reader
+   *  tab can build a headless CurrentPageStudyModel via buildStudyModel(ultraPageView, {}, ...).
+   *  Optional: RightPanel's own `intelligence` prop (a hand-assembled subset of this
+   *  type — see pages/index.tsx's intelligenceSnapshot) doesn't carry it, since
+   *  RightPanel already computes its own ultraPageView independently. */
+  ultraPageView?: UltraPageView | null;
 };
 
 interface UseActivePageIntelligenceArgs {
@@ -568,6 +575,18 @@ export function useActivePageIntelligence({
         : "content_page",
   });
 
+  // The same heuristic view RightPanel.tsx computes for the reader tab
+  // (buildUltraPageView(pageModel, {existingNormResult: normResult})) — hoisted
+  // here, unconditional on shouldRenderFullPanel, so a headless caller (any
+  // shell tab other than "reader") can build a heuristic-only CurrentPageStudyModel
+  // without RightPanel ever mounting. Not gated on isCurrentPage: callers that
+  // need only-the-current-page semantics already get that from pageModel itself
+  // (staleness-guarded upstream in this hook's requestKey pipeline).
+  const ultraPageView = useMemo(() => {
+    if (!pageModel) return null;
+    return buildUltraPageView(pageModel, { existingNormResult: normResult ?? undefined });
+  }, [pageModel, normResult]);
+
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
 
@@ -609,7 +628,7 @@ export function useActivePageIntelligence({
     // anchors. We call buildUltraPageView here to get the surviving concept IDs, then
     // filter allConcepts to match — preserving the raw ConceptBlockInput data (support
     // sentences, trapCandidates) needed by buildHighlightNeighborhoods.
-    const ultraView = buildUltraPageView(pageModel, { existingNormResult: normResult });
+    const ultraView = ultraPageView;
     const activeIds = new Set(ultraView?.blocks.map(b => b.conceptId) ?? []);
 
     // If ultraView returned blocks, use only those concepts. Fall back to all concepts
@@ -691,7 +710,7 @@ export function useActivePageIntelligence({
     }
 
     return neighborhoods;
-  }, [pageModel, pageNumber, normResult, documentId]);
+  }, [pageModel, pageNumber, normResult, documentId, ultraPageView]);
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     if (!normResult?.shouldRenderFullPanel) return [];
@@ -766,6 +785,7 @@ export function useActivePageIntelligence({
     confidence,
     pageRole: signals.pageRole ?? undefined,
     pageViewType: derivePageViewType(pageClass, normResult),
+    ultraPageView,
   };
 }
 

@@ -73,6 +73,7 @@ import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/componen
 import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
+import { buildStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
@@ -2017,6 +2018,7 @@ export default function ThoughtUnitReader() {
     pageRole: currentPageRole,
     confidence: currentConfidence,
     formulaSignals,
+    ultraPageView: currentUltraPageView,
   } = useActivePageIntelligence({
     documentId: resolvedDocumentId,
     pageNumber: currentPage,
@@ -2046,6 +2048,24 @@ export default function ThoughtUnitReader() {
   // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
+
+  // Heuristic-only fallback for currentPageStudyModel — gives NoteLab/Learning Hub/
+  // Recall/Podcast/Study Guide a valid study model for a page even when the Reader
+  // tab (the only mounter of RightPanel, the sole producer of AI-enriched models via
+  // handleStudyModelReady) has never been opened for it. ultraPageView is the same
+  // heuristic computation RightPanel makes, now unconditional on activeShellTab (see
+  // useActivePageIntelligence's ultraPageView). buildStudyModel handles an empty
+  // synth object safely (RightPanel.tsx makes the identical call with a real synth).
+  // Only fills when nothing has claimed this page's model yet (prev === null, reset
+  // by the [bookId, currentPage] effect above) — never clobbers a model RightPanel
+  // already resolved (heuristic or AI-enriched) for the current page.
+  useEffect(() => {
+    if (!currentUltraPageView || !isCurrentIntelligencePage) return;
+    setCurrentPageStudyModel((prev) => {
+      if (prev) return prev;
+      return buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId);
+    });
+  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage]);
 
   // ── SurgeonAnnotationPlan: OpenAI reads the current page fresh, Avrrio draws it ──
   // Captured page image (hidden fixed-scale render, decoupled from zoom) — see
