@@ -124,11 +124,10 @@ import {
   uploadPDF,
   getPDFLibrary,
   deletePDF,
-  listenForAuthChanges,
   signInWithGoogle,
   signOutUser,
-  handleRedirectResult,
 } from "@/lib/firebase";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
 
 import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
@@ -553,7 +552,11 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 State
   ========================================================================= */
-  const [user, setUser] = useState<any>(null);
+  // Product-split Phase 2: shared hook (also used by pages/_app.tsx) instead
+  // of this component's own separate listenForAuthChanges subscription and
+  // dev-bypass mock user, which had drifted from lib/firebase.ts's own
+  // internal bypass handling — see lib/auth/useAuthUser.ts.
+  const { user } = useAuthUser();
   const USER_ID = user?.uid || "guest-user";
 
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
@@ -2482,29 +2485,6 @@ export default function ThoughtUnitReader() {
     showPanel: false,
   });
   const [smartTOC, setSmartTOC] = useState<SmartTOCEntry[]>([]);
-
-  /* =========================================================================
-     🔹 Auth Listener + complete redirect
-  ========================================================================= */
-  useEffect(() => {
-    // Check if bypass mode is enabled
-    const isBypassMode = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-    
-    if (isBypassMode) {
-      // Create a mock user for guest mode
-      const mockUser = {
-        uid: "guest-user-" + Date.now(),
-        displayName: "Guest User",
-        email: "guest@local",
-        photoURL: null,
-      };
-      DEV && console.log("✅ Bypass mode enabled - using mock user");
-      setUser(mockUser as any);
-    } else {
-      handleRedirectResult().catch(() => {});
-      return listenForAuthChanges((u) => setUser(u));
-    }
-  }, []);
 
   /* =========================================================================
      🔹 Initialize Chapter Absorption Pipeline
