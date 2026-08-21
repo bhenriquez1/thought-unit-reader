@@ -1,4 +1,4 @@
-export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'elena' | 'podcast' | 'studyguide' | 'studyplan';
+export type WorkspaceMode = 'reader' | 'toc' | 'syllabus' | 'notelab' | 'study' | 'podcast' | 'studyguide' | 'studyplan';
 
 /**
  * Determines how the Reader, Whiteboard, and AI responses are framed.

@@ -32,7 +32,6 @@ import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore"
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
-import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -689,13 +688,7 @@ export default function ThoughtUnitReader() {
   const [syllabusStudyPlan, setSyllabusStudyPlan] = useState<StudyDay[]>(() => {
     try { return JSON.parse(localStorage.getItem("syllabus_plan") ?? "[]"); } catch { return []; }
   });
-  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("avrrio-shell-tab");
-      if (saved === "elena") return "elena" as WorkspaceMode;
-    }
-    return "reader" as WorkspaceMode;
-  });
+  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader" as WorkspaceMode);
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
@@ -1462,7 +1455,7 @@ export default function ThoughtUnitReader() {
     if (!restored) return;
 
     setViewMode(
-      ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study" || restored.viewMode === "elena")
+      ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study")
         ? restored.viewMode
         : "reader") as WorkspaceMode
     );
@@ -1812,7 +1805,7 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus", "podcast", "elena"].includes(tab);
+    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
@@ -5143,14 +5136,7 @@ export default function ThoughtUnitReader() {
       currentPriorityHighlights, currentNormResult, currentPageRole]);
 
   const renderContent = () => {
-    // Elena Mode uses browser-local IndexedDB — no Firebase auth required
-    if (activeShellTab === "elena") {
-      // Elena Mode owns its own upload/library/reading-position state (E2) —
-      // it no longer mirrors whatever the adult Reader tab has open.
-      return <ElenaChildWorkspace />;
-    }
-
-    // 🔐 All other tabs require sign-in
+    // 🔐 All tabs require sign-in
     if (!user) {
       return (
         <div className="flex items-center justify-center h-full">
@@ -6451,16 +6437,18 @@ export default function ThoughtUnitReader() {
             🎯 Exam Forge
           </button>
           <button
-            onClick={() => trySwitchShellTab("elena", "elena")}
+            onClick={() => {
+              if (focusSoftLock && focusState.running) {
+                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for Elena?");
+                if (!ok) return;
+              }
+              router.push("/elena");
+            }}
             data-testid="nav-elena"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
-              activeShellTab === "elena"
-                ? "bg-violet-700 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-            title="Elena Mode — personalized child learning"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
+            title="Elena — personalized child learning"
           >
-            ✨ Elena Mode
+            ✨ Elena
           </button>
                   </div>
 
