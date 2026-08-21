@@ -15,6 +15,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 import { resolveTargetGeometry, resolveWordGeometry } from "@/lib/pdf/resolveAnchorGeometry";
 import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
+import { extractPageText, renderPdfPageToDataUrl, shouldUseOCR } from "@/lib/page-intelligence/extractor";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -31,94 +32,8 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// focusSnippet matching helpers
+// focusSnippet auto-scroll helpers
 // ---------------------------------------------------------------------------
-
-function normForMatch(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[­​-‍﻿]/g, '')   // zero-width / soft-hyphen
-    .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')       // common ligatures
-    .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl')
-    .replace(/['']/g, "'").replace(/[""]/g, '"')    // smart quotes
-    .replace(/[–—]/g, '-')                          // dashes
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Punctuation-stripped variant of normForMatch, matching the normalization
- * used for AI-highlight-anchor matching (see normForConcat/spanNorm below).
- * Used as a fallback when exact punctuation-sensitive matching fails, so
- * snippet/click/speech matching tolerates punctuation differences the same
- * way AI-anchor matching already does.
- */
-function stripPunctForMatch(s: string): string {
-  return normForMatch(s).replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Finds the best span element in the PDF text layer for the given snippet.
- * Strategy 1: single-span substring (fast path for short snippets / exact OCR).
- * Strategy 2: multi-span sliding window — concatenate 4 adjacent spans and check
- *             if the window contains the first 5 words of the query (handles
- *             cases where one sentence spans multiple text-run spans).
- * Strategy 3: token-overlap fallback — find the 4-span window with the highest
- *             fraction of query words (handles OCR variants / reordered text).
- */
-function findSpanForSnippetWithNorm(
-  spans: HTMLElement[],
-  snippet: string,
-  norm: (s: string) => string,
-): HTMLElement | null {
-  const q = norm(snippet);
-  if (q.length < 8) return null;
-
-  // Strategy 1 — single span substring
-  const n40 = q.slice(0, 40);
-  const n20 = q.slice(0, 20);
-  const hit1 = spans.find(s => norm(s.textContent || '').includes(n40))
-    ?? spans.find(s => norm(s.textContent || '').includes(n20));
-  if (hit1) return hit1;
-
-  // Strategy 2 — multi-span window: first 5 words of the query.
-  // Window increased from 4 → 10 spans because PDF text layers often split one
-  // sentence across 10–20 individual word/character spans.
-  const firstWords = q.split(/\s+/).slice(0, 5).join(' ');
-  if (firstWords.length >= 10) {
-    for (let i = 0; i < spans.length - 1; i++) {
-      const win = spans.slice(i, i + 10).map(s => norm(s.textContent || '')).join(' ');
-      if (win.includes(firstWords)) return spans[i];
-    }
-  }
-
-  // Strategy 3 — token-overlap across 10-span windows
-  const qWords = q.split(/\s+/).filter(w => w.length > 3);
-  if (qWords.length < 3) return null;
-  let bestSpan: HTMLElement | null = null;
-  let bestScore = 0;
-  for (let i = 0; i < spans.length; i++) {
-    const win = spans.slice(i, i + 10).map(s => norm(s.textContent || '')).join(' ');
-    const overlap = qWords.filter(w => win.includes(w)).length;
-    const score = overlap / qWords.length;
-    if (score > bestScore) { bestScore = score; bestSpan = spans[i]; }
-  }
-  return bestScore >= 0.45 ? bestSpan : null;
-}
-
-/**
- * Finds the best span element in the PDF text layer for the given snippet.
- * Tries punctuation-sensitive matching first (normForMatch), then falls back
- * to punctuation-stripped matching (stripPunctForMatch) so snippets that
- * differ only in punctuation/quoting still resolve — matching the tolerance
- * AI-highlight-anchor matching already gets via normForConcat/spanNorm.
- */
-function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement | null {
-  return (
-    findSpanForSnippetWithNorm(spans, snippet, normForMatch)
-    ?? findSpanForSnippetWithNorm(spans, snippet, stripPunctForMatch)
-  );
-}
 
 /** True when `el` is already fully visible within `container`'s viewport —
  *  used to gate auto-scroll so the reading marker doesn't yank the page on
@@ -611,6 +526,12 @@ export default function SmartPDFViewer({
   // Hidden fixed-scale render used only for SurgeonAnnotationPlan image capture —
   // separate from the visible/zoomed canvas so effectiveZoom never affects it.
   const captureContainerRef = useRef<HTMLDivElement>(null);
+  // Sentence-focus marker (stabilization fix) — the resolved rect backing
+  // focusSnippet's auto-scroll/highlight, via resolveTargetGeometry (the
+  // SAME canonical TextLayerRegistry-backed resolver highlights and the
+  // word marker use), never an independent DOM text-layer search.
+  const sentenceFocusMarkerRef = useRef<HTMLDivElement>(null);
+  const [sentenceFocusRect, setSentenceFocusRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const paragraphScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Scroll → active paragraph detection (no DOM overlays, no IntersectionObserver overhead)
@@ -686,49 +607,51 @@ export default function SmartPDFViewer({
     };
   }, [isPageChanging, onActiveParagraphChange]);
 
+  // Stabilization fix: resolve focusSnippet through the SAME canonical
+  // TextLayerRegistry-backed resolver (resolveTargetGeometry) that
+  // highlights and the word marker already use — not an independent
+  // 0.45-score fuzzy DOM-span matcher. resolveTargetGeometry only returns
+  // rects once the FULL quote is verified word-by-word at the found
+  // position (see resolveAnchorGeometry.ts's verifyFullQuoteMatch); when it
+  // can't prove an exact/normalized location, rects is empty and this
+  // effect does nothing — no fallback guess, no jump to a wrong sentence.
   useEffect(() => {
-    if (!focusSnippet) return;
-    const container = viewerRef.current;
-    if (!container) return;
-    if (focusSnippet.trim().length < 8) return;
-    const spans = Array.from(container.querySelectorAll(
-      '.react-pdf__Page__textContent span, .textLayer span'
-    )) as HTMLElement[];
-    if (!spans.length) return;
-
-    const target = findSpanForSnippet(spans, focusSnippet);
-
+    if (!focusSnippet || focusSnippet.trim().length < 8) { setSentenceFocusRect(null); return; }
+    const resolved = resolveTargetGeometry(currentPage - 1, focusSnippet, effectiveZoom);
+    const rects = resolved.rects;
     console.log("[FOCUSSNIPPET_MATCH]", {
-      snippet:       focusSnippet.slice(0, 60),
-      matched:       !!target,
-      spansSearched: spans.length,
-    });
-    console.log("[TRACE focusSnippet]", {
-      snippet: focusSnippet.slice(0, 70),
-      spansSearched: spans.length,
-      matched: !!target,
-      matchedText: target ? (target.textContent || '').slice(0, 50) : null,
+      snippet:          focusSnippet.slice(0, 60),
+      matched:          rects.length > 0,
+      source:           resolved.source,
+      boundaryComplete: resolved.boundaryComplete,
     });
 
-    if (!target) return;
-    // REQUIRED (Reader stabilization fix #4): auto-scroll only when the active
-    // text has actually left the viewport — not on every sentence tick.
-    if (!isFullyVisibleInContainer(target, container)) {
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-    target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
+    if (rects.length === 0) { setSentenceFocusRect(null); return; }
+    const r = rects[0];
+    setSentenceFocusRect({ top: r.y, left: r.x, width: r.w, height: r.h });
 
     // While speech is actively reading (focusHighlightPersist), keep this sentence
-    // highlighted until the next sentence's focusSnippet replaces it — the cleanup
-    // below removes it then. Otherwise (one-off "Focus" clicks), auto-clear after 2.2s.
-    if (focusHighlightPersist) {
-      return () => target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
-    }
-    const timer = window.setTimeout(() => {
-      target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
-    }, 2200);
+    // highlighted until the next sentence's focusSnippet replaces it. Otherwise
+    // (one-off "Focus" clicks), auto-clear after 2.2s.
+    if (focusHighlightPersist) return;
+    const timer = window.setTimeout(() => setSentenceFocusRect(null), 2200);
     return () => window.clearTimeout(timer);
-  }, [focusSnippet, currentPage, focusHighlightPersist]);
+  }, [focusSnippet, currentPage, effectiveZoom, focusHighlightPersist]);
+
+  // Auto-scroll the resolved sentence marker into view — only when it has
+  // actually left the viewport, not on every sentence tick. Drives off the
+  // real marker element's own getBoundingClientRect() via scrollIntoView,
+  // same mechanism the prior DOM-span implementation used, just anchored to
+  // a canonically-resolved position instead of a fuzzy-matched span.
+  useEffect(() => {
+    if (!sentenceFocusRect) return;
+    const marker = sentenceFocusMarkerRef.current;
+    const container = viewerRef.current;
+    if (!marker || !container) return;
+    if (!isFullyVisibleInContainer(marker, container)) {
+      marker.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [sentenceFocusRect]);
 
   useEffect(() => {
     const container = viewerRef.current;
@@ -1276,6 +1199,86 @@ export default function SmartPDFViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasError]);
 
+  // ── OCR fallback (stabilization fix) ────────────────────────────────────
+  // onGetTextSuccess below only ever sees the PDF.js NATIVE text layer — a
+  // scanned/image-only page returns near-empty items and there is no OCR
+  // call anywhere on that path, so such a page silently never gets a
+  // pageText at all (the root cause traced in the verification audit).
+  // Reuses the EXISTING OCR engine (lib/page-intelligence/extractor.ts,
+  // tesseract.js + IDB cache) rather than a new one, and writes its result
+  // through the exact same onPageTextExtracted(pageNumber, text) callback
+  // the native path already uses — so OCR output enters the same canonical
+  // pageText -> annotation planning -> grounding -> highlights pipeline,
+  // never a parallel one.
+  //
+  // Always current page identity — read inside the OCR completion handler
+  // (which resolves well after this render) so a result for a page the
+  // student has since navigated away from is provably stale, not inferred
+  // from a possibly-stale closed-over value.
+  const livePageIdentityRef = useRef({ page: currentPage, pageTruthKey });
+  useEffect(() => {
+    livePageIdentityRef.current = { page: currentPage, pageTruthKey };
+  }, [currentPage, pageTruthKey]);
+
+  // Single in-flight OCR run at a time — aborted whenever the page/document
+  // identity moves on, so a slow OCR/Tesseract pass for a page the student
+  // already left never lands. Native-text extraction is unaffected; this
+  // only cancels the OCR fallback's own async work.
+  const ocrAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      ocrAbortRef.current?.abort();
+      ocrAbortRef.current = null;
+    };
+  }, [currentPage, docId, pageTruthKey]);
+
+  // Keys already attempted this session (docId:pageNumber) — extractPageText
+  // itself checks the IDB cache before running Tesseract, so a repeat call
+  // is cheap, but this still prevents rapid duplicate onGetTextSuccess fires
+  // (react-pdf can refire on the same page) from starting concurrent
+  // Tesseract runs for the same page.
+  const ocrAttemptedKeysRef = useRef<Set<string>>(new Set());
+
+  const attemptOcrFallback = useCallback(async (nativeText: string) => {
+    if (!docId || !pdfDocument) return; // OCR cache is keyed by docId — never OCR without one
+    if (!shouldUseOCR(nativeText)) return; // native text layer already usable — never OCR a normal text PDF
+
+    const requestPage = currentPage;
+    const requestPageTruthKey = pageTruthKey;
+    const requestKey = `${docId}:${requestPage}`;
+    if (ocrAttemptedKeysRef.current.has(requestKey)) return;
+    ocrAttemptedKeysRef.current.add(requestKey);
+
+    ocrAbortRef.current?.abort();
+    const controller = new AbortController();
+    ocrAbortRef.current = controller;
+
+    try {
+      const result = await extractPageText({
+        pageNumber: requestPage,
+        docId,
+        getNativeText: async () => nativeText,
+        getPageImageDataUrl: () => renderPdfPageToDataUrl(pdfDocument, requestPage, 2.0),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      const live = livePageIdentityRef.current;
+      if (live.page !== requestPage || live.pageTruthKey !== requestPageTruthKey) {
+        console.log("[OCR_STALE_RESULT_REJECTED]", { requestPage, currentPage: live.page });
+        return;
+      }
+      const ocrText = result.mergedText ?? "";
+      if (ocrText.length > 20) {
+        console.log("[OCR_FALLBACK_APPLIED]", { page: requestPage, source: result.source, confidence: result.confidence, chars: ocrText.length });
+        onPageTextExtracted?.(requestPage, ocrText);
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      console.error("[SmartPDFViewer] OCR fallback failed:", err);
+      ocrAttemptedKeysRef.current.delete(requestKey); // allow a later retry (e.g. user returns to this page)
+    }
+  }, [docId, pdfDocument, currentPage, pageTruthKey, onPageTextExtracted]);
+
   // Enhanced sync integration
   const { 
     setPage, 
@@ -1771,6 +1774,11 @@ export default function SmartPDFViewer({
                   if (text.length > 20) {
                     console.log("[PARENT_WRITE:SmartPDFViewer] onPageTextExtracted page=" + currentPage + " chars=" + text.length);
                     onPageTextExtracted(currentPage, text);
+                  } else {
+                    // Native PDF.js text layer produced (near-)nothing — a scanned/
+                    // image-only page. Fall back to OCR rather than leaving this
+                    // page's text permanently empty.
+                    void attemptOcrFallback(text);
                   }
                 }}
               />
@@ -1806,6 +1814,26 @@ export default function SmartPDFViewer({
                 viewportScale={effectiveZoom}
                 pageRenderKey={pageRenderKey}
               />
+
+              {/* Sentence-focus marker — canonical-geometry replacement for the
+                  old fuzzy DOM-span match. Positioned exactly like WordRectOverlay's
+                  own marker (same coordinate space), used both as the visual
+                  highlight and as the real element scrollIntoView targets. */}
+              {sentenceFocusRect && (
+                <div
+                  ref={sentenceFocusMarkerRef}
+                  aria-hidden
+                  className="pointer-events-none absolute z-20 rounded transition-all duration-150"
+                  style={{
+                    top: sentenceFocusRect.top,
+                    left: sentenceFocusRect.left,
+                    width: sentenceFocusRect.width,
+                    height: sentenceFocusRect.height,
+                    background: "rgba(253,224,71,0.35)",
+                    boxShadow: "0 0 0 2px rgba(253,224,71,0.9)",
+                  }}
+                />
+              )}
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}
               {prefetchPage !== null && (

@@ -16,6 +16,7 @@ import { detectFormulaLines } from "./formulaNormalizer";
 import { segmentParagraphs } from "@/lib/paragraphSegmentation";
 import { scoreParagraphs } from "@/lib/paragraphScoring";
 import { suppressFiller, selectTopSignals } from "@/lib/fillerFilter";
+import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 
 const hasAny = (text: string, words: string[]) => words.some((w) => text.includes(w));
 
@@ -163,16 +164,15 @@ export function extractPageSignals(ctx: ActivePageContext, options?: { minYield?
   const _bodyLines = lines.filter(l => l.length > 45);
   const _figureCaptionCount = lines.filter(l => /^(figure|fig\.?|table|plate|diagram)\s*[\d.]/i.test(l)).length;
   const _instructionalSentenceCount = lines.filter(l => l.length > 60 && /[.!?]$/.test(l)).length;
-  const BLOCKED_ROLES_SET = new Set(["chapter_opener", "section_opener", "unit_opener", "learning_objectives", "cover", "title_page", "contents", "glossary", "index", "bibliography", "appendix", "copyright_frontmatter", "image_scan_heavy"]);
   console.log("[PAGE_CLASSIFY]", {
     page:                     ctx.pageNumber,
     pageRole,
-    reason:                   BLOCKED_ROLES_SET.has(pageRole ?? "") ? "blocked-structural" : "instructional",
+    reason:                   isNoninstructionalPage(pageRole) ? "blocked-structural" : "instructional",
     bodyTextChars:            _bodyLines.join(" ").length,
     instructionalSentenceCount: _instructionalSentenceCount,
     figureCaptionCount:       _figureCaptionCount,
     lineGroups:               lines.length,
-    blocked:                  BLOCKED_ROLES_SET.has(pageRole ?? ""),
+    blocked:                  isNoninstructionalPage(pageRole),
   });
 
   return {

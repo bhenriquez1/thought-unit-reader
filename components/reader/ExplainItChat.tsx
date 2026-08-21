@@ -65,8 +65,19 @@ export default function ExplainItChat({
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Tracks the object URL backing audioRef's current <audio> src, so every
+  // path that stops/replaces/unmounts this component can revoke it — mirrors
+  // the blobUrlRef pattern already correct in StudySpeechPanel.tsx/TldrawCanvas.tsx.
+  const blobUrlRef = useRef<string | null>(null);
   const globalTokenRef = useRef(0);
   const isStartingRef = useRef(false);
+
+  function revokeSpeakAnswerBlobUrl() {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }
 
   const lastAnswer = turns.filter((t) => t.role === "assistant").slice(-1)[0]?.content ?? "";
 
@@ -79,6 +90,7 @@ export default function ExplainItChat({
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      revokeSpeakAnswerBlobUrl();
       SpeechRecognitionAPI.stop();
       if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
         notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
@@ -183,6 +195,7 @@ export default function ExplainItChat({
     if (speaking) {
       stopAllSpeech("explain-it-stop-button");
       audioRef.current = null;
+      revokeSpeakAnswerBlobUrl();
       setSpeaking(false);
       return;
     }
@@ -192,6 +205,9 @@ export default function ExplainItChat({
       return;
     }
     isStartingRef.current = true;
+    // Defensive: never let a new "Speak Answer" replace audioRef.current
+    // while an earlier attempt's object URL is still un-revoked.
+    revokeSpeakAnswerBlobUrl();
     const token = claimSpeech(SPEECH_OWNER);
     globalTokenRef.current = token;
     setTimeout(() => { isStartingRef.current = false; }, 400);
@@ -210,15 +226,18 @@ export default function ExplainItChat({
         const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
         const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
-        const audio = new Audio(URL.createObjectURL(blob));
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
+        const audio = new Audio(blobUrl);
         audioRef.current = audio;
         registerActiveAudio(token, audio, () => {
           audio.pause();
+          revokeSpeakAnswerBlobUrl();
           setSpeaking(false);
         });
         audio.onplay = () => notifySpeechStart(token, SPEECH_OWNER);
-        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
-        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); setSpeaking(false); };
+        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); revokeSpeakAnswerBlobUrl(); setSpeaking(false); };
+        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); revokeSpeakAnswerBlobUrl(); setSpeaking(false); };
         await audio.play();
       } else if (data?.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(data.script || lastAnswer);

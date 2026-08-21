@@ -90,12 +90,29 @@ interface ProfessorAgentDiagnostic {
   nontrivialVisualCount: number; fallbackUsed: boolean;
   fallbackReason: ProfessorAgentFailureReason | null; agentDurationMs: number;
   actualTldrawShapeDelta: number;
+  /** Stabilization item 6 (measure first, don't enforce yet) — total
+   *  verified actions across all passes, how many of those are trivial
+   *  (isNontrivialProfessorAgentAction === false: plain boxes and labels),
+   *  and how many are real freehand/sketch strokes. nontrivialVisualCount
+   *  above is a NARROWER count (nontrivial actions that both verified AND
+   *  actually rendered a tldraw shape) — totalActions/trivialActions here
+   *  are the wider "what did the agent propose" picture nontrivialVisualCount
+   *  alone can't answer. Instrumentation only: nothing reads these to reject
+   *  a response yet. */
+  totalActions: number; trivialActions: number; freehandCount: number;
+  /** nontrivialVisualCount / totalActions (0 when totalActions is 0). A
+   *  response that clears the current nontrivial-floor with one real arrow
+   *  buried among nine generic boxes reports a LOW ratio here even though it
+   *  currently passes — exactly the gap stabilization item 6 asks to
+   *  surface before anyone decides whether to gate on it. */
+  visualRichnessRatio: number;
 }
 const EMPTY_AGENT_DIAGNOSTIC: ProfessorAgentDiagnostic = {
   eligible: false, agentTriggered: false, currentPass: 0, executeActions: 0,
   correctionActions: 0, cameraCommands: 0, nontrivialVisualCount: 0,
   fallbackUsed: false, fallbackReason: null, agentDurationMs: 0,
   actualTldrawShapeDelta: 0,
+  totalActions: 0, trivialActions: 0, freehandCount: 0, visualRichnessRatio: 0,
 };
 
 // ── Tier colors (unchanged semantics: red=danger/trap, gold=master, …) ─────
@@ -810,6 +827,9 @@ export default function TldrawCanvas({
     let correctionActions = 0;
     let cameraCommands = 0;
     let nontrivialVisualCount = 0;
+    let totalActions = 0;
+    let trivialActions = 0;
+    let freehandCount = 0;
     let currentPass = 0;
     setAgentDiagnostic({ ...EMPTY_AGENT_DIAGNOSTIC, eligible: true, agentTriggered: true });
 
@@ -835,6 +855,9 @@ export default function TldrawCanvas({
         if (passIndex === 0) executeActions = verified.actions.length;
         else correctionActions += verified.actions.length;
         cameraCommands += verified.actions.filter(action => action.type === "move-camera").length;
+        totalActions += verified.actions.length;
+        trivialActions += verified.actions.filter(action => !isNontrivialProfessorAgentAction(action)).length;
+        freehandCount += verified.actions.filter(action => action.type === "draw-freehand").length;
         agentLocalIdsByStepRef.current.set(stepId, [
           ...(agentLocalIdsByStepRef.current.get(stepId) ?? []), ...verified.localIds,
         ]);
@@ -856,6 +879,8 @@ export default function TldrawCanvas({
           fallbackUsed: false, fallbackReason: null,
           agentDurationMs: Math.round(performance.now() - startedAt),
           actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
+          totalActions, trivialActions, freehandCount,
+          visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
         });
         if (passIndex === 0 && nontrivialVisualCount === 0) {
           throw new ProfessorAgentRequestError("no_visual_actions");
@@ -876,6 +901,8 @@ export default function TldrawCanvas({
           fallbackUsed: failure.fallbackUsed, fallbackReason,
           agentDurationMs: Math.round(performance.now() - startedAt),
           actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
+          totalActions, trivialActions, freehandCount,
+          visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
         });
         console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
           lessonId: planIdentity, stepId, reason: fallbackReason,
@@ -1736,6 +1763,7 @@ export default function TldrawCanvas({
             agent eligible={String(agentDiagnostic.eligible)} triggered={String(agentDiagnostic.agentTriggered)} pass={agentDiagnostic.currentPass}/{PROFESSOR_AGENT_MAX_PASSES}
             {" · "}exec={agentDiagnostic.executeActions} correct={agentDiagnostic.correctionActions} camera={agentDiagnostic.cameraCommands}
             {" · "}nontrivial={agentDiagnostic.nontrivialVisualCount} shapeΔ={agentDiagnostic.actualTldrawShapeDelta}
+            {" · "}total={agentDiagnostic.totalActions} trivial={agentDiagnostic.trivialActions} freehand={agentDiagnostic.freehandCount} richness={agentDiagnostic.visualRichnessRatio.toFixed(2)}
             {" · "}fallback={String(agentDiagnostic.fallbackUsed)} reason={agentDiagnostic.fallbackReason ?? "none"} duration={agentDiagnostic.agentDurationMs}ms
           </span>
         )}

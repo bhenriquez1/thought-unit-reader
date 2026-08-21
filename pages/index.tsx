@@ -73,6 +73,7 @@ import { getStoredProfessionMode } from "@/lib/notelab/professionModes";
 import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/components/reader/ThoughtUnitNavigator";
 import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
+import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
@@ -168,6 +169,7 @@ import { type SmartTOCEntry } from "@/lib/tocParser";
 import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
+import type { ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
@@ -1084,13 +1086,12 @@ export default function ThoughtUnitReader() {
     //   visualAnchors (meaning it sees instructional content), the local
     //   classifier is wrong — likely a stale ref from the previous page or a
     //   running-header false-positive. Showing AI highlights is always correct.
+    // NON_INSTRUCTIONAL_ROLES used to be defined locally here; it's now
+    // lib/insights/pageRoleGate.ts's isNoninstructionalPage(), the same
+    // canonical gate the Surgeon annotation pipeline uses (see
+    // useSurgeonAnnotations.ts's Effect B) — one definition instead of
+    // three disagreeing ones.
     const NON_INSTRUCTIONAL_TYPES = new Set(["review_checkpoint", "overview"]);
-    const NON_INSTRUCTIONAL_ROLES = new Set([
-      "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
-      "copyright_frontmatter", "contents", "unit_opener", "section_opener",
-      "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
-      "chapter_opener", "learning_objectives",
-    ]);
 
     // Canonical evidence: only real model-backed anchors confirm instructional content —
     // page_text_fallback/model_fallback units are locally generated and must not bypass
@@ -1105,7 +1106,7 @@ export default function ThoughtUnitReader() {
       visualAnchorCountBeforeSkip: visualAnchors.length,
       conceptBlockCount,
       willCheckOpenAIType:  NON_INSTRUCTIONAL_TYPES.has(pageType ?? ""),
-      willCheckLocalRole:   !aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? ""),
+      willCheckLocalRole:   !aiConfirmsInstructional && isNoninstructionalPage(pageRole),
     });
 
     // Tier 1: always respect OpenAI's own type
@@ -1121,7 +1122,7 @@ export default function ThoughtUnitReader() {
     }
 
     // Tier 2: local classifier only when AI found nothing
-    if (!aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+    if (!aiConfirmsInstructional && isNoninstructionalPage(pageRole)) {
       DEV && console.log("[NON_INSTRUCTIONAL_SKIP]", { page: currentPage, reason: "local pageRole + AI found zero anchors", pageType: pageType ?? "none", pageRole: pageRole ?? "none" });
       DEV && console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "local-page-role-structural", pageRole });
       const savedGrounded = groundSavedAnchors(pageText);
@@ -1133,7 +1134,7 @@ export default function ThoughtUnitReader() {
     }
 
     // If AI has anchors but local classifier fired chapter_opener — override logged here
-    if (aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+    if (aiConfirmsInstructional && isNoninstructionalPage(pageRole)) {
       DEV && console.log("[PAGE_CLASSIFY_REASON]", {
         page:    currentPage,
         verdict: "instructional — AI anchors override stale local pageRole",
@@ -2073,6 +2074,7 @@ export default function ThoughtUnitReader() {
     domain:            surgeonPageDomain,
     semanticPack:      activePack,
     existingCanonicalUnits: surgeonExistingUnits,
+    pageRole:          currentPageRole ?? null,
     enabled:           !!bookId && !!fileUrl,
   });
 
@@ -4967,6 +4969,38 @@ export default function ThoughtUnitReader() {
     setShowWhiteboardPanel(true);
   }, []);
 
+  // Closes the Whiteboard/Professor modal. When Professor was active, restores
+  // Current Page speech to wherever Professor was ACTUALLY teaching — the live
+  // grounded source unit (focusedEvidenceId), kept in sync throughout Professor
+  // playback via the shared reading-focus store (TldrawCanvas's
+  // focusDirectorEvidence calls setThoughtUnit on every step advance) — never a
+  // full page restart and never an earlier, unrelated Thought Unit. When no
+  // resolvable unit exists (Professor closed before reaching one), still resets
+  // the speech panel off its now-inactive Professor tab rather than leaving it
+  // stuck there.
+  const closeProfessorWhiteboard = useCallback(() => {
+    const wasProfessor = professorAutoStart;
+    setShowWhiteboardPanel(false);
+    setProfessorAutoStart(false);
+    setWbConcept("");
+    setWbContext("");
+    if (wasProfessor) {
+      const unit = canonicalLeftPanelUnits.find(
+        (u) => u.evidenceRefId === focusedEvidenceId || u.id === focusedEvidenceId
+      );
+      const cursor: ReadingCursor | null = unit?.exactText
+        ? {
+            canonicalAnchorId: unit.evidenceRefId ?? unit.id ?? null,
+            sourcePage: currentPage,
+            sourceText: unit.exactText,
+            sourceWordIndex: 0,
+            sourceCharOffset: 0,
+          }
+        : null;
+      speechPanelRef.current?.returnFromProfessor(cursor);
+    }
+  }, [professorAutoStart, canonicalLeftPanelUnits, focusedEvidenceId, currentPage]);
+
   const handleJumpToUnit = useCallback(
     (id: string) => onPdfHighlightFocus(id),
     [onPdfHighlightFocus]
@@ -6860,7 +6894,7 @@ export default function ThoughtUnitReader() {
             background: professorAutoStart && professorSurface === "pdf" ? "transparent" : "rgba(0,0,0,0.78)",
             pointerEvents: professorAutoStart && professorSurface === "pdf" ? "none" : "auto",
           }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setShowWhiteboardPanel(false); setProfessorAutoStart(false); setWbConcept(""); setWbContext(""); } }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeProfessorWhiteboard(); }}
         >
           {professorAutoStart && professorSurface === "pdf" && (
             <div
@@ -6869,7 +6903,7 @@ export default function ThoughtUnitReader() {
               <span style={{ fontSize: 11, fontWeight: 700 }}>Professor is following the PDF</span>
               <button
                 type="button"
-                onClick={() => { setShowWhiteboardPanel(false); setProfessorAutoStart(false); }}
+                onClick={closeProfessorWhiteboard}
                 style={{ border: 0, borderRadius: 999, padding: "4px 8px", background: "rgba(255,255,255,0.08)", color: "#e2e8f0", fontSize: 10, cursor: "pointer" }}
               >
                 Stop
@@ -6893,7 +6927,7 @@ export default function ThoughtUnitReader() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
               <span className="text-sm font-semibold tracking-wide text-gray-200">{professorAutoStart ? "Professor" : "Whiteboard"}</span>
               <button
-                onClick={() => { setShowWhiteboardPanel(false); setProfessorAutoStart(false); setWbConcept(""); setWbContext(""); }}
+                onClick={closeProfessorWhiteboard}
                 className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
                 aria-label="Close whiteboard"
               >
