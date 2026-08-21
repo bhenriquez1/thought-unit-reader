@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
@@ -115,6 +115,28 @@ function TodayTab() {
 
   return (
     <div className="space-y-6">
+      {/* Setup-flow resequencing: a first-time user (no book with notes yet)
+          sees a clear 3-step path instead of a dashboard full of zeros with
+          no explanation of what to do first. */}
+      {!primaryBook && booksLoaded && (
+        <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl p-6 border border-blue-500/30">
+          <h2 className="text-lg font-bold text-white mb-3">🚀 Get Started</h2>
+          <ol className="space-y-1.5 text-sm text-gray-300 mb-4">
+            <li><span className="font-semibold text-blue-300">1.</span> Open a book in the Reader and let it synthesize a few pages</li>
+            <li><span className="font-semibold text-blue-300">2.</span> Choose DAT or Custom Exam, and pick your book</li>
+            <li><span className="font-semibold text-blue-300">3.</span> Generate a diagnostic to see where you stand</li>
+          </ol>
+          <div className="flex gap-3">
+            <Link href="/" className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-semibold transition-colors">
+              Open Reader
+            </Link>
+            <Link href="/apex/generator" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
+              Build Your First Exam →
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Blueprint snapshot */}
       <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
         <div className="flex items-center justify-between mb-4">
@@ -786,8 +808,18 @@ function HistoryTab() {
 
 /* ─── Page shell ──────────────────────────────────────────────────────────── */
 
-export default function DatApexPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("today");
+// Setup-flow resequencing: lets other pages (e.g. app/apex/results) deep-link
+// directly into a specific tab — "review your weaknesses" and "regenerate
+// targeted practice" used to both dead-end at a generic "Back to Hub" link
+// that always landed on "today" regardless of what the student just did.
+// useSearchParams() requires a Suspense boundary in the App Router or the
+// whole route opts out of static generation; DatApexPageInner is the actual
+// page body, wrapped by the default export below.
+function DatApexPageInner() {
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get("tab") ?? null;
+  const initialTab: TabId = TABS.some(t => t.id === requestedTab) ? (requestedTab as TabId) : "today";
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const { projection } = useApexEngineStore();
 
   return (
@@ -855,5 +887,13 @@ export default function DatApexPage() {
         {activeTab === "history"   && <HistoryTab />}
       </main>
     </div>
+  );
+}
+
+export default function DatApexPage() {
+  return (
+    <Suspense fallback={null}>
+      <DatApexPageInner />
+    </Suspense>
   );
 }

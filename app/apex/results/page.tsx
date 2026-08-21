@@ -384,13 +384,34 @@ export default function ExamResultsPage() {
                 {results.totalScore} / {results.exam.questions.length}
               </div>
             </div>
-            <Link 
-              href="/apex" 
+            <Link
+              href="/apex"
               className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-colors"
             >
               Back to Hub
             </Link>
           </div>
+        </div>
+      </div>
+
+      {/* Setup-flow resequencing: close the "review weaknesses -> regenerate
+          targeted practice" loop explicitly instead of leaving both as
+          something the student has to discover on their own via "Back to Hub". */}
+      <div className="bg-gray-800/50 border-b border-gray-700 px-6 py-3">
+        <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-3">
+          <span className="text-sm text-gray-400">Next:</span>
+          <Link
+            href="/apex?tab=mistakes"
+            className="text-sm px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
+          >
+            🔍 Review Weaknesses
+          </Link>
+          <Link
+            href="/apex?tab=today"
+            className="text-sm px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg font-medium transition-colors"
+          >
+            🎯 Practice Weak Areas
+          </Link>
         </div>
       </div>
 
