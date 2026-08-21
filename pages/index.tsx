@@ -3717,6 +3717,32 @@ export default function ThoughtUnitReader() {
 
           allPageTexts.push(...pages);
 
+          // Reader-architecture fix: this incremental extraction already runs
+          // on every book load, unconditionally — independent of activeShellTab
+          // — and already uses the same buildStructuredPageTextFull() SmartPDFViewer
+          // uses (lib/pdfjs-handler.ts). Previously its per-page text only ever
+          // fed thoughtUnits/TOC and was discarded; pageTextByPage (what NoteLab/
+          // Learning Hub/Recall/Podcast/Study Guide actually read) was populated
+          // ONLY by SmartPDFViewer's onPageTextExtracted callback, which is mounted
+          // exclusively inside the "reader" shell tab — so those other tabs saw an
+          // empty map for any page the Reader tab hadn't been opened for yet.
+          // Background-fills gaps only — never overwrites a key that already has
+          // text, so a live SmartPDFViewer extraction (which can benefit from the
+          // OCR fallback and the exact live viewport) always wins if it races this.
+          setPageTextByPage((prev) => {
+            let changed = false;
+            const next = new Map(prev);
+            for (const p of pages) {
+              if (!p.text || p.text.length <= 20) continue; // matches SmartPDFViewer's own floor
+              const key = `${documentId}:${p.pageIndex + 1}`; // pageIndex is 0-based; pageTextByPage keys are 1-based
+              if (!next.has(key)) {
+                next.set(key, p.text);
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+
           // Convert pages to thought units and store by page index.
           // Concurrently persist CanonicalThoughtUnits to IDB for DAT Apex.
           const canonicalBatch: import('@/lib/canonical').CanonicalThoughtUnit[] = [];
