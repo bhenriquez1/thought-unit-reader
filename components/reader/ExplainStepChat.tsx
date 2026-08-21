@@ -119,8 +119,19 @@ export default function ExplainStepChat({
   const listRef = useRef<HTMLDivElement>(null);
   const initialSentRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Tracks the object URL backing audioRef's current <audio> src, so every
+  // path that stops/replaces/unmounts this component can revoke it — mirrors
+  // the blobUrlRef pattern already correct in StudySpeechPanel.tsx/TldrawCanvas.tsx.
+  const blobUrlRef = useRef<string | null>(null);
   const globalTokenRef = useRef(0);
   const isStartingRef = useRef(false);
+
+  function revokeSpeakAnswerBlobUrl() {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }
 
   const lastQuestion = turns.filter((t) => t.role === "user").slice(-1)[0]?.content ?? context.selectedText;
   const lastAnswer = turns.filter((t) => t.role === "assistant").slice(-1)[0]?.content ?? "";
@@ -141,6 +152,7 @@ export default function ExplainStepChat({
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      revokeSpeakAnswerBlobUrl();
       if (globalTokenRef.current && !isSpeechStale(globalTokenRef.current)) {
         notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       }
@@ -247,6 +259,7 @@ export default function ExplainStepChat({
       // utterance gets hard-cancelled too, not just the OpenAI <audio>.
       stopAllSpeech("explain-step-stop-button");
       audioRef.current = null;
+      revokeSpeakAnswerBlobUrl();
       setSpeaking(false);
       return;
     }
@@ -256,6 +269,11 @@ export default function ExplainStepChat({
       return;
     }
     isStartingRef.current = true;
+    // Defensive: a previous attempt's blob URL should already be revoked by
+    // one of onended/onerror/the stop branch/the force-stop callback above,
+    // but never let a new "Speak Answer" replace audioRef.current while an
+    // earlier object URL is still un-revoked.
+    revokeSpeakAnswerBlobUrl();
     // claimSpeech() force-stops any speech currently active anywhere in the
     // app (StudySpeechPanel, PodcastLab, Whiteboard, or a prior Explain Step
     // answer) before this one starts.
@@ -278,15 +296,18 @@ export default function ExplainStepChat({
         const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
         const blob = new Blob([arr], { type: data.mimeType || "audio/mpeg" });
-        const audio = new Audio(URL.createObjectURL(blob));
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
+        const audio = new Audio(blobUrl);
         audioRef.current = audio;
         registerActiveAudio(token, audio, () => {
           audio.pause();
+          revokeSpeakAnswerBlobUrl();
           setSpeaking(false);
         });
         audio.onplay = () => notifySpeechStart(token, SPEECH_OWNER);
-        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); setSpeaking(false); };
-        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); setSpeaking(false); };
+        audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); revokeSpeakAnswerBlobUrl(); setSpeaking(false); };
+        audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-playback-failed"); revokeSpeakAnswerBlobUrl(); setSpeaking(false); };
         await audio.play();
       } else if (data?.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(data.script || cleaned);

@@ -65,10 +65,10 @@ describe("SmartPDFViewer.tsx — focusSnippet auto-scrolls only when the target 
 
   it("REQUIRED: isFullyVisibleInContainer exists and gates the scrollIntoView call", () => {
     expect(src).toMatch(/function isFullyVisibleInContainer\(el: HTMLElement, container: HTMLElement\): boolean \{/);
-    const idx = src.indexOf("if (!isFullyVisibleInContainer(target, container)) {");
+    const idx = src.indexOf("if (!isFullyVisibleInContainer(marker, container)) {");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 150);
-    expect(block).toMatch(/target\.scrollIntoView\(\{ block: "center", behavior: "smooth" \}\);/);
+    expect(block).toMatch(/marker\.scrollIntoView\(\{ block: "center", behavior: "smooth" \}\);/);
   });
 
   it("isFullyVisibleInContainer checks the target's rect against the container's rect on both edges", () => {

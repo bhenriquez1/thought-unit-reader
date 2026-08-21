@@ -233,6 +233,12 @@ export interface StudySpeechPanelHandle {
   seekToCursor: (cursor: ReadingCursor) => void;
   /** Start playback from the already-primed cursor (called by Play chip after seekToCursor). */
   triggerPlay: () => void;
+  /** Called when Professor/Whiteboard closes — restores Current Page to the
+   *  position Professor was actually teaching from (via the same resume
+   *  cursor mechanism as a PDF click) and always resets visibleMode back to
+   *  "currentPage", whether or not a cursor is available. Does NOT
+   *  auto-start playback — same contract as seekToCursor. */
+  returnFromProfessor: (cursor: ReadingCursor | null) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -1619,7 +1625,23 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     play(resumeIdx);
   }
 
-  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments, visibleMode]);
+  // ── returnFromProfessor — called when Professor/Whiteboard closes ──────────
+  // Restores Current Page speech to the position Professor was ACTUALLY
+  // teaching from (the live grounded source unit, tracked throughout
+  // Professor playback via the shared reading-focus store) rather than
+  // wherever Current Page speech itself had reached before Professor opened,
+  // and never leaves visibleMode stuck on the now-inactive Professor tab.
+  // Reuses seekToCursor's existing resume machinery rather than a parallel
+  // one — same contract (primes the resume cursor, does not auto-play).
+  function returnFromProfessor(cursor: ReadingCursor | null) {
+    if (cursor) {
+      seekToCursor(cursor);
+    } else {
+      setVisibleMode("currentPage");
+    }
+  }
+
+  useImperativeHandle(ref, () => ({ playFromSnippet, seekToCursor, triggerPlay, returnFromProfessor }), [fpSentences, activePageText, pageNumber, speed, voice, mode, segments, visibleMode]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 

@@ -27,6 +27,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import type { SemanticPack } from "@/lib/semantic/types";
 import type { HighlightTarget } from "@/lib/readerContracts";
+import type { PageRole } from "@/lib/readerContracts";
+import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 import type { SurgeonAnnotationPlan, CanonicalType, Importance } from "@/lib/insights/pageAnnotationPlan";
 import { buildSurgeonAnnotationInput, type ExistingCanonicalUnitContext } from "@/lib/insights/buildSurgeonAnnotationInput";
 import { resolveVisualContext } from "@/lib/insights/resolveVisualContext";
@@ -151,6 +153,15 @@ interface UseSurgeonAnnotationsArgs {
   domain: PageDomain;
   semanticPack: SemanticPack;
   existingCanonicalUnits: ExistingCanonicalUnitContext[];
+  /** Local heuristic role classification (lib/right-panel/extractPageSignals.ts's
+   *  detectPageRole, surfaced via useActivePageIntelligence). When
+   *  isNoninstructionalPage(pageRole) is true (title/copyright/front-matter/
+   *  structural pages), Effect B never spends an AI call — the earliest point
+   *  in the pipeline this can be decided. Professor, Whiteboard, and Recall
+   *  all derive their evidence from this hook's output (wholePageAnnotations/
+   *  groundedAnnotations/highlightTargets), so they inherit the suppression
+   *  automatically; nothing downstream needs its own gate. */
+  pageRole: PageRole | string | null;
   enabled: boolean;
 }
 
@@ -285,6 +296,7 @@ export function useSurgeonAnnotations({
   domain,
   semanticPack,
   existingCanonicalUnits,
+  pageRole,
   enabled,
 }: UseSurgeonAnnotationsArgs): UseSurgeonAnnotationsResult {
   const [plan,             setPlan]             = useState<SurgeonAnnotationPlan | null>(null);
@@ -450,6 +462,31 @@ export function useSurgeonAnnotations({
     }
 
     const compositeKey = `${pageTruthKey}|${pageContentHash}|${domain}|${semanticPack.id}`;
+
+    // Canonical noninstructional-page gate (lib/insights/pageRoleGate.ts).
+    // Title/copyright/front-matter/structural pages never reach the AI call —
+    // this is the earliest point the pipeline can decide that, and since
+    // Professor/Whiteboard/Recall all read this hook's output rather than
+    // re-classifying the page themselves, suppressing here suppresses all
+    // four surfaces without a duplicate check anywhere downstream. Not a
+    // failure state — resolves to planTier "empty", same as a page the model
+    // itself judged to have nothing worth annotating.
+    if (isNoninstructionalPage(pageRole)) {
+      if (DEV) console.log("[SURGEON_NONINSTRUCTIONAL_SKIP]", { pageNumber: pageNumberRef.current, pageRole });
+      startedKeyRef.current = compositeKey;
+      setStatus("success");
+      setPlan(null);
+      setHighlightTargets([]);
+      setGroundedAnnotations([]);
+      setWholePageAnnotations([]);
+      setAnnotationErrorMessage(null);
+      setAnnotationFailureStage(null);
+      setAnnotationRequestId(null);
+      setAnnotationModel(null);
+      displayedKeyRef.current = null;
+      return;
+    }
+
     if (startedKeyRef.current === compositeKey && !forceRefetchRef.current) {
       return; // already satisfied (cache hit or prior fetch) for this exact combination
     }
@@ -647,7 +684,7 @@ export function useSurgeonAnnotations({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, pageContentHash, domain, semanticPack.id, enabled, pageText, reanalyzeCount]);
+  }, [pageTruthKey, pageContentHash, domain, semanticPack.id, enabled, pageText, pageRole, reanalyzeCount]);
 
   const tiered = resolveAnnotationTier({
     aiHighlightTargets:    highlightTargets,

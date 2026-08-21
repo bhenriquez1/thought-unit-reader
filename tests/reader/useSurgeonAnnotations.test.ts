@@ -31,7 +31,7 @@ describe("useSurgeonAnnotations.ts — Effect A/B dependency shape", () => {
   it("Effect B's dependency array includes domain and semanticPack.id (must retrigger on pack/domain change)", () => {
     const idx = src.indexOf("// ── Effect B:");
     const effectBody = src.slice(idx);
-    expect(effectBody).toMatch(/\}, \[pageTruthKey, pageContentHash, domain, semanticPack\.id, enabled, pageText, reanalyzeCount\]\);/);
+    expect(effectBody).toMatch(/\}, \[pageTruthKey, pageContentHash, domain, semanticPack\.id, enabled, pageText, pageRole, reanalyzeCount\]\);/);
   });
 
   it("does NOT read domain/semanticPack via non-reactive refs the way useTeachingSynthesis.ts does", () => {
@@ -144,7 +144,7 @@ describe("useSurgeonAnnotations.ts — reanalyze() on the SAME page aborts the s
 
   it("REQUIRED: Effect B aborts its own previous controller before creating a new one, ahead of every fetch it might start", () => {
     const idx = src.indexOf("// ── Effect B:");
-    const effectBody = src.slice(idx, idx + 4000);
+    const effectBody = src.slice(idx, idx + 5000);
     const newCtrlIdx = effectBody.indexOf("const ctrl = new AbortController();");
     expect(newCtrlIdx).toBeGreaterThan(-1);
     const before = effectBody.slice(Math.max(0, newCtrlIdx - 500), newCtrlIdx);
@@ -641,5 +641,67 @@ describe("useSurgeonAnnotations.ts — page_extraction: a genuinely-too-short pa
 
   it("page_extraction is part of the exported ClientFailureStage union", () => {
     expect(src).toMatch(/export type ClientFailureStage = ServerFailureStage \| "page_extraction" \| "page_identity" \| "network_error";/);
+  });
+});
+
+describe("useSurgeonAnnotations.ts — canonical noninstructional-page gate (stabilization fix)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
+
+  it("REQUIRED: Effect B checks isNoninstructionalPage(pageRole) BEFORE the compositeKey-satisfied check and BEFORE any fetch/AI call is built", () => {
+    const gateIdx = src.indexOf("if (isNoninstructionalPage(pageRole)) {");
+    const alreadySatisfiedIdx = src.indexOf("if (startedKeyRef.current === compositeKey && !forceRefetchRef.current)");
+    const fetchIdx = src.indexOf('fetch("/api/page-annotation-plan"');
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(alreadySatisfiedIdx).toBeGreaterThan(gateIdx);
+    expect(fetchIdx).toBeGreaterThan(gateIdx);
+  });
+
+  it("REQUIRED: a suppressed page produces no Surgeon plan — clears plan/highlightTargets/groundedAnnotations/wholePageAnnotations and never sets an error/failure stage", () => {
+    const idx = src.indexOf("if (isNoninstructionalPage(pageRole)) {");
+    const block = src.slice(idx, src.indexOf("\n    }", idx));
+    expect(block).toMatch(/setStatus\("success"\);/);
+    expect(block).toMatch(/setPlan\(null\);/);
+    expect(block).toMatch(/setHighlightTargets\(\[\]\);/);
+    expect(block).toMatch(/setGroundedAnnotations\(\[\]\);/);
+    expect(block).toMatch(/setWholePageAnnotations\(\[\]\);/);
+    expect(block).toMatch(/setAnnotationErrorMessage\(null\);/);
+    expect(block).toMatch(/setAnnotationFailureStage\(null\);/);
+  });
+
+  it("imports the shared gate from lib/insights/pageRoleGate.ts rather than a local role list", () => {
+    expect(src).toMatch(/import \{ isNoninstructionalPage \} from "@\/lib\/insights\/pageRoleGate";/);
+  });
+
+  it("pageRole is a required arg on UseSurgeonAnnotationsArgs", () => {
+    const idx = src.indexOf("interface UseSurgeonAnnotationsArgs");
+    const block = src.slice(idx, src.indexOf("}", idx));
+    expect(block).toMatch(/pageRole: PageRole \| string \| null;/);
+  });
+});
+
+describe("pages/index.tsx — Surgeon annotation pipeline receives pageRole from the same classifier used by the legacy gate (one classifier, one canonical suppression set)", () => {
+  const INDEX_SRC = fs.readFileSync(INDEX_FILE, "utf8");
+
+  it("REQUIRED: useSurgeonAnnotations() is called with pageRole: currentPageRole — the exact value produced by useActivePageIntelligence's detectPageRole", () => {
+    const idx = INDEX_SRC.indexOf("const surgeonAnnotations = useSurgeonAnnotations({");
+    const block = INDEX_SRC.slice(idx, INDEX_SRC.indexOf("});", idx));
+    expect(block).toMatch(/pageRole:\s+currentPageRole \?\? null,/);
+  });
+
+  it("no longer defines a local NON_INSTRUCTIONAL_ROLES list — uses the shared isNoninstructionalPage() gate instead", () => {
+    expect(INDEX_SRC).not.toMatch(/const NON_INSTRUCTIONAL_ROLES = new Set/);
+    expect(INDEX_SRC).toMatch(/import \{ isNoninstructionalPage \} from "@\/lib\/insights\/pageRoleGate";/);
+  });
+
+  it("REQUIRED: downstream Professor/Whiteboard/Recall receive no instructional evidence on a suppressed page — they read wholePageAnnotations/groundedAnnotations directly from the same suppressed hook output, not a re-derived value", () => {
+    // Professor/Whiteboard: whiteboardCanonicalEntriesWiring.test.ts already proves
+    // whiteboardCanonicalEntries derives from surgeonAnnotations.wholePageAnnotations —
+    // which the gate above clears to [] on a suppressed page. Recall reads
+    // surgeonAnnotations.groundedAnnotations directly at every one of its call sites,
+    // same story: cleared to [] by the same gate, nothing recomputed downstream.
+    const groundedAnnotationsPassThroughs = (INDEX_SRC.match(/groundedAnnotations=\{surgeonAnnotations\.groundedAnnotations\}/g) ?? []).length;
+    expect(groundedAnnotationsPassThroughs).toBeGreaterThan(0);
+    expect(INDEX_SRC).toMatch(/whiteboardCanonicalEntries/);
   });
 });

@@ -14,6 +14,7 @@ import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
+import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
 import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insights/buildNarrativePageView";
@@ -551,7 +552,7 @@ export function useActivePageIntelligence({
   const limitedEvidence =
     classification.confidence < 0.35 ||
     (ctx.pageText || "").trim().length < 500 ||
-    ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
+    isNoninstructionalPage(signals.pageRole);
 
   // [PAGE_CLASSIFY] diagnostic — logs classification reason for every page so
   // image-heavy / copyright false-positives are immediately visible in the console.
