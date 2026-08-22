@@ -1815,6 +1815,40 @@ export default function SmartPDFViewer({
                 pageRenderKey={pageRenderKey}
               />
 
+              {/* Eye Guide dim layer (P0 stabilization) — reinstates the dim
+                  veil an earlier pass removed ("lighter opacity on highlights
+                  means veil no longer needed", above) as a playback-driven
+                  feature rather than the highlight-vs-highlight dimming
+                  PdfEvidenceOverlay already does. Only active during actual
+                  SOURCE_VERBATIM playback (focusHighlightPersist — true only
+                  while speech is actively reading, same flag that keeps
+                  sentenceFocusRect pinned instead of auto-clearing above), so
+                  it never dims the page while the student is just reading or
+                  navigating manually. Reuses sentenceFocusRect verbatim — the
+                  same canonical TextLayerRegistry-backed rect the sentence
+                  marker below renders from — as the "paragraph" clear zone
+                  (padded a bit for breathing room); no separate paragraph-
+                  level geometry resolver was built, per instruction. The
+                  classic CSS spotlight technique (a huge box-shadow on a
+                  small transparent box) dims everything outside that rect;
+                  it's naturally clipped to the scrollable page container
+                  above (overflow-auto), so it never darkens outside the
+                  visible page. Kept subtle (0.38 alpha) so surrounding
+                  context stays legible, not "excessively dark." */}
+              {focusHighlightPersist && sentenceFocusRect && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute z-10 rounded-lg transition-all duration-150"
+                  style={{
+                    top: sentenceFocusRect.top - 14,
+                    left: sentenceFocusRect.left - 14,
+                    width: sentenceFocusRect.width + 28,
+                    height: sentenceFocusRect.height + 28,
+                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.38)",
+                  }}
+                />
+              )}
+
               {/* Sentence-focus marker — canonical-geometry replacement for the
                   old fuzzy DOM-span match. Positioned exactly like WordRectOverlay's
                   own marker (same coordinate space), used both as the visual

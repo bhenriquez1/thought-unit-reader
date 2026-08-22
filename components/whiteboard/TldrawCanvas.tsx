@@ -404,6 +404,16 @@ export default function TldrawCanvas({
     enabled: !!derivedVsg,
   });
 
+  // P0 stabilization: a valid lesson plan whose Director legitimately
+  // decided every step is verbal-only (expository/definitional page, "don't
+  // force every paragraph onto the Whiteboard" — pages/api/professor-lesson-
+  // plan.ts's own instruction) previously left the canvas blank for the
+  // whole lesson with no indication this was intentional, indistinguishable
+  // from a broken pipeline. This is a valid pedagogical state, not an error
+  // — never fabricate a diagram just to fill the canvas.
+  const allStepsVerbalOnly = !!lessonPlan?.directorSteps?.length
+    && lessonPlan.directorSteps.every((step) => !step.visualNeeded);
+
   // Every narration cache entry/in-flight fetch below is scoped to this
   // identity (see lib/speech/speechSessionIdentity.ts) — lessonId is the
   // lesson plan's own VSG content hash, so a reanalyze() that regenerates a
@@ -1535,9 +1545,20 @@ export default function TldrawCanvas({
 
   useEffect(() => { advanceForPlaybackRef.current = advanceForPlayback; }, [advanceForPlayback]);
 
+  // P0 stabilization: previously gated on `autoStartProfessor` (true only for
+  // the "Start Professor" button; false for the manual "🎨 Whiteboard" open
+  // path), so a manually-opened Whiteboard mounted a canvas with zero shapes
+  // and sat there until the student noticed and pressed Play — reported as
+  // "modal opens, canvas completely blank." A ready lesson plan now
+  // auto-starts playback regardless of which entry point opened the panel;
+  // `autoStartProfessor` still distinguishes "Start Professor" (narrates
+  // over the PDF, hides this modal — see pages/index.tsx's professorSurface
+  // handling) from a manual open (stays visible as a modal while it plays).
+  // The explicit Play/Pause button below is unaffected — pausing/restarting
+  // still always works the same way regardless of how playback started.
   const autoStartedPlanRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!autoStartProfessor || !canvasReady || !lessonPlan) return;
+    if (!canvasReady || !lessonPlan) return;
     const planKey = buildProfessorLessonCacheKey(lessonPlan.sourceSnapshot);
     if (autoStartedPlanRef.current === planKey) return;
     autoStartedPlanRef.current = planKey;
@@ -1547,7 +1568,7 @@ export default function TldrawCanvas({
     // callback sees the new setting before it resolves the first source clip.
     const timer = window.setTimeout(() => advanceForPlaybackRef.current(), 60);
     return () => window.clearTimeout(timer);
-  }, [autoStartProfessor, canvasReady, lessonPlan]);
+  }, [canvasReady, lessonPlan]);
 
   // ── Manual controls — always instant, exact-state jumps, never audio ────
   // Phase B2: Next/Previous move by TEACHING STEP (one narrated point's
@@ -1872,6 +1893,13 @@ export default function TldrawCanvas({
                 ))}
               </div>
               <style>{`@keyframes wb-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+            </div>
+          )}
+
+          {!licenseMissingInProduction && !canvasInitFailure && lessonPlan && allStepsVerbalOnly && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, zIndex: 5, background: "rgba(15,23,42,0.55)", color: "#94a3b8", fontFamily: "ui-monospace, monospace", fontSize: 13, textAlign: "center", padding: 24, pointerEvents: "none" }}>
+              <span style={{ fontSize: 20 }}>🗣️</span>
+              <span>Professor is teaching this page verbally — no diagram is needed for this section.</span>
             </div>
           )}
         </div>

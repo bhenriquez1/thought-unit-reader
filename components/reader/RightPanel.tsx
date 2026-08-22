@@ -30,6 +30,7 @@ import { tokenizeWords } from "@/lib/speech/wordSync";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import type { CanonicalType } from "@/lib/insights/pageAnnotationPlan";
+import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 
 // Same visual language as PdfEvidenceOverlay's treatments — gold=definition,
 // green=mechanism/procedure, blue=decision, purple=comparison, red=trap,
@@ -1037,18 +1038,15 @@ export function RightPanel({
     normResult !== null &&
     normResult.shouldRenderFullPanel === false;
 
-  const STRUCTURAL_PAGE_ROLES = new Set([
-    // Front matter
-    "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
-    "copyright_frontmatter",
-    // Navigation / structural — chapter_opener, learning_objectives block synthesis
-    "contents", "unit_opener", "section_opener", "chapter_opener", "learning_objectives",
-    // Back matter
-    "glossary", "index", "bibliography", "appendix",
-    // Unrenderable
-    "image_scan_heavy",
-  ]);
-  const isStructuralPage = STRUCTURAL_PAGE_ROLES.has(intelligence.pageRole ?? "");
+  // Was a locally hand-maintained 17-role Set, duplicating (and requiring
+  // manual sync with) lib/insights/pageRoleGate.ts's canonical
+  // NONINSTRUCTIONAL_PAGE_ROLES — the single shared gate every other
+  // content-generation surface (Surgeon, extractPageSignals,
+  // useActivePageIntelligence, pages/index.tsx) already consolidated onto.
+  // Role-set-identical today; importing the canonical helper removes the
+  // duplicate-classifier maintenance hazard rather than trusting two lists
+  // to stay in sync by hand.
+  const isStructuralPage = isNoninstructionalPage(intelligence.pageRole);
 
 
   const ultraPageView = useMemo((): UltraPageView | null => {
