@@ -454,11 +454,20 @@ function FullExamsTab() {
         <div className="flex items-start justify-between mb-1 gap-4">
           <h2 className="text-lg font-bold text-white">Full-Length DAT Simulation</h2>
           <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide bg-green-900/40 text-green-300 border border-green-600/30 px-2 py-0.5 rounded-full">
-            Official Format
+            DAT Blueprint
           </span>
         </div>
-        <p className="text-sm text-gray-400 mb-4">
-          All sections in order · {bp.breaks[0]?.durationMinutes ?? 15}-min optional break after PAT · {bp.totalAdministrationMinutes} min total
+        <p className="text-sm text-gray-400 mb-1">
+          Official section order, timing, and break structure · {bp.totalAdministrationMinutes} min total
+        </p>
+        {/* Honest caveat: generateFullSimulationExam only sources from one
+            book (usePrimaryApexBook's "most notes" pick) — buildExam does
+            not yet combine multiple subject books or fill every blueprint
+            section's quota, so a single-subject book can under-populate
+            sections it has no content for. The blueprint above is real
+            reference info; this line is about what actually gets generated. */}
+        <p className="text-xs text-gray-500 mb-4">
+          Questions are generated from {primaryBook ? <span className="text-gray-300 font-medium">{primaryBook.bookTitle}</span> : "your primary book"} only — sections it has little or no content for will be thin or default to Survey of Natural Sciences, so coverage may not match every section below.
         </p>
 
         <div className="space-y-2 mb-5">
