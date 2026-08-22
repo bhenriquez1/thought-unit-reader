@@ -39,11 +39,26 @@ describe("components/SmartPDFViewer.tsx — dim layer activates only during actu
     expect(idx).toBeGreaterThan(-1);
   });
 
-  it("REQUIRED: the word marker (WordRectOverlay, z-30) and sentence marker (z-20) both render above the dim veil (z-10)", () => {
-    const veilIdx = VIEWER_SRC.indexOf('className="pointer-events-none absolute z-10 rounded-lg transition-all duration-150"');
+  it("REQUIRED: the dim veil (z-25) renders ABOVE PdfEvidenceOverlay's evidence annotation layer (z-20) — P0 fix for the z-order inversion that let green highlights paint over the veil unmuted", () => {
+    const veilIdx = VIEWER_SRC.indexOf('className="pointer-events-none absolute z-[25] rounded-lg transition-all duration-150"');
     expect(veilIdx).toBeGreaterThan(-1);
-    expect(VIEWER_SRC).toMatch(/className="pointer-events-none absolute z-20 rounded transition-all duration-150"/);
+    const overlayIdx = VIEWER_SRC.indexOf("<PdfEvidenceOverlay");
+    expect(overlayIdx).toBeGreaterThan(-1);
+    expect(veilIdx).toBeGreaterThan(overlayIdx);
+  });
+
+  it("REQUIRED: the live word marker (WordRectOverlay, z-30) still renders above the dim veil (z-25) — the veil must never cover the actively-spoken word", () => {
     expect(VIEWER_SRC).toMatch(/className="pointer-events-none absolute z-30 transition-all duration-100"/);
+  });
+
+  it("the sentence marker (z-20) stays visually uncovered by the veil despite the veil now outranking it in z-order — the veil's own box is transparent (only its box-shadow paints), and its cutout is padded 14px larger than sentenceFocusRect on every side, so the unpadded sentence marker sits entirely inside the transparent hole", () => {
+    const veilIdx = VIEWER_SRC.indexOf('className="pointer-events-none absolute z-[25] rounded-lg transition-all duration-150"');
+    const block = VIEWER_SRC.slice(veilIdx - 200, veilIdx + 700);
+    expect(block).toMatch(/top: sentenceFocusRect\.top - 14,/);
+    expect(block).toMatch(/left: sentenceFocusRect\.left - 14,/);
+    expect(block).toMatch(/width: sentenceFocusRect\.width \+ 28,/);
+    expect(block).toMatch(/height: sentenceFocusRect\.height \+ 28,/);
+    expect(VIEWER_SRC).toMatch(/className="pointer-events-none absolute z-20 rounded transition-all duration-150"/);
   });
 });
 
