@@ -2062,11 +2062,10 @@ export default function ThoughtUnitReader() {
   // Mirrors RightPanel's own gate (RightPanel.tsx: `blockEmit = isStructuralPage ||
   // openAIConfirmsNonInstructional`) so this headless path can't emit a study model
   // for cover/contents/chapter_opener/etc. pages RightPanel would have suppressed —
-  // isNoninstructionalPage(currentPageRole) is the exact same 17-role set RightPanel's
-  // local STRUCTURAL_PAGE_ROLES uses. openAIConfirmsNonInstructional has no headless
-  // equivalent (it's teachingSynthesis-derived) — the local-role tier is all a
-  // no-AI path can check, same as the two-tier pattern pages/index.tsx already
-  // applies to finalHighlightAnchors above.
+  // both now call the exact same lib/insights/pageRoleGate.ts's isNoninstructionalPage().
+  // openAIConfirmsNonInstructional has no headless equivalent (it's teachingSynthesis-
+  // derived) — the local-role tier is all a no-AI path can check, same as the two-tier
+  // pattern pages/index.tsx already applies to finalHighlightAnchors above.
   useEffect(() => {
     if (!currentUltraPageView || !isCurrentIntelligencePage) return;
     if (isNoninstructionalPage(currentPageRole)) return;
@@ -2249,6 +2248,15 @@ export default function ThoughtUnitReader() {
   // the one call site that contract was written for but never wired up).
   useEffect(() => {
     useReadingFocusStore.getState().clearFocus();
+    // P0 stabilization: clearFocus() above only resets useReadingFocusStore's
+    // word/thoughtUnit-level state — focusSnippet is a separate piece of
+    // state that drives SmartPDFViewer's sentenceFocusRect (and, in turn,
+    // the Eye Guide dim veil built from it). Without also clearing it here,
+    // the previous page's sentence-focus box/dim veil could survive into
+    // the new page until either its own ~2.2s auto-clear timer fired or a
+    // new focusSnippet happened to overwrite it — not the "immediately"
+    // navigation-clear behavior the reading-focus contract requires.
+    setFocusSnippet(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey]);
 
@@ -4993,7 +5001,17 @@ export default function ThoughtUnitReader() {
     setWbConcept("");
     setWbContext("");
     setProfessorAutoStart(true);
-    setProfessorSurface("pdf");
+    // Do NOT optimistically set "pdf" here. The modal below goes opacity:0
+    // whenever professorAutoStart && professorSurface === "pdf" — that's
+    // meant to hide the modal only once Professor is GENUINELY narrating
+    // over the PDF (TldrawCanvas's onProfessorSurfaceChange, fired from a
+    // real, loaded lesson plan's resolved step). Setting it here eagerly,
+    // before any lesson plan exists, hid TldrawCanvas's own loading/error/
+    // retry UI behind opacity:0 for the entire planning window — any
+    // failure or slowness in /api/professor-lesson-plan reproduced exactly
+    // as "Professor appears to start, nothing visible or audible happens."
+    // Leaving this at its default ("whiteboard") keeps the modal visible
+    // and opaque until a real surface change arrives.
     setShowWhiteboardPanel(true);
   }, []);
 

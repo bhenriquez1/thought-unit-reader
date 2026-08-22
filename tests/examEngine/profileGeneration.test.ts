@@ -91,4 +91,19 @@ describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book befo
     expect(block).toMatch(/setLaunchError\(err instanceof Error \? err\.message : "Could not prepare the exam\. Please try again\."\);/);
     expect(PAGE_SRC).toMatch(/\{launchError && \(/);
   });
+
+  it("REQUIRED: FullExamsTab no longer badges the panel 'Official Format' — generateFullSimulationExam sources one book only (usePrimaryApexBook picks the single book with the most notes), buildExam neither combines multiple subject books nor fills every blueprint section's quota, so labeling it an official-format simulation was misleading", () => {
+    const idx = PAGE_SRC.indexOf("{/* Full simulation panel */}");
+    expect(idx).toBeGreaterThan(-1);
+    const block = PAGE_SRC.slice(idx, idx + 1200);
+    expect(block).not.toMatch(/Official Format/);
+    expect(block).toMatch(/DAT Blueprint/);
+  });
+
+  it("REQUIRED: names the single source book and warns that section coverage may be thin/defaulted, instead of implying full official coverage", () => {
+    const idx = PAGE_SRC.indexOf("{/* Full simulation panel */}");
+    const block = PAGE_SRC.slice(idx, idx + 1700);
+    expect(block).toMatch(/Questions are generated from \{primaryBook \? <span className="text-gray-300 font-medium">\{primaryBook\.bookTitle\}<\/span> : "your primary book"\} only/);
+    expect(block).toMatch(/default to Survey of Natural Sciences/);
+  });
 });

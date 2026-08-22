@@ -240,8 +240,25 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
       return null;
     };
     
-    // Initially call with current state
-    const currentUser = checkCurrentAuthState();
+    // Initially call with current state — auto-create and persist a mock user
+    // when bypass mode is on and nothing was ever explicitly signed in/out
+    // yet. DISABLE_GOOGLE_SIGNIN's whole point is a zero-click local/dev
+    // bypass; requiring a manual "Sign in" click here would only be true to
+    // signInWithGoogle()'s own mock branch, not to what a bypassed app
+    // should look like on first load. Persisted (not just passed to this
+    // callback) so every other listenForAuthChanges call in the same
+    // session — and a page reload — see the same mock user rather than each
+    // minting its own transient one.
+    let currentUser = checkCurrentAuthState();
+    if (!currentUser) {
+      const autoUser = createMockUser();
+      localStorage.setItem("mock-auth-user", JSON.stringify({
+        uid: autoUser.uid,
+        email: autoUser.email,
+        displayName: autoUser.displayName,
+      }));
+      currentUser = autoUser;
+    }
     setTimeout(() => callback(currentUser), 0);
     
     // Listen for storage events to detect mock auth state changes

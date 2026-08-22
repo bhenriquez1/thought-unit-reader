@@ -11,6 +11,7 @@ import path from "path";
 const HOOK_FILE = path.resolve(__dirname, "../../lib/auth/useAuthUser.ts");
 const APP_FILE = path.resolve(__dirname, "../../pages/_app.tsx");
 const INDEX_FILE = path.resolve(__dirname, "../../pages/index.tsx");
+const FIREBASE_FILE = path.resolve(__dirname, "../../lib/firebase.ts");
 
 describe("lib/auth/useAuthUser.ts", () => {
   let src: string;
@@ -94,5 +95,40 @@ describe("pages/index.tsx — uses the shared hook instead of its own drifted by
     const block = src.slice(Math.max(0, idx - 400), idx);
     expect(block).toMatch(/signInWithGoogle,/);
     expect(block).toMatch(/signOutUser,/);
+  });
+});
+
+describe("lib/firebase.ts — listenForAuthChanges auto-logs in during bypass mode (product-split Phase 2 regression fix)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(FIREBASE_FILE, "utf8"); });
+
+  it("REQUIRED: when bypass mode is on and no mock user is stored yet, it creates AND persists one instead of resolving null — restores the original pre-Phase-2 Reader behavior (zero-click auto-login) for every caller of the shared listener, not just the Reader", () => {
+    const fnIdx = src.indexOf("export function listenForAuthChanges(");
+    expect(fnIdx).toBeGreaterThan(-1);
+    const checkIdx = src.indexOf("const checkCurrentAuthState = ()", fnIdx);
+    const initIdx = src.indexOf("setTimeout(() => callback(currentUser), 0);", checkIdx);
+    expect(checkIdx).toBeGreaterThan(-1);
+    expect(initIdx).toBeGreaterThan(checkIdx);
+    const block = src.slice(checkIdx, initIdx + 60);
+    expect(block).toMatch(/let currentUser = checkCurrentAuthState\(\);/);
+    expect(block).toMatch(/if \(!currentUser\) \{/);
+    expect(block).toMatch(/localStorage\.setItem\("mock-auth-user", JSON\.stringify\(\{/);
+    expect(block).toMatch(/currentUser = autoUser;/);
+  });
+
+  it("persists the same shape signInWithGoogle's own bypass branch stores (uid/email/displayName), so an explicit sign-in afterward is a no-op, not a conflicting second mock identity", () => {
+    const fnIdx = src.indexOf("export function listenForAuthChanges(");
+    const block = src.slice(fnIdx, fnIdx + 3200);
+    expect(block).toMatch(/uid: autoUser\.uid,/);
+    expect(block).toMatch(/email: autoUser\.email,/);
+    expect(block).toMatch(/displayName: autoUser\.displayName,/);
+  });
+
+  it("an explicit signOutUser() in bypass mode still works — it removes mock-auth-user and dispatches mock-auth-change, which the already-mounted listener's event handler (not checkCurrentAuthState) picks up live", () => {
+    const idx = src.indexOf("export async function signOutUser(): Promise<void> {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/localStorage\.removeItem\("mock-auth-user"\);/);
+    expect(block).toMatch(/type: 'mock-signout'/);
   });
 });

@@ -1539,6 +1539,16 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     // Clear word-level sync so the PDF yellow word-box disappears on stop.
     // Evidence focus (thoughtUnitId in ReadingFocusStore) intentionally preserved.
     useReadingFocusStore.getState().clearWord();
+    // P0 stabilization: without this, SmartPDFViewer's sentenceFocusRect (and
+    // now the Eye Guide dim veil built from it) only cleared via its own
+    // ~2.2s auto-clear timer — that timer is skipped entirely while
+    // focusHighlightPersist is true, and this stop() call is what flips
+    // playState (and therefore focusHighlightPersist, via onPlayStateChange
+    // below) to false, so the still-set focusSnippet would otherwise sit
+    // fully pinned for a stale beat before the timer even starts. Clearing
+    // it explicitly here makes Stop clear the sentence focus/dim state
+    // immediately, matching word-level clearWord() above.
+    onSnippetFocus?.(null);
   }
 
   // ── "Read From Click" ───────────────────────────────────────────────────────

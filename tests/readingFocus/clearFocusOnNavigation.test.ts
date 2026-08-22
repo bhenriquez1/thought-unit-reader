@@ -25,7 +25,7 @@ describe("pages/index.tsx — clearFocus() fires on every page-identity change",
   it("REQUIRED: a useEffect keyed on [pageTruthKey] calls useReadingFocusStore.getState().clearFocus()", () => {
     const idx = src.indexOf("CRITICAL: clear the Reading Focus Engine's eye-follow/word-sync state");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 900);
+    const block = src.slice(idx, idx + 1500);
     expect(block).toMatch(/useEffect\(\(\) => \{\s*\n\s*useReadingFocusStore\.getState\(\)\.clearFocus\(\);/);
     expect(block).toMatch(/\}, \[pageTruthKey\]\);/);
   });
