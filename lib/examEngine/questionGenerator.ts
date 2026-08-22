@@ -24,6 +24,11 @@ export interface GenerateQuestionsOptions {
   pageTruthKey?: string;
   /** CanonicalThoughtUnit IDs this question was generated from. */
   sourceThoughtUnitIds?: string[];
+  /** Knowledge Graph node IDs already resolved for this source page —
+   *  TestLab-Reader progress integration provenance, stamped client-side
+   *  the same way sourceThoughtUnitIds is below (the server doesn't know
+   *  about the Knowledge Graph). */
+  sourceKnowledgeNodeIds?: string[];
   questionType: QuestionType;
   difficulty: DifficultyLevel;
   count: number;
@@ -119,6 +124,9 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
           sourceThoughtUnitIds: opts.sourceThoughtUnitIds?.length
             ? opts.sourceThoughtUnitIds
             : q.sourceThoughtUnitIds,
+          sourceKnowledgeNodeIds: opts.sourceKnowledgeNodeIds?.length
+            ? opts.sourceKnowledgeNodeIds
+            : q.sourceKnowledgeNodeIds,
         }))
       : [];
 

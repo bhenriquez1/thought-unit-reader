@@ -12,6 +12,7 @@ import type { DifficultyLevel, EngineQuestion, ExamProfile, QuestionType } from 
 import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 import { canonicalUnitsToDatStubs } from "@/lib/datApex/canonicalQuestionMapper";
+import { getNodesByBookAndPage } from "@/lib/knowledge/knowledgeGraphStore";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -24,6 +25,16 @@ export interface ExamBuildOptions {
   randomize?: boolean;
   /** Filter notes to these inclusive page ranges (chapter selection). */
   chapterPageRanges?: { start: number; end: number }[];
+  /** When true, chapterPageRanges is a hard scope constraint (e.g. TestLab's
+   *  "Completed material only" exam scope) — zero notes matching the ranges
+   *  means zero eligible questions, never a silent fallback to the full,
+   *  unnarrowed pool. Without this flag chapterPageRanges keeps its original
+   *  lenient behavior (falls back to the full pool when nothing matches),
+   *  which the existing manual chapter-checkbox picker in
+   *  app/apex/generator/page.tsx still relies on. See lib/examEngine/
+   *  examScope.ts and tests/examEngine/examScope.test.ts for why a scoped
+   *  exam must never leak material outside the chosen ranges. */
+  strictScope?: boolean;
   practiceMode?: 'practice' | 'practice-exam' | 'full-dat';
 }
 
@@ -125,7 +136,10 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
         (r) => n.pageNumber >= r.start && n.pageNumber <= r.end,
       ),
     );
-    if (chapterFiltered.length > 0) pool = chapterFiltered;
+    // strictScope: an empty match means zero eligible questions, full stop —
+    // NOT a fallback to the unnarrowed pool. Without strictScope, an empty
+    // match keeps the original lenient "fall back to everything" behavior.
+    if (chapterFiltered.length > 0 || opts.strictScope) pool = chapterFiltered;
   }
 
   if (pool.length === 0) {
@@ -164,11 +178,29 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
     }),
   );
 
+  // TestLab-Reader progress integration — Knowledge Graph nodes already
+  // resolved for this page (created as the student actually read it, see
+  // pages/index.tsx's resolveOrCreateNode wiring). Best-effort: a page with
+  // no nodes yet (never opened in Reader) just gets an empty provenance
+  // list, same as sourceThoughtUnitIds above when a page has no canonical
+  // units. Never a second identity system — these ARE the same nodes
+  // Reader/Recall read and write.
+  const knowledgeNodesByNote = await Promise.all(
+    pool.map(async (note) => {
+      try {
+        return await getNodesByBookAndPage(opts.bookId, note.pageNumber);
+      } catch {
+        return [];
+      }
+    }),
+  );
+
   const batches = await Promise.all(
     pool.map((note, i) => {
       const questionType = questionTypes[i % questionTypes.length];
       const section = matchSection(note, opts.profile);
       const units = canonicalUnitsByNote[i];
+      const knowledgeNodes = knowledgeNodesByNote[i];
       const groundedStems = canonicalUnitsToDatStubs(units, { sourceBookId: opts.bookId, maxStubs: 3 })
         .map((stub) => stub.questionStem);
       return getOrGenerateQuestions({
@@ -186,6 +218,7 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
         // one string builder.
         pageTruthKey: `${opts.bookId}::${note.pageNumber}::t`,
         sourceThoughtUnitIds: units.map((u) => u.id),
+        sourceKnowledgeNodeIds: knowledgeNodes.map((n) => n.id),
         questionType,
         difficulty: opts.difficulty,
         count: perConcept,

@@ -83,6 +83,14 @@ export interface EngineQuestion {
   /** IDs of CanonicalThoughtUnits this question was generated from.
    *  Enables "View Source in Reader" navigation. */
   sourceThoughtUnitIds?: string[];
+  /** IDs of the shared Knowledge Graph nodes (lib/knowledge/) resolved for
+   *  this question's source page — TestLab-Reader progress integration.
+   *  Lets a wrong/uncertain answer feed back into the SAME Knowledge Node
+   *  Reader and Recall already track, rather than a second, disconnected
+   *  "weak topic" concept unique to TestLab. Populated on a best-effort
+   *  basis: empty when no Knowledge Graph nodes exist yet for this page
+   *  (e.g. the page was never actually opened in Reader). */
+  sourceKnowledgeNodeIds?: string[];
   /** Canonical page identity (`${documentId}::${pageNumber}::${textReady}`)
    *  this question was generated from — same buildPageTruthKey convention
    *  used everywhere else in the app. */

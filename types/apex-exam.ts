@@ -53,6 +53,12 @@ export interface DATQuestion {
   /** CanonicalThoughtUnit IDs this question was generated from.
    *  Enables "View Source in Reader" navigation. */
   sourceThoughtUnitIds?: string[];
+  /** Knowledge Graph node IDs resolved for this question's source page —
+   *  TestLab-Reader progress integration. This, not sourceThoughtUnitIds,
+   *  is the correct id space for Learning State writes: KnowledgeNodeProgress
+   *  is keyed by real node ids (lib/knowledge/knowledgeGraphStore.ts), which
+   *  are a different id space from CanonicalThoughtUnit ids. */
+  sourceKnowledgeNodeIds?: string[];
 }
 
 export interface ExamConfiguration {

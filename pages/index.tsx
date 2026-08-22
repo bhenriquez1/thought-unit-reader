@@ -169,7 +169,8 @@ import { parseSyllabus } from "@/lib/syllabusParser/parser";
 import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
-import { resolveOrCreateNode } from "@/lib/knowledge/knowledgeGraphStore";
+import { resolveOrCreateNode, getNodeProgress } from "@/lib/knowledge/knowledgeGraphStore";
+import { recordPageReached } from "@/lib/reader/readingProgressStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
@@ -613,6 +614,11 @@ export default function ThoughtUnitReader() {
   const syncToPageRef = useRef<((page: number, opts?: { reason?: string }) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
+  // TestLab-Reader progress integration — "TestLab found this concept weak —
+  // review". Only fires when the current page's Knowledge Graph node has
+  // real datPerformance evidence (i.e. TestLab specifically saw it missed,
+  // not just generic low mastery from some other source).
+  const [weakConceptBanner, setWeakConceptBanner] = useState<{ nodeId: string; accuracy: number } | null>(null);
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
   // Clear PDF source failure when a new source URL is set (fresh upload or IDB reload).
   useEffect(() => { if (fileUrl) setPdfSourceFailed(false); }, [fileUrl]);
@@ -1984,6 +1990,42 @@ export default function ThoughtUnitReader() {
     }
     return () => { cancelled = true; };
   }, [currentPageStudyModel, bookId, resolvedDocumentId, currentPage]);
+
+  // TestLab-Reader progress integration — checkpoints how far this student
+  // has actually reached, independent of whether the current page has any
+  // highlighted anchors (the Knowledge Graph effect above only fires when
+  // visualAnchors.length > 0, which would silently undercount plain/
+  // image-heavy pages). Keyed by bookId, NOT resolvedDocumentId — TestLab's
+  // book catalogue (lib/apex/bookCatalogue.ts) and examBuilder.ts's own
+  // canonical-unit lookups already key everything off UltraNote.bookId, so
+  // this must match or TestLab could never look its own reading-progress
+  // checkpoint back up. Fire-and-forget: a write failure here must never
+  // block reading. See lib/reader/readingProgressStore.ts.
+  useEffect(() => {
+    if (!bookId || !currentPage) return;
+    recordPageReached(bookId, currentPage).catch(() => {});
+  }, [bookId, currentPage]);
+
+  // TestLab-Reader progress integration — surface "TestLab found this
+  // concept weak — review" when the current page's primary Knowledge Graph
+  // node has real DAT question performance below a weak threshold. Reuses
+  // the same node id the Knowledge Graph effect above already resolves
+  // (pageKnowledgeNodeId), so this is read-only against existing state —
+  // no new node resolution, no second identity system.
+  useEffect(() => {
+    if (!pageKnowledgeNodeId) { setWeakConceptBanner(null); return; }
+    let alive = true;
+    getNodeProgress(pageKnowledgeNodeId)
+      .then((progress) => {
+        if (!alive) return;
+        const dat = progress?.datPerformance;
+        if (!dat || dat.attempts < 2) { setWeakConceptBanner(null); return; }
+        const accuracy = Math.round((dat.correct / dat.attempts) * 100);
+        setWeakConceptBanner(accuracy < 60 ? { nodeId: pageKnowledgeNodeId, accuracy } : null);
+      })
+      .catch(() => { if (alive) setWeakConceptBanner(null); });
+    return () => { alive = false; };
+  }, [pageKnowledgeNodeId]);
 
   const activePageTextKey = `${bookId}:${currentPage}`;
   const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
@@ -5419,6 +5461,32 @@ export default function ThoughtUnitReader() {
                       onClick={() => setViewSourceBanner(null)}
                       className="ml-auto shrink-0 text-teal-300 hover:text-white"
                       aria-label="Dismiss view source banner"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* TestLab-Reader progress integration — "TestLab found this
+                    concept weak — review". */}
+                {weakConceptBanner && (
+                  <div className="sticky top-0 z-20 flex items-start gap-3 border-b border-amber-700/50 bg-amber-900/80 px-4 py-2 text-xs text-amber-100 backdrop-blur-sm">
+                    <span className="mt-0.5">🎯</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold">TestLab found this concept weak</span>
+                      {' — '}
+                      <span className="opacity-85">{weakConceptBanner.accuracy}% correct on TestLab questions.</span>
+                    </div>
+                    <button
+                      onClick={() => router.push("/apex/review")}
+                      className="shrink-0 text-amber-200 hover:text-white underline underline-offset-2"
+                    >
+                      Review →
+                    </button>
+                    <button
+                      onClick={() => setWeakConceptBanner(null)}
+                      className="ml-2 shrink-0 text-amber-300 hover:text-white"
+                      aria-label="Dismiss weak concept banner"
                     >
                       ✕
                     </button>
