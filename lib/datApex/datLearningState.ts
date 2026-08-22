@@ -39,6 +39,25 @@
 // the same nodes Reader's resolveOrCreateNode creates), so a weak answer
 // here actually lands on the node Reader/Recall already track.
 //
+// P0 fix — the documentId passed alongside those node ids had the exact
+// same bug one layer up: it used question.sourceBookId (a filename), but
+// recordLearningEvent uses `documentId` as an OWNERSHIP GUARD — it only
+// reuses existing progress when `existing.documentId === documentId`
+// (lib/knowledge/recordLearningEvent.ts), and KnowledgeNodeProgress.documentId
+// is stamped from the RESOLVED identity (see lib/insights/
+// resolveDocumentIdentity.ts), never the filename. So a node that already
+// had progress from Whiteboard or Recall (written under the real resolved
+// id) failed this guard on every TestLab write, silently discarding its
+// accumulated understandingScore/recallScore/evidence trail and starting a
+// fresh record under the wrong id — which then failed the SAME guard in
+// reverse the next time Whiteboard or Recall touched that node. Now keyed
+// on question.sourceDocumentId, the resolved id examBuilder.ts stamps from
+// the same Knowledge Graph node sourceKnowledgeNodeIds comes from — no
+// fallback to sourceBookId, since writing under the wrong id space is worse
+// than not writing at all; a question with node ids but no resolved
+// documentId (should not happen — both are stamped from the same node) is
+// skipped rather than risking a reset.
+//
 // timeMs stays null — the proctor UI (app/apex/proctor/page.tsx) does not
 // currently capture per-question timing, only per-section time remaining;
 // wiring true per-question timeMs would mean instrumenting the live timed-
@@ -73,7 +92,7 @@ export async function recordDatQuestionAnswered(
   correct: boolean,
   occurredAt: string,
 ): Promise<void> {
-  const documentId = question.sourceBookId;
+  const documentId = question.sourceDocumentId;
   const nodeIds = question.sourceKnowledgeNodeIds;
   if (!documentId || !nodeIds || nodeIds.length === 0) return;
 

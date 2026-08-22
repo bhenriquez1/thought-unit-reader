@@ -219,6 +219,11 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
         pageTruthKey: `${opts.bookId}::${note.pageNumber}::t`,
         sourceThoughtUnitIds: units.map((u) => u.id),
         sourceKnowledgeNodeIds: knowledgeNodes.map((n) => n.id),
+        // The resolved documentId these nodes actually belong to — see
+        // EngineQuestion.sourceDocumentId. Only meaningful when a node
+        // exists; undefined otherwise (matches sourceKnowledgeNodeIds being
+        // empty in that same case).
+        sourceDocumentId: knowledgeNodes[0]?.documentId,
         questionType,
         difficulty: opts.difficulty,
         count: perConcept,

@@ -16,6 +16,13 @@
 // record nothing else could ever read back. Fixed to key on
 // sourceKnowledgeNodeIds instead — this suite now asserts the FIXED
 // behavior, not the old bug.
+//
+// P0 fix — the SAME bug existed one layer up on the documentId argument:
+// it used question.sourceBookId (a filename), which fails
+// recordLearningEvent's ownership guard against progress already written
+// under the real resolved documentId, silently resetting it. Fixed to key
+// on question.sourceDocumentId (the resolved id examBuilder.ts stamps from
+// the same Knowledge Graph node sourceKnowledgeNodeIds comes from).
 
 import fs from "fs";
 import path from "path";
@@ -27,6 +34,13 @@ describe("recordDatQuestionAnswered", () => {
     const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
     const block = SRC.slice(idx, idx + 700);
     expect(block).toMatch(/if \(!documentId \|\| !nodeIds \|\| nodeIds\.length === 0\) return;/);
+  });
+
+  it("REQUIRED: documentId comes from sourceDocumentId (the resolved id), never sourceBookId (a filename) — the P0 fix", () => {
+    const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
+    const block = SRC.slice(idx, idx + 700);
+    expect(block).toMatch(/const documentId = question\.sourceDocumentId;/);
+    expect(block).not.toMatch(/question\.sourceBookId/);
   });
 
   it("REQUIRED: fires one event per Knowledge Graph node id (sourceKnowledgeNodeIds), not per CanonicalThoughtUnit id", () => {
