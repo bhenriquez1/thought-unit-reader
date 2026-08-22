@@ -297,6 +297,12 @@ export default function WhiteboardPanel({
         pageNumber: currentPage ?? 0,
         topic: effectiveTopic,
         bookTitle,
+        // P0 stabilization, Tier 4 — finishes what a9b3962 started for this
+        // panel's title display: the SAVED note's thesis must match what
+        // this panel actually showed the student, not silently revert to
+        // the separate legacy studyModel pipeline's own (possibly
+        // unrelated) thesis the moment they click Save.
+        pageThesisOverride: pageTitle ?? undefined,
       });
       await saveUltraNote(note);
       flashAction("✅ Saved to NoteLab");
@@ -315,6 +321,7 @@ export default function WhiteboardPanel({
         pageNumber: currentPage ?? 0,
         topic: effectiveTopic,
         bookTitle,
+        pageThesisOverride: pageTitle ?? undefined,
       });
       const set = buildRecallSetFromNote(note);
       await saveRecallSet(set);

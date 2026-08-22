@@ -2071,9 +2071,12 @@ export default function ThoughtUnitReader() {
     if (isNoninstructionalPage(currentPageRole)) return;
     setCurrentPageStudyModel((prev) => {
       if (prev) return prev;
-      return buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId);
+      return buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId, {
+        documentId: resolvedDocumentId,
+        confidence: currentConfidence,
+      });
     });
-  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage, currentPageRole]);
+  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage, currentPageRole, resolvedDocumentId, currentConfidence]);
 
   // ── SurgeonAnnotationPlan: OpenAI reads the current page fresh, Avrrio draws it ──
   // Captured page image (hidden fixed-scale render, decoupled from zoom) — see
@@ -5184,9 +5187,10 @@ export default function ThoughtUnitReader() {
     priorityHighlights: currentPriorityHighlights,
     normResult: currentNormResult,
     pageRole: currentPageRole,
+    confidence: currentConfidence,
   }), [pageIntelligenceStatus, pageTruthKey, isCurrentIntelligencePage, currentPageClass,
       currentPageTruth, currentPageModel, currentPageStory, currentPageStoryV2, currentPageStoryV3,
-      currentPriorityHighlights, currentNormResult, currentPageRole]);
+      currentPriorityHighlights, currentNormResult, currentPageRole, currentConfidence]);
 
   const renderContent = () => {
     // 🔐 All tabs require sign-in
