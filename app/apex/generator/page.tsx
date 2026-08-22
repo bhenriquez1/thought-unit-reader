@@ -124,6 +124,17 @@ export default function ExamGeneratorPage() {
     setGenerationError(null);
   }
 
+  // Switching exam type changes which profile generateExam() builds against
+  // (DAT_EXAM_PROFILE vs CUSTOM_EXAM_PROFILE) — an already-generated exam
+  // built under the previous profile must not survive the switch, or the
+  // summary panel can show the newly selected profile while Start launches
+  // the stale one. Same reset shape as handleModeChange/handleBookSelect above.
+  function handleProfileChange(id: 'dat' | typeof CUSTOM_EXAM_PROFILE_ID) {
+    setExamProfileId(id);
+    setGeneratedExam(null);
+    setGenerationError(null);
+  }
+
   function toggleChapter(itemId: string) {
     setSelectedChapterIds((prev) => {
       const next = new Set(prev);
@@ -253,7 +264,7 @@ export default function ExamGeneratorPage() {
               <h3 className="text-lg font-semibold mb-4 text-blue-400">🎯 Exam Type</h3>
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => setExamProfileId('dat')}
+                  onClick={() => handleProfileChange('dat')}
                   className={`text-left p-3 rounded-lg border-2 transition-all ${
                     examProfileId === 'dat'
                       ? 'border-blue-500 bg-blue-500/10'
@@ -264,7 +275,7 @@ export default function ExamGeneratorPage() {
                   <div className="text-xs text-gray-400 mt-0.5">Official section weighting and blueprint</div>
                 </button>
                 <button
-                  onClick={() => setExamProfileId(CUSTOM_EXAM_PROFILE_ID)}
+                  onClick={() => handleProfileChange(CUSTOM_EXAM_PROFILE_ID)}
                   className={`text-left p-3 rounded-lg border-2 transition-all ${
                     examProfileId === CUSTOM_EXAM_PROFILE_ID
                       ? 'border-blue-500 bg-blue-500/10'

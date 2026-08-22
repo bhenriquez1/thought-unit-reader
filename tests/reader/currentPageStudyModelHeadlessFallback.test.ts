@@ -92,4 +92,11 @@ describe("pages/index.tsx — headless heuristic-only fallback for currentPageSt
     expect(resetIdx).toBeGreaterThan(-1);
     expect(fallbackIdx).toBeGreaterThan(resetIdx);
   });
+
+  it("REQUIRED: mirrors RightPanel's isStructuralPage gate — never emits a heuristic study model for a noninstructional page role (cover/contents/chapter_opener/etc.)", () => {
+    const idx = PAGE_SRC.indexOf("if (!currentUltraPageView || !isCurrentIntelligencePage) return;");
+    expect(idx).toBeGreaterThan(-1);
+    const block = PAGE_SRC.slice(idx, idx + 200);
+    expect(block).toMatch(/if \(isNoninstructionalPage\(currentPageRole\)\) return;/);
+  });
 });

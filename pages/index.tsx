@@ -2059,13 +2059,22 @@ export default function ThoughtUnitReader() {
   // Only fills when nothing has claimed this page's model yet (prev === null, reset
   // by the [bookId, currentPage] effect above) — never clobbers a model RightPanel
   // already resolved (heuristic or AI-enriched) for the current page.
+  // Mirrors RightPanel's own gate (RightPanel.tsx: `blockEmit = isStructuralPage ||
+  // openAIConfirmsNonInstructional`) so this headless path can't emit a study model
+  // for cover/contents/chapter_opener/etc. pages RightPanel would have suppressed —
+  // isNoninstructionalPage(currentPageRole) is the exact same 17-role set RightPanel's
+  // local STRUCTURAL_PAGE_ROLES uses. openAIConfirmsNonInstructional has no headless
+  // equivalent (it's teachingSynthesis-derived) — the local-role tier is all a
+  // no-AI path can check, same as the two-tier pattern pages/index.tsx already
+  // applies to finalHighlightAnchors above.
   useEffect(() => {
     if (!currentUltraPageView || !isCurrentIntelligencePage) return;
+    if (isNoninstructionalPage(currentPageRole)) return;
     setCurrentPageStudyModel((prev) => {
       if (prev) return prev;
       return buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId);
     });
-  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage]);
+  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage, currentPageRole]);
 
   // ── SurgeonAnnotationPlan: OpenAI reads the current page fresh, Avrrio draws it ──
   // Captured page image (hidden fixed-scale render, decoupled from zoom) — see

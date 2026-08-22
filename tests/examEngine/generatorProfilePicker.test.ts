@@ -18,8 +18,17 @@ describe("app/apex/generator/page.tsx — exam profile is a real choice, not a h
 
   it("REQUIRED: examProfileId is real state with a picker UI, not a hardcoded constant", () => {
     expect(SRC).toMatch(/const \[examProfileId, setExamProfileId\] = useState/);
-    expect(SRC).toMatch(/onClick=\{\(\) => setExamProfileId\('dat'\)\}/);
-    expect(SRC).toMatch(/onClick=\{\(\) => setExamProfileId\(CUSTOM_EXAM_PROFILE_ID\)\}/);
+    expect(SRC).toMatch(/onClick=\{\(\) => handleProfileChange\('dat'\)\}/);
+    expect(SRC).toMatch(/onClick=\{\(\) => handleProfileChange\(CUSTOM_EXAM_PROFILE_ID\)\}/);
+  });
+
+  it("REQUIRED: switching profile clears any already-generated exam and error, so Start can never launch an exam built under the previous profile", () => {
+    const idx = SRC.indexOf("function handleProfileChange(");
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 300);
+    expect(block).toMatch(/setExamProfileId\(id\);/);
+    expect(block).toMatch(/setGeneratedExam\(null\);/);
+    expect(block).toMatch(/setGenerationError\(null\);/);
   });
 
   it("REQUIRED: generateExam() passes the selected profile, not a hardcoded DAT_EXAM_PROFILE", () => {

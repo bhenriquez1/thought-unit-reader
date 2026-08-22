@@ -65,6 +65,15 @@ export async function generateWeakTopicsPracticeExam(
     questionCount,
     sectionIds: targetSections.size > 0 ? Array.from(targetSections) : undefined,
   });
+  // buildExam can legitimately resolve with zero questions (no notes in the
+  // targeted sections yet, or every /api/exam-question-gen call failed) —
+  // app/apex/generator/page.tsx's own generateExam() already guards this
+  // exact case before launching; this quick-launch path (Today tab's "Start
+  // Now") skipped it, so an empty build reached the proctor as "Question Not
+  // Found" instead of a clear failure here.
+  if (built.questions.length === 0) {
+    throw new Error("No questions could be generated for these weak topics yet — read and synthesize a few more pages first.");
+  }
   return builtExamToGeneratedExam(built, Math.round(questionCount * 1.5), "practice");
 }
 
@@ -76,5 +85,10 @@ export async function generateFullSimulationExam(bookId: string, bookTitle?: str
     difficulty: "simulation",
     questionCount: 280, // matches PRACTICE_MODES' "full-dat" defaultQuestions
   });
+  // See generateWeakTopicsPracticeExam's identical guard above — an empty
+  // build must never reach the proctor as a launchable "full simulation."
+  if (built.questions.length === 0) {
+    throw new Error("No questions could be generated for a full simulation yet — read and synthesize more of this book first.");
+  }
   return builtExamToGeneratedExam(built, totalTestingMinutes(ACTIVE_DAT_BLUEPRINT), "full-dat");
 }

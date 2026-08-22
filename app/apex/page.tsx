@@ -73,6 +73,7 @@ function TodayTab() {
   const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
   const router = useRouter();
   const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const cancelRef = useRef(false);
   useEffect(() => {
     cancelRef.current = false;
@@ -83,6 +84,7 @@ function TodayTab() {
   const handleStartRecommended = useCallback(async () => {
     if (!currentRecommendation || !primaryBook) return;
     setLaunching(true);
+    setLaunchError(null);
     try {
       const exam = await generateWeakTopicsPracticeExam(
         primaryBook.bookId,
@@ -98,8 +100,11 @@ function TodayTab() {
       if (cancelRef.current) return;
       safeSetItem("currentExam", JSON.stringify(exam));
       router.push(`/apex/proctor?examId=${examId}`);
-    } catch {
-      if (!cancelRef.current) setLaunching(false);
+    } catch (err: unknown) {
+      if (!cancelRef.current) {
+        setLaunchError(err instanceof Error ? err.message : "Could not prepare the exam. Please try again.");
+        setLaunching(false);
+      }
     }
   }, [currentRecommendation, primaryBook, patterns, adaptiveDifficulty, router]);
 
@@ -223,6 +228,9 @@ function TodayTab() {
                 <p className="text-xs text-gray-400 mt-2">
                   No book with notes yet — questions are generated from your own book. Open a PDF in the Reader and let it synthesize a few pages, then come back.
                 </p>
+              )}
+              {launchError && (
+                <p className="text-xs text-red-400 mt-2">{launchError}</p>
               )}
             </div>
           </div>

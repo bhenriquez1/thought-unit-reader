@@ -38,6 +38,17 @@ describe("lib/examEngine/profileGeneration.ts — book-grounded generation (prod
   it("maps the legacy AdaptiveDifficulty vocabulary ('mixed' included) onto DifficultyLevel rather than assuming they're the same type", () => {
     expect(WRAPPER_SRC).toMatch(/difficulty === "mixed" \? "simulation" : legacyToDifficulty\(difficulty\)/);
   });
+
+  it("REQUIRED: rejects an empty build (zero questions) instead of returning a launchable exam with no questions — buildExam can legitimately resolve empty when the targeted sections have no notes yet", () => {
+    const weakIdx = WRAPPER_SRC.indexOf("export async function generateWeakTopicsPracticeExam(");
+    const fullIdx = WRAPPER_SRC.indexOf("export async function generateFullSimulationExam(");
+    expect(weakIdx).toBeGreaterThan(-1);
+    expect(fullIdx).toBeGreaterThan(weakIdx);
+    const weakBlock = WRAPPER_SRC.slice(weakIdx, fullIdx);
+    const fullBlock = WRAPPER_SRC.slice(fullIdx);
+    expect(weakBlock).toMatch(/if \(built\.questions\.length === 0\) \{\s*throw new Error\(/);
+    expect(fullBlock).toMatch(/if \(built\.questions\.length === 0\) \{\s*throw new Error\(/);
+  });
 });
 
 describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book before generating (product split, Phase 1 item 1)", () => {
@@ -71,5 +82,13 @@ describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book befo
   it("shows an empty-state message pointing back to the Reader, matching the existing generator page's wording, instead of a silently-disabled button with no explanation", () => {
     const occurrences = (PAGE_SRC.match(/No book with notes yet/g) ?? []).length;
     expect(occurrences).toBe(2); // TodayTab + FullExamsTab
+  });
+
+  it("REQUIRED: Start Now surfaces a launch error to the user (e.g. an empty-build rejection from profileGeneration.ts) instead of just silently re-enabling the button", () => {
+    const idx = PAGE_SRC.indexOf("const handleStartRecommended");
+    expect(idx).toBeGreaterThan(-1);
+    const block = PAGE_SRC.slice(idx, idx + 900);
+    expect(block).toMatch(/setLaunchError\(err instanceof Error \? err\.message : "Could not prepare the exam\. Please try again\."\);/);
+    expect(PAGE_SRC).toMatch(/\{launchError && \(/);
   });
 });
