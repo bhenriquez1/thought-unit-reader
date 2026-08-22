@@ -348,6 +348,17 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Number of spoken-text prefix words NOT present in rawText/PDF (guided narration phrases).
   // Subtracted from the TTS word index before passing to the PDF word-rect overlay.
   const sourceTextWordOffsetRef = useRef(0);
+  // P0 stabilization, Tier 3 — the currently-playing segment's content role.
+  // Word-level PDF Eye Guide tracking (useReadingFocusStore.setWord, consumed
+  // by WordRectOverlay's geometry search against the real PDF text layer)
+  // must only ever run for SOURCE_VERBATIM segments — PROFESSOR_EXPLANATION
+  // text is AI-generated prose that was never extracted from this page, so
+  // word-matching it against the PDF is either a silent no-op (safe) or,
+  // worse, a coincidental match on an unrelated word (a real fuzzy-highlight
+  // risk). beginKaraoke()/onSpokenWordIndex() both gate their setWord() call
+  // on this ref rather than skipping karaoke state entirely — the panel's
+  // own on-screen reading-bar highlight is legitimate for either role.
+  const activeContentRoleRef = useRef<SpeechContentRole>("SOURCE_VERBATIM");
   // Phase 11 — speech mode continuity refs.
   // Anchor to resume from when the user switches modes mid-playback.
   const resumeAnchorIdRef  = useRef<string | null>(null);
@@ -384,7 +395,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   // Non-zero only in Guided mode segments that have narration prefixes. The PDF
   // word-rect index must subtract this so the yellow box tracks the anchor text,
   // not the narration prefix.
-  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null, rawText?: string, wordOffset = 0) {
+  function beginKaraoke(displayText: string, spokenText: string, anchorId: string | null = null, rawText?: string, wordOffset = 0, contentRole: SpeechContentRole = "SOURCE_VERBATIM") {
     const displayWords = tokenizeWords(displayText);
     const spokenWords  = tokenizeWords(spokenText);
     setKaraokeWords(displayWords);
@@ -396,7 +407,12 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     activeAnchorIdRef.current       = anchorId;
     activeSentenceTextRef.current   = rawText ?? spokenText;
     sourceTextWordOffsetRef.current = wordOffset;
-    useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
+    activeContentRoleRef.current    = contentRole;
+    // PDF word-level Eye Guide only for verbatim source text — see
+    // activeContentRoleRef's doc comment above.
+    if (contentRole === "SOURCE_VERBATIM") {
+      useReadingFocusStore.getState().setWord(anchorId, 0, displayWords[0]?.word ?? "", rawText ?? spokenText);
+    }
     // Request-time snapshot: emitted before PDF has painted. pdfTargetMatched and
     // pdfWordRectRendered are NOT included here — they are false at this point even
     // when the overlay will render correctly milliseconds later. Confirmation comes from
@@ -418,6 +434,9 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
   function onSpokenWordIndex(spokenIdx: number) {
     const scaled = scaleIndex(spokenIdx, spokenWordsRef.current.length, displayWordCountRef.current);
     setActiveWordIdx(scaled); // Eye Guide always uses the full scaled index (includes any prefix words)
+    // PDF word-level tracking only for verbatim source text — see
+    // activeContentRoleRef's doc comment near its declaration.
+    if (activeContentRoleRef.current !== "SOURCE_VERBATIM") return;
     // PDF word-rect index skips prefix words that aren't present in the source text.
     const pdfWordIdx = Math.max(0, scaled - sourceTextWordOffsetRef.current) + seekWordStartRef.current;
     useReadingFocusStore.getState().setWord(activeAnchorIdRef.current, pdfWordIdx, displayWordsRef.current[scaled]?.word ?? "", activeSentenceTextRef.current ?? undefined);
@@ -1127,7 +1146,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       });
       // Tokenize the complete spoken source segment; only the compact preview is
       // visually truncated. This keeps word tracking valid beyond 160 characters.
-      beginKaraoke(ttsText, ttsText, matchedId ?? lastMatchedId, raw);
+      beginKaraoke(ttsText, ttsText, matchedId ?? lastMatchedId, raw, 0, "SOURCE_VERBATIM");
 
       if (DEV) console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: ttsText.length, totalSentences: sentences.length });
       if (DEV) console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: ttsText.length, voice, mode: "fullPage" });
@@ -1236,7 +1255,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         effectivePrefixOffset: hWordOffset,
         resultingPdfStartIndex: seekWordStartRef.current,
       });
-      beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, hWordOffset);
+      beginKaraoke(eyeHText, ttsHText, seg.evidenceRefId ?? null, seg.rawText, hWordOffset, seg.contentRole);
       if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, "highlights", seg.sourceTextWordOffset ?? 0));
       if (DEV) console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode: "highlights", charCount: ttsHText.length });
       if (DEV) console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsHText.length, preview: ttsHText.slice(0, 60) });
@@ -1443,7 +1462,7 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
         effectivePrefixOffset: segWordOffset,
         resultingPdfStartIndex: seekWordStartRef.current,
       });
-      beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, segWordOffset);
+      beginKaraoke(eyeSegText, ttsSegText, seg.evidenceRefId ?? null, seg.rawText, segWordOffset, seg.contentRole);
       if (DEV) console.log("[CANONICAL_SYNC]", buildCanonicalSyncState(seg.evidenceRefId ?? null, mode, seg.sourceTextWordOffset ?? 0));
       if (DEV) console.log("[SPEECH_TEXT_READY]", { segIdx: i, mode, charCount: ttsSegText.length });
       if (DEV) console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: ttsSegText.length, mode, preview: ttsSegText.slice(0, 60) });

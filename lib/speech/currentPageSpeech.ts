@@ -6,9 +6,31 @@
 // content, and must never drop instructional content (body prose,
 // equations, figure/table captions) just because it's adjacent to furniture.
 
-import { cleanActivePageText } from "@/lib/insights/cleanActivePageText";
+import { cleanActivePageText, classifyLineRole, type RegionRole } from "@/lib/insights/cleanActivePageText";
 
 const ABBREVIATION_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
+
+// P0 stabilization, Tier 3 — roles that stay semantic context (headings orient
+// the listener, page furniture is never meaningful) but are normally not
+// spoken. "body" and "figure-table-caption" are read aloud — a figure/table
+// caption can carry real instructional content (see hasSubstantiveCaptionContent
+// below for the "bare label, no content" exception). classifyLineRole() is the
+// existing lib/insights/cleanActivePageText.ts classifier (already used by the
+// Canonical Page Map) — reused here rather than building a second one.
+const NON_SPOKEN_ROLES: ReadonlySet<RegionRole> = new Set(["heading", "page-furniture", "checkpoint-review", "callout-label"]);
+
+// A caption line that survived cleanActivePageText's FIGURE_CAPTION_RE match
+// but carries no real description beyond the "Figure N." / "Table N." label
+// itself — e.g. "Figure 3.2." with nothing after the number. Speaking a bare
+// label with no content aloud tells the listener nothing; a caption with a
+// real description ("Figure 3.2 The ATP synthase enzyme rotates during
+// phosphorylation...") is real instructional content and stays spoken.
+const BARE_CAPTION_LABEL_RE =
+  /^(?:Figure|FIGURE|Fig\.|Table|TABLE|Photo|PHOTO|Illustration|ILLUSTRATION)\s+\d+[.\-]?\d*\s*[.]?\s*$/;
+
+function hasSubstantiveCaptionContent(line: string): boolean {
+  return !BARE_CAPTION_LABEL_RE.test(line.trim());
+}
 
 export function normalizeSourceWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -34,24 +56,51 @@ function splitOversizedSegment(segment: string, maxChars: number): string[] {
 /**
  * Builds ordered TTS segments for the whole current page.
  *
- * Invariant for ordinary extracted text:
- *   segments.join(" ") === normalizeSourceWhitespace(cleanActivePageText(source, undefined, { stripFigureCaptions: false }))
+ * Invariant: every returned segment is verbatim source text — cleanActivePageText's
+ * output, re-segmented into sentences, never invented/paraphrased/reordered.
+ * What changed (P0 stabilization, Tier 3): NOT every surviving line is spoken
+ * anymore. Section headings, page-furniture fragments that survived the regex
+ * stripping above, and (rare, since cleanActivePageText already strips these)
+ * residual checkpoint/callout markers are classified via classifyLineRole()
+ * and excluded from narration — they remain real page content (a caller that
+ * wants full-page semantic context, not just narration, still has cleanActivePageText's
+ * output available), just not read aloud as if they were body prose. A figure/
+ * table caption is kept UNLESS it's a bare "Figure 3.2." label with no actual
+ * description — see hasSubstantiveCaptionContent above.
+ *
+ * Classification runs on cleanActivePageText's PARAGRAPH-BREAK-preserving
+ * output (before normalizeSourceWhitespace collapses newlines to spaces) —
+ * classifying after collapsing would risk a heading with no terminal
+ * punctuation ("2.1 Limits of Sequences") getting glued by the sentence-
+ * boundary splitter to the body sentence that follows it, so the whole
+ * merged blob would be misclassified as one unit and either wrongly kept
+ * (heading prefix spoken) or wrongly dropped (the real body sentence lost
+ * with it). Splitting on paragraph breaks first — the same structural
+ * boundary lib/pdf/structuredPageText.ts already inserts between headings
+ * and body paragraphs — keeps each classification decision scoped to one
+ * real structural unit.
  *
  * The page furniture stripped here (running headers/footers, page numbers,
  * copyright/publisher debris, checkpoint/callout section labels — see
  * lib/insights/cleanActivePageText.ts) is the same stripping already used
  * for anchor grounding and synthesis input; this reuses it rather than
- * building a second matcher. Figure/table captions are deliberately KEPT —
- * they can carry real instructional content — and there is no AI/OCR
- * rewrite of anything that survives: every surviving word is spoken
- * verbatim, in source order.
+ * building a second matcher.
  */
 export function buildCurrentPageSpeechSegments(
   activePageText: string,
   maxChars = 3500,
 ): string[] {
   const cleaned = cleanActivePageText(activePageText, "current-page-speech", { stripFigureCaptions: false });
-  const source = normalizeSourceWhitespace(cleaned);
+  if (!cleaned) return [];
+
+  const lines = cleaned.split(/\n+/).map(normalizeSourceWhitespace).filter(Boolean);
+  const spokenLines = lines.filter((line) => {
+    const role = classifyLineRole(line);
+    if (NON_SPOKEN_ROLES.has(role)) return false;
+    if (role === "figure-table-caption") return hasSubstantiveCaptionContent(line);
+    return true;
+  });
+  const source = normalizeSourceWhitespace(spokenLines.join(" "));
   if (!source) return [];
 
   const chunks = source.split(/(?<=[.!?…])\s+/);
