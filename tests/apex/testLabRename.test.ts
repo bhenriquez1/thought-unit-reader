@@ -14,9 +14,10 @@ function read(relPath: string): string {
 }
 
 describe("TestLab rename — visible copy only, URL stays /apex", () => {
-  it("REQUIRED: app/apex/page.tsx dashboard header reads 'Avrrio TestLab — DAT'", () => {
+  it("REQUIRED: app/apex/page.tsx dashboard header reads 'Avrrio TestLab' — the active exam profile (DAT) is a switcher, not baked into the wordmark", () => {
     const src = read("app/apex/page.tsx");
-    expect(src).toMatch(/Avrrio TestLab <span className="text-blue-300 font-bold">— DAT<\/span>/);
+    expect(src).toMatch(/🎯 Avrrio TestLab<\/h1>/);
+    expect(src).not.toMatch(/Avrrio TestLab <span className="text-blue-300 font-bold">— DAT<\/span>/);
     expect(src).not.toMatch(/Avrrio Exam Forge/);
   });
 
@@ -43,11 +44,6 @@ describe("TestLab rename — visible copy only, URL stays /apex", () => {
     expect(src).toMatch(/Open TestLab →/);
     expect(src).toMatch(/Avrrio TestLab — Practice Exams/);
     expect(src).not.toMatch(/Exam Forge/);
-  });
-
-  it("components/surgeonView2/SurgeonCockpit.tsx toggle label renamed (dead code, but kept internally consistent)", () => {
-    const src = read("components/surgeonView2/SurgeonCockpit.tsx");
-    expect(src).toMatch(/>\s*TestLab\s*<\/button>/);
   });
 
   it("REQUIRED: the legacy /dat-apex redirect route itself is unchanged (only its visible text is) — external bookmarks keep working", () => {

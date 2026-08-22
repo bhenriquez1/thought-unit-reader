@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { savePendingExam } from '@/lib/db/examStore';
 import { DAT_SECTIONS } from '@/types/apex-exam';
 import { buildExam } from '@/lib/examEngine/examBuilder';
 import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
 import { DAT_EXAM_PROFILE } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
+import { EXAM_PROFILE_CATALOG } from '@/lib/examEngine/profiles/profileCatalog';
 import type { ExamProfile } from '@/lib/examEngine/types';
 import {
   getUserBookCatalogue,
@@ -24,6 +25,12 @@ import { getNotesByBook } from '@/lib/notelab/ultraNoteStore';
 import type { DATSubject, PracticeMode } from '@/lib/apex/bookCatalogue';
 import type { DifficultyLevel } from '@/lib/examEngine/types';
 import type { GeneratedExam } from '@/lib/apex/examGenerator';
+import { getReadingProgress } from '@/lib/reader/readingProgressStore';
+import type { ReadingProgressRecord } from '@/lib/reader/readingProgressStore';
+import { EXAM_SCOPE_OPTIONS, resolveExamScope, defaultScopeFor } from '@/lib/examEngine/examScope';
+import type { ExamScope } from '@/lib/examEngine/examScope';
+import { getNodesByBook, getNodeProgress } from '@/lib/knowledge/knowledgeGraphStore';
+import type { KnowledgeNode, KnowledgeNodeProgress } from '@/lib/knowledge/knowledgeGraphSchema';
 
 const SECTION_COLORS: Record<string, string> = {
   'survey-natural-sciences': 'from-green-600 to-emerald-600',
@@ -46,8 +53,12 @@ const SUBJECT_COLORS: Record<string, string> = {
   Other: 'bg-gray-800/60 border-gray-500/40 text-gray-300',
 };
 
-export default function ExamGeneratorPage() {
+// useSearchParams() requires a Suspense boundary in the App Router (same
+// discipline as app/apex/page.tsx's DatApexPageInner) — ExamGeneratorPage
+// below is the actual page body; the default export just wraps it.
+function ExamGeneratorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const tocs = useTocStore((s) => s.tocs);
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
   const [books, setBooks] = useState<import('@/lib/apex/bookCatalogue').CatalogueBook[]>([]);
@@ -63,7 +74,11 @@ export default function ExamGeneratorPage() {
   // Product-split Phase 1, item 2 — proves ExamProfile generalizes beyond
   // DAT: 'dat' (the official blueprint) or 'custom' (no external
   // standardized-test blueprint, draws entirely from the selected source).
-  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>('dat');
+  // Deep-links from the TestLab dashboard's exam-profile switcher
+  // (/apex/generator?examType=custom) preselect the profile here.
+  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>(
+    () => (searchParams?.get('examType') === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE_ID : 'dat'),
+  );
   const selectedProfile: ExamProfile = examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
   const [bookId, setBookId] = useState<string>(books[0]?.bookId ?? '');
@@ -80,6 +95,46 @@ export default function ExamGeneratorPage() {
   const [generatedExam, setGeneratedExam] = useState<GeneratedExam | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
+
+  // TestLab-Reader progress integration — "Completed material only" (or
+  // whatever scope the student picks) must never let buildExam() draw on
+  // pages the student hasn't reached. See lib/examEngine/examScope.ts.
+  const [examScope, setExamScope] = useState<ExamScope>('entire-book');
+  const [readingProgress, setReadingProgress] = useState<ReadingProgressRecord | null>(null);
+  const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
+  const [nodeProgressById, setNodeProgressById] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // Reload Reader progress + Knowledge Graph nodes whenever the selected
+  // book changes, and default the scope to "Completed material only" when
+  // this book has a Reader progress checkpoint, "Entire book" otherwise —
+  // never the reverse (a book with no linked progress has nothing to scope
+  // "completed" against).
+  useEffect(() => {
+    let alive = true;
+    if (!bookId) { setReadingProgress(null); setAllNodes([]); setNodeProgressById(new Map()); return; }
+    getReadingProgress(bookId)
+      .then((progress) => {
+        if (!alive) return;
+        setReadingProgress(progress);
+        setExamScope(defaultScopeFor(progress));
+      })
+      .catch(() => { if (alive) setReadingProgress(null); });
+    getNodesByBook(bookId)
+      .then(async (nodes) => {
+        if (!alive) return;
+        setAllNodes(nodes);
+        const entries = await Promise.all(
+          nodes.map(async (n) => [n.id, await getNodeProgress(n.id).catch(() => null)] as const),
+        );
+        if (!alive) return;
+        const map = new Map<string, KnowledgeNodeProgress>();
+        for (const [id, p] of entries) if (p) map.set(id, p);
+        setNodeProgressById(map);
+      })
+      .catch(() => { if (alive) { setAllNodes([]); setNodeProgressById(new Map()); } });
+    return () => { alive = false; };
+  }, [bookId]);
 
   // --- Derived ---
   const modeConfig = PRACTICE_MODES.find((m) => m.id === practiceMode)!;
@@ -108,6 +163,20 @@ export default function ExamGeneratorPage() {
     [availableNoteCount, questionCount],
   );
 
+  const resolvedScope = useMemo(
+    () => resolveExamScope({
+      scope: examScope,
+      progress: readingProgress,
+      manualPageRanges: selectedChapterIds.size > 0 ? tocToPageRanges(tocItems, selectedChapterIds) : undefined,
+      allNodes,
+      progressByNodeId: nodeProgressById,
+      weakAccuracyThreshold: selectedProfile.weaknessAnalytics.weakAccuracyThreshold,
+      minAttemptsForSignal: selectedProfile.weaknessAnalytics.minAttemptsForSignal,
+      selectedNodeIds,
+    }),
+    [examScope, readingProgress, selectedChapterIds, tocItems, allNodes, nodeProgressById, selectedProfile, selectedNodeIds],
+  );
+
   // When mode changes, reset questionCount to mode default
   function handleModeChange(mode: PracticeMode) {
     const cfg = PRACTICE_MODES.find((m) => m.id === mode)!;
@@ -120,8 +189,21 @@ export default function ExamGeneratorPage() {
   function handleBookSelect(id: string) {
     setBookId(id);
     setSelectedChapterIds(new Set());
+    setSelectedNodeIds(new Set());
     setGeneratedExam(null);
     setGenerationError(null);
+    // examScope itself is re-defaulted by the bookId effect once this
+    // book's Reader progress loads — not reset here to avoid a one-frame
+    // flash back to 'entire-book' before that load resolves.
+  }
+
+  function toggleConceptSelection(nodeId: string) {
+    setSelectedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
   }
 
   // Switching exam type changes which profile generateExam() builds against
@@ -170,14 +252,13 @@ export default function ExamGeneratorPage() {
 
   async function generateExam() {
     if (!bookId) return;
+    if (resolvedScope.blocked) {
+      setGenerationError(resolvedScope.summary);
+      return;
+    }
     setIsGenerating(true);
     setGenerationError(null);
     try {
-      const chapterPageRanges =
-        selectedChapterIds.size > 0
-          ? tocToPageRanges(tocItems, selectedChapterIds)
-          : undefined;
-
       const built = await buildExam({
         bookId,
         bookTitle: selectedBook?.bookTitle,
@@ -188,7 +269,12 @@ export default function ExamGeneratorPage() {
         // Exam has one "general" section and draws from the whole selection.
         sectionIds: examProfileId === 'dat' && sectionIds.length ? sectionIds : undefined,
         randomize,
-        chapterPageRanges,
+        chapterPageRanges: resolvedScope.pageRanges,
+        // Hard constraint, not a preference — a chosen exam scope (in
+        // particular "Completed material only") must never silently widen
+        // back to the full book when the narrowed range matches nothing.
+        // See lib/examEngine/examScope.ts and lib/examEngine/examBuilder.ts.
+        strictScope: true,
         practiceMode,
       });
 
@@ -234,7 +320,7 @@ export default function ExamGeneratorPage() {
     router.push(`/apex/proctor?examId=${encodeURIComponent(examId)}`);
   }
 
-  const canGenerate = !!bookId && sectionIds.length > 0 && !isGenerating;
+  const canGenerate = !!bookId && sectionIds.length > 0 && !isGenerating && !resolvedScope.blocked;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white">
@@ -245,7 +331,7 @@ export default function ExamGeneratorPage() {
             href="/apex"
             className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-4"
           >
-            ← Back to Hub
+            ← TestLab
           </Link>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
             ⚡ Build Practice Exam
@@ -285,6 +371,23 @@ export default function ExamGeneratorPage() {
                   <div className="font-medium text-white text-sm">Custom Exam</div>
                   <div className="text-xs text-gray-400 mt-0.5">No external blueprint — your source only</div>
                 </button>
+                {/* TestLab is built to support more than the DAT — these
+                    profiles are visibly part of the product even before
+                    they have a real ExamProfile implementation, so the
+                    picker never reads as "DAT with a rename." */}
+                {EXAM_PROFILE_CATALOG.filter((p) => !p.available).map((p) => (
+                  <div
+                    key={p.id}
+                    title="Coming soon"
+                    className="text-left p-3 rounded-lg border-2 border-dashed border-gray-700 bg-gray-800/20 cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium text-gray-500 text-sm">{p.label}</div>
+                      <span className="text-[10px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded shrink-0">Coming soon</span>
+                    </div>
+                    <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -438,9 +541,17 @@ export default function ExamGeneratorPage() {
                     </div>
                   )}
 
-                  {/* Chapter selector (only when a book is selected and has TOC) */}
+                  {/* Chapter selector (only when a book is selected and has TOC) —
+                      this selection is only applied to generation when the
+                      Exam Scope section below is set to "Selected chapters/
+                      pages"; for every other scope it's inert (dimmed). */}
                   {bookId && topLevelChapters.length > 0 && (
-                    <div className="mt-4 border border-gray-600 rounded-lg overflow-hidden">
+                    <div className={`mt-4 border border-gray-600 rounded-lg overflow-hidden ${examScope !== 'selected-chapters' ? 'opacity-50' : ''}`}>
+                      {examScope !== 'selected-chapters' && (
+                        <p className="px-4 pt-2 text-[11px] text-gray-500">
+                          Only applied when Exam Scope (below) is set to &ldquo;Selected chapters/pages&rdquo;.
+                        </p>
+                      )}
                       <button
                         onClick={() => setChaptersExpanded((v) => !v)}
                         className="w-full flex items-center justify-between px-4 py-3 bg-gray-700/50 hover:bg-gray-700 transition-colors text-sm font-medium"
@@ -499,7 +610,70 @@ export default function ExamGeneratorPage() {
               )}
             </section>
 
-            {/* 3 — Practice Mode */}
+            {/* 3 — Exam Scope */}
+            {bookId && (
+              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold mb-1 text-blue-400">🧭 Exam Scope</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  {readingProgress
+                    ? `TestLab knows you've reached page ${readingProgress.furthestPageReached} in Reader for this book.`
+                    : "No Reader progress found yet for this book — TestLab can't scope by what you've read until you open it in Reader."}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {EXAM_SCOPE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setExamScope(opt.id)}
+                      className={`text-left p-3 rounded-lg border-2 transition-all ${
+                        examScope === opt.id
+                          ? 'border-blue-500 bg-blue-500/10'
+                          : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="font-medium text-white text-sm flex items-center gap-2">
+                        {opt.label}
+                        {opt.id === 'entire-book' && (
+                          <span className="text-[10px] font-normal uppercase tracking-wide bg-amber-900/40 text-amber-300 border border-amber-600/30 px-1.5 py-0.5 rounded-full">
+                            May include unread material
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">{opt.description}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom concepts picker — only meaningful when this scope is active */}
+                {examScope === 'custom-concepts' && (
+                  <div className="mt-4 border border-gray-600 rounded-lg p-3 max-h-56 overflow-y-auto">
+                    {allNodes.length === 0 ? (
+                      <p className="text-xs text-gray-500">No Knowledge Graph concepts recorded for this book yet — read a few pages in Reader first.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {allNodes.map((n) => (
+                          <label key={n.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-700/50 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={selectedNodeIds.has(n.id)}
+                              onChange={() => toggleConceptSelection(n.id)}
+                              className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="flex-1 text-gray-200">{n.title}</span>
+                            <span className="text-xs text-gray-500">p.{n.sourcePages[0] ?? '—'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <p className={`text-xs mt-4 ${resolvedScope.blocked ? 'text-amber-400' : 'text-gray-400'}`}>
+                  {resolvedScope.blocked ? '⚠ ' : ''}{resolvedScope.summary}
+                </p>
+              </section>
+            )}
+
+            {/* 4 — Practice Mode */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">🎓 Practice Mode</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -524,7 +698,7 @@ export default function ExamGeneratorPage() {
               </div>
             </section>
 
-            {/* 4 — Difficulty */}
+            {/* 5 — Difficulty */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📊 Difficulty</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -546,7 +720,7 @@ export default function ExamGeneratorPage() {
               </div>
             </section>
 
-            {/* 5 — DAT Sections (collapsed for Practice mode; DAT profile only) */}
+            {/* 6 — DAT Sections (collapsed for Practice mode; DAT profile only) */}
             {examProfileId === 'dat' ? (
               <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
                 <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 DAT Sections</h3>
@@ -812,5 +986,13 @@ export default function ExamGeneratorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExamGeneratorPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <ExamGeneratorPage />
+    </Suspense>
   );
 }

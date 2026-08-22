@@ -5,6 +5,17 @@
 // env, no jsdom/indexedDB polyfill), so the routing/guard logic gets
 // static-analysis coverage, matching the established pattern for
 // IDB-backed modules throughout this session's work.
+//
+// TestLab-Reader progress integration — this file used to assert writes
+// were keyed on question.sourceThoughtUnitIds. That was a real bug:
+// recordLearningEvent's first argument is a Knowledge Graph NODE id (it
+// calls getNodeProgress/saveNodeProgress, keyed by KnowledgeNodeProgress.
+// nodeId — see lib/knowledge/recordLearningEvent.ts), and CanonicalThoughtUnit
+// ids are a DIFFERENT id space from KnowledgeNode ids in this app. Every
+// prior write here silently created an orphaned KnowledgeNodeProgress
+// record nothing else could ever read back. Fixed to key on
+// sourceKnowledgeNodeIds instead — this suite now asserts the FIXED
+// behavior, not the old bug.
 
 import fs from "fs";
 import path from "path";
@@ -12,16 +23,18 @@ import path from "path";
 const SRC = fs.readFileSync(path.resolve(__dirname, "../../lib/datApex/datLearningState.ts"), "utf8");
 
 describe("recordDatQuestionAnswered", () => {
-  it("REQUIRED: no-ops (does not call recordLearningEvent) when the question carries no grounding", () => {
+  it("REQUIRED: no-ops (does not call recordLearningEvent) when the question carries no Knowledge Graph grounding", () => {
     const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
     const block = SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(!documentId \|\| !unitIds \|\| unitIds\.length === 0\) return;/);
+    expect(block).toMatch(/if \(!documentId \|\| !nodeIds \|\| nodeIds\.length === 0\) return;/);
   });
 
-  it("REQUIRED: fires one event per source canonical unit, not one event for the whole question", () => {
+  it("REQUIRED: fires one event per Knowledge Graph node id (sourceKnowledgeNodeIds), not per CanonicalThoughtUnit id", () => {
     const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
     const block = SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/unitIds\.map\(\(unitId\) =>\s*\n\s*recordLearningEvent\(unitId, documentId, \{/);
+    expect(block).toMatch(/const nodeIds = question\.sourceKnowledgeNodeIds;/);
+    expect(block).toMatch(/nodeIds\.map\(\(nodeId\) =>\s*\n\s*recordLearningEvent\(nodeId, documentId, \{/);
+    expect(block).not.toMatch(/sourceThoughtUnitIds/);
   });
 
   it("REQUIRED: the event kind is dat-question-answered, carrying correct/timeMs/occurredAt/sourceId", () => {
@@ -38,20 +51,26 @@ describe("recordDatQuestionAnswered", () => {
 describe("recordDatAttemptLearningState", () => {
   it("REQUIRED: skips unanswered responses (selectedChoiceId === null) before doing any lookup", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(r\.selectedChoiceId === null\) return Promise\.resolve\(\);/);
+    const block = SRC.slice(idx, idx + 900);
+    expect(block).toMatch(/if \(r\.selectedChoiceId === null\) return null;/);
   });
 
   it("REQUIRED: correctness is computed by comparing the response to the question's own correctAnswer", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 700);
+    const block = SRC.slice(idx, idx + 900);
     expect(block).toMatch(/const correct = r\.selectedChoiceId === q\.correctAnswer;/);
   });
 
-  it("a single question's write failure is caught per-question, not allowed to reject the whole Promise.all", () => {
+  it("REQUIRED: a single question's write failure is caught per-question, not allowed to reject the whole Promise.all", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/recordDatQuestionAnswered\(q, correct, occurredAt\)\.catch\(\(\) => \{\}\);/);
+    const block = SRC.slice(idx, idx + 900);
+    expect(block).toMatch(/try \{\s*\n\s*await recordDatQuestionAnswered\(q, correct, occurredAt\);\s*\n\s*return true;\s*\n\s*\} catch \{\s*\n\s*return false;\s*\n\s*\}/);
+  });
+
+  it("REQUIRED: write failures are counted and returned, not silently swallowed — the whole point of this pass", () => {
+    const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
+    const block = SRC.slice(idx, idx + 1200);
+    expect(block).toMatch(/return \{\s*\n\s*written: attempted\.filter\(Boolean\)\.length,\s*\n\s*failed:\s*attempted\.filter\(\(ok\) => !ok\)\.length,\s*\n\s*\};/);
   });
 });
 
@@ -63,7 +82,12 @@ describe("app/apex/proctor/page.tsx — wires the attempt submission into record
     const wireIdx = pageSrc.indexOf("recordDatAttemptLearningState(");
     expect(scoreIdx).toBeGreaterThan(-1);
     expect(wireIdx).toBeGreaterThan(scoreIdx);
-    const block = pageSrc.slice(wireIdx, wireIdx + 200);
-    expect(block).toMatch(/recordDatAttemptLearningState\(allQuestions, attempt\.responses, endTime\)\.catch\(\(\) => \{\}\);/);
+  });
+
+  it("REQUIRED: a write failure is logged, not swallowed by a blanket .catch(() => {})", () => {
+    const wireIdx = pageSrc.indexOf("recordDatAttemptLearningState(");
+    const block = pageSrc.slice(wireIdx, wireIdx + 400);
+    expect(block).not.toMatch(/\.catch\(\(\) => \{\}\);/);
+    expect(block).toMatch(/console\.error\("\[TESTLAB_LEARNING_STATE_WRITE_FAIL\]"/);
   });
 });

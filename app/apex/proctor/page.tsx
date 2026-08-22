@@ -247,8 +247,18 @@ export default function ExamProctorPage() {
         // X3 — additionally write grounded (AI-generated) questions' outcomes
         // into the shared Learning State engine. No-ops per-question for
         // legacy static-bank questions, which carry no canonical grounding.
+        // Fire-and-forget from the exam-submission flow's perspective (a
+        // Learning State write failure must never block seeing results),
+        // but no longer silently swallowed — logged so a real failure is
+        // visible instead of vanishing into a blanket .catch(() => {}).
         const allQuestions = s.sections.flatMap((sg) => sg.questions);
-        recordDatAttemptLearningState(allQuestions, attempt.responses, endTime).catch(() => {});
+        recordDatAttemptLearningState(allQuestions, attempt.responses, endTime)
+          .then((summary) => {
+            if (summary.failed > 0) {
+              console.error("[TESTLAB_LEARNING_STATE_WRITE_FAIL]", summary);
+            }
+          })
+          .catch((err) => console.error("[TESTLAB_LEARNING_STATE_WRITE_FAIL]", err));
       })
       .catch(() => { /* non-fatal — results are in localStorage */ });
 

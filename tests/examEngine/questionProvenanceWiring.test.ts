@@ -17,7 +17,7 @@ describe("lib/examEngine/types.ts — EngineQuestion provenance fields", () => {
 
   it("REQUIRED: adds pageTruthKey, sourceEvidence, generatorVersion alongside the existing sourceThoughtUnitIds", () => {
     const idx = src.indexOf("export interface EngineQuestion");
-    const block = src.slice(idx, idx + 1800);
+    const block = src.slice(idx, idx + 2400);
     expect(block).toMatch(/sourceThoughtUnitIds\?: string\[\];/);
     expect(block).toMatch(/pageTruthKey\?: string;/);
     expect(block).toMatch(/sourceEvidence\?: string\[\];/);

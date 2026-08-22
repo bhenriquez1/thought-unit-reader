@@ -54,6 +54,7 @@ export function engineQuestionToDATQuestion(q: EngineQuestion): DATQuestion {
     sourceBookId: q.sourceBookId,
     sourcePageNumber: q.sourcePageNumber,
     sourceThoughtUnitIds: q.sourceThoughtUnitIds,
+    sourceKnowledgeNodeIds: q.sourceKnowledgeNodeIds,
   };
 }
 
