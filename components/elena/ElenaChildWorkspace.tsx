@@ -5,6 +5,7 @@
 const DEV = process.env.NODE_ENV === "development";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { safeSetItem } from "@/lib/storage/safeStorage";
 import ReadingBuddy    from "@/components/elena/ReadingBuddy";
 import MemoryMatch     from "@/components/elena/MemoryMatch";
@@ -435,80 +436,91 @@ function HomeTab({
         {(profile.preferredName || profile.displayName)}'s Learning Space
       </p>
 
-      {/* Child identity — large, unmistakably the top of the page */}
-      <div className="mb-4 flex items-center gap-4 rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/12 to-purple-500/8 p-4">
-        <button
-          onClick={onSwitchProfile}
-          className="text-5xl leading-none flex-shrink-0 w-16 h-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/15 transition-colors"
-          aria-label="Switch learner"
-          title="Switch learner"
-        >
-          {getAvatarEmoji(profile.id)}
-        </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-white truncate">{profile.preferredName || profile.displayName}</h1>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-base">{levelInfo.icon}</span>
-            <span className={`text-sm font-semibold ${levelInfo.color}`}>{levelInfo.label}</span>
+      {/* Identity + current-book side by side on wider viewports instead of
+          always stacking — the workspace now uses the space a wide screen
+          actually gives it rather than staying pinned to a narrow column. */}
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-5 gap-4">
+        {/* Child identity — large, unmistakably the top of the page */}
+        <div className="md:col-span-2 flex items-center gap-4 rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/12 to-purple-500/8 p-4">
+          <button
+            onClick={onSwitchProfile}
+            className="text-5xl leading-none flex-shrink-0 w-16 h-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/15 transition-colors"
+            aria-label="Switch learner"
+            title="Switch learner"
+          >
+            {getAvatarEmoji(profile.id)}
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold text-white truncate">{profile.preferredName || profile.displayName}</h1>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="text-base">{levelInfo.icon}</span>
+              <span className={`text-sm font-semibold ${levelInfo.color}`}>{levelInfo.label}</span>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-2.5 py-1">
+              <span className="text-sm">⭐</span>
+              <span className="text-yellow-200 font-bold text-sm tabular-nums">{rewards.totalStars}</span>
+            </div>
+            {rewards.currentStreak > 0 && (
+              <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2 py-0.5">
+                <span className="text-xs">🔥</span>
+                <span className="text-orange-200 font-semibold text-xs">{rewards.currentStreak}d</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-2.5 py-1">
-            <span className="text-sm">⭐</span>
-            <span className="text-yellow-200 font-bold text-sm tabular-nums">{rewards.totalStars}</span>
-          </div>
-          {rewards.currentStreak > 0 && (
-            <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2 py-0.5">
-              <span className="text-xs">🔥</span>
-              <span className="text-orange-200 font-semibold text-xs">{rewards.currentStreak}d</span>
+
+        {/* Primary action — Continue Reading when a book exists, a full
+            "choose your next adventure" invitation when it doesn't. This is
+            Elena's own new-product empty state: it never falls back to a
+            bare/blank card just because no book is loaded yet. */}
+        <div className="md:col-span-3 rounded-2xl border border-blue-400/25 bg-blue-500/8 p-4">
+          {activeBook ? (
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl flex-shrink-0">📘</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-semibold text-sm truncate">{activeBook.title}</p>
+                <p className="text-blue-300/70 text-xs mt-0.5">
+                  {activeBook.totalPages > 0 ? `Page ${activeBook.currentPage} of ${activeBook.totalPages}` : "Ready to open"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl flex-shrink-0">🧭</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-semibold text-sm">Let's choose your next adventure!</p>
+                <p className="text-blue-300/70 text-xs mt-0.5">Upload a book or pick one from your library to start reading.</p>
+              </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Current book */}
-      <div className="mb-4 rounded-2xl border border-blue-400/25 bg-blue-500/8 p-4">
-        {activeBook ? (
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-2xl flex-shrink-0">📘</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-white font-semibold text-sm truncate">{activeBook.title}</p>
-              <p className="text-blue-300/70 text-xs mt-0.5">
-                {activeBook.totalPages > 0 ? `Page ${activeBook.currentPage} of ${activeBook.totalPages}` : "Ready to open"}
-              </p>
+          {bookPct !== null && (
+            <div className="mb-3">
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all" style={{ width: `${bookPct}%` }} />
+              </div>
             </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={onContinueReading}
+              className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-400 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
+            >
+              {activeBook ? "📖 Continue Reading" : "📖 Choose or Start Reading"}
+            </button>
+            <button
+              onClick={onUploadClick}
+              className="flex-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
+            >
+              📤 Upload a Book
+            </button>
           </div>
-        ) : (
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-2xl flex-shrink-0 opacity-40">📖</span>
-            <p className="text-blue-300/70 text-sm">No book open yet — upload one to get started.</p>
-          </div>
-        )}
-        {bookPct !== null && (
-          <div className="mb-3">
-            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all" style={{ width: `${bookPct}%` }} />
-            </div>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            onClick={onContinueReading}
-            className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-400 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
-          >
-            {activeBook ? "📖 Continue Reading" : "📖 Start Reading"}
-          </button>
-          <button
-            onClick={onUploadClick}
-            className="flex-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
-          >
-            📤 Upload a Book
-          </button>
         </div>
       </div>
 
       {/* Today's Goal + Progress — compact stats */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
         {[
           { icon: "⭐", value: String(rewards.totalStars),           label: "Stars"    },
           { icon: "🔥", value: String(rewards.currentStreak),        label: "Streak"   },
@@ -533,7 +545,7 @@ function HomeTab({
       {/* Explore grid — My Books / Today's Learning / Vocabulary / Practice / Progress */}
       <div className="mb-5">
         <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-3">Explore</h2>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {EXPLORE_NAV.map(({ tab, icon, label, color }) => (
             <button
               key={tab}
@@ -1678,6 +1690,19 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
             <span>🔥</span>
             <span className="font-bold tabular-nums">{rewards.currentStreak}d</span>
           </div>
+          {/* Distinct from "Parent" below — Parent opens the in-Elena parent
+              overlay; this leaves Elena entirely and returns to the main
+              Avrrio Reader route. Elena's own session (profile, library,
+              active book) is untouched by navigating away — it's all
+              persisted in IndexedDB, not component state. */}
+          <Link
+            href="/"
+            className="text-[11px] text-slate-300 hover:text-white transition-colors flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10"
+            aria-label="Back to Avrrio Reader"
+          >
+            <span>←</span>
+            <span>Reader</span>
+          </Link>
           <button
             onClick={() => setShowParent(true)}
             className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/5"
@@ -1704,9 +1729,11 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
         </div>
       )}
 
-      {/* Tab content — centered with max-width and responsive padding */}
+      {/* Tab content — uses the available viewport width instead of a narrow
+          centered column with a huge empty field on either side; max-w-6xl
+          matches the width TestLab's dashboard (app/apex/page.tsx) uses. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="h-full max-w-2xl mx-auto w-full px-4 py-4">
+        <div className="h-full max-w-6xl mx-auto w-full px-4 sm:px-6 py-4">
           {activeTab === "home" && (
             <HomeTab
               profile={profile} rewards={rewards} progress={progress} activeBook={activeBook}
@@ -1763,7 +1790,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
 
       {/* Bottom nav — clearly separated from content, horizontally scrollable */}
       <div className="flex-shrink-0 border-t-2 border-white/10 bg-slate-950/90 backdrop-blur-md">
-        <div className="flex overflow-x-auto scrollbar-hide max-w-2xl mx-auto">
+        <div className="flex overflow-x-auto scrollbar-hide max-w-6xl mx-auto">
           {ELENA_TABS.map(tab => (
             <button
               key={tab.id}
