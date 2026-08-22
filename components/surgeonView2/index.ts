@@ -10,7 +10,9 @@ export { BottomDrawer } from './BottomDrawer';
 export { SurgeonStackPanel } from './SurgeonStackPanel';
 
 // NEW: Relationship-first Cockpit (Surgeon View 2.0 redesign)
-export { SurgeonCockpit } from './SurgeonCockpit';
+// SurgeonCockpit itself was removed as dead code (TestLab legacy-fallback
+// audit) — zero importers outside this barrel; DATDrillMode.tsx (its sole
+// child) was removed alongside it.
 export { CockpitHeader } from './CockpitHeader';
 export { ClusterRail } from './ClusterRail';
 export { RelationPanel } from './RelationPanel';

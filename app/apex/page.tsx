@@ -16,6 +16,7 @@ import { safeSetItem } from "@/lib/storage/safeStorage";
 import { getUserBookCatalogue } from "@/lib/apex/bookCatalogue";
 import type { CatalogueBook } from "@/lib/apex/bookCatalogue";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
+import { EXAM_PROFILE_CATALOG } from "@/lib/examEngine/profiles/profileCatalog";
 
 /** Loads the student's book catalogue (books with Reader notes) and returns
  *  the "primary" one (most notes) to generate from, or null if none exist
@@ -240,7 +241,7 @@ function TodayTab() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { href: "/apex/generator",            label: "Create Practice Exam",  icon: "📝", color: "from-blue-600 to-blue-700"   },
-          { href: "/apex/proctor?config=full",  label: "Full DAT Simulation",   icon: "⏰", color: "from-green-600 to-green-700"  },
+          { href: "/apex/proctor?config=full",  label: "Full Simulation",       icon: "⏰", color: "from-green-600 to-green-700"  },
           { href: "/apex/review",               label: "Review Mistakes",       icon: "🔍", color: "from-purple-600 to-purple-700" },
           { href: "/apex/generator?mode=quick", label: "Quick Practice (30q)",  icon: "⚡", color: "from-orange-600 to-orange-700" },
         ].map(({ href, label, icon, color }) => (
@@ -452,7 +453,7 @@ function FullExamsTab() {
       {/* Full simulation panel */}
       <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
         <div className="flex items-start justify-between mb-1 gap-4">
-          <h2 className="text-lg font-bold text-white">Full-Length DAT Simulation</h2>
+          <h2 className="text-lg font-bold text-white">Full-Length Simulation</h2>
           <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide bg-green-900/40 text-green-300 border border-green-600/30 px-2 py-0.5 rounded-full">
             DAT Blueprint
           </span>
@@ -825,6 +826,79 @@ function HistoryTab() {
 
 /* ─── Page shell ──────────────────────────────────────────────────────────── */
 
+/* ─── Exam profile switcher ───────────────────────────────────────────────
+ * TestLab legacy-fallback audit — the dashboard header used to hardcode
+ * "Avrrio TestLab — DAT" into the wordmark itself, so a screenshot always
+ * read as a DAT-only product no matter what else changed. DAT stays the
+ * active/selected profile (per the product brief — TestLab isn't dropping
+ * DAT support), but the product identity now visibly generalizes: the
+ * active profile is a switcher, not baked into the brand name, and the
+ * other exam profiles TestLab is meant to grow into (MCAT, board/licensure,
+ * course exams) are listed even though only DAT and Custom Exam have a real
+ * ExamProfile implementation today (see profileCatalog.ts). Selecting an
+ * unavailable profile is a no-op close, never a silent dead click that
+ * looks the same as a working one — the "Coming soon" tag makes the state
+ * explicit before the click, not after. */
+function ExamProfileSwitcher() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const active = EXAM_PROFILE_CATALOG.find(p => p.available) ?? EXAM_PROFILE_CATALOG[0];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-600/20 border border-blue-500/40 text-blue-200 text-xs font-semibold hover:bg-blue-600/30 transition-colors"
+      >
+        {active.label}
+        <span className="text-blue-400">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-2 w-72 bg-slate-900 border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden">
+            <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-gray-500 border-b border-white/5">
+              Choose Exam
+            </div>
+            {EXAM_PROFILE_CATALOG.map(p => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setOpen(false);
+                  if (!p.available || p.id === active.id) return;
+                  router.push(`/apex/generator?examType=${p.id}`);
+                }}
+                disabled={!p.available}
+                className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
+                  p.id === active.id
+                    ? "bg-blue-600/20 text-white"
+                    : p.available
+                      ? "text-gray-300 hover:bg-white/5"
+                      : "text-gray-500 cursor-default"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{p.label}</span>
+                  {p.id === active.id && <span className="text-[10px] text-blue-300 shrink-0">Active</span>}
+                  {!p.available && <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded shrink-0">Coming soon</span>}
+                </div>
+                <p className="text-[11px] text-gray-500 mt-0.5">{p.description}</p>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const RIBBON_CHIP = "px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors whitespace-nowrap";
+
+function FlowArrow() {
+  return <span className="text-gray-600 shrink-0">→</span>;
+}
+
 // Setup-flow resequencing: lets other pages (e.g. app/apex/results) deep-link
 // directly into a specific tab — "review your weaknesses" and "regenerate
 // targeted practice" used to both dead-end at a generic "Back to Hub" link
@@ -844,9 +918,12 @@ function DatApexPageInner() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio TestLab <span className="text-blue-300 font-bold">— DAT</span></h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio TestLab</h1>
+              <ExamProfileSwitcher />
+            </div>
             <p className="text-xs text-blue-200 mt-0.5">
-              Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
+              DAT Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -862,6 +939,28 @@ function DatApexPageInner() {
                 <div className="text-lg font-bold text-green-400">{projection.totalProjected}</div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Flow ribbon — makes TestLab's own first-level product experience
+            (Choose Exam → Choose/Upload Sources → Blueprint → Practice/
+            Simulation → Review → Readiness) visible as an actual product
+            shape, not just a folder of tabs that happens to resemble the
+            old DAT Apex dashboard. */}
+        <div className="max-w-7xl mx-auto px-4 pb-2.5">
+          <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-medium">
+            <span className="text-gray-500 uppercase tracking-wide mr-0.5 shrink-0">Flow</span>
+            <span className={RIBBON_CHIP}>Choose Exam</span>
+            <FlowArrow />
+            <Link href="/apex/generator" className={RIBBON_CHIP}>Choose / Upload Sources</Link>
+            <FlowArrow />
+            <Link href="/apex/generator" className={RIBBON_CHIP}>Blueprint</Link>
+            <FlowArrow />
+            <button onClick={() => setActiveTab("practice")} className={RIBBON_CHIP}>Practice / Simulation</button>
+            <FlowArrow />
+            <button onClick={() => setActiveTab("mistakes")} className={RIBBON_CHIP}>Review</button>
+            <FlowArrow />
+            <button onClick={() => setActiveTab("readiness")} className={RIBBON_CHIP}>Readiness</button>
           </div>
         </div>
 

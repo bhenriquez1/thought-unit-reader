@@ -1,0 +1,61 @@
+// lib/examEngine/profiles/profileCatalog.ts
+// TestLab legacy-fallback audit — the product surface (dashboard header,
+// exam-type picker) must show that TestLab supports more than one exam
+// profile even though only DAT and Custom Exam have a real ExamProfile
+// implementation today (see datProfile.ts / customProfile.ts). This catalog
+// is the single source of truth both app/apex/page.tsx (dashboard header
+// switcher) and app/apex/generator/page.tsx (Exam Type picker) render from,
+// so the two surfaces can't drift into listing different profiles.
+//
+// `available: false` entries are real, visible, selectable-looking options
+// that resolve to an explicit "not built yet" state rather than silently
+// doing nothing — never a disabled-looking ghost button.
+
+import { DAT_EXAM_PROFILE_ID } from "./datProfile";
+import { CUSTOM_EXAM_PROFILE_ID } from "./customProfile";
+
+export interface ExamProfileCatalogEntry {
+  id: string;
+  label: string;
+  shortLabel: string;
+  description: string;
+  available: boolean;
+}
+
+export const EXAM_PROFILE_CATALOG: ExamProfileCatalogEntry[] = [
+  {
+    id: DAT_EXAM_PROFILE_ID,
+    label: "DAT",
+    shortLabel: "DAT",
+    description: "Dental Admission Test — official section weighting and blueprint",
+    available: true,
+  },
+  {
+    id: "mcat",
+    label: "MCAT",
+    shortLabel: "MCAT",
+    description: "Medical College Admission Test",
+    available: false,
+  },
+  {
+    id: "board-licensure",
+    label: "Board / Licensure",
+    shortLabel: "Board",
+    description: "Board and licensure exams",
+    available: false,
+  },
+  {
+    id: "course-exam",
+    label: "Course Exam",
+    shortLabel: "Course",
+    description: "Your class midterm or final",
+    available: false,
+  },
+  {
+    id: CUSTOM_EXAM_PROFILE_ID,
+    label: "Custom Exam",
+    shortLabel: "Custom",
+    description: "No external blueprint — draws only from your uploaded source",
+    available: true,
+  },
+];

@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { savePendingExam } from '@/lib/db/examStore';
 import { DAT_SECTIONS } from '@/types/apex-exam';
 import { buildExam } from '@/lib/examEngine/examBuilder';
 import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
 import { DAT_EXAM_PROFILE } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
+import { EXAM_PROFILE_CATALOG } from '@/lib/examEngine/profiles/profileCatalog';
 import type { ExamProfile } from '@/lib/examEngine/types';
 import {
   getUserBookCatalogue,
@@ -46,8 +47,12 @@ const SUBJECT_COLORS: Record<string, string> = {
   Other: 'bg-gray-800/60 border-gray-500/40 text-gray-300',
 };
 
-export default function ExamGeneratorPage() {
+// useSearchParams() requires a Suspense boundary in the App Router (same
+// discipline as app/apex/page.tsx's DatApexPageInner) — ExamGeneratorPage
+// below is the actual page body; the default export just wraps it.
+function ExamGeneratorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const tocs = useTocStore((s) => s.tocs);
   const [catalogueRefreshKey, setCatalogueRefreshKey] = useState(0);
   const [books, setBooks] = useState<import('@/lib/apex/bookCatalogue').CatalogueBook[]>([]);
@@ -63,7 +68,11 @@ export default function ExamGeneratorPage() {
   // Product-split Phase 1, item 2 — proves ExamProfile generalizes beyond
   // DAT: 'dat' (the official blueprint) or 'custom' (no external
   // standardized-test blueprint, draws entirely from the selected source).
-  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>('dat');
+  // Deep-links from the TestLab dashboard's exam-profile switcher
+  // (/apex/generator?examType=custom) preselect the profile here.
+  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>(
+    () => (searchParams?.get('examType') === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE_ID : 'dat'),
+  );
   const selectedProfile: ExamProfile = examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
   const [bookId, setBookId] = useState<string>(books[0]?.bookId ?? '');
@@ -245,7 +254,7 @@ export default function ExamGeneratorPage() {
             href="/apex"
             className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-4"
           >
-            ← Back to Hub
+            ← TestLab
           </Link>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
             ⚡ Build Practice Exam
@@ -285,6 +294,23 @@ export default function ExamGeneratorPage() {
                   <div className="font-medium text-white text-sm">Custom Exam</div>
                   <div className="text-xs text-gray-400 mt-0.5">No external blueprint — your source only</div>
                 </button>
+                {/* TestLab is built to support more than the DAT — these
+                    profiles are visibly part of the product even before
+                    they have a real ExamProfile implementation, so the
+                    picker never reads as "DAT with a rename." */}
+                {EXAM_PROFILE_CATALOG.filter((p) => !p.available).map((p) => (
+                  <div
+                    key={p.id}
+                    title="Coming soon"
+                    className="text-left p-3 rounded-lg border-2 border-dashed border-gray-700 bg-gray-800/20 cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium text-gray-500 text-sm">{p.label}</div>
+                      <span className="text-[10px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded shrink-0">Coming soon</span>
+                    </div>
+                    <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -812,5 +838,13 @@ export default function ExamGeneratorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExamGeneratorPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <ExamGeneratorPage />
+    </Suspense>
   );
 }
