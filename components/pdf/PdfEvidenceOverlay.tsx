@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { tierGlowStyle } from "@/lib/insights/tierStyle";
 import type { Treatment, CanonicalType } from "@/lib/insights/pageAnnotationPlan";
 
@@ -206,6 +206,15 @@ export default function PdfEvidenceOverlay({
 }) {
   const rectRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
+  // P0 stabilization, Tier 3, item 4 — contextual relationship connectors.
+  // Hover is inherently local to this view (unlike click-focus/Professor-
+  // focus, which already flow cross-view through the focusedId prop —
+  // ultimately backed by useReadingFocusStore's focusedEvidenceId in
+  // pages/index.tsx), so it's plain component state here, not a new
+  // cross-view store. Reused below both for the rects' existing dim-others
+  // logic and for the connector chains' opacity.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   // Scroll focused highlight into view when focusedId changes.
   // useLayoutEffect fires synchronously after DOM mutations so the rect is
   // guaranteed to exist in rectRefs when the newly-authorized rect appears
@@ -273,13 +282,31 @@ export default function PdfEvidenceOverlay({
       .sort((a, b) => a.top - b.top);
   }, [rects]);
 
+  // Contextual connector opacity — low by default, brightened only when one
+  // of THIS chain's own rects is the active one (click focus, hover, or
+  // Professor discussing that concept — all three already converge on
+  // focusedId/hoveredId by the time they reach here). A connector is one
+  // visual entity spanning several rects, so activating any rect in the
+  // chain brightens the whole chain rather than just that one segment.
+  const activeEvidenceId = focusedId ?? hoveredId ?? null;
+  const CONNECTOR_DIM_OPACITY = 0.32;
+  const CONNECTOR_ACTIVE_OPACITY = 1;
+  function chainOpacity(chain: OverlayRect[]): number {
+    if (!activeEvidenceId) return CONNECTOR_DIM_OPACITY;
+    const isActive = chain.some((r) => r.id === activeEvidenceId || r.id.replace(/-L\d+$/, "") === activeEvidenceId);
+    return isActive ? CONNECTOR_ACTIVE_OPACITY : CONNECTOR_DIM_OPACITY;
+  }
+  const mechanismChainOpacity  = useMemo(() => chainOpacity(mechanismChain),  [mechanismChain, activeEvidenceId]);
+  const procedureChainOpacity  = useMemo(() => chainOpacity(procedureChain),  [procedureChain, activeEvidenceId]);
+  const comparisonChainOpacity = useMemo(() => chainOpacity(comparisonChain), [comparisonChain, activeEvidenceId]);
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
       {/* SVG connector layer — arrows between consecutive mechanism steps + left brace */}
       {mechanismChain.length >= 2 && (
         <svg
           aria-hidden
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", opacity: mechanismChainOpacity, transition: "opacity 180ms ease" }}
         >
           <defs>
             <marker id="mech-arrow" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
@@ -363,7 +390,7 @@ export default function PdfEvidenceOverlay({
       {procedureChain.length >= 2 && (
         <svg
           aria-hidden
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", opacity: procedureChainOpacity, transition: "opacity 180ms ease" }}
         >
           <defs>
             <marker id="proc-arrow" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
@@ -439,7 +466,7 @@ export default function PdfEvidenceOverlay({
       {comparisonChain.length >= 2 && (
         <svg
           aria-hidden
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", opacity: comparisonChainOpacity, transition: "opacity 180ms ease" }}
         >
           {comparisonChain.map((rect) => {
             const bracketX = Math.max(4, rect.left - 10);
@@ -470,12 +497,13 @@ export default function PdfEvidenceOverlay({
         </svg>
       )}
       {rects.filter(shouldRender).map((rect) => {
-        const focused = focusedId === rect.id;
-        // When any highlight is active, dim all others — "surgeon's spotlight" effect.
-        // Continuation lines share a base ID (e.g. "va-0-L1" belongs to "va-0") so check prefix too.
+        // When any highlight is active — click-focused, hovered, or Professor
+        // is discussing it (all converge on activeEvidenceId) — dim all
+        // others: "surgeon's spotlight" effect. Continuation lines share a
+        // base ID (e.g. "va-0-L1" belongs to "va-0") so check prefix too.
         const baseId = rect.id.replace(/-L\d+$/, "");
-        const activeFocused = focused || (!!focusedId && baseId === focusedId);
-        const dimmed = !!focusedId && !activeFocused;
+        const activeFocused = !!activeEvidenceId && (rect.id === activeEvidenceId || baseId === activeEvidenceId);
+        const dimmed = !!activeEvidenceId && !activeFocused;
         const cfg = getConfig(rect);
         // Only render a label on the first line of each highlight target.
         // Continuation lines have IDs like "va-0-L1", "va-0-L2"; first lines are plain IDs.
@@ -497,6 +525,8 @@ export default function PdfEvidenceOverlay({
             type="button"
             ref={(el) => { if (el) rectRefs.current.set(rect.id, el); else rectRefs.current.delete(rect.id); }}
             onClick={() => onFocus?.(baseId)}
+            onMouseEnter={() => setHoveredId(baseId)}
+            onMouseLeave={() => setHoveredId((prev) => (prev === baseId ? null : prev))}
             className={`pointer-events-auto absolute ${activeFocused ? cfg.ringClass : ""}`}
             style={{
               top: rect.top,

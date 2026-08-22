@@ -69,3 +69,57 @@ describe("Current Page speech — page-furniture stripping", () => {
     expect(segments.join(" ")).toBe(source);
   });
 });
+
+// P0 stabilization, Tier 3, item 1 — wires the existing classifyLineRole()
+// (lib/insights/cleanActivePageText.ts, already used by the Canonical Page
+// Map) into Current Page speech: instructional body paragraphs are narrated,
+// but section headings, page furniture, and decorative labels remain real
+// page content — orientation, not something read aloud as if it were prose.
+// Each case below uses a real \n\n paragraph break — the same structural
+// boundary lib/pdf/structuredPageText.ts inserts between a heading and the
+// body paragraph that follows it — so classification is scoped to one
+// structural unit at a time (see buildCurrentPageSpeechSegments's own doc
+// comment for why classifying pre-collapse, not post-collapse, matters).
+describe("Current Page speech — heading/page-furniture suppression (Tier 3)", () => {
+  it("REQUIRED: a section-number heading on its own paragraph is not spoken; the body paragraph after it is", () => {
+    const source = "2.1 Limits of Sequences\n\nThe limit of a sequence describes the value its terms approach as n increases without bound.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/2\.1 Limits of Sequences/);
+    expect(spoken).toContain("The limit of a sequence describes the value its terms approach as n increases without bound.");
+  });
+
+  it("REQUIRED: a chapter-title paragraph is not spoken; the body paragraph after it is", () => {
+    const source = "Chapter 4: Acid-Base Equilibrium and Buffer Systems\n\nThe mechanism by which buffer solutions resist changes in pH depends on equilibrium.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/Chapter 4: Acid-Base Equilibrium/);
+    expect(spoken).toContain("The mechanism by which buffer solutions resist changes in pH depends on equilibrium.");
+  });
+
+  it("a short title-only paragraph (page-furniture) between two body paragraphs is not spoken, but both real paragraphs survive in order", () => {
+    const source = "Enzymes speed up biological reactions without being consumed.\n\nOverview Diagram\n\nSubstrates bind at the enzyme's active site.";
+    const segments = buildCurrentPageSpeechSegments(source);
+    const spoken = segments.join(" ");
+    expect(spoken).not.toMatch(/Overview Diagram/);
+    expect(spoken.indexOf("Enzymes speed up")).toBeLessThan(spoken.indexOf("Substrates bind"));
+  });
+
+  it("REQUIRED: a bare figure/table label with no description is not spoken", () => {
+    const source = "The cell membrane regulates transport.\n\nFigure 3.2.\n\nDiffusion moves solutes down their concentration gradient.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).not.toMatch(/Figure 3\.2\./);
+    expect(spoken).toContain("The cell membrane regulates transport.");
+    expect(spoken).toContain("Diffusion moves solutes down their concentration gradient.");
+  });
+
+  it("a figure caption WITH a real description is still spoken in full — item 2's \"preserve only when instructional\" cuts the label-only case, not genuine content", () => {
+    const source = "Figure 3.2 The ATP synthase complex spans the inner mitochondrial membrane and rotates to generate ATP.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).toContain("Figure 3.2 The ATP synthase complex spans the inner mitochondrial membrane and rotates to generate ATP.");
+  });
+
+  it("never invents or paraphrases what it DOES keep — surviving paragraphs are byte-identical to the source, just re-segmented", () => {
+    const source = "Mechanism Overview\n\nMitochondria produce ATP through oxidative phosphorylation.";
+    const spoken = buildCurrentPageSpeechSegments(source).join(" ");
+    expect(spoken).toBe("Mitochondria produce ATP through oxidative phosphorylation.");
+  });
+});
