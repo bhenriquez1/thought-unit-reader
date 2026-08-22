@@ -68,11 +68,11 @@ describe("pages/index.tsx — headless heuristic-only fallback for currentPageSt
     expect(block).toMatch(/ultraPageView: currentUltraPageView,/);
   });
 
-  it("REQUIRED: a dedicated effect calls buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId) — the identical heuristic-only call RightPanel documents as safe with an empty synth", () => {
+  it("REQUIRED: a dedicated effect calls buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId, ...) — the identical heuristic-only call RightPanel documents as safe with an empty synth, now also carrying resolvedDocumentId/currentConfidence (Tier 4 — see tests/reader/buildStudyModelIdentityWiring.test.ts)", () => {
     const idx = PAGE_SRC.indexOf("if (!currentUltraPageView || !isCurrentIntelligencePage) return;");
     expect(idx).toBeGreaterThan(-1);
     const block = PAGE_SRC.slice(idx, idx + 400);
-    expect(block).toMatch(/buildStudyModel\(currentUltraPageView, \{\}, bookId, currentPage, sharedPresetId\)/);
+    expect(block).toMatch(/buildStudyModel\(currentUltraPageView, \{\}, bookId, currentPage, sharedPresetId, \{/);
   });
 
   it("REQUIRED: never overwrites an existing model (heuristic OR RightPanel's AI-enriched one) for the current page — first successful write wins until the [bookId, currentPage] reset effect clears it", () => {

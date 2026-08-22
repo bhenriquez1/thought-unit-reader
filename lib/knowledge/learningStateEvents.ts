@@ -34,7 +34,19 @@ export type LearningStateEvent =
       predictedForgetAt?: string;
     }
   // A Whiteboard "Professor" lesson for this concept finished playing.
-  | { kind: "whiteboard-lesson-completed"; occurredAt: string; sourceId: string; snapshotId?: string }
+  | {
+      kind: "whiteboard-lesson-completed"; occurredAt: string; sourceId: string; snapshotId?: string;
+      /** P0 stabilization, Tier 4 — the resolved page thesis (Surgeon-sourced
+       *  when available, falling back to the legacy studyModel pipeline's own —
+       *  same precedent WhiteboardPanel.tsx already uses for its title and save
+       *  actions), appended to the reducer's own state-aware detail string
+       *  (e.g. "lesson completed" vs "lesson replayed") so the evidence trail
+       *  reads "lesson completed — Buffer Systems" instead of generic text
+       *  with no indication of what topic it was. Raw thesis text only — the
+       *  reducer owns the final phrasing, not the caller. Optional — omitting
+       *  it keeps the prior detail string exactly as it was. */
+      detail?: string;
+    }
   // A DAT Apex question targeting this concept was answered.
   | { kind: "dat-question-answered"; correct: boolean; timeMs: number | null; occurredAt: string; sourceId: string }
   // The learner self-reported a confidence level (0-100).
@@ -48,7 +60,10 @@ export type LearningStateEvent =
   // above) is what earns the modest understandingScore credit — per-step
   // completion is a finer-grained activity trail, not additional credit for
   // simply continuing to watch.
-  | { kind: "teaching-step-completed"; stepId: number; occurredAt: string; sourceId: string }
+  // detail (Tier 4, optional): raw resolved page-thesis text, appended to
+  // the reducer's own "step N completed" phrasing — see whiteboard-lesson-
+  // completed's doc comment above for the full rationale.
+  | { kind: "teaching-step-completed"; stepId: number; occurredAt: string; sourceId: string; detail?: string }
   // Phase B3 — a Professor/Whiteboard lesson began (its first teaching step
   // started). Evidence + exposure only, same shape as "exposure" above but
   // its own kind so a Whiteboard lesson start is distinguishable in the
@@ -56,7 +71,9 @@ export type LearningStateEvent =
   // grant understandingScore — only whiteboard-lesson-completed (finishing
   // the lesson) does that, and even then only once per distinct lesson (see
   // the whiteboard-lesson-completed case below).
-  | { kind: "professor-lesson-started"; occurredAt: string; sourceId: string };
+  // detail (Tier 4, optional): raw resolved page-thesis text, appended to
+  // the reducer's own "lesson started" phrasing.
+  | { kind: "professor-lesson-started"; occurredAt: string; sourceId: string; detail?: string };
 
 export function emptyProgress(nodeId: string, documentId: string): KnowledgeNodeProgress {
   return {
@@ -83,6 +100,15 @@ export function emptyProgress(nodeId: string, documentId: string): KnowledgeNode
     whiteboardSnapshotIds: [],
     datPerformance: null,
   };
+}
+
+/** P0 stabilization, Tier 4 — appends a caller-supplied detail (typically a
+ *  resolved page thesis) to the reducer's own state-aware phrasing, rather
+ *  than letting the caller replace it outright — "lesson completed" vs
+ *  "lesson replayed" is information the caller can't reconstruct (only the
+ *  reducer knows progress.whiteboardSnapshotIds), so it must never be lost. */
+function withDetail(base: string, detail: string | undefined): string {
+  return detail ? `${base} — ${detail}` : base;
 }
 
 function pushEvidence(
@@ -156,7 +182,10 @@ export function applyLearningEvent(
         whiteboardSnapshotIds: event.snapshotId && !progress.whiteboardSnapshotIds.includes(event.snapshotId)
           ? [...progress.whiteboardSnapshotIds, event.snapshotId]
           : progress.whiteboardSnapshotIds,
-        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, alreadyCredited ? "lesson replayed" : "lesson completed"),
+        evidence: pushEvidence(
+          progress, "whiteboard", event.sourceId, event.occurredAt,
+          withDetail(alreadyCredited ? "lesson replayed" : "lesson completed", event.detail),
+        ),
       };
     }
 
@@ -207,7 +236,10 @@ export function applyLearningEvent(
     case "teaching-step-completed": {
       return {
         ...progress,
-        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, `step ${event.stepId} completed`),
+        evidence: pushEvidence(
+          progress, "whiteboard", event.sourceId, event.occurredAt,
+          withDetail(`step ${event.stepId} completed`, event.detail),
+        ),
       };
     }
 
@@ -216,7 +248,7 @@ export function applyLearningEvent(
         ...progress,
         exposureCount: progress.exposureCount + 1,
         lastStudiedAt: event.occurredAt,
-        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, "lesson started"),
+        evidence: pushEvidence(progress, "whiteboard", event.sourceId, event.occurredAt, withDetail("lesson started", event.detail)),
       };
     }
   }

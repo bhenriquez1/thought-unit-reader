@@ -404,15 +404,27 @@ export function buildUltraNote(
  */
 export function buildNoteFromStudyModel(
   model: CurrentPageStudyModel,
-  opts: { bookId: string; pageNumber: number; topic: string; bookTitle?: string },
+  opts: {
+    bookId: string; pageNumber: number; topic: string; bookTitle?: string;
+    /** P0 stabilization, Tier 4 — when a caller has a page-specific thesis
+     *  from a DIFFERENT, more authoritative pipeline than `model`'s own
+     *  (e.g. WhiteboardPanel's Surgeon-sourced pageTitle, already what the
+     *  panel displays), this replaces `model.pageThesis` in the note's
+     *  content sections below — never both showing on the same page. Every
+     *  other caller (Reader's own "Save to NoteLab", which already reads
+     *  and displays THIS SAME model, no competing pipeline in play) omits
+     *  it and gets the exact prior behavior. */
+    pageThesisOverride?: string;
+  },
 ): UltraNote {
-  const { bookId, pageNumber, topic, bookTitle } = opts;
+  const { bookId, pageNumber, topic, bookTitle, pageThesisOverride } = opts;
+  const effectiveThesis = pageThesisOverride || model.pageThesis;
   const sn = model.studyNotes;
   const sections: NoteSection[] = [];
 
   // 1. Chief Concern / Problem — the governing idea of the page
-  if (model.pageThesis) {
-    sections.push({ label: "Chief Concern / Problem", content: model.pageThesis });
+  if (effectiveThesis) {
+    sections.push({ label: "Chief Concern / Problem", content: effectiveThesis });
   }
 
   // 2. Why This Matters Clinically
@@ -490,7 +502,7 @@ export function buildNoteFromStudyModel(
   }
 
   // 13. Summary — closing recap built from already-computed fields, no new AI call
-  const summaryParts = [model.pageThesis, sn.keyMechanism, sn.quickMemory]
+  const summaryParts = [effectiveThesis, sn.keyMechanism, sn.quickMemory]
     .filter((v): v is string => typeof v === "string" && v.length > 10);
   if (summaryParts.length) {
     sections.push({ label: "Summary", content: summaryParts.join(" ") });
@@ -540,14 +552,14 @@ export function buildNoteFromStudyModel(
     bookTitle:        bookTitle || undefined,
     pageNumber,
     topic,
-    coreIdea:         model.pageThesis,
+    coreIdea:         effectiveThesis,
     concepts,
     memoryShortcuts,
     sections,
     subject:          inferSubject(bookId),
     createdAt:        Date.now(),
     professorNotes,
-    pageThesis:       model.pageThesis,
+    pageThesis:       effectiveThesis,
     miniTest:         model.miniTest?.length           ? model.miniTest           : undefined,
     externalStudyLinks: model.externalStudyLinks?.length ? model.externalStudyLinks : undefined,
     relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,

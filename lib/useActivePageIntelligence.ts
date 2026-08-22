@@ -55,6 +55,12 @@ export type ActivePageIntelligenceSnapshot = {
   priorityHighlights: ExtractPriorityHighlightsResult;
   normResult: ClinicalNormalizationResult | null;
   pageRole?: string; // from detectPageRole: "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy"
+  /** P0 stabilization, Tier 4 — page-model confidence (0-1), already computed
+   *  by this hook (computePageConfidence) but not previously exposed on the
+   *  narrower snapshot type used for RightPanel's `intelligence` prop. Lets
+   *  buildStudyModel() carry a real confidence value on CurrentPageStudyModel
+   *  instead of leaving that field permanently unset. */
+  confidence?: number;
   /** Heuristic-only page view (no AI synthesis) — the same computation RightPanel.tsx
    *  makes for the reader tab, exposed unconditionally so callers outside the reader
    *  tab can build a headless CurrentPageStudyModel via buildStudyModel(ultraPageView, {}, ...).

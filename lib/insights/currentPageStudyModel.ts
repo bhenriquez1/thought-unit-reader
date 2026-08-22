@@ -194,6 +194,22 @@ export type CurrentPageStudyModel = {
   /** Pre-resolved canonical anchor IDs for each Study Note field.
    * Computed at model-build time — do not rediscover via sourceField matching at runtime. */
   studyNoteAnchorIds?: Record<string, string | null>;
+  /** P0 stabilization, Tier 4 — Page Thesis formalization (additive, does not
+   *  change/replace bookId). The resolved, collision-resistant document
+   *  identity (see resolveDocumentIdentity) when the caller has it available —
+   *  bookId is filename-derived and can collide across two different PDFs
+   *  sharing a name; documentId cannot. Falls back to bookId when the caller
+   *  doesn't have a resolved id (both call sites today happen to use the same
+   *  value either way — this just makes the real identity explicit on the
+   *  model itself instead of leaving it implicit in bookId's naming). */
+  documentId?: string;
+  /** Page-model confidence (0-1), when the caller has it available — see
+   *  lib/useActivePageIntelligence.ts's computePageConfidence. */
+  confidence?: number;
+  /** The subset of visualAnchors.id that ground pageThesis specifically
+   *  (sourceField === "pageThesis") — lets a consumer trace the thesis back
+   *  to its supporting evidence without re-deriving the filter itself. */
+  supportingAnnotationIds: string[];
 };
 
 type AnchorCandidate = {
@@ -429,6 +445,11 @@ export function buildStudyModel(
   bookId: string,
   page: number,
   presetId: string = "universal",
+  /** P0 stabilization, Tier 4 — additive, optional. Neither field changes
+   *  any existing behavior when omitted (documentId falls back to bookId,
+   *  confidence stays undefined) — every existing caller keeps working
+   *  unchanged. */
+  identity?: { documentId?: string; confidence?: number },
 ): CurrentPageStudyModel {
   const thesis = (view.coreIdea || view.title || "") as string;
   const rawExtLinks = (synth.externalStudyLinks as Array<{ label: string; searchQuery: string; type: string }> | null) ?? [];
@@ -609,6 +630,9 @@ export function buildStudyModel(
   const model: CurrentPageStudyModel = {
     page,
     bookId,
+    documentId: identity?.documentId ?? bookId,
+    confidence: identity?.confidence,
+    supportingAnnotationIds: visualAnchors.filter((a) => a.sourceField === "pageThesis").map((a) => a.id),
     pageType,
     pageThesis: cleanThesis,
     studyNoteAnchorIds,

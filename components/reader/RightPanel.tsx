@@ -1403,8 +1403,9 @@ export function RightPanel({
       ctx?.documentId ?? "",
       ctx?.pageNumber ?? 0,
       effectivePresetId,
+      { documentId: resolvedDocumentId, confidence: intelligence.confidence },
     );
-  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber, effectivePresetId]);
+  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber, effectivePresetId, resolvedDocumentId, intelligence.confidence]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
