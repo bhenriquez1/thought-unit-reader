@@ -32,7 +32,6 @@ import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore"
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
-import ElenaChildWorkspace from "@/components/elena/ElenaChildWorkspace";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -74,6 +73,7 @@ import ThoughtUnitNavigator, { type ThoughtUnitNavigatorEntry } from "@/componen
 import { buildCanonicalLeftPanelUnits, type ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
+import { buildStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
 import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
@@ -125,11 +125,10 @@ import {
   uploadPDF,
   getPDFLibrary,
   deletePDF,
-  listenForAuthChanges,
   signInWithGoogle,
   signOutUser,
-  handleRedirectResult,
 } from "@/lib/firebase";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
 
 import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
@@ -554,7 +553,11 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 State
   ========================================================================= */
-  const [user, setUser] = useState<any>(null);
+  // Product-split Phase 2: shared hook (also used by pages/_app.tsx) instead
+  // of this component's own separate listenForAuthChanges subscription and
+  // dev-bypass mock user, which had drifted from lib/firebase.ts's own
+  // internal bypass handling — see lib/auth/useAuthUser.ts.
+  const { user } = useAuthUser();
   const USER_ID = user?.uid || "guest-user";
 
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
@@ -689,13 +692,7 @@ export default function ThoughtUnitReader() {
   const [syllabusStudyPlan, setSyllabusStudyPlan] = useState<StudyDay[]>(() => {
     try { return JSON.parse(localStorage.getItem("syllabus_plan") ?? "[]"); } catch { return []; }
   });
-  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("avrrio-shell-tab");
-      if (saved === "elena") return "elena" as WorkspaceMode;
-    }
-    return "reader" as WorkspaceMode;
-  });
+  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader" as WorkspaceMode);
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
@@ -1462,7 +1459,7 @@ export default function ThoughtUnitReader() {
     if (!restored) return;
 
     setViewMode(
-      ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study" || restored.viewMode === "elena")
+      ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study")
         ? restored.viewMode
         : "reader") as WorkspaceMode
     );
@@ -1812,7 +1809,7 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus", "podcast", "elena"].includes(tab);
+    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
@@ -2021,6 +2018,7 @@ export default function ThoughtUnitReader() {
     pageRole: currentPageRole,
     confidence: currentConfidence,
     formulaSignals,
+    ultraPageView: currentUltraPageView,
   } = useActivePageIntelligence({
     documentId: resolvedDocumentId,
     pageNumber: currentPage,
@@ -2050,6 +2048,33 @@ export default function ThoughtUnitReader() {
   // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
+
+  // Heuristic-only fallback for currentPageStudyModel — gives NoteLab/Learning Hub/
+  // Recall/Podcast/Study Guide a valid study model for a page even when the Reader
+  // tab (the only mounter of RightPanel, the sole producer of AI-enriched models via
+  // handleStudyModelReady) has never been opened for it. ultraPageView is the same
+  // heuristic computation RightPanel makes, now unconditional on activeShellTab (see
+  // useActivePageIntelligence's ultraPageView). buildStudyModel handles an empty
+  // synth object safely (RightPanel.tsx makes the identical call with a real synth).
+  // Only fills when nothing has claimed this page's model yet (prev === null, reset
+  // by the [bookId, currentPage] effect above) — never clobbers a model RightPanel
+  // already resolved (heuristic or AI-enriched) for the current page.
+  // Mirrors RightPanel's own gate (RightPanel.tsx: `blockEmit = isStructuralPage ||
+  // openAIConfirmsNonInstructional`) so this headless path can't emit a study model
+  // for cover/contents/chapter_opener/etc. pages RightPanel would have suppressed —
+  // isNoninstructionalPage(currentPageRole) is the exact same 17-role set RightPanel's
+  // local STRUCTURAL_PAGE_ROLES uses. openAIConfirmsNonInstructional has no headless
+  // equivalent (it's teachingSynthesis-derived) — the local-role tier is all a
+  // no-AI path can check, same as the two-tier pattern pages/index.tsx already
+  // applies to finalHighlightAnchors above.
+  useEffect(() => {
+    if (!currentUltraPageView || !isCurrentIntelligencePage) return;
+    if (isNoninstructionalPage(currentPageRole)) return;
+    setCurrentPageStudyModel((prev) => {
+      if (prev) return prev;
+      return buildStudyModel(currentUltraPageView, {}, bookId, currentPage, sharedPresetId);
+    });
+  }, [bookId, currentPage, currentUltraPageView, sharedPresetId, isCurrentIntelligencePage, currentPageRole]);
 
   // ── SurgeonAnnotationPlan: OpenAI reads the current page fresh, Avrrio draws it ──
   // Captured page image (hidden fixed-scale render, decoupled from zoom) — see
@@ -2489,29 +2514,6 @@ export default function ThoughtUnitReader() {
     showPanel: false,
   });
   const [smartTOC, setSmartTOC] = useState<SmartTOCEntry[]>([]);
-
-  /* =========================================================================
-     🔹 Auth Listener + complete redirect
-  ========================================================================= */
-  useEffect(() => {
-    // Check if bypass mode is enabled
-    const isBypassMode = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-    
-    if (isBypassMode) {
-      // Create a mock user for guest mode
-      const mockUser = {
-        uid: "guest-user-" + Date.now(),
-        displayName: "Guest User",
-        email: "guest@local",
-        photoURL: null,
-      };
-      DEV && console.log("✅ Bypass mode enabled - using mock user");
-      setUser(mockUser as any);
-    } else {
-      handleRedirectResult().catch(() => {});
-      return listenForAuthChanges((u) => setUser(u));
-    }
-  }, []);
 
   /* =========================================================================
      🔹 Initialize Chapter Absorption Pipeline
@@ -3743,6 +3745,32 @@ export default function ThoughtUnitReader() {
           if (ac.signal.aborted) return;
 
           allPageTexts.push(...pages);
+
+          // Reader-architecture fix: this incremental extraction already runs
+          // on every book load, unconditionally — independent of activeShellTab
+          // — and already uses the same buildStructuredPageTextFull() SmartPDFViewer
+          // uses (lib/pdfjs-handler.ts). Previously its per-page text only ever
+          // fed thoughtUnits/TOC and was discarded; pageTextByPage (what NoteLab/
+          // Learning Hub/Recall/Podcast/Study Guide actually read) was populated
+          // ONLY by SmartPDFViewer's onPageTextExtracted callback, which is mounted
+          // exclusively inside the "reader" shell tab — so those other tabs saw an
+          // empty map for any page the Reader tab hadn't been opened for yet.
+          // Background-fills gaps only — never overwrites a key that already has
+          // text, so a live SmartPDFViewer extraction (which can benefit from the
+          // OCR fallback and the exact live viewport) always wins if it races this.
+          setPageTextByPage((prev) => {
+            let changed = false;
+            const next = new Map(prev);
+            for (const p of pages) {
+              if (!p.text || p.text.length <= 20) continue; // matches SmartPDFViewer's own floor
+              const key = `${documentId}:${p.pageIndex + 1}`; // pageIndex is 0-based; pageTextByPage keys are 1-based
+              if (!next.has(key)) {
+                next.set(key, p.text);
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
 
           // Convert pages to thought units and store by page index.
           // Concurrently persist CanonicalThoughtUnits to IDB for DAT Apex.
@@ -5143,14 +5171,7 @@ export default function ThoughtUnitReader() {
       currentPriorityHighlights, currentNormResult, currentPageRole]);
 
   const renderContent = () => {
-    // Elena Mode uses browser-local IndexedDB — no Firebase auth required
-    if (activeShellTab === "elena") {
-      // Elena Mode owns its own upload/library/reading-position state (E2) —
-      // it no longer mirrors whatever the adult Reader tab has open.
-      return <ElenaChildWorkspace />;
-    }
-
-    // 🔐 All other tabs require sign-in
+    // 🔐 All tabs require sign-in
     if (!user) {
       return (
         <div className="flex items-center justify-center h-full">
@@ -6126,13 +6147,13 @@ export default function ThoughtUnitReader() {
               ) : null}
               <div className="rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/50 to-slate-900/60 p-5 text-center">
                 <div className="text-3xl mb-3">🎯</div>
-                <div className="text-sm font-semibold text-slate-200">Avrrio Exam Forge — Practice Exams</div>
+                <div className="text-sm font-semibold text-slate-200">Avrrio TestLab — Practice Exams</div>
                 <div className="text-xs text-slate-500 mt-1">Full-length simulations with section scoring</div>
                 <button
                   onClick={() => { router.push("/apex"); }}
                   className="mt-4 px-5 py-2 rounded-lg bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 text-xs font-semibold hover:bg-indigo-600/60 transition-colors"
                 >
-                  Open Exam Forge →
+                  Open TestLab →
                 </button>
               </div>
             </div>
@@ -6440,27 +6461,29 @@ export default function ThoughtUnitReader() {
           <button
             onClick={() => {
               if (focusSoftLock && focusState.running) {
-                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for Exam Forge?");
+                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for TestLab?");
                 if (!ok) return;
               }
               router.push("/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
-            title="Open Exam Forge"
+            title="Open Avrrio TestLab"
           >
-            🎯 Exam Forge
+            🎯 TestLab
           </button>
           <button
-            onClick={() => trySwitchShellTab("elena", "elena")}
+            onClick={() => {
+              if (focusSoftLock && focusState.running) {
+                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for Elena?");
+                if (!ok) return;
+              }
+              router.push("/elena");
+            }}
             data-testid="nav-elena"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
-              activeShellTab === "elena"
-                ? "bg-violet-700 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-            title="Elena Mode — personalized child learning"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
+            title="Elena — personalized child learning"
           >
-            ✨ Elena Mode
+            ✨ Elena
           </button>
                   </div>
 

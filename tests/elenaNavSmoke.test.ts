@@ -1,6 +1,9 @@
 // tests/elenaNavSmoke.test.ts
-// Smoke test: ✨ Elena Mode nav tab must be permanently visible, not gated by ELENA_ENABLED.
-// These checks prevent the feature-flag guard from being accidentally re-introduced.
+// Elena's nav-tab-based wiring (permanently-visible tab, pre-auth-gate render
+// branch) was retired when Elena moved to its own route — see
+// tests/elena/routeExtraction.test.ts for the current architecture's
+// regression guards. This file keeps the remaining checks that are still
+// live and unrelated to Elena's own extraction.
 
 import fs   from "fs";
 import path from "path";
@@ -10,49 +13,6 @@ const PAGE_SRC = fs.readFileSync(
   path.resolve(__dirname, "../pages/index.tsx"),
   "utf-8",
 );
-
-describe("Elena Mode nav — permanent visibility", () => {
-  it('nav-elena button exists in page source', () => {
-    expect(PAGE_SRC).toContain('data-testid="nav-elena"');
-  });
-
-  it('nav-elena button is not wrapped in an ELENA_ENABLED && guard', () => {
-    const idx = PAGE_SRC.indexOf('data-testid="nav-elena"');
-    // Inspect up to 400 chars before the testid — covers any wrapping conditional
-    const pre = PAGE_SRC.slice(Math.max(0, idx - 400), idx);
-    expect(pre).not.toMatch(/ELENA_ENABLED\s*&&\s*\(/);
-  });
-
-  it('Elena workspace render guard does not require ELENA_ENABLED', () => {
-    expect(PAGE_SRC).not.toMatch(
-      /activeShellTab\s*===\s*["']elena["']\s*&&\s*ELENA_ENABLED/,
-    );
-  });
-});
-
-describe("Elena click path — auth gate bypass", () => {
-  it('Elena render branch appears before the !user auth gate in renderContent', () => {
-    const renderStart = PAGE_SRC.indexOf("const renderContent = ()");
-    const elenaIdx    = PAGE_SRC.indexOf('activeShellTab === "elena"', renderStart);
-    const authGateIdx = PAGE_SRC.indexOf('if (!user)', renderStart);
-    expect(elenaIdx).toBeGreaterThan(-1);
-    expect(authGateIdx).toBeGreaterThan(-1);
-    // Elena check must come before the auth gate so unauthenticated users can access it
-    expect(elenaIdx).toBeLessThan(authGateIdx);
-  });
-
-  it('Elena workspace does not depend on user being signed in', () => {
-    const renderStart = PAGE_SRC.indexOf("const renderContent = ()");
-    const elenaBlock  = PAGE_SRC.indexOf('activeShellTab === "elena"', renderStart);
-    // Grab the 200 chars inside the elena block — should not reference !user guard
-    const snippet = PAGE_SRC.slice(elenaBlock, elenaBlock + 200);
-    expect(snippet).not.toMatch(/if\s*\(\s*!user\s*\)/);
-  });
-
-  it('shell tab preference is persisted to localStorage', () => {
-    expect(PAGE_SRC).toContain('avrrio-shell-tab');
-  });
-});
 
 describe("NoteLab tab state preservation", () => {
   it('Study Sheet is always mounted (display:none not conditional)', () => {

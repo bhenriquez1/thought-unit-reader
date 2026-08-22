@@ -8,6 +8,8 @@ import { DAT_SECTIONS } from '@/types/apex-exam';
 import { buildExam } from '@/lib/examEngine/examBuilder';
 import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
 import { DAT_EXAM_PROFILE } from '@/lib/examEngine/profiles/datProfile';
+import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
+import type { ExamProfile } from '@/lib/examEngine/types';
 import {
   getUserBookCatalogue,
   DAT_SUBJECTS,
@@ -58,6 +60,11 @@ export default function ExamGeneratorPage() {
   }, [catalogueRefreshKey]);
 
   // --- State ---
+  // Product-split Phase 1, item 2 — proves ExamProfile generalizes beyond
+  // DAT: 'dat' (the official blueprint) or 'custom' (no external
+  // standardized-test blueprint, draws entirely from the selected source).
+  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>('dat');
+  const selectedProfile: ExamProfile = examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
   const [bookId, setBookId] = useState<string>(books[0]?.bookId ?? '');
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
@@ -117,6 +124,17 @@ export default function ExamGeneratorPage() {
     setGenerationError(null);
   }
 
+  // Switching exam type changes which profile generateExam() builds against
+  // (DAT_EXAM_PROFILE vs CUSTOM_EXAM_PROFILE) — an already-generated exam
+  // built under the previous profile must not survive the switch, or the
+  // summary panel can show the newly selected profile while Start launches
+  // the stale one. Same reset shape as handleModeChange/handleBookSelect above.
+  function handleProfileChange(id: 'dat' | typeof CUSTOM_EXAM_PROFILE_ID) {
+    setExamProfileId(id);
+    setGeneratedExam(null);
+    setGenerationError(null);
+  }
+
   function toggleChapter(itemId: string) {
     setSelectedChapterIds((prev) => {
       const next = new Set(prev);
@@ -163,10 +181,12 @@ export default function ExamGeneratorPage() {
       const built = await buildExam({
         bookId,
         bookTitle: selectedBook?.bookTitle,
-        profile: DAT_EXAM_PROFILE,
+        profile: selectedProfile,
         difficulty,
         questionCount,
-        sectionIds: sectionIds.length ? sectionIds : undefined,
+        // The DAT section checkboxes only apply to the DAT profile — Custom
+        // Exam has one "general" section and draws from the whole selection.
+        sectionIds: examProfileId === 'dat' && sectionIds.length ? sectionIds : undefined,
         randomize,
         chapterPageRanges,
         practiceMode,
@@ -239,7 +259,36 @@ export default function ExamGeneratorPage() {
           {/* ── Left panel ── */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* 1 — Source Book */}
+            {/* 1 — Exam Type */}
+            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+              <h3 className="text-lg font-semibold mb-4 text-blue-400">🎯 Exam Type</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => handleProfileChange('dat')}
+                  className={`text-left p-3 rounded-lg border-2 transition-all ${
+                    examProfileId === 'dat'
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                  }`}
+                >
+                  <div className="font-medium text-white text-sm">DAT</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Official section weighting and blueprint</div>
+                </button>
+                <button
+                  onClick={() => handleProfileChange(CUSTOM_EXAM_PROFILE_ID)}
+                  className={`text-left p-3 rounded-lg border-2 transition-all ${
+                    examProfileId === CUSTOM_EXAM_PROFILE_ID
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                  }`}
+                >
+                  <div className="font-medium text-white text-sm">Custom Exam</div>
+                  <div className="text-xs text-gray-400 mt-0.5">No external blueprint — your source only</div>
+                </button>
+              </div>
+            </section>
+
+            {/* 2 — Source Book */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📖 Source Book</h3>
 
@@ -450,7 +499,7 @@ export default function ExamGeneratorPage() {
               )}
             </section>
 
-            {/* 2 — Practice Mode */}
+            {/* 3 — Practice Mode */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">🎓 Practice Mode</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -475,7 +524,7 @@ export default function ExamGeneratorPage() {
               </div>
             </section>
 
-            {/* 3 — Difficulty */}
+            {/* 4 — Difficulty */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📊 Difficulty</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -497,43 +546,52 @@ export default function ExamGeneratorPage() {
               </div>
             </section>
 
-            {/* 4 — DAT Sections (collapsed for Practice mode) */}
-            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 DAT Sections</h3>
-              <div className="space-y-3">
-                {DAT_SECTIONS.map((section) => {
-                  const isSelected = sectionIds.includes(section.id);
-                  return (
-                    <label
-                      key={section.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                        isSelected
-                          ? 'border-blue-500/50 bg-blue-500/5'
-                          : 'border-gray-600 bg-gray-700/20 hover:border-gray-500'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handleSectionToggle(section.id)}
-                        className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-white text-sm">{section.name}</div>
-                        <div className="text-xs text-gray-400">{section.description}</div>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r ${
-                          SECTION_COLORS[section.id] ?? 'from-gray-600 to-gray-700'
-                        } text-white`}
+            {/* 5 — DAT Sections (collapsed for Practice mode; DAT profile only) */}
+            {examProfileId === 'dat' ? (
+              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 DAT Sections</h3>
+                <div className="space-y-3">
+                  {DAT_SECTIONS.map((section) => {
+                    const isSelected = sectionIds.includes(section.id);
+                    return (
+                      <label
+                        key={section.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-blue-500/50 bg-blue-500/5'
+                            : 'border-gray-600 bg-gray-700/20 hover:border-gray-500'
+                        }`}
                       >
-                        {section.shortName}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleSectionToggle(section.id)}
+                          className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium text-white text-sm">{section.name}</div>
+                          <div className="text-xs text-gray-400">{section.description}</div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r ${
+                            SECTION_COLORS[section.id] ?? 'from-gray-600 to-gray-700'
+                          } text-white`}
+                        >
+                          {section.shortName}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold mb-2 text-blue-400">📚 Sections</h3>
+                <p className="text-sm text-gray-400">
+                  Custom Exam draws from your entire selected source (or selected chapters, above) — no fixed exam sections or external blueprint.
+                </p>
+              </section>
+            )}
           </div>
 
           {/* ── Right panel: summary + actions ── */}
@@ -542,6 +600,10 @@ export default function ExamGeneratorPage() {
             <div className="bg-gradient-to-br from-blue-900/50 to-purple-900/50 rounded-xl p-6 border border-blue-500/30">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📋 Exam Summary</h3>
               <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Exam Type:</span>
+                  <span className="text-white font-medium">{examProfileId === 'dat' ? 'DAT' : 'Custom'}</span>
+                </div>
                 <div className="flex justify-between gap-2">
                   <span className="text-gray-400">Book:</span>
                   <span className="text-white font-medium text-right truncate max-w-[55%]">
@@ -577,7 +639,7 @@ export default function ExamGeneratorPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Sections:</span>
-                  <span className="text-white font-medium">{sectionIds.length}</span>
+                  <span className="text-white font-medium">{examProfileId === 'dat' ? sectionIds.length : 'All (no blueprint)'}</span>
                 </div>
               </div>
             </div>

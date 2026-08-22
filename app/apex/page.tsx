@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import TrainingArena from "@/components/apex/TrainingArena";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ACTIVE_DAT_BLUEPRINT } from "@/lib/datApex/activeBlueprint";
@@ -13,7 +13,26 @@ import { generateWeakTopicsPracticeExam, generateFullSimulationExam } from "@/li
 import { savePendingExam } from "@/lib/db/examStore";
 import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 import { safeSetItem } from "@/lib/storage/safeStorage";
+import { getUserBookCatalogue } from "@/lib/apex/bookCatalogue";
+import type { CatalogueBook } from "@/lib/apex/bookCatalogue";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
+
+/** Loads the student's book catalogue (books with Reader notes) and returns
+ *  the "primary" one (most notes) to generate from, or null if none exist
+ *  yet — used by both TodayTab and FullExamsTab to gate book-grounded
+ *  generation, mirroring app/apex/generator/page.tsx's own catalogue load. */
+function usePrimaryApexBook(): { primaryBook: CatalogueBook | null; loaded: boolean } {
+  const [books, setBooks] = useState<CatalogueBook[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getUserBookCatalogue()
+      .then((b) => { if (alive) { setBooks(b); setLoaded(true); } })
+      .catch(() => { if (alive) { setBooks([]); setLoaded(true); } });
+    return () => { alive = false; };
+  }, []);
+  return { primaryBook: books[0] ?? null, loaded };
+}
 
 /* ─── Tab config ──────────────────────────────────────────────────────────── */
 
@@ -54,17 +73,22 @@ function TodayTab() {
   const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
   const router = useRouter();
   const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const cancelRef = useRef(false);
   useEffect(() => {
     cancelRef.current = false;
     return () => { cancelRef.current = true; };
   }, []);
+  const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
 
   const handleStartRecommended = useCallback(async () => {
-    if (!currentRecommendation) return;
+    if (!currentRecommendation || !primaryBook) return;
     setLaunching(true);
+    setLaunchError(null);
     try {
       const exam = await generateWeakTopicsPracticeExam(
+        primaryBook.bookId,
+        primaryBook.bookTitle,
         patterns,
         currentRecommendation.targetPatterns,
         20,
@@ -76,10 +100,13 @@ function TodayTab() {
       if (cancelRef.current) return;
       safeSetItem("currentExam", JSON.stringify(exam));
       router.push(`/apex/proctor?examId=${examId}`);
-    } catch {
-      if (!cancelRef.current) setLaunching(false);
+    } catch (err: unknown) {
+      if (!cancelRef.current) {
+        setLaunchError(err instanceof Error ? err.message : "Could not prepare the exam. Please try again.");
+        setLaunching(false);
+      }
     }
-  }, [currentRecommendation, patterns, adaptiveDifficulty, router]);
+  }, [currentRecommendation, primaryBook, patterns, adaptiveDifficulty, router]);
 
   const bp         = ACTIVE_DAT_BLUEPRINT;
   const totalItems = totalBlueprintItems(bp);
@@ -93,6 +120,28 @@ function TodayTab() {
 
   return (
     <div className="space-y-6">
+      {/* Setup-flow resequencing: a first-time user (no book with notes yet)
+          sees a clear 3-step path instead of a dashboard full of zeros with
+          no explanation of what to do first. */}
+      {!primaryBook && booksLoaded && (
+        <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl p-6 border border-blue-500/30">
+          <h2 className="text-lg font-bold text-white mb-3">🚀 Get Started</h2>
+          <ol className="space-y-1.5 text-sm text-gray-300 mb-4">
+            <li><span className="font-semibold text-blue-300">1.</span> Open a book in the Reader and let it synthesize a few pages</li>
+            <li><span className="font-semibold text-blue-300">2.</span> Choose DAT or Custom Exam, and pick your book</li>
+            <li><span className="font-semibold text-blue-300">3.</span> Generate a diagnostic to see where you stand</li>
+          </ol>
+          <div className="flex gap-3">
+            <Link href="/" className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-semibold transition-colors">
+              Open Reader
+            </Link>
+            <Link href="/apex/generator" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
+              Build Your First Exam →
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Blueprint snapshot */}
       <div className="bg-black/30 rounded-xl p-5 border border-blue-500/20">
         <div className="flex items-center justify-between mb-4">
@@ -168,12 +217,21 @@ function TodayTab() {
                 )}
                 <button
                   onClick={handleStartRecommended}
-                  disabled={launching}
+                  disabled={launching || !primaryBook}
+                  title={!primaryBook && booksLoaded ? "Open a PDF in the Reader and let it synthesize a few pages first" : undefined}
                   className="ml-auto px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors"
                 >
                   {launching ? "Loading…" : "Start Now"}
                 </button>
               </div>
+              {!primaryBook && booksLoaded && (
+                <p className="text-xs text-gray-400 mt-2">
+                  No book with notes yet — questions are generated from your own book. Open a PDF in the Reader and let it synthesize a few pages, then come back.
+                </p>
+              )}
+              {launchError && (
+                <p className="text-xs text-red-400 mt-2">{launchError}</p>
+              )}
             </div>
           </div>
         </div>
@@ -326,6 +384,7 @@ function FullExamsTab() {
     cancelRef.current = false;
     return () => { cancelRef.current = true; };
   }, []);
+  const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
 
   // Check if there's a paused exam in localStorage
   useEffect(() => {
@@ -333,10 +392,11 @@ function FullExamsTab() {
   }, []);
 
   const handleStartSimulation = useCallback(async (prometric: boolean) => {
+    if (!primaryBook) return;
     setSeeding(true);
     setSeedError(null);
     try {
-      const exam = await generateFullSimulationExam();
+      const exam = await generateFullSimulationExam(primaryBook.bookId, primaryBook.bookTitle);
       if (cancelRef.current) return;
       const examId = `simulation-${Date.now()}`;
       await savePendingExam(examId, exam);
@@ -349,7 +409,7 @@ function FullExamsTab() {
         setSeeding(false);
       }
     }
-  }, [router]);
+  }, [primaryBook, router]);
 
   const handleResume = useCallback(() => {
     const progress = localStorage.getItem("examProgress");
@@ -421,17 +481,23 @@ function FullExamsTab() {
 
         {seedError && <p className="mb-3 text-sm text-red-400">{seedError}</p>}
 
+        {!primaryBook && booksLoaded && (
+          <p className="mb-3 text-sm text-gray-400">
+            No book with notes yet — questions are generated from your own book, never a generic bank. Open a PDF in the Reader and let it synthesize a few pages, then come back.
+          </p>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={() => handleStartSimulation(false)}
-            disabled={seeding}
+            disabled={seeding || !primaryBook}
             className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
           >
             {seeding ? "⏳ Preparing…" : "Start Practice Simulation"}
           </button>
           <button
             onClick={() => handleStartSimulation(true)}
-            disabled={seeding}
+            disabled={seeding || !primaryBook}
             title="No pausing, section-locked — mirrors the real DAT testing center"
             className="flex-1 py-3 bg-gradient-to-r from-red-700 to-rose-700 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-opacity text-sm"
           >
@@ -750,8 +816,18 @@ function HistoryTab() {
 
 /* ─── Page shell ──────────────────────────────────────────────────────────── */
 
-export default function DatApexPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("today");
+// Setup-flow resequencing: lets other pages (e.g. app/apex/results) deep-link
+// directly into a specific tab — "review your weaknesses" and "regenerate
+// targeted practice" used to both dead-end at a generic "Back to Hub" link
+// that always landed on "today" regardless of what the student just did.
+// useSearchParams() requires a Suspense boundary in the App Router or the
+// whole route opts out of static generation; DatApexPageInner is the actual
+// page body, wrapped by the default export below.
+function DatApexPageInner() {
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get("tab") ?? null;
+  const initialTab: TabId = TABS.some(t => t.id === requestedTab) ? (requestedTab as TabId) : "today";
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const { projection } = useApexEngineStore();
 
   return (
@@ -759,7 +835,7 @@ export default function DatApexPage() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-blue-500/20 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio Exam Forge <span className="text-blue-300 font-bold">— DAT</span></h1>
+            <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio TestLab <span className="text-blue-300 font-bold">— DAT</span></h1>
             <p className="text-xs text-blue-200 mt-0.5">
               Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
             </p>
@@ -819,5 +895,13 @@ export default function DatApexPage() {
         {activeTab === "history"   && <HistoryTab />}
       </main>
     </div>
+  );
+}
+
+export default function DatApexPage() {
+  return (
+    <Suspense fallback={null}>
+      <DatApexPageInner />
+    </Suspense>
   );
 }

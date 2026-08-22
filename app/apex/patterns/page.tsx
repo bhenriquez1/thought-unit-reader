@@ -231,7 +231,7 @@ export default function DATPatternBrowser() {
                 href="/apex"
                 className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors text-sm"
               >
-                ← Exam Forge
+                ← TestLab
               </Link>
               <div>
                 <h1 className="text-2xl font-bold text-white">🎯 Pattern Rules & Decision Making</h1>

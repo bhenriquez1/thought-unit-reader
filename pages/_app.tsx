@@ -3,7 +3,7 @@ import type { AppProps } from "next/app";
 import React, { useEffect } from "react";
 import { ThemeProvider } from "next-themes";
 
-import { listenForAuthChanges, handleRedirectResult } from "@/lib/firebase";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
 
 // Global styles
 import "@/styles/globals.css";
@@ -24,17 +24,23 @@ function deleteCookie(name: string) {
 }
 
 export default function App({ Component, pageProps }: AppProps) {
-  useEffect(() => {
-    // 1) Finish Firebase redirect sign-ins (safe to call every load)
-    handleRedirectResult().catch(() => { /* noop */ });
+  // Redirect-completion + the actual onAuthStateChanged subscription both
+  // now live in the shared hook (product-split Phase 2) — this effect only
+  // keeps middleware cookies in sync with whatever it reports.
+  const { user, loading } = useAuthUser();
 
-    // 2) Keep middleware cookies in sync with Firebase auth state
-    const unsub = listenForAuthChanges(async (u) => {
-      if (u) {
-        setCookie("rb_uid", u.uid);
+  useEffect(() => {
+    // Wait for the first real callback — never act on the pre-determination
+    // `null` loading briefly presents, or a signed-in user's cookies would
+    // get wiped for an instant on every load before Firebase re-establishes
+    // the session.
+    if (loading) return;
+    (async () => {
+      if (user) {
+        setCookie("rb_uid", user.uid);
         try {
           // Only a short prefix; we don't need a full token in a JS cookie for gating
-          const tok = (await u.getIdToken())?.slice(0, 16) || "1";
+          const tok = (await user.getIdToken())?.slice(0, 16) || "1";
           setCookie("rb_token", tok);
         } catch {
           setCookie("rb_token", "1");
@@ -43,9 +49,8 @@ export default function App({ Component, pageProps }: AppProps) {
         deleteCookie("rb_uid");
         deleteCookie("rb_token");
       }
-    });
-    return () => unsub();
-  }, []);
+    })();
+  }, [user, loading]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
