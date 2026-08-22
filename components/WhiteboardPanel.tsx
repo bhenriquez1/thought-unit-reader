@@ -209,6 +209,17 @@ export default function WhiteboardPanel({
   const liveIdentityRef = useRef({ documentId: effectiveLearningDocumentId, pageTruthKey: effectivePageTruthKey ?? "" });
   liveIdentityRef.current = { documentId: effectiveLearningDocumentId, pageTruthKey: effectivePageTruthKey ?? "" };
 
+  // P0 stabilization, Tier 4 — Learning State's evidence trail previously
+  // recorded generic strings ("lesson started", "lesson completed") with no
+  // indication of what topic the lesson was actually on. Resolves the same
+  // way this panel's own title/save actions already do: the Surgeon-sourced
+  // pageTitle wins when available (it's what the student actually saw),
+  // falling back to the legacy studyModel pipeline's own pageThesis.
+  // Deliberately does NOT introduce a third canonical-thesis source or any
+  // new cross-view state — reuses exactly the two props this panel already
+  // has, in the exact fallback order it already uses elsewhere.
+  const resolvedPageThesis = pageTitle || (studyModel as unknown as CurrentPageStudyModel | null)?.pageThesis || undefined;
+
   const handleTeachingStepStarted = (stepId: number) => {
     if (stepId !== 0 || !knowledgeNodeId || !lessonId) return;
     if (lessonStartFiredForRef.current === lessonId) return;
@@ -217,6 +228,7 @@ export default function WhiteboardPanel({
       kind: "professor-lesson-started",
       occurredAt: new Date().toISOString(),
       sourceId: lessonId,
+      detail: resolvedPageThesis,
     }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
   };
 
@@ -229,6 +241,7 @@ export default function WhiteboardPanel({
       stepId,
       occurredAt,
       sourceId,
+      detail: resolvedPageThesis,
     }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
     // Phase B1's own "debunk this misconception" signal (crossOut emphasis),
     // reused here rather than building new interactive checkpoint UI.
@@ -254,6 +267,7 @@ export default function WhiteboardPanel({
         occurredAt,
         sourceId: lessonId,
         snapshotId: lessonId,
+        detail: resolvedPageThesis,
       }).catch(err => console.error("[WHITEBOARD_LEARNING_EVENT_ERROR]", err));
     }
     const snapshot = buildWhiteboardLessonSnapshot({

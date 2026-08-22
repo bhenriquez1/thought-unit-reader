@@ -146,6 +146,25 @@ describe("applyLearningEvent — whiteboard-lesson-completed", () => {
     expect(p.understandingScore).toBe(16);
     expect(p.whiteboardSnapshotIds).toEqual(["snap-1", "snap-2"]);
   });
+
+  // P0 stabilization, Tier 4 — resolved page thesis (WhiteboardPanel's
+  // Surgeon-sourced pageTitle, falling back to the legacy studyModel
+  // pipeline) is appended to the evidence detail, not substituted for it —
+  // the reducer is the only thing that knows whether this was a first
+  // completion or a replay, so a caller-supplied detail must never lose
+  // that distinction.
+  it("REQUIRED: event.detail (a resolved page thesis) is appended to, not substituted for, the reducer's own 'lesson completed'/'lesson replayed' phrasing", () => {
+    let p = emptyProgress("n1", "doc-1");
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1", detail: "Buffer Systems" });
+    expect(p.evidence[0]).toMatchObject({ detail: "lesson completed — Buffer Systems" });
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T2, sourceId: "lesson-2", snapshotId: "snap-1", detail: "Buffer Systems" });
+    expect(p.evidence[1]).toMatchObject({ detail: "lesson replayed — Buffer Systems" });
+  });
+
+  it("omitting event.detail keeps the exact prior phrasing — no dangling separator", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1" });
+    expect(next.evidence[0]).toMatchObject({ detail: "lesson completed" });
+  });
 });
 
 describe("applyLearningEvent — professor-lesson-started (Phase B3)", () => {
@@ -163,6 +182,11 @@ describe("applyLearningEvent — professor-lesson-started (Phase B3)", () => {
     const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "professor-lesson-started", occurredAt: T1, sourceId: "lesson-1" });
     expect(next.evidence).toHaveLength(1);
     expect(next.evidence[0]).toMatchObject({ sourceType: "whiteboard", sourceId: "lesson-1", occurredAt: T1, detail: "lesson started" });
+  });
+
+  it("REQUIRED (Tier 4): a resolved page thesis in event.detail is appended, giving the evidence trail real topic context instead of a bare 'lesson started'", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "professor-lesson-started", occurredAt: T1, sourceId: "lesson-1", detail: "Buffer Systems" });
+    expect(next.evidence[0]).toMatchObject({ detail: "lesson started — Buffer Systems" });
   });
 });
 
@@ -215,5 +239,10 @@ describe("applyLearningEvent — teaching-step-completed (Phase B3)", () => {
     p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 1, occurredAt: T1, sourceId: "step-1" });
     p = applyLearningEvent(p, { kind: "teaching-step-completed", stepId: 2, occurredAt: T2, sourceId: "step-2" });
     expect(p.evidence).toHaveLength(2);
+  });
+
+  it("REQUIRED (Tier 4): a resolved page thesis in event.detail is appended to the step-completed phrasing", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "teaching-step-completed", stepId: 2, occurredAt: T1, sourceId: "step-2", detail: "Buffer Systems" });
+    expect(next.evidence[0]).toMatchObject({ detail: "step 2 completed — Buffer Systems" });
   });
 });

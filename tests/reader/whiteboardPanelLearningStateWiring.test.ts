@@ -101,4 +101,36 @@ describe("WhiteboardPanel.tsx — Phase B3-2: Learning State event wiring", () =
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/documentId: effectiveLearningDocumentId,/);
   });
+
+  // P0 stabilization, Tier 4 — Learning State's evidence trail previously
+  // recorded generic strings ("lesson started", "lesson completed") with no
+  // indication of what topic the lesson was on. resolvedPageThesis resolves
+  // the same way this panel's title/save actions already do (Surgeon pageTitle
+  // wins, falls back to the legacy studyModel's own pageThesis) and is
+  // threaded into all three Learning-State event calls as detail — the
+  // REDUCER (not this panel) owns the final phrasing, see
+  // tests/knowledge/learningStateEvents.test.ts for the append behavior.
+  describe("REQUIRED: resolvedPageThesis reuses the panel's existing title-resolution precedent, threaded into all three Learning State calls", () => {
+    it("resolvedPageThesis follows the same fallback order as this panel's own title (pageTitle, then the legacy studyModel's pageThesis) — no third thesis source introduced", () => {
+      expect(src).toMatch(/const resolvedPageThesis = pageTitle \|\| \(studyModel as unknown as CurrentPageStudyModel \| null\)\?\.pageThesis \|\| undefined;/);
+    });
+
+    it("handleTeachingStepStarted passes resolvedPageThesis as detail", () => {
+      const idx = src.indexOf("const handleTeachingStepStarted = (stepId: number) => {");
+      const block = src.slice(idx, idx + 500);
+      expect(block).toMatch(/detail: resolvedPageThesis,/);
+    });
+
+    it("handleTeachingStepCompleted passes resolvedPageThesis as detail", () => {
+      const idx = src.indexOf("const handleTeachingStepCompleted = (stepId: number");
+      const block = src.slice(idx, idx + 500);
+      expect(block).toMatch(/detail: resolvedPageThesis,/);
+    });
+
+    it("handleLessonCompleted passes resolvedPageThesis as detail", () => {
+      const idx = src.indexOf("const handleLessonCompleted = (_canvasReportedSnapshotId: string, plan: ProfessorLessonPlan) => {");
+      const block = src.slice(idx, idx + 700);
+      expect(block).toMatch(/detail: resolvedPageThesis,/);
+    });
+  });
 });
