@@ -146,6 +146,7 @@ import {
 } from "@/lib/parser";
 import { type ExtractOptions, extractPageTextsIncremental } from "@/lib/pdfjs-handler";
 import { buildCanonicalUnits, saveCanonicalUnits, readAndClearViewSourceLink } from "@/lib/canonical";
+import type { ViewSourceLink } from "@/lib/canonical";
 import {
   saveDocumentMeta,
   saveDocumentFile,
@@ -612,8 +613,20 @@ export default function ThoughtUnitReader() {
   // including it in the dep array causes a TDZ error in the production SSR bundle
   // because the dep array is evaluated eagerly when the useCallback is created).
   const syncToPageRef = useRef<((page: number, opts?: { reason?: string }) => void) | null>(null);
+  // Same TDZ workaround as syncToPageRef above — handleLoadPDF is declared
+  // much later in this component; populated by an effect right after its
+  // own declaration, read via .current by handleViewSourcePickFromLibrary.
+  const handleLoadPDFRef = useRef<((url: string, name?: string, localDocumentId?: string) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
+  // P0 fix — a ViewSourceLink whose documentId doesn't (yet) match the
+  // currently-open book. Held here instead of applied immediately: the link
+  // used to only ever call setCurrentPage, which — if a different book (or
+  // no book) happened to be open — silently showed that OTHER book's
+  // content at a confidently-labeled page number, with no indication
+  // anything was wrong. Now the page jump only fires once bookId actually
+  // matches; until then this renders an honest "open the right book" prompt.
+  const [pendingViewSourceLink, setPendingViewSourceLink] = useState<ViewSourceLink | null>(null);
   // TestLab-Reader progress integration — "TestLab found this concept weak —
   // review". Only fires when the current page's Knowledge Graph node has
   // real datPerformance evidence (i.e. TestLab specifically saw it missed,
@@ -1505,17 +1518,32 @@ export default function ThoughtUnitReader() {
     }
   }, []);
 
-  // "View Source in Reader" deep-link — written by DAT Apex before navigating here.
-  // Runs once on mount, after session restore, so setCurrentPage wins over any
-  // restored page position when a source link is present.
+  // "View Source in Reader" deep-link — written by DAT Apex before navigating
+  // here. Consumed exactly once on mount (readAndClearViewSourceLink clears
+  // the localStorage entry immediately, so a reload never re-applies a stale
+  // link) and staged into pendingViewSourceLink rather than acted on
+  // directly — session restore may still be in flight, so bookId here can
+  // be one render behind the book that's actually about to load.
   useEffect(() => {
     const link = readAndClearViewSourceLink();
-    if (!link) return;
-    setCurrentPage(link.pageNumber);
-    if (link.quote) {
-      setViewSourceBanner({ pageNumber: link.pageNumber, quote: link.quote });
-    }
+    if (link) setPendingViewSourceLink(link);
   }, []);
+
+  // Applies the pending link the moment the open book's bookId actually
+  // matches it — whether that's because session restore just finished
+  // loading the right book, or because the user picked it from the
+  // library via the mismatch prompt below (handleViewSourcePickFromLibrary).
+  // Re-evaluates on every bookId change, so it isn't a one-shot check that
+  // could miss the match arriving a render later.
+  useEffect(() => {
+    if (!pendingViewSourceLink) return;
+    if (!bookId || bookId !== pendingViewSourceLink.documentId) return;
+    setCurrentPage(pendingViewSourceLink.pageNumber);
+    if (pendingViewSourceLink.quote) {
+      setViewSourceBanner({ pageNumber: pendingViewSourceLink.pageNumber, quote: pendingViewSourceLink.quote });
+    }
+    setPendingViewSourceLink(null);
+  }, [bookId, pendingViewSourceLink, setCurrentPage]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark");
@@ -1529,6 +1557,27 @@ export default function ThoughtUnitReader() {
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string }[]
   >([]);
+
+  // User-driven fallback for a pending view-source link whose book isn't
+  // already open — looks the source book up in the library by filename and
+  // loads it; the effect above (right after pendingViewSourceLink's own
+  // declaration) then applies the page jump once bookId catches up. Never
+  // auto-loads on its own (the library can still be loading when the link
+  // first arrives), so this only ever fires from an explicit click.
+  // handleLoadPDF is declared much later in this component — called via a
+  // ref (populated just after its own declaration) to avoid a TDZ error,
+  // same pattern syncToPageRef uses for the same reason.
+  const handleViewSourcePickFromLibrary = useCallback(() => {
+    if (!pendingViewSourceLink) return;
+    const match = pdfLibrary.find(
+      (p) => p.name.replace(/\.[Pp][Dd][Ff]$/, "") === pendingViewSourceLink.documentId,
+    );
+    if (match) {
+      handleLoadPDFRef.current?.(match.url, match.name, match.localDocumentId);
+    } else {
+      setShowLibrary(true);
+    }
+  }, [pendingViewSourceLink, pdfLibrary]);
   // Entry shown when a local book's binary can't be found in IndexedDB
   const [missingPDFEntry, setMissingPDFEntry] = useState<{ name: string; documentId: string } | null>(null);
 
@@ -4310,6 +4359,8 @@ export default function ThoughtUnitReader() {
     }
   }, [startBookProcessing, updateSync]);
 
+  useEffect(() => { handleLoadPDFRef.current = handleLoadPDF; }, [handleLoadPDF]);
+
   /* =========================================================================
      🔹 Delete PDF
   ========================================================================= */
@@ -5461,6 +5512,36 @@ export default function ThoughtUnitReader() {
                       onClick={() => setViewSourceBanner(null)}
                       className="ml-auto shrink-0 text-teal-300 hover:text-white"
                       aria-label="Dismiss view source banner"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* P0 fix — a pending "View Source in Reader" link whose book
+                    isn't the one currently open. Replaces the old behavior
+                    of silently jumping to that page number in whatever book
+                    happened to be open (or none). Honest prompt instead of
+                    wrong content. */}
+                {pendingViewSourceLink && bookId !== pendingViewSourceLink.documentId && (
+                  <div className="sticky top-0 z-20 flex items-start gap-3 border-b border-orange-700/50 bg-orange-900/80 px-4 py-2 text-xs text-orange-100 backdrop-blur-sm">
+                    <span className="mt-0.5">📖</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold">
+                        This question is from {pendingViewSourceLink.bookTitle ?? "a different book"}
+                      </span>
+                      {' — open it to view page ' + pendingViewSourceLink.pageNumber + ' of the source.'}
+                    </div>
+                    <button
+                      onClick={handleViewSourcePickFromLibrary}
+                      className="shrink-0 text-orange-200 hover:text-white underline underline-offset-2"
+                    >
+                      Open book →
+                    </button>
+                    <button
+                      onClick={() => setPendingViewSourceLink(null)}
+                      className="ml-2 shrink-0 text-orange-300 hover:text-white"
+                      aria-label="Dismiss view source prompt"
                     >
                       ✕
                     </button>
