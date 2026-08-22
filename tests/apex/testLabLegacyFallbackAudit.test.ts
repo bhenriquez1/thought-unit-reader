@@ -68,8 +68,8 @@ describe("TestLab legacy-fallback audit — TestLab visibly supports more than D
   it("REQUIRED: app/apex/page.tsx's dashboard header renders an exam-profile switcher sourced from the shared catalog, not a static 'DAT' label", () => {
     const src = read("app/apex/page.tsx");
     expect(src).toMatch(/import \{ EXAM_PROFILE_CATALOG \} from "@\/lib\/examEngine\/profiles\/profileCatalog"/);
-    expect(src).toMatch(/function ExamProfileSwitcher\(\)/);
-    expect(src).toMatch(/<ExamProfileSwitcher \/>/);
+    expect(src).toMatch(/function ExamProfileSwitcher\(\{ activeProfileId, onSelect \}: \{ activeProfileId: string; onSelect: \(id: string\) => void \}\)/);
+    expect(src).toMatch(/<ExamProfileSwitcher activeProfileId=\{activeProfileId\} onSelect=\{handleProfileSelect\} \/>/);
   });
 
   it("REQUIRED: the dashboard's flow ribbon exposes TestLab's first-level product experience (Choose Exam → Sources → Blueprint → Practice/Simulation → Review → Readiness)", () => {

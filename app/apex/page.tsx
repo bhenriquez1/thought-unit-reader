@@ -17,6 +17,36 @@ import { getUserBookCatalogue } from "@/lib/apex/bookCatalogue";
 import type { CatalogueBook } from "@/lib/apex/bookCatalogue";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 import { EXAM_PROFILE_CATALOG } from "@/lib/examEngine/profiles/profileCatalog";
+import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
+import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/customProfile";
+import type { ExamProfile } from "@/lib/examEngine/types";
+
+// P0 fix — the dashboard used to hardcode DAT_EXAM_PROFILE into every
+// quick-launch call regardless of what ExamProfileSwitcher displayed as
+// active, so picking a different profile there had zero effect on what
+// "Start Now"/"Start Practice Simulation" actually generated. This is the
+// single source of truth for "which profile is active," shared by the
+// switcher and both quick-launch tabs, persisted so it survives navigating
+// to /apex/generator and back.
+const ACTIVE_PROFILE_STORAGE_KEY = "avrrio:testlab:activeProfileId";
+
+function resolveExamProfile(id: string): ExamProfile {
+  return id === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
+}
+
+function readStoredActiveProfileId(): string {
+  try {
+    const stored = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+    // Only trust a stored id if it's still a real, available profile —
+    // never resurrect a profile that was available in a prior session but
+    // isn't today.
+    return stored && EXAM_PROFILE_CATALOG.some((p) => p.id === stored && p.available)
+      ? stored
+      : DAT_EXAM_PROFILE_ID;
+  } catch {
+    return DAT_EXAM_PROFILE_ID;
+  }
+}
 
 /** Loads the student's book catalogue (books with Reader notes) and returns
  *  the "primary" one (most notes) to generate from, or null if none exist
@@ -70,7 +100,7 @@ const BAND_INFO: Record<string, { label: string; color: string; bg: string }> = 
 
 /* ─── Today tab ───────────────────────────────────────────────────────────── */
 
-function TodayTab() {
+function TodayTab({ activeProfileId }: { activeProfileId: string }) {
   const { sessions, scores, patterns, projection, currentRecommendation, adaptiveDifficulty, insights } = useApexEngineStore();
   const router = useRouter();
   const [launching, setLaunching] = useState(false);
@@ -82,8 +112,21 @@ function TodayTab() {
   }, []);
   const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
 
+  // "Weak topics" quick-launch is built on apexEngineStore's UserPattern
+  // data (bio/gc/orgo/pat/rc/qr mastery tracking) — a DAT-specific pattern
+  // taxonomy with no equivalent for Custom Exam or any other profile today.
+  // P0 fix: this used to call generateWeakTopicsPracticeExam unconditionally
+  // regardless of which profile ExamProfileSwitcher showed as active, so
+  // picking Custom Exam and clicking "Start Now" silently produced a DAT
+  // exam anyway. Rather than fabricate a fake weak-topics signal for a
+  // profile that has no pattern data, this quick-launch is honestly DAT-only
+  // until per-profile weak-area targeting exists (see lib/examEngine/
+  // examScope.ts's "weak-areas" scope, which IS profile-generic and is the
+  // right long-term home for this).
+  const isDatActive = activeProfileId === DAT_EXAM_PROFILE_ID;
+
   const handleStartRecommended = useCallback(async () => {
-    if (!currentRecommendation || !primaryBook) return;
+    if (!currentRecommendation || !primaryBook || !isDatActive) return;
     setLaunching(true);
     setLaunchError(null);
     try {
@@ -107,7 +150,7 @@ function TodayTab() {
         setLaunching(false);
       }
     }
-  }, [currentRecommendation, primaryBook, patterns, adaptiveDifficulty, router]);
+  }, [currentRecommendation, primaryBook, patterns, adaptiveDifficulty, router, isDatActive]);
 
   const bp         = ACTIVE_DAT_BLUEPRINT;
   const totalItems = totalBlueprintItems(bp);
@@ -218,14 +261,25 @@ function TodayTab() {
                 )}
                 <button
                   onClick={handleStartRecommended}
-                  disabled={launching || !primaryBook}
-                  title={!primaryBook && booksLoaded ? "Open a PDF in the Reader and let it synthesize a few pages first" : undefined}
+                  disabled={launching || !primaryBook || !isDatActive}
+                  title={
+                    !isDatActive
+                      ? "Weak-topics quick launch is only available for DAT — switch back to DAT to use it"
+                      : !primaryBook && booksLoaded
+                        ? "Open a PDF in the Reader and let it synthesize a few pages first"
+                        : undefined
+                  }
                   className="ml-auto px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors"
                 >
                   {launching ? "Loading…" : "Start Now"}
                 </button>
               </div>
-              {!primaryBook && booksLoaded && (
+              {!isDatActive && (
+                <p className="text-xs text-gray-400 mt-2">
+                  This recommendation is tracked from DAT practice patterns — switch the exam profile back to DAT (top left) to launch it.
+                </p>
+              )}
+              {isDatActive && !primaryBook && booksLoaded && (
                 <p className="text-xs text-gray-400 mt-2">
                   No book with notes yet — questions are generated from your own book. Open a PDF in the Reader and let it synthesize a few pages, then come back.
                 </p>
@@ -374,7 +428,7 @@ function PracticeTab() {
 
 /* ─── Full-Length Exams tab ───────────────────────────────────────────────── */
 
-function FullExamsTab() {
+function FullExamsTab({ activeProfileId }: { activeProfileId: string }) {
   const bp = ACTIVE_DAT_BLUEPRINT;
   const router = useRouter();
   const [seeding, setSeeding]       = useState(false);
@@ -386,18 +440,27 @@ function FullExamsTab() {
     return () => { cancelRef.current = true; };
   }, []);
   const { primaryBook, loaded: booksLoaded } = usePrimaryApexBook();
+  const isDatActive = activeProfileId === DAT_EXAM_PROFILE_ID;
 
   // Check if there's a paused exam in localStorage
   useEffect(() => {
     setInProgress(!!localStorage.getItem("examProgress"));
   }, []);
 
+  // P0 fix — this used to hardcode DAT_EXAM_PROFILE inside
+  // generateFullSimulationExam regardless of what ExamProfileSwitcher
+  // showed as active in the header, so selecting Custom Exam and clicking
+  // "Start Practice Simulation" silently produced a DAT exam anyway.
+  // buildExam() (which this ultimately calls) is genuinely profile-generic,
+  // so — unlike the weak-topics quick-launch in TodayTab — there's no
+  // reason to restrict this one to DAT; it now generates from whichever
+  // profile is actually active.
   const handleStartSimulation = useCallback(async (prometric: boolean) => {
     if (!primaryBook) return;
     setSeeding(true);
     setSeedError(null);
     try {
-      const exam = await generateFullSimulationExam(primaryBook.bookId, primaryBook.bookTitle);
+      const exam = await generateFullSimulationExam(primaryBook.bookId, primaryBook.bookTitle, resolveExamProfile(activeProfileId));
       if (cancelRef.current) return;
       const examId = `simulation-${Date.now()}`;
       await savePendingExam(examId, exam);
@@ -410,7 +473,7 @@ function FullExamsTab() {
         setSeeding(false);
       }
     }
-  }, [primaryBook, router]);
+  }, [primaryBook, router, activeProfileId]);
 
   const handleResume = useCallback(() => {
     const progress = localStorage.getItem("examProgress");
@@ -470,6 +533,11 @@ function FullExamsTab() {
         <p className="text-xs text-gray-500 mb-4">
           Questions are generated from {primaryBook ? <span className="text-gray-300 font-medium">{primaryBook.bookTitle}</span> : "your primary book"} only — sections it has little or no content for will be thin or default to Survey of Natural Sciences, so coverage may not match every section below.
         </p>
+        {!isDatActive && (
+          <p className="text-xs text-amber-300/80 mb-4 bg-amber-900/20 border border-amber-500/20 rounded-lg px-3 py-2">
+            The section breakdown below is DAT's reference blueprint — since {EXAM_PROFILE_CATALOG.find(p => p.id === activeProfileId)?.label ?? "your selected exam"} is active, the questions generated will follow that profile instead, not this DAT section structure.
+          </p>
+        )}
 
         <div className="space-y-2 mb-5">
           {bp.sections.map((sec, idx) => (
@@ -839,10 +907,10 @@ function HistoryTab() {
  * unavailable profile is a no-op close, never a silent dead click that
  * looks the same as a working one — the "Coming soon" tag makes the state
  * explicit before the click, not after. */
-function ExamProfileSwitcher() {
+function ExamProfileSwitcher({ activeProfileId, onSelect }: { activeProfileId: string; onSelect: (id: string) => void }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const active = EXAM_PROFILE_CATALOG.find(p => p.available) ?? EXAM_PROFILE_CATALOG[0];
+  const active = EXAM_PROFILE_CATALOG.find(p => p.id === activeProfileId) ?? EXAM_PROFILE_CATALOG[0];
 
   return (
     <div className="relative">
@@ -867,6 +935,7 @@ function ExamProfileSwitcher() {
                 onClick={() => {
                   setOpen(false);
                   if (!p.available || p.id === active.id) return;
+                  onSelect(p.id);
                   router.push(`/apex/generator?examType=${p.id}`);
                 }}
                 disabled={!p.available}
@@ -912,6 +981,11 @@ function DatApexPageInner() {
   const initialTab: TabId = TABS.some(t => t.id === requestedTab) ? (requestedTab as TabId) : "today";
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const { projection } = useApexEngineStore();
+  const [activeProfileId, setActiveProfileId] = useState<string>(() => readStoredActiveProfileId());
+  const handleProfileSelect = useCallback((id: string) => {
+    setActiveProfileId(id);
+    try { localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, id); } catch { /* quota — non-fatal */ }
+  }, []);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_28%),linear-gradient(135deg,#020617,#0f172a_48%,#111827)] text-white">
@@ -920,7 +994,7 @@ function DatApexPageInner() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-black tracking-tight text-white">🎯 Avrrio TestLab</h1>
-              <ExamProfileSwitcher />
+              <ExamProfileSwitcher activeProfileId={activeProfileId} onSelect={handleProfileSelect} />
             </div>
             <p className="text-xs text-blue-200 mt-0.5">
               DAT Blueprint v{ACTIVE_DAT_BLUEPRINT.version} · {ACTIVE_DAT_BLUEPRINT.scoringModelVersion}
@@ -985,7 +1059,7 @@ function DatApexPageInner() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === "today"     && <TodayTab />}
+        {activeTab === "today"     && <TodayTab activeProfileId={activeProfileId} />}
         {activeTab === "learn"     && (
           <div>
             <p className="text-sm text-gray-400 mb-4">
@@ -997,7 +1071,7 @@ function DatApexPageInner() {
           </div>
         )}
         {activeTab === "practice"  && <PracticeTab />}
-        {activeTab === "exams"     && <FullExamsTab />}
+        {activeTab === "exams"     && <FullExamsTab activeProfileId={activeProfileId} />}
         {activeTab === "mistakes"  && <MistakesTab />}
         {activeTab === "readiness" && <ReadinessTab />}
         {activeTab === "history"   && <HistoryTab />}
