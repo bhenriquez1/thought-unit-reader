@@ -38,8 +38,20 @@ export interface GenerateQuestionsOptions {
   count: number;
 }
 
-function cacheKey(opts: Pick<GenerateQuestionsOptions, "bookId" | "conceptId" | "questionType" | "difficulty">): string {
-  return `${opts.bookId}::${opts.conceptId}::${opts.questionType}::${opts.difficulty}`;
+// P1 fix — this key used to omit examProfileId, so a DAT build and a Custom
+// Exam build over the same book/concept/type/difficulty collided in the
+// cache: whichever profile generated first "won," and every subsequent
+// build under the OTHER profile silently got back cached EngineQuestions
+// still stamped with the first profile's examProfileId. examBuilder.ts
+// never re-stamps examProfileId on the questions getOrGenerateQuestions
+// returns — it's only sent as a request param for the cache-miss path — so
+// a cache hit under the wrong profile shipped a wrong examProfileId all
+// the way to app/apex/results/page.tsx's profile-resolution logic. Scoping
+// the cache key by profile closes this at the source; stale entries under
+// the old 4-part key format simply age out (this cache is disposable and
+// rebuildable, like every other cache in this module).
+export function cacheKey(opts: Pick<GenerateQuestionsOptions, "examProfileId" | "bookId" | "conceptId" | "questionType" | "difficulty">): string {
+  return `${opts.examProfileId}::${opts.bookId}::${opts.conceptId}::${opts.questionType}::${opts.difficulty}`;
 }
 
 function openCacheIDB(): Promise<IDBDatabase> {
