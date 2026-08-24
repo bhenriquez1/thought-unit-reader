@@ -9,6 +9,7 @@ import {
   deriveBookTitle,
   buildChildLibraryEntry,
   mergeLibraryEntryProgress,
+  isNewlyCompleted,
   pickMostRecentEntry,
 } from "@/lib/elena/childBooks";
 import type { ChildLibraryEntry } from "@/lib/elena/types";
@@ -83,6 +84,57 @@ describe("mergeLibraryEntryProgress", () => {
   it("does not mutate the input entry", () => {
     mergeLibraryEntryProgress(base, { currentPage: 99 }, "2026-08-15T00:00:00.000Z");
     expect(base.currentPage).toBe(3);
+  });
+
+  it("REQUIRED: stamps completedAt the first time currentPage reaches totalPages", () => {
+    const merged = mergeLibraryEntryProgress(base, { currentPage: 20 }, "2026-08-15T00:00:00.000Z");
+    expect(merged.completedAt).toBe("2026-08-15T00:00:00.000Z");
+  });
+
+  it("REQUIRED: also completes when currentPage overshoots totalPages (e.g. a last short page), not just an exact match", () => {
+    const merged = mergeLibraryEntryProgress(base, { currentPage: 25 }, "2026-08-15T00:00:00.000Z");
+    expect(merged.completedAt).toBe("2026-08-15T00:00:00.000Z");
+  });
+
+  it("does not stamp completedAt while short of the last page", () => {
+    const merged = mergeLibraryEntryProgress(base, { currentPage: 19 }, "2026-08-15T00:00:00.000Z");
+    expect(merged.completedAt).toBeUndefined();
+  });
+
+  it("REQUIRED: never re-stamps or clears completedAt once set — paging backward afterward doesn't 'uncomplete' a finished book", () => {
+    const finished: ChildLibraryEntry = { ...base, currentPage: 20, completedAt: "2026-08-10T00:00:00.000Z" };
+    const merged = mergeLibraryEntryProgress(finished, { currentPage: 5 }, "2026-08-15T00:00:00.000Z");
+    expect(merged.completedAt).toBe("2026-08-10T00:00:00.000Z");
+  });
+
+  it("does not complete a book whose totalPages is still unknown (0)", () => {
+    const unknownLength: ChildLibraryEntry = { ...base, totalPages: 0 };
+    const merged = mergeLibraryEntryProgress(unknownLength, { currentPage: 500 }, "2026-08-15T00:00:00.000Z");
+    expect(merged.completedAt).toBeUndefined();
+  });
+});
+
+describe("isNewlyCompleted", () => {
+  const base: ChildLibraryEntry = {
+    id: "child-1::doc-1", childProfileId: "child-1", documentId: "doc-1",
+    title: "Dragons", totalPages: 20, currentPage: 3,
+    addedAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z", lastOpenedAt: "2026-08-01T00:00:00.000Z",
+  };
+
+  it("REQUIRED: true when the update is the one that just set completedAt", () => {
+    const updated = mergeLibraryEntryProgress(base, { currentPage: 20 }, "2026-08-15T00:00:00.000Z");
+    expect(isNewlyCompleted(base, updated)).toBe(true);
+  });
+
+  it("REQUIRED: false when the book was already complete before this update — prevents double-counting on re-reads", () => {
+    const alreadyDone: ChildLibraryEntry = { ...base, currentPage: 20, completedAt: "2026-08-10T00:00:00.000Z" };
+    const updated = mergeLibraryEntryProgress(alreadyDone, { currentPage: 5 }, "2026-08-15T00:00:00.000Z");
+    expect(isNewlyCompleted(alreadyDone, updated)).toBe(false);
+  });
+
+  it("false when neither the previous nor the updated entry is complete", () => {
+    const updated = mergeLibraryEntryProgress(base, { currentPage: 10 }, "2026-08-15T00:00:00.000Z");
+    expect(isNewlyCompleted(base, updated)).toBe(false);
   });
 });
 

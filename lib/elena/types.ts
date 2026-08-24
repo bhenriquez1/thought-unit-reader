@@ -121,7 +121,17 @@ export type ChildProgress = {
   currentLevel:     ReadingLevel;
   booksCompleted:   number;
   totalSessions:    number;
+  /** Lifetime cumulative minutes — NOT suitable for daily-limit enforcement
+   *  on its own (see todayMinutes below). */
   totalMinutes:     number;
+  /** Minutes read on `todayDate`; resets to 0 whenever a new update finds
+   *  today's ISO date differs from `todayDate` (see lib/elena/dailyLimit.ts's
+   *  rollDailyMinutes). This is what parental daily-limit enforcement
+   *  actually checks. Optional so pre-existing progress records without it
+   *  simply roll over to 0 on first read, same as any other day boundary. */
+  todayMinutes?:    number;
+  /** ISO date (YYYY-MM-DD) todayMinutes was last accumulated for. */
+  todayDate?:       string;
   /** Running word-count across all sessions */
   totalWordsRead:   number;
   /** ISO date of most recent session */
@@ -167,6 +177,11 @@ export type ChildLibraryEntry = {
   addedAt:         string;
   updatedAt:       string;
   lastOpenedAt:    string;
+  /** P1 fix — set once, the first time currentPage reaches totalPages; never
+   *  cleared by paging backward afterward, so re-reading doesn't "uncomplete"
+   *  a finished book. The guard ChildProgress.booksCompleted needs to only
+   *  increment once per book instead of once per page-turn-into-the-last-page. */
+  completedAt?:    string;
 };
 
 /* ─── Parent controls ────────────────────────────────────────────────────────── */
@@ -181,7 +196,10 @@ export type ParentControlSettings = {
     startHour: number;  // 0–23
     endHour:   number;  // 0–23
   };
-  safetyPolicy:        ChildContentSafetyPolicy;
+  /** Optional — content-safety controls are separate follow-on work; the
+   *  daily time limit above is the first ParentControlSettings field with
+   *  a real persistence/enforcement path (lib/elena/dailyLimit.ts). */
+  safetyPolicy?:       ChildContentSafetyPolicy;
 };
 
 /* ─── Parent gate ─────────────────────────────────────────────────────────────

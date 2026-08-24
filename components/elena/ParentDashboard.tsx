@@ -16,7 +16,18 @@ interface ParentDashboardProps {
   rewards:  ChildRewardState;
   progress: ChildProgress | null;
   onClose:  () => void;
+  /** null = no daily reading-time limit set. */
+  dailyLimitMinutes: number | null;
+  onSetDailyLimit: (minutes: number | null) => void;
 }
+
+const DAILY_LIMIT_PRESETS: { label: string; minutes: number | null }[] = [
+  { label: "No limit", minutes: null },
+  { label: "15 min",   minutes: 15   },
+  { label: "30 min",   minutes: 30   },
+  { label: "45 min",   minutes: 45   },
+  { label: "60 min",   minutes: 60   },
+];
 
 /* ─── Stat card ──────────────────────────────────────────────────────────────── */
 
@@ -33,7 +44,9 @@ function StatCard({ emoji, label, value, sub }: { emoji: string; label: string; 
 
 /* ─── Component ──────────────────────────────────────────────────────────────── */
 
-export default function ParentDashboard({ profile, rewards, progress, onClose }: ParentDashboardProps) {
+export default function ParentDashboard({
+  profile, rewards, progress, onClose, dailyLimitMinutes, onSetDailyLimit,
+}: ParentDashboardProps) {
   const [words, setWords] = useState<VocabWord[]>([]);
 
   useEffect(() => {
@@ -89,6 +102,37 @@ export default function ParentDashboard({ profile, rewards, progress, onClose }:
                 Interests: {profile.interests.slice(0, 3).join(", ")}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Daily reading time limit */}
+        <div>
+          <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide mb-3">Parental Controls</p>
+          <div className="rounded-2xl border border-sky-400/20 bg-sky-500/8 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-white">Daily reading time limit</span>
+              <span className="text-xs text-sky-300">
+                {dailyLimitMinutes ? `${dailyLimitMinutes} min/day` : "No limit"}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {DAILY_LIMIT_PRESETS.map(({ label, minutes }) => (
+                <button
+                  key={label}
+                  onClick={() => onSetDailyLimit(minutes)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+                    dailyLimitMinutes === minutes
+                      ? "bg-sky-500 text-white border-sky-400"
+                      : "bg-white/5 text-slate-300 border-white/15 hover:bg-white/10"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-slate-500 text-[11px] mt-3">
+              Once today's limit is reached, the Reading tab pauses until tomorrow.
+            </p>
           </div>
         </div>
 

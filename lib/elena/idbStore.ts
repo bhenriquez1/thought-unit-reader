@@ -1,27 +1,30 @@
 // lib/elena/idbStore.ts
 // IndexedDB persistence for Elena Mode child profiles and progress.
-// DB: "avrrio-elena"  version 4
+// DB: "avrrio-elena"  version 5
 //
 // Stores:
-//   child-profiles  — ChildProfile records keyed by id
-//   progress        — ChildProgress keyed by childProfileId
-//   reward-state    — ChildRewardState keyed by childProfileId
-//   vocabulary      — VocabWord records keyed by id, indexed by childProfileId
-//   child-library   — ChildLibraryEntry records keyed by id, indexed by childProfileId
-//   parent-gate     — ParentGateRecord keyed by parentAccountId (v4 — the P0
-//                      Parent-dashboard authentication fix)
+//   child-profiles   — ChildProfile records keyed by id
+//   progress         — ChildProgress keyed by childProfileId
+//   reward-state     — ChildRewardState keyed by childProfileId
+//   vocabulary       — VocabWord records keyed by id, indexed by childProfileId
+//   child-library    — ChildLibraryEntry records keyed by id, indexed by childProfileId
+//   parent-gate      — ParentGateRecord keyed by parentAccountId (v4 — the P0
+//                       Parent-dashboard authentication fix)
+//   parent-controls  — ParentControlSettings keyed by childProfileId (v5 —
+//                       the first real parental control: daily time limit)
 
-import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry, ParentGateRecord } from "./types";
+import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry, ParentGateRecord, ParentControlSettings } from "./types";
 import type { VocabWord } from "./vocabulary";
 
 const DB_NAME        = "avrrio-elena";
-const DB_VERSION     = 4;
+const DB_VERSION     = 5;
 const STORE_PROFILES = "child-profiles";
 const STORE_PROGRESS = "progress";
 const STORE_REWARDS  = "reward-state";
 const STORE_VOCAB    = "vocabulary";
 const STORE_LIBRARY  = "child-library";
 const STORE_PARENT_GATE = "parent-gate";
+const STORE_PARENT_CONTROLS = "parent-controls";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -47,6 +50,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_PARENT_GATE)) {
         db.createObjectStore(STORE_PARENT_GATE, { keyPath: "parentAccountId" });
+      }
+      if (!db.objectStoreNames.contains(STORE_PARENT_CONTROLS)) {
+        db.createObjectStore(STORE_PARENT_CONTROLS, { keyPath: "childProfileId" });
       }
     };
     req.onsuccess = () => {
@@ -261,6 +267,31 @@ export async function loadParentGate(parentAccountId: string): Promise<ParentGat
   const req = tx.objectStore(STORE_PARENT_GATE).get(parentAccountId);
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve((req.result as ParentGateRecord) ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+/* ─── Parent controls ────────────────────────────────────────────────────────
+ * One record per childProfileId — a daily time limit is a per-child setting,
+ * unlike the family-level parent-gate PIN above. */
+
+export async function saveParentControlSettings(settings: ParentControlSettings): Promise<void> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_PARENT_CONTROLS, "readwrite");
+  const req = tx.objectStore(STORE_PARENT_CONTROLS).put(settings);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+export async function loadParentControlSettings(childProfileId: string): Promise<ParentControlSettings | null> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_PARENT_CONTROLS, "readonly");
+  const req = tx.objectStore(STORE_PARENT_CONTROLS).get(childProfileId);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve((req.result as ParentControlSettings) ?? null);
     req.onerror   = () => reject(req.error);
   });
 }

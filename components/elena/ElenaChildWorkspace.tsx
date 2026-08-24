@@ -26,7 +26,10 @@ import {
   saveVocabWord,
   loadVocabWords,
   deleteVocabWord,
+  loadParentControlSettings,
+  saveParentControlSettings,
 } from "@/lib/elena/idbStore";
+import { addDailyMinutes, isDailyLimitReached } from "@/lib/elena/dailyLimit";
 import {
   uploadChildBook,
   loadChildBookFileUrl,
@@ -34,6 +37,8 @@ import {
   updateBookProgress,
   listChildLibraryEntries,
   pickMostRecentEntry,
+  mergeLibraryEntryProgress,
+  isNewlyCompleted,
 } from "@/lib/elena/childBooks";
 import type {
   ChildProfile,
@@ -41,6 +46,7 @@ import type {
   ChildRewardState,
   ChildProgress,
   ChildLibraryEntry,
+  ParentControlSettings,
 } from "@/lib/elena/types";
 import type { VocabWord, VocabStatus } from "@/lib/elena/vocabulary";
 import { VOCAB_STATUS_META } from "@/lib/elena/vocabulary";
@@ -1337,6 +1343,24 @@ function WeeklyChallengeTab({
   );
 }
 
+/* ─── Daily limit reached (Reading tab) ──────────────────────────────────────── */
+
+function DailyLimitReachedCard({ limitMinutes }: { limitMinutes: number | null }) {
+  return (
+    <div className="h-full flex items-center justify-center p-6">
+      <div className="max-w-sm text-center rounded-2xl border border-amber-400/25 bg-amber-500/8 p-6">
+        <div className="text-4xl mb-3">⏰</div>
+        <h3 className="text-white font-bold text-lg mb-1.5">Reading time is up for today!</h3>
+        <p className="text-amber-200/80 text-sm">
+          {limitMinutes
+            ? `You've reached your ${limitMinutes}-minute reading limit for today. Come back tomorrow for more adventures!`
+            : "Come back tomorrow for more adventures!"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Storage helpers ────────────────────────────────────────────────────────── */
 
 const STORAGE_KEY = "elena-active-profile-id";
@@ -1377,6 +1401,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   // and resets on every close, so re-opening always re-prompts for the PIN.
   const [parentUnlocked,     setParentUnlocked]      = useState(false);
   const [showSwitcher,       setShowSwitcher]       = useState(false);
+  const [dailyLimitMinutes,  setDailyLimitMinutes]  = useState<number | null>(null);
 
   const [library,     setLibrary]     = useState<ChildLibraryEntry[]>([]);
   const [activeBook,  setActiveBook]  = useState<ChildLibraryEntry | null>(null);
@@ -1433,6 +1458,28 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     }).catch(() => { if (!cancelled) setLibrary([]); });
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  // Load this child's parent-set daily reading limit whenever the active
+  // profile changes — a limit is per-child, never global.
+  useEffect(() => {
+    if (!profile) { setDailyLimitMinutes(null); return; }
+    let cancelled = false;
+    loadParentControlSettings(profile.id).then(settings => {
+      if (!cancelled) setDailyLimitMinutes(settings?.dailyTimeLimitMinutes ?? null);
+    }).catch(() => { if (!cancelled) setDailyLimitMinutes(null); });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
+
+  const handleSetDailyLimit = useCallback(async (minutes: number | null) => {
+    if (!profile) return;
+    setDailyLimitMinutes(minutes);
+    const settings: ParentControlSettings = {
+      parentAccountId: PARENT_ACCOUNT_ID,
+      childProfileId:  profile.id,
+      dailyTimeLimitMinutes: minutes,
+    };
+    await saveParentControlSettings(settings).catch(() => {});
+  }, [profile]);
 
   // Revoke the previous blob: URL whenever it's replaced or the component unmounts.
   useEffect(() => { bookFileUrlRef.current = bookFileUrl; }, [bookFileUrl]);
@@ -1496,25 +1543,46 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     else triggerUpload();
   }, [activeBook, library, openBook, triggerUpload]);
 
+  // P1 fix — a real book-completion signal instead of booksCompleted being
+  // permanently stuck at 0. mergeLibraryEntryProgress stamps completedAt the
+  // first time currentPage reaches totalPages; isNewlyCompleted tells us
+  // whether THIS specific update is the one that finished the book (not a
+  // later re-read of an already-finished one), so the counter only
+  // increments once per book, ever.
+  const markBookCompletedIfNeeded = useCallback((previous: ChildLibraryEntry, updated: ChildLibraryEntry) => {
+    if (!profile || !isNewlyCompleted(previous, updated)) return;
+    setProgress(prev => {
+      const base = prev ?? makeDefaultProgress(profile.id);
+      const now = new Date().toISOString();
+      const next: ChildProgress = { ...base, booksCompleted: base.booksCompleted + 1, lastActiveAt: now, updatedAt: now };
+      saveChildProgress(next).catch(() => {});
+      return next;
+    });
+  }, [profile]);
+
   const handleBookPageChange = useCallback((page: number) => {
     setActiveBook(prev => {
       if (!prev || prev.currentPage === page) return prev;
-      const updated = { ...prev, currentPage: page };
+      const now = new Date().toISOString();
+      const updated = mergeLibraryEntryProgress(prev, { currentPage: page }, now);
       updateBookProgress(prev, { currentPage: page }).catch(() => {});
       setLibrary(list => list.map(e => (e.id === updated.id ? updated : e)));
+      markBookCompletedIfNeeded(prev, updated);
       return updated;
     });
-  }, []);
+  }, [markBookCompletedIfNeeded]);
 
   const handleBookPageCount = useCallback((total: number) => {
     setActiveBook(prev => {
       if (!prev || prev.totalPages === total) return prev;
-      const updated = { ...prev, totalPages: total };
+      const now = new Date().toISOString();
+      const updated = mergeLibraryEntryProgress(prev, { totalPages: total }, now);
       updateBookProgress(prev, { totalPages: total }).catch(() => {});
       setLibrary(list => list.map(e => (e.id === updated.id ? updated : e)));
+      markBookCompletedIfNeeded(prev, updated);
       return updated;
     });
-  }, []);
+  }, [markBookCompletedIfNeeded]);
 
   const handleBookPageTextExtracted = useCallback((page: number, text: string) => {
     setBookPageTexts(prev => {
@@ -1531,6 +1599,42 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
       extractChildPageCanonicalUnits(activeBook.documentId, activeBook.title, page - 1, text).catch(() => {});
     }
   }, [activeBook]);
+
+  // P1 fix — ChildProgress.totalMinutes used to be initialized to 0 and
+  // never written anywhere, so "Minutes Read" showed a permanent "—"
+  // regardless of how much a child actually read. This tracks real elapsed
+  // time: a session starts the moment the Reading tab is showing a book,
+  // and ends (persisting whatever elapsed) the moment that stops being true
+  // — switching tabs, switching books, or leaving Elena entirely (the
+  // cleanup function still runs on unmount). progressRef exists so the
+  // cleanup can read the latest progress without needing it in the
+  // dependency array, which would otherwise restart the timer on every
+  // unrelated progress write (e.g. a star awarded elsewhere).
+  const progressRef = useRef(progress);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+
+  // P1 fix — parental daily reading-time limit. totalMinutes alone can't
+  // answer "has today's limit been reached" (see lib/elena/dailyLimit.ts's
+  // module comment), so isDailyLimitReached rolls todayMinutes over to the
+  // current date before comparing against the parent-set limit.
+  const dailyLimitReached = isDailyLimitReached(progress, dailyLimitMinutes, isoToday());
+
+  useEffect(() => {
+    if (!(activeTab === "reading" && activeBook && profile)) return;
+    if (dailyLimitReached) return;
+    const startedAt = Date.now();
+    const activeProfileId = profile.id;
+    return () => {
+      const elapsedMinutes = Math.round((Date.now() - startedAt) / 60000);
+      if (elapsedMinutes <= 0) return;
+      const base = progressRef.current ?? makeDefaultProgress(activeProfileId);
+      const now = new Date().toISOString();
+      const next: ChildProgress = { ...addDailyMinutes(base, elapsedMinutes, isoToday()), lastActiveAt: now, updatedAt: now };
+      progressRef.current = next;
+      setProgress(next);
+      saveChildProgress(next).catch(() => {});
+    };
+  }, [activeTab, activeBook?.id, profile, dailyLimitReached]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
     // Write the active profile ID so the next mount can load it.
@@ -1667,6 +1771,8 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
           rewards={rewards}
           progress={progress}
           onClose={() => { setShowParent(false); setParentUnlocked(false); }}
+          dailyLimitMinutes={dailyLimitMinutes}
+          onSetDailyLimit={handleSetDailyLimit}
         />
       )}
 
@@ -1757,7 +1863,10 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
               onSwitchProfile={() => setShowSwitcher(true)}
             />
           )}
-          {activeTab === "reading" && (
+          {activeTab === "reading" && dailyLimitReached && (
+            <DailyLimitReachedCard limitMinutes={dailyLimitMinutes} />
+          )}
+          {activeTab === "reading" && !dailyLimitReached && (
             <ChildReaderTab
               profile={profile}
               activeBook={activeBook}
