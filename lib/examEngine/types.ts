@@ -91,6 +91,17 @@ export interface EngineQuestion {
    *  basis: empty when no Knowledge Graph nodes exist yet for this page
    *  (e.g. the page was never actually opened in Reader). */
   sourceKnowledgeNodeIds?: string[];
+  /** The RESOLVED, collision-resistant document identity (lib/insights/
+   *  resolveDocumentIdentity.ts) that sourceKnowledgeNodeIds' nodes actually
+   *  belong to — distinct from sourceBookId, which is a filename. This is
+   *  what a Learning State write (lib/datApex/datLearningState.ts) must key
+   *  on: recordLearningEvent's ownership guard compares against
+   *  KnowledgeNodeProgress.documentId, which is stamped from this same
+   *  resolved identity, not from sourceBookId. Populated on the same best-
+   *  effort basis as sourceKnowledgeNodeIds — present exactly when that
+   *  array is non-empty, since both come from the same resolved
+   *  KnowledgeNode lookup. */
+  sourceDocumentId?: string;
   /** Canonical page identity (`${documentId}::${pageNumber}::${textReady}`)
    *  this question was generated from — same buildPageTruthKey convention
    *  used everywhere else in the app. */
