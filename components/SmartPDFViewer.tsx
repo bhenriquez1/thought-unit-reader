@@ -841,6 +841,19 @@ export default function SmartPDFViewer({
           // instead of accepting the guess.
           if (endIdx === null) continue;
 
+          // P0 follow-up — trying shorter prefixes (above) opened a second
+          // failure mode: a shorter prefix consumes less of the anchor
+          // before the suffix search starts, exposing more of the anchor's
+          // OWN middle text to that search. If the true suffix phrase also
+          // occurs earlier — inside the anchor itself (e.g. a repeated key
+          // term) or, for very short/generic prefixes, at an unrelated spot
+          // on the page — the suffix can pin to that coincidental earlier
+          // occurrence instead of the anchor's real end, producing a
+          // "verified" but truncated or wrong span. A genuine match should
+          // still cover most of the anchor's own length; reject anything
+          // suspiciously short and try the next prefix instead.
+          if (endIdx - startIdx < baseText.length * 0.5) continue;
+
           return { startIdx, endIdx: Math.min(endIdx, concatText.length) };
         }
         return null;
