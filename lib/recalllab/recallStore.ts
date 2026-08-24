@@ -705,6 +705,57 @@ export function buildWeakTopicReviewSet(
   };
 }
 
+// ── Build a Weak Topics review set from an exam JUST taken ─────────────────
+// P1 fix — the post-exam "Open in Recall Lab" recommendation used to call
+// buildWeakTopicReviewSet(existingSets) exclusively, which only ever
+// aggregates cards already marked missed inside PRIOR Recall sessions —
+// the exam's own weakness report was used for narrative text and reader
+// deep-links, never for card selection. A student who bombs their first
+// exam on a book (zero existing Recall history) got no weak-review deck at
+// all, and a student who did have history got a deck built from unrelated
+// past misses instead of the exam they just took. This builds real cards
+// directly from THIS exam's wrong answers — front is the question actually
+// missed, back is the correct answer plus its explanation — so the deck a
+// student opens right after an exam is provably about that exam.
+
+export interface WrongAnswerForReview {
+  questionId: string;
+  stem: string;
+  correctAnswerText: string;
+  explanation: string;
+  topic: string;
+}
+
+export function buildRecallSetFromWrongAnswers(
+  bookId: string,
+  wrongAnswers: WrongAnswerForReview[],
+  opts?: BuildRecallSetOpts
+): RecallSet | null {
+  if (wrongAnswers.length === 0) return null;
+
+  const cards: RecallCard[] = wrongAnswers.slice(0, 30).map((wa, i) => ({
+    id: `weak-exam-${i}-${wa.questionId}`,
+    type: "weak-review",
+    front: wa.stem,
+    back: wa.explanation ? `${wa.correctAnswerText}\n\n${wa.explanation}` : wa.correctAnswerText,
+    tag: wa.topic,
+    reviewCount: 0,
+    isMissed: true,
+  }));
+
+  return {
+    id:          `rs-${bookId}-weak-review`,
+    bookId,
+    bookTitle:   opts?.bookTitle,
+    sourceLabel: "weak-review",
+    pageNumber:  0,
+    subject:     inferSubject(bookId),
+    topic:       "Weak Topics Review",
+    cards,
+    createdAt:   Date.now(),
+  };
+}
+
 // ── Build from Teaching Canvas sequence (Adaptive Teaching Engine → Recall) ──
 // Converts NoteCard[] from the Teaching Canvas into a single in-memory RecallSet.
 // Not persisted by this function — caller decides whether to save.

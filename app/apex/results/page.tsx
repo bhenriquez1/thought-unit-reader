@@ -10,6 +10,7 @@ import TUExplainModal from '@/components/apex/TUExplainModal';
 import { mistakeLogger } from '@/lib/apex/mistakeLogger';
 import { buildWeaknessReport } from '@/lib/examEngine/weaknessAnalytics';
 import { buildStudyRecommendation } from '@/lib/examEngine/recommendationEngine';
+import type { WrongAnswerForReview } from '@/lib/examEngine/recommendationEngine';
 import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
 import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
@@ -287,8 +288,25 @@ export default function ExamResultsPage() {
     const attempts = buildEngineAttempts(results.exam, results.attempt);
     const report = buildWeaknessReport(bookId, activeProfile.id, attempts, activeProfile.weaknessAnalytics);
 
+    // P1 fix — the "Open in Recall Lab" recommendation used to build its
+    // deck from unrelated prior Recall history, never from this exam's own
+    // wrong answers. Real front/back content (stem + correct answer +
+    // explanation) is right here on results.exam.questions — pass it
+    // through so the deck a student opens is provably about this exam.
+    const wrongAnswers: WrongAnswerForReview[] = results.attempt.responses
+      .filter((r) => r.selectedAnswer && r.selectedAnswer !== results.exam.questions.find((q) => q.id === r.questionId)?.correctAnswer)
+      .map((r) => results.exam.questions.find((q) => q.id === r.questionId))
+      .filter((q): q is DATQuestion => q !== undefined)
+      .map((q) => ({
+        questionId: q.id,
+        stem: q.stem,
+        correctAnswerText: q.options[q.correctAnswer] ?? q.correctAnswer,
+        explanation: q.explanation,
+        topic: q.topic,
+      }));
+
     let cancelled = false;
-    buildStudyRecommendation(report, activeProfile, bookId)
+    buildStudyRecommendation(report, activeProfile, bookId, wrongAnswers)
       .then((rec) => {
         if (!cancelled) setRecommendation(rec);
       })

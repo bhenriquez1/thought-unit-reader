@@ -67,10 +67,10 @@ describe("app/apex/results/page.tsx — resolves the real generating profile ins
   it("REQUIRED: the weakness-report/recommendation effect uses the attempt's own resolved profile, not the DAT constants directly", () => {
     const idx = SRC.indexOf("const bookId = results.exam.questions.find((q) => q.sourceBookId)?.sourceBookId;");
     expect(idx).toBeGreaterThan(-1);
-    const block = SRC.slice(idx, idx + 700);
+    const block = SRC.slice(idx, idx + 1600);
     expect(block).toMatch(/const activeProfile = resolveExamProfile\(results\.examProfileId\);/);
     expect(block).toMatch(/buildWeaknessReport\(bookId, activeProfile\.id, attempts, activeProfile\.weaknessAnalytics\)/);
-    expect(block).toMatch(/buildStudyRecommendation\(report, activeProfile, bookId\)/);
+    expect(block).toMatch(/buildStudyRecommendation\(report, activeProfile, bookId, wrongAnswers\)/);
     expect(block).not.toMatch(/buildWeaknessReport\(bookId, DAT_EXAM_PROFILE_ID, attempts, DAT_EXAM_PROFILE\.weaknessAnalytics\)/);
     expect(block).not.toMatch(/buildStudyRecommendation\(report, DAT_EXAM_PROFILE, bookId\)/);
   });

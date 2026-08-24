@@ -1,14 +1,18 @@
 // lib/examEngine/recommendationEngine.ts
 // Post-exam study recommendations: weakest topics, highest-return topic,
-// Reader page deep links, a Recall Lab weak-topic review set (reusing
-// buildWeakTopicReviewSet unmodified), and a Podcast Lab deep link.
-// Podcast Lab's exam_cram/quiz_podcast modes are single-page only today, so
-// this only deep-links the weakest topic's source page in page_review mode —
-// a true cross-topic cram episode is a known follow-up, not silently built.
+// Reader page deep links, a Recall Lab weak-topic review set built directly
+// from this exam's own wrong answers (buildRecallSetFromWrongAnswers — P1
+// fix, see the comment on buildStudyRecommendation's wrongAnswers param),
+// and a Podcast Lab deep link. Podcast Lab's exam_cram/quiz_podcast modes
+// are single-page only today, so this only deep-links the weakest topic's
+// source page in page_review mode — a true cross-topic cram episode is a
+// known follow-up, not silently built.
 
 import { getNotesByBook } from "@/lib/notelab/ultraNoteStore";
-import { getRecallSetsByBook, buildWeakTopicReviewSet, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { buildRecallSetFromWrongAnswers, saveRecallSet, type WrongAnswerForReview } from "@/lib/recalllab/recallStore";
 import type { ExamProfile, StudyRecommendation, TopicAccuracy, WeaknessReport } from "@/lib/examEngine/types";
+
+export type { WrongAnswerForReview };
 
 const WEAKEST_COUNT = 3;
 
@@ -41,6 +45,14 @@ export async function buildStudyRecommendation(
   report: WeaknessReport,
   profile: ExamProfile,
   bookId: string,
+  // P1 fix — this used to build the "Open in Recall Lab" deck exclusively
+  // from buildWeakTopicReviewSet(existingSets), which aggregates cards
+  // already marked missed inside PRIOR Recall sessions — the exam this
+  // recommendation is actually FOR never fed into card selection at all.
+  // Passing the exam's own wrong answers here (results/page.tsx has the
+  // real question stem/explanation text for each miss) lets the deck be
+  // built from what the student just got wrong, not unrelated history.
+  wrongAnswers: WrongAnswerForReview[] = [],
 ): Promise<StudyRecommendation> {
   const weakestTopics = report.weakestTopics.slice(0, WEAKEST_COUNT).map((t) => t.topic);
   const notes = getNotesByBook(bookId);
@@ -55,14 +67,13 @@ export async function buildStudyRecommendation(
     })
     .filter((p): p is { bookId: string; pageNumber: number; topic: string } => p !== null);
 
+  // A perfect-score exam has nothing to build a weak-review deck from —
+  // recallSetId stays null rather than surfacing an unrelated prior deck.
   let recallSetId: string | null = null;
-  const existingSets = getRecallSetsByBook(bookId);
-  if (existingSets.length > 0) {
-    const weakSet = buildWeakTopicReviewSet(existingSets);
-    if (weakSet) {
-      await saveRecallSet(weakSet);
-      recallSetId = weakSet.id;
-    }
+  const weakSet = buildRecallSetFromWrongAnswers(bookId, wrongAnswers, { bookTitle: notes[0]?.bookTitle });
+  if (weakSet) {
+    await saveRecallSet(weakSet);
+    recallSetId = weakSet.id;
   }
 
   const podcastDeepLink = readerPages[0]
