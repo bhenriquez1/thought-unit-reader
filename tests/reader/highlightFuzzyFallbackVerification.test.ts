@@ -20,6 +20,18 @@
 // shorter prefix lengths; only return null (fail closed — no highlight, not
 // a wrong one) if none of them can.
 //
+// Follow-up (flagged by automated PR review on the fix above, #672): trying
+// shorter prefixes opened a second failure mode. A shorter prefix consumes
+// less of the anchor before the suffix search starts, exposing more of the
+// anchor's OWN middle text to that search — if the true suffix phrase (e.g.
+// a repeated key term) also occurs earlier, inside the anchor itself, the
+// suffix search can pin to that coincidental earlier occurrence instead of
+// the anchor's real end. The result passes the "endIdx was found" check
+// above while still being a truncated, wrong span — the exact bug class the
+// #672 fix existed to prevent, just via a different code path. The fix:
+// reject any candidate match whose length is suspiciously short relative to
+// the anchor's own length before accepting it.
+//
 // No jsdom/render harness for this file in this repo — source inspection,
 // matching this repo's established pattern for logic embedded in a large
 // client component (SmartPDFViewer.tsx has no exported unit-testable
@@ -68,5 +80,24 @@ describe("components/SmartPDFViewer.tsx — locateAnchor() never accepts an unve
 
   it("the fallback is still only reachable after canonical geometry resolution reports an incomplete match — this fix does not change when locateAnchor runs, only what it's allowed to accept", () => {
     expect(SRC).toMatch(/\/\/ Fall through to DOM-based matching \(logged as "legacy-dom" below\)\./);
+  });
+});
+
+describe("components/SmartPDFViewer.tsx — locateAnchor() rejects a suspiciously short (truncated) match", () => {
+  it("REQUIRED: a match shorter than half the anchor's own length is rejected and a shorter prefix is tried instead", () => {
+    const block = locateAnchorSource();
+    expect(block).toMatch(/if \(endIdx - startIdx < baseText\.length \* 0\.5\) continue;/);
+    // Must come after the endIdx===null check and before the final return —
+    // same "reject, try a shorter prefix" pattern, not a hard failure.
+    const nullCheckIdx  = block.indexOf("if (endIdx === null) continue;");
+    const lengthCheckIdx = block.indexOf("if (endIdx - startIdx < baseText.length * 0.5) continue;");
+    const returnIdx      = block.indexOf("return { startIdx, endIdx: Math.min(endIdx, concatText.length) };");
+    expect(lengthCheckIdx).toBeGreaterThan(nullCheckIdx);
+    expect(returnIdx).toBeGreaterThan(lengthCheckIdx);
+  });
+
+  it("locateAnchor still returns null (fails closed) when every prefix length produces only truncated or unverified matches", () => {
+    const block = locateAnchorSource();
+    expect(block.trimEnd().endsWith("return null;")).toBe(true);
   });
 });
