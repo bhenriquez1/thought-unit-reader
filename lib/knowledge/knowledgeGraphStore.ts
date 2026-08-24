@@ -13,6 +13,7 @@
 import type { KnowledgeNode, KnowledgeNodeProgress, SourceCitation } from "./knowledgeGraphSchema";
 import type { VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import { buildNewNode, tokenOverlap } from "./buildKnowledgeNode";
+import { linkRelatedNodes } from "./inferNodeRelationships";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -218,9 +219,29 @@ export async function resolveOrCreateNode(
     return fuzzy;
   }
 
-  // Tier 3 — new concept
+  // Tier 3 — new concept. pageNodes (fetched above for the Tier-2 fuzzy
+  // check) is exactly "this document+page's existing nodes" — the same
+  // sibling set relationship inference needs, fetched before this node
+  // exists so it can't accidentally relate to itself.
   const node = buildNewNode(anchor, documentId, bookId, pageNumber, chapterCandidateId, profileId);
-  await idbPutNode(node);
-  console.log("[KG] tier-3 create", { nodeId: node.id, role: anchor.role, page: pageNumber });
-  return node;
+
+  // P1 fix — infer real parent/child/related edges from role co-occurrence
+  // on this page (lib/knowledge/inferNodeRelationships.ts) instead of
+  // leaving parentNodeIds/childNodeIds/relatedNodeIds permanently empty.
+  // Conservative by design: most role pairs return no relation at all.
+  const relationshipUpdates = linkRelatedNodes(node, pageNodes);
+  const finalNode = relationshipUpdates.find(n => n.id === node.id) ?? node;
+  await idbPutNode(finalNode);
+  for (const updated of relationshipUpdates) {
+    if (updated.id === node.id) continue; // already persisted above
+    await idbPutNode(updated);
+  }
+
+  console.log("[KG] tier-3 create", {
+    nodeId: node.id,
+    role: anchor.role,
+    page: pageNumber,
+    relatedEdges: relationshipUpdates.length,
+  });
+  return finalNode;
 }
