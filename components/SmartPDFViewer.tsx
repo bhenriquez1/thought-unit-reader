@@ -1834,11 +1834,22 @@ export default function SmartPDFViewer({
                   it's naturally clipped to the scrollable page container
                   above (overflow-auto), so it never darkens outside the
                   visible page. Kept subtle (0.38 alpha) so surrounding
-                  context stays legible, not "excessively dark." */}
+                  context stays legible, not "excessively dark."
+                  P0 fix — z-10 rendered this BELOW PdfEvidenceOverlay's
+                  z-20 evidence annotation layer, so the veil's darkening
+                  never actually muted the non-focused green highlight
+                  rectangles it exists to mute — they painted on top of it
+                  unchanged. z-25 puts the veil above that layer. The veil's
+                  own box is transparent (only its box-shadow paints), and
+                  its cutout window is padded 14px larger than
+                  sentenceFocusRect on every side, so the sentence marker
+                  (z-20, unpadded rect below) and the live word marker
+                  (z-30, WordRectOverlay above) both still sit inside the
+                  transparent hole and read through undimmed. */}
               {focusHighlightPersist && sentenceFocusRect && (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute z-10 rounded-lg transition-all duration-150"
+                  className="pointer-events-none absolute z-[25] rounded-lg transition-all duration-150"
                   style={{
                     top: sentenceFocusRect.top - 14,
                     left: sentenceFocusRect.left - 14,
