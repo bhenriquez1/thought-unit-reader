@@ -11,8 +11,21 @@ import { mistakeLogger } from '@/lib/apex/mistakeLogger';
 import { buildWeaknessReport } from '@/lib/examEngine/weaknessAnalytics';
 import { buildStudyRecommendation } from '@/lib/examEngine/recommendationEngine';
 import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/datProfile';
+import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
 import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
 import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
+import type { ExamProfile } from '@/lib/examEngine/types';
+
+// P0 fix — every attempt used to be scored, persisted, and analyzed as if it
+// were DAT (DAT_SECTIONS for section breakdown, DAT_EXAM_PROFILE_ID for the
+// weakness report), regardless of which profile actually generated the exam.
+// A Custom Exam attempt's questions carry sectionId "general", which never
+// matches any of the 4 DAT_SECTIONS entries, so its section-score table came
+// back silently empty and its weakness report was thresholded using DAT's
+// numbers. Resolve the real profile from the exam's own questions instead.
+function resolveExamProfile(examProfileId: string | undefined): ExamProfile {
+  return examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
+}
 import { useTocStore } from '@/lib/stores/tocStore';
 import { chapterForPage } from '@/lib/apex/bookCatalogue';
 import { getCurrentApexUserId } from '@/lib/apex/currentApexUserId';
@@ -28,7 +41,7 @@ function buildEngineAttempts(exam: GeneratedExam, attempt: ExamAttempt): Questio
     return {
       id: `${attempt.id}-${q.id}`,
       questionId: q.id,
-      examProfileId: DAT_EXAM_PROFILE_ID,
+      examProfileId: q.examProfileId ?? DAT_EXAM_PROFILE_ID,
       bookId: q.sourceBookId ?? 'unknown',
       examAttemptId: attempt.id,
       section: q.sectionId,
@@ -47,6 +60,7 @@ function buildEngineAttempts(exam: GeneratedExam, attempt: ExamAttempt): Questio
 interface ExamResults {
   attempt: ExamAttempt;
   exam: GeneratedExam;
+  examProfileId: string;
   totalScore: number;
   percentageScore: number;
   sectionScores: {
@@ -139,8 +153,14 @@ export default function ExamResultsPage() {
         const totalScore = correctAnswers;
         const percentageScore = Math.round((correctAnswers / totalQuestions) * 100);
 
+        // Resolve the profile that actually generated this exam from its own
+        // questions, rather than assuming DAT — see resolveExamProfile above.
+        const examProfileId = exam.questions.find(q => q.examProfileId)?.examProfileId ?? DAT_EXAM_PROFILE_ID;
+        const activeProfile = resolveExamProfile(examProfileId);
+        const profileSections = activeProfile.id === DAT_EXAM_PROFILE_ID ? DAT_SECTIONS : activeProfile.sections;
+
         // Section scores
-        const sectionScores = DAT_SECTIONS.map(section => {
+        const sectionScores = profileSections.map(section => {
           const sectionQuestions = exam!.questions.filter(q => q.sectionId === section.id);
           const sectionResponses = attempt.responses.filter(r => 
             sectionQuestions.some(q => q.id === r.questionId)
@@ -231,6 +251,7 @@ export default function ExamResultsPage() {
         setResults({
           attempt,
           exam,
+          examProfileId,
           totalScore,
           percentageScore,
           sectionScores,
@@ -262,11 +283,12 @@ export default function ExamResultsPage() {
     const bookId = results.exam.questions.find((q) => q.sourceBookId)?.sourceBookId;
     if (!bookId) return;
 
+    const activeProfile = resolveExamProfile(results.examProfileId);
     const attempts = buildEngineAttempts(results.exam, results.attempt);
-    const report = buildWeaknessReport(bookId, DAT_EXAM_PROFILE_ID, attempts, DAT_EXAM_PROFILE.weaknessAnalytics);
+    const report = buildWeaknessReport(bookId, activeProfile.id, attempts, activeProfile.weaknessAnalytics);
 
     let cancelled = false;
-    buildStudyRecommendation(report, DAT_EXAM_PROFILE, bookId)
+    buildStudyRecommendation(report, activeProfile, bookId)
       .then((rec) => {
         if (!cancelled) setRecommendation(rec);
       })

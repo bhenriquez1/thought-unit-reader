@@ -65,6 +65,10 @@ export interface DATQuestion {
    *  THIS field, not sourceBookId — see its header comment for the bug this
    *  fixed. */
   sourceDocumentId?: string;
+  /** Which ExamProfile (lib/examEngine/profiles/) actually generated this
+   *  question — app/apex/results/page.tsx uses this to score/report against
+   *  the real profile instead of assuming DAT for every attempt. */
+  examProfileId?: string;
 }
 
 export interface ExamConfiguration {
