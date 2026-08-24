@@ -42,6 +42,31 @@ function cacheKey(opts: Pick<GenerateQuestionsOptions, "bookId" | "conceptId" | 
   return `${opts.bookId}::${opts.conceptId}::${opts.questionType}::${opts.difficulty}`;
 }
 
+/** P1 fix — questions cached before sourceKnowledgeNodeIds/sourceDocumentId
+ *  existed (or cached from a call where examBuilder had no Knowledge Graph
+ *  node yet for that page) permanently lacked those fields, since a cache
+ *  hit used to return the stored object as-is. recordDatQuestionAnswered
+ *  deliberately skips its learning-state write when sourceDocumentId is
+ *  missing (a wrong-id-space write is worse than no write — see
+ *  lib/datApex/datLearningState.ts) — so a stale cached question silently
+ *  never recorded progress, forever, even once examBuilder had a real
+ *  documentId to offer on every later call for that same concept. Re-apply
+ *  the CURRENT call's provenance on every read (cache hit or miss), the
+ *  same "prefer opts, fall back to the question's own value" rule already
+ *  used for freshly-generated questions below — never overwriting a good
+ *  cached value with an empty one, only filling in what's missing. */
+export function applyProvenance(
+  question: EngineQuestion,
+  opts: Pick<GenerateQuestionsOptions, "sourceThoughtUnitIds" | "sourceKnowledgeNodeIds" | "sourceDocumentId">,
+): EngineQuestion {
+  return {
+    ...question,
+    sourceThoughtUnitIds: opts.sourceThoughtUnitIds?.length ? opts.sourceThoughtUnitIds : question.sourceThoughtUnitIds,
+    sourceKnowledgeNodeIds: opts.sourceKnowledgeNodeIds?.length ? opts.sourceKnowledgeNodeIds : question.sourceKnowledgeNodeIds,
+    sourceDocumentId: opts.sourceDocumentId ?? question.sourceDocumentId,
+  };
+}
+
 function openCacheIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") { reject(new Error("IDB unavailable")); return; }
@@ -93,7 +118,7 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
   const cached = await idbGetCached(key);
 
   if (cached.length >= opts.count) {
-    return cached.slice(0, opts.count);
+    return cached.slice(0, opts.count).map((q) => applyProvenance(q, opts));
   }
 
   const need = opts.count - cached.length;
@@ -123,20 +148,15 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
       throw new Error(data.error);
     }
     const generated: EngineQuestion[] = Array.isArray(data?.questions)
-      ? (data.questions as EngineQuestion[]).map((q) => ({
-          ...q,
-          sourceThoughtUnitIds: opts.sourceThoughtUnitIds?.length
-            ? opts.sourceThoughtUnitIds
-            : q.sourceThoughtUnitIds,
-          sourceKnowledgeNodeIds: opts.sourceKnowledgeNodeIds?.length
-            ? opts.sourceKnowledgeNodeIds
-            : q.sourceKnowledgeNodeIds,
-          sourceDocumentId: opts.sourceDocumentId ?? q.sourceDocumentId,
-        }))
+      ? (data.questions as EngineQuestion[]).map((q) => applyProvenance(q, opts))
       : [];
 
     if (generated.length > 0) {
-      const merged = [...cached, ...generated];
+      // Re-stamp the pre-existing cached entries too (not just the newly
+      // generated ones) — see applyProvenance's comment. This also means
+      // the fixed-up values get persisted back to IDB below, so a concept
+      // that's ever rebuilt with real provenance self-heals permanently.
+      const merged = [...cached.map((q) => applyProvenance(q, opts)), ...generated];
       await idbPutCached(key, merged);
 
       // X2 — make CanonicalThoughtUnit.questionIds real: every generated
@@ -156,5 +176,5 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
     console.error("[EXAM_ENGINE_QUESTIONGEN_FETCH_FAIL]", String(e));
   }
 
-  return cached;
+  return cached.map((q) => applyProvenance(q, opts));
 }
