@@ -143,14 +143,49 @@ export default function ExamProctorPage() {
       const sections    = groupBySections(exam);
       const isProctored = !!exam.config.strictMode || isPrometric;
 
+      // Resume — the auto-save effect below writes { exam, currentState }
+      // to localStorage['examProgress'] every 30s, but until now nothing
+      // ever read it back: "Resume" (app/apex/page.tsx's handleResume)
+      // only restored the exam's question set, silently discarding
+      // position/answers/time and restarting from zero. Only restore when
+      // the saved blob's own exam.id matches THIS exam — a stale
+      // examProgress entry left over from a previous, different exam must
+      // never apply to a freshly-generated one.
+      let restoredState: {
+        currentSectionIdx: number;
+        currentQuestionIdx: number;
+        sectionTimeRemaining: number;
+        responses: Record<string, string>;
+        flagged: string[];
+      } | null = null;
+      try {
+        const rawProgress = localStorage.getItem("examProgress");
+        if (rawProgress) {
+          const saved = JSON.parse(rawProgress);
+          if (saved?.exam?.id === exam.id && saved.currentState) {
+            restoredState = saved.currentState;
+          }
+        }
+      } catch { /* corrupted examProgress — start fresh rather than throw */ }
+
+      // Clamp restored indices against the freshly-grouped sections — never
+      // trust a saved index blindly, in case the exam's own section count
+      // ever differs from what it was when the blob was written.
+      const clampedSectionIdx = restoredState
+        ? Math.min(Math.max(restoredState.currentSectionIdx, 0), Math.max(sections.length - 1, 0))
+        : 0;
+      const clampedQuestionIdx = restoredState
+        ? Math.min(Math.max(restoredState.currentQuestionIdx, 0), Math.max((sections[clampedSectionIdx]?.questions.length ?? 1) - 1, 0))
+        : 0;
+
       const s: ProctorState = {
         exam,
         sections,
-        currentSectionIdx:    0,
-        currentQuestionIdx:   0,
-        sectionTimeRemaining: sections[0]?.timeLimitSeconds ?? exam.config.totalTimeLimit * 60,
-        responses:            {},
-        flagged:              new Set(),
+        currentSectionIdx:    clampedSectionIdx,
+        currentQuestionIdx:   clampedQuestionIdx,
+        sectionTimeRemaining: restoredState?.sectionTimeRemaining ?? (sections[0]?.timeLimitSeconds ?? exam.config.totalTimeLimit * 60),
+        responses:            restoredState?.responses ?? {},
+        flagged:              new Set(restoredState?.flagged ?? []),
         isPaused:             false,
         startTime:            new Date().toISOString(),
         breakTimeRemaining:   BREAK_DURATION_SECS,
