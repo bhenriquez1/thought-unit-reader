@@ -163,32 +163,48 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   // types so coverage isn't biased toward one type.
   const perConcept = Math.max(1, Math.ceil(opts.questionCount / pool.length));
 
-  // Look up canonical units per page (best-effort, one IDB read per note).
-  // Canonical units are stored under bookId == documentId used during extraction.
-  // Feeds two things: the sourceThoughtUnitIds provenance stamp, and — via
-  // canonicalQuestionMapper — grounded question stems derived independently
-  // of the note's own teaching content.
-  const canonicalUnitsByNote = await Promise.all(
+  // TestLab-Reader progress integration — Knowledge Graph nodes already
+  // resolved for this page (created as the student actually read it, see
+  // pages/index.tsx's resolveOrCreateNode wiring). Best-effort: a page with
+  // no nodes yet (never opened in Reader) just gets an empty provenance
+  // list, same as sourceThoughtUnitIds below when a page has no canonical
+  // units. Never a second identity system — these ARE the same nodes
+  // Reader/Recall read and write. Fetched BEFORE the canonical-unit lookup
+  // below because each node's own `documentId` is the only reliable way to
+  // resolve the real, collision-resistant document identity from here —
+  // examBuilder only ever receives `opts.bookId` (a filename), which is a
+  // DIFFERENT identity space than CanonicalThoughtUnit.documentId (see
+  // pages/index.tsx's startBookProcessing: canonical units are stamped with
+  // the resolved `canonicalDocumentId`, not the filename `bookId`).
+  const knowledgeNodesByNote = await Promise.all(
     pool.map(async (note) => {
       try {
-        return await getCanonicalUnitsByPage(opts.bookId, note.pageNumber - 1);
+        return await getNodesByBookAndPage(opts.bookId, note.pageNumber);
       } catch {
         return [];
       }
     }),
   );
 
-  // TestLab-Reader progress integration — Knowledge Graph nodes already
-  // resolved for this page (created as the student actually read it, see
-  // pages/index.tsx's resolveOrCreateNode wiring). Best-effort: a page with
-  // no nodes yet (never opened in Reader) just gets an empty provenance
-  // list, same as sourceThoughtUnitIds above when a page has no canonical
-  // units. Never a second identity system — these ARE the same nodes
-  // Reader/Recall read and write.
-  const knowledgeNodesByNote = await Promise.all(
-    pool.map(async (note) => {
+  // Look up canonical units per page (best-effort, one IDB read per note).
+  // Bug fix: this used to call the lookup below with opts.bookId — the
+  // filename — against an index keyed by the resolved documentId, which
+  // silently returned nothing for any book uploaded through the normal
+  // Reader flow (resolveDocumentIdentity.ts almost always resolves to a real
+  // UUID, not the filename). The Knowledge Graph node fetched above for this
+  // same page already carries the correct resolved documentId (it's stamped
+  // by the exact same resolveOrCreateNode call site that receives
+  // resolvedDocumentId), so use that when a node exists; only fall back to
+  // opts.bookId — which will still legitimately return nothing — for a page
+  // that was never actually read in Reader (no node was ever created).
+  // Feeds two things: the sourceThoughtUnitIds provenance stamp, and — via
+  // canonicalQuestionMapper — grounded question stems derived independently
+  // of the note's own teaching content.
+  const canonicalUnitsByNote = await Promise.all(
+    pool.map(async (note, i) => {
+      const resolvedDocumentId = knowledgeNodesByNote[i][0]?.documentId ?? opts.bookId;
       try {
-        return await getNodesByBookAndPage(opts.bookId, note.pageNumber);
+        return await getCanonicalUnitsByPage(resolvedDocumentId, note.pageNumber - 1);
       } catch {
         return [];
       }
