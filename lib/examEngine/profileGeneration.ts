@@ -75,7 +75,7 @@ export async function generateWeakTopicsPracticeExam(
   if (built.questions.length === 0) {
     throw new Error("No questions could be generated for these weak topics yet — read and synthesize a few more pages first.");
   }
-  return builtExamToGeneratedExam(built, Math.round(questionCount * 1.5), "practice");
+  return builtExamToGeneratedExam(built, Math.round(questionCount * 1.5), "practice", DAT_EXAM_PROFILE);
 }
 
 // P0 fix: this used to hardcode DAT_EXAM_PROFILE into buildExam() regardless
@@ -91,12 +91,23 @@ export async function generateFullSimulationExam(
   bookTitle: string | undefined,
   profile: ExamProfile,
 ): Promise<GeneratedExam> {
+  // P1 fix — this was hardcoded to 280 (matching DAT's real section
+  // question counts, PRACTICE_MODES' "full-dat" defaultQuestions) for
+  // EVERY profile, including Custom Exam, whose sole "general" section
+  // declares only 20 questions and has no full-DAT blueprint. For a book
+  // with enough notes that generated hundreds of AI questions for what's
+  // supposed to be a 60-minute custom exam; for a thinner book, the API's
+  // per-concept question cap instead produced an unpredictably undersized
+  // exam. Deriving it from the profile's own sections is correct for both
+  // cases — for DAT it sums to exactly 280 (100+90+50+40, unchanged), and
+  // for Custom Exam it correctly comes out to 20.
+  const questionCount = profile.sections.reduce((sum, s) => sum + s.defaultQuestionCount, 0);
   const built = await buildExam({
     bookId,
     bookTitle,
     profile,
     difficulty: "simulation",
-    questionCount: 280, // matches PRACTICE_MODES' "full-dat" defaultQuestions
+    questionCount,
   });
   // See generateWeakTopicsPracticeExam's identical guard above — an empty
   // build must never reach the proctor as a launchable "full simulation."
@@ -106,5 +117,5 @@ export async function generateFullSimulationExam(
   const timeLimitMinutes = profile.id === DAT_EXAM_PROFILE.id
     ? totalTestingMinutes(ACTIVE_DAT_BLUEPRINT)
     : profile.timingRules.totalTimeLimitMinutes;
-  return builtExamToGeneratedExam(built, timeLimitMinutes, "full-dat");
+  return builtExamToGeneratedExam(built, timeLimitMinutes, "full-dat", profile);
 }

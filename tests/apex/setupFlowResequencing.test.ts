@@ -20,7 +20,10 @@ describe("app/apex/page.tsx — first-time user gets a guided 3-step path, not a
     const block = PAGE_SRC.slice(Math.max(0, idx - 300), idx + 900);
     expect(block).toMatch(/\{!primaryBook && booksLoaded && \(/);
     expect(block).toMatch(/href="\/"/);
-    expect(block).toMatch(/href="\/apex\/generator"/);
+    // P1 fix — the generator link now carries the active exam profile
+    // forward (generatorLink) instead of a bare href, so the generator
+    // doesn't silently default back to DAT when Custom Exam is active.
+    expect(block).toMatch(/href=\{generatorLink\("\/apex\/generator", activeProfileId\)\}/);
   });
 
   it("the Get Started card renders before the Blueprint snapshot, not buried below the empty stat cards", () => {
