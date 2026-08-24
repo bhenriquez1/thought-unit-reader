@@ -10,8 +10,10 @@ import path from "path";
 const SRC = fs.readFileSync(path.resolve(__dirname, "../../lib/elena/idbStore.ts"), "utf8");
 
 describe("lib/elena/idbStore.ts — child-library store", () => {
-  it("REQUIRED: DB version bumped to 3 for the new store", () => {
-    expect(SRC).toMatch(/DB_VERSION\s*=\s*3/);
+  it("REQUIRED: DB version is at least 3, the version this store was added at", () => {
+    const match = SRC.match(/DB_VERSION\s*=\s*(\d+)/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(3);
   });
 
   it("REQUIRED: creates the child-library object store keyed by id", () => {

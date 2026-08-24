@@ -183,3 +183,20 @@ export type ParentControlSettings = {
   };
   safetyPolicy:        ChildContentSafetyPolicy;
 };
+
+/* ─── Parent gate ─────────────────────────────────────────────────────────────
+ * P0 fix — the Parent dashboard used to open on a single unauthenticated tap
+ * from the child-visible workspace header, with no PIN, password, or check
+ * of any kind. This record is the ONE piece of that gate that ships now: a
+ * family-level PIN (not per-child — one household, one gate), stored as a
+ * salted SHA-256 digest via lib/elena/parentGate.ts, never the raw PIN.
+ * The richer ParentControlSettings above (time limits, safety policy) is
+ * separate follow-on work — this type exists only to make the gate itself
+ * real. */
+export type ParentGateRecord = {
+  parentAccountId: string;
+  pinHash:         string;
+  salt:            string;
+  createdAt:       string;
+  updatedAt:       string;
+};

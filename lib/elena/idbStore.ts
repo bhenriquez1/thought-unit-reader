@@ -1,6 +1,6 @@
 // lib/elena/idbStore.ts
 // IndexedDB persistence for Elena Mode child profiles and progress.
-// DB: "avrrio-elena"  version 3
+// DB: "avrrio-elena"  version 4
 //
 // Stores:
 //   child-profiles  — ChildProfile records keyed by id
@@ -8,17 +8,20 @@
 //   reward-state    — ChildRewardState keyed by childProfileId
 //   vocabulary      — VocabWord records keyed by id, indexed by childProfileId
 //   child-library   — ChildLibraryEntry records keyed by id, indexed by childProfileId
+//   parent-gate     — ParentGateRecord keyed by parentAccountId (v4 — the P0
+//                      Parent-dashboard authentication fix)
 
-import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry } from "./types";
+import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry, ParentGateRecord } from "./types";
 import type { VocabWord } from "./vocabulary";
 
 const DB_NAME        = "avrrio-elena";
-const DB_VERSION     = 3;
+const DB_VERSION     = 4;
 const STORE_PROFILES = "child-profiles";
 const STORE_PROGRESS = "progress";
 const STORE_REWARDS  = "reward-state";
 const STORE_VOCAB    = "vocabulary";
 const STORE_LIBRARY  = "child-library";
+const STORE_PARENT_GATE = "parent-gate";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -41,6 +44,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_LIBRARY)) {
         const libraryStore = db.createObjectStore(STORE_LIBRARY, { keyPath: "id" });
         libraryStore.createIndex("byChild", "childProfileId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_PARENT_GATE)) {
+        db.createObjectStore(STORE_PARENT_GATE, { keyPath: "parentAccountId" });
       }
     };
     req.onsuccess = () => {
@@ -230,5 +236,31 @@ export async function deleteChildLibraryEntry(childProfileId: string, documentId
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
+  });
+}
+
+/* ─── Parent gate ─────────────────────────────────────────────────────────────
+ * One record per parentAccountId (family-level, not per-child) — see
+ * lib/elena/parentGate.ts for the hashing/verification logic that calls
+ * these; nothing here ever handles a raw PIN. */
+
+export async function saveParentGate(record: ParentGateRecord): Promise<void> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_PARENT_GATE, "readwrite");
+  const req = tx.objectStore(STORE_PARENT_GATE).put(record);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+export async function loadParentGate(parentAccountId: string): Promise<ParentGateRecord | null> {
+  const db  = await openDb();
+  const tx  = db.transaction(STORE_PARENT_GATE, "readonly");
+  const req = tx.objectStore(STORE_PARENT_GATE).get(parentAccountId);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve((req.result as ParentGateRecord) ?? null);
+    req.onerror   = () => reject(req.error);
   });
 }

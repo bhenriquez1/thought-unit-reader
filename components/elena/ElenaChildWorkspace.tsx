@@ -12,6 +12,7 @@ import MemoryMatch     from "@/components/elena/MemoryMatch";
 import WordScramble    from "@/components/elena/WordScramble";
 import AdventureMap    from "@/components/elena/AdventureMap";
 import ParentDashboard from "@/components/elena/ParentDashboard";
+import ParentGate      from "@/components/elena/ParentGate";
 import ChildProfileSwitcher from "@/components/elena/ChildProfileSwitcher";
 import ChildReaderTab   from "@/components/elena/ChildReaderTab";
 import { getAvatarEmoji } from "@/lib/elena/avatar";
@@ -1371,6 +1372,10 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   const [loadAttempt,        setLoadAttempt]        = useState(0);
   const [activeTab,          setActiveTab]          = useState<ElenaTab>("home");
   const [showParent,         setShowParent]         = useState(false);
+  // P0 fix — showParent alone used to render ParentDashboard directly with
+  // no authentication step; parentUnlocked now gates it behind ParentGate
+  // and resets on every close, so re-opening always re-prompts for the PIN.
+  const [parentUnlocked,     setParentUnlocked]      = useState(false);
   const [showSwitcher,       setShowSwitcher]       = useState(false);
 
   const [library,     setLibrary]     = useState<ChildLibraryEntry[]>([]);
@@ -1647,13 +1652,21 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
         onChange={handleFileInputChange}
       />
 
-      {/* Parent Dashboard overlay */}
-      {showParent && (
+      {/* Parent Dashboard overlay — gated behind a PIN (ParentGate) until
+          parentUnlocked is set; see the P0 fix comment on parentUnlocked. */}
+      {showParent && !parentUnlocked && (
+        <ParentGate
+          parentAccountId={PARENT_ACCOUNT_ID}
+          onUnlock={() => setParentUnlocked(true)}
+          onCancel={() => setShowParent(false)}
+        />
+      )}
+      {showParent && parentUnlocked && (
         <ParentDashboard
           profile={profile}
           rewards={rewards}
           progress={progress}
-          onClose={() => setShowParent(false)}
+          onClose={() => { setShowParent(false); setParentUnlocked(false); }}
         />
       )}
 
