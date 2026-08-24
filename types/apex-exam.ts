@@ -59,6 +59,10 @@ export interface DATQuestion {
    *  is keyed by real node ids (lib/knowledge/knowledgeGraphStore.ts), which
    *  are a different id space from CanonicalThoughtUnit ids. */
   sourceKnowledgeNodeIds?: string[];
+  /** Which ExamProfile (lib/examEngine/profiles/) actually generated this
+   *  question — app/apex/results/page.tsx uses this to score/report against
+   *  the real profile instead of assuming DAT for every attempt. */
+  examProfileId?: string;
 }
 
 export interface ExamConfiguration {
