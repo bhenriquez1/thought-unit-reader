@@ -59,6 +59,12 @@ export interface DATQuestion {
    *  is keyed by real node ids (lib/knowledge/knowledgeGraphStore.ts), which
    *  are a different id space from CanonicalThoughtUnit ids. */
   sourceKnowledgeNodeIds?: string[];
+  /** The RESOLVED, collision-resistant document identity sourceKnowledgeNodeIds'
+   *  nodes belong to — distinct from sourceBookId, which is a filename.
+   *  lib/datApex/datLearningState.ts's Learning State write must key on
+   *  THIS field, not sourceBookId — see its header comment for the bug this
+   *  fixed. */
+  sourceDocumentId?: string;
   /** Which ExamProfile (lib/examEngine/profiles/) actually generated this
    *  question — app/apex/results/page.tsx uses this to score/report against
    *  the real profile instead of assuming DAT for every attempt. */

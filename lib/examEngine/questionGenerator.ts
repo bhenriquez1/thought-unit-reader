@@ -29,6 +29,10 @@ export interface GenerateQuestionsOptions {
    *  the same way sourceThoughtUnitIds is below (the server doesn't know
    *  about the Knowledge Graph). */
   sourceKnowledgeNodeIds?: string[];
+  /** The resolved documentId sourceKnowledgeNodeIds' nodes belong to —
+   *  see EngineQuestion.sourceDocumentId. Stamped client-side alongside
+   *  sourceKnowledgeNodeIds for the same reason. */
+  sourceDocumentId?: string;
   questionType: QuestionType;
   difficulty: DifficultyLevel;
   count: number;
@@ -127,6 +131,7 @@ export async function getOrGenerateQuestions(opts: GenerateQuestionsOptions): Pr
           sourceKnowledgeNodeIds: opts.sourceKnowledgeNodeIds?.length
             ? opts.sourceKnowledgeNodeIds
             : q.sourceKnowledgeNodeIds,
+          sourceDocumentId: opts.sourceDocumentId ?? q.sourceDocumentId,
         }))
       : [];
 
