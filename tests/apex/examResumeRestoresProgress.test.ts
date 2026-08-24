@@ -16,16 +16,17 @@ import path from "path";
 const SRC = fs.readFileSync(path.resolve(__dirname, "../../app/apex/proctor/page.tsx"), "utf8");
 
 describe("app/apex/proctor/page.tsx — exam resume actually restores saved progress", () => {
-  it("REQUIRED: the auto-save write shape is unchanged (exam + currentState with all 5 restorable fields)", () => {
+  it("REQUIRED: the auto-save write shape is unchanged (exam + currentState with all 5 restorable fields), plus a real savedAt timestamp", () => {
     const idx = SRC.indexOf("localStorage.setItem(\"examProgress\"");
     expect(idx).toBeGreaterThan(-1);
-    const block = SRC.slice(idx, idx + 400);
+    const block = SRC.slice(idx, idx + 700);
     expect(block).toMatch(/exam: s\.exam,/);
     expect(block).toMatch(/currentSectionIdx:\s*s\.currentSectionIdx,/);
     expect(block).toMatch(/currentQuestionIdx:\s*s\.currentQuestionIdx,/);
     expect(block).toMatch(/sectionTimeRemaining:\s*s\.sectionTimeRemaining,/);
     expect(block).toMatch(/responses:\s*s\.responses,/);
     expect(block).toMatch(/flagged:\s*Array\.from\(s\.flagged\),/);
+    expect(block).toMatch(/savedAt:\s*new Date\(\)\.toISOString\(\),/);
   });
 
   it("REQUIRED: the load effect reads examProgress back and only trusts it when the saved exam.id matches the exam actually being loaded", () => {
@@ -57,8 +58,32 @@ describe("app/apex/proctor/page.tsx — exam resume actually restores saved prog
     const block = SRC.slice(idx, idx + 500);
     expect(block).toMatch(/currentSectionIdx:\s*clampedSectionIdx,/);
     expect(block).toMatch(/currentQuestionIdx:\s*clampedQuestionIdx,/);
-    expect(block).toMatch(/sectionTimeRemaining: restoredState\?\.sectionTimeRemaining \?\?/);
+    expect(block).toMatch(/sectionTimeRemaining,/);
     expect(block).toMatch(/responses:\s*restoredState\?\.responses \?\? \{\},/);
     expect(block).toMatch(/flagged:\s*new Set\(restoredState\?\.flagged \?\? \[\]\),/);
+  });
+});
+
+describe("app/apex/proctor/page.tsx — P1 fix: strict/proctored resume can't be paused by closing the tab", () => {
+  it("REQUIRED: elapsed real time since the last save is computed from restoredState.savedAt", () => {
+    const idx = SRC.indexOf("const elapsedSinceLastSave");
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 250);
+    expect(block).toMatch(/restoredState\?\.savedAt/);
+    expect(block).toMatch(/Date\.now\(\) - new Date\(restoredState\.savedAt\)\.getTime\(\)/);
+  });
+
+  it("REQUIRED: only isProctored sessions deduct elapsed time from the restored countdown — practice/non-strict resume is unaffected", () => {
+    const idx = SRC.indexOf("const sectionTimeRemaining = isProctored");
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 250);
+    expect(block).toMatch(/\? Math\.max\(0, restoredTimeRemaining - elapsedSinceLastSave\)/);
+    expect(block).toMatch(/: restoredTimeRemaining;/);
+  });
+
+  it("the deducted result is clamped to a minimum of 0, never negative", () => {
+    const idx = SRC.indexOf("const sectionTimeRemaining = isProctored");
+    const block = SRC.slice(idx, idx + 250);
+    expect(block).toMatch(/Math\.max\(0,/);
   });
 });
