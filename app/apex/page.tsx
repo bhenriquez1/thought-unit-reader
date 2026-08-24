@@ -34,6 +34,18 @@ function resolveExamProfile(id: string): ExamProfile {
   return id === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
 }
 
+/** P1 fix — /apex/generator only reads its initial profile from the
+ *  examType URL param (defaulting to 'dat' when absent); dashboard links
+ *  into it that omitted that param silently discarded whatever profile
+ *  ExamProfileSwitcher showed as active, e.g. clicking "Create Practice
+ *  Exam" while Custom Exam was selected still opened the generator in DAT
+ *  mode. Every dashboard entry point into the generator should carry the
+ *  active profile forward instead of the generator having to guess. */
+function generatorLink(path: string, activeProfileId: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}examType=${activeProfileId}`;
+}
+
 function readStoredActiveProfileId(): string {
   try {
     const stored = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
@@ -179,7 +191,7 @@ function TodayTab({ activeProfileId }: { activeProfileId: string }) {
             <Link href="/" className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-semibold transition-colors">
               Open Reader
             </Link>
-            <Link href="/apex/generator" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
+            <Link href={generatorLink("/apex/generator", activeProfileId)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
               Build Your First Exam →
             </Link>
           </div>
@@ -301,7 +313,7 @@ function TodayTab({ activeProfileId }: { activeProfileId: string }) {
         ].map(({ href, label, icon, color }) => (
           <Link
             key={href}
-            href={href}
+            href={href.startsWith("/apex/generator") ? generatorLink(href, activeProfileId) : href}
             className={`bg-gradient-to-r ${color} rounded-lg p-4 text-white hover:opacity-90 transition-opacity`}
           >
             <div className="text-2xl mb-1">{icon}</div>
@@ -595,7 +607,7 @@ function FullExamsTab({ activeProfileId }: { activeProfileId: string }) {
         ].map(({ label, desc, href, icon, color, border }) => (
           <Link
             key={label}
-            href={href}
+            href={generatorLink(href, activeProfileId)}
             className={`bg-gradient-to-br ${color} rounded-xl p-5 border ${border} hover:opacity-90 transition-opacity block`}
           >
             <div className="text-2xl mb-2">{icon}</div>
@@ -1026,9 +1038,9 @@ function DatApexPageInner() {
             <span className="text-gray-500 uppercase tracking-wide mr-0.5 shrink-0">Flow</span>
             <span className={RIBBON_CHIP}>Choose Exam</span>
             <FlowArrow />
-            <Link href="/apex/generator" className={RIBBON_CHIP}>Choose / Upload Sources</Link>
+            <Link href={generatorLink("/apex/generator", activeProfileId)} className={RIBBON_CHIP}>Choose / Upload Sources</Link>
             <FlowArrow />
-            <Link href="/apex/generator" className={RIBBON_CHIP}>Blueprint</Link>
+            <Link href={generatorLink("/apex/generator", activeProfileId)} className={RIBBON_CHIP}>Blueprint</Link>
             <FlowArrow />
             <button onClick={() => setActiveTab("practice")} className={RIBBON_CHIP}>Practice / Simulation</button>
             <FlowArrow />

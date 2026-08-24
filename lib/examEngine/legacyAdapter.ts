@@ -10,7 +10,7 @@ import { DAT_SECTIONS } from "@/types/apex-exam";
 import type { DATQuestion, ExamConfiguration } from "@/types/apex-exam";
 import type { GeneratedExam } from "@/lib/apex/examGenerator";
 import type { BuiltExam } from "@/lib/examEngine/examBuilder";
-import type { DifficultyLevel, EngineQuestion } from "@/lib/examEngine/types";
+import type { DifficultyLevel, EngineQuestion, ExamProfile } from "@/lib/examEngine/types";
 
 const ANSWER_LETTERS = ["A", "B", "C", "D", "E"] as const;
 
@@ -62,22 +62,37 @@ export function engineQuestionToDATQuestion(q: EngineQuestion): DATQuestion {
 
 /** Converts an AI-built exam into the legacy GeneratedExam shape the proctor
  *  and results pages already render — the only thing that's changed is
- *  where the questions came from. */
+ *  where the questions came from.
+ *
+ *  P1 fix — per-section time limits used to come ONLY from DAT_SECTIONS
+ *  (a DAT-specific lookup table), falling back to a hardcoded 30 minutes
+ *  for any section id DAT_SECTIONS doesn't know about — which is every
+ *  section of every non-DAT profile (e.g. Custom Exam's single "general"
+ *  section). The proctor's live countdown timer reads exactly this
+ *  per-section value (app/apex/proctor/page.tsx's groupBySections), not
+ *  config.totalTimeLimit, so a 60-minute Custom Exam silently ran out
+ *  after 30. `profile` (when given) is now checked FIRST via its own
+ *  ExamSectionConfig.defaultTimeLimitMinutes — the source of truth for
+ *  any profile's own sections — before falling back to DAT_SECTIONS
+ *  (still correct for the DAT profile, whose questions carry DAT's own
+ *  section ids) and finally the 30-minute constant as a last resort. */
 export function builtExamToGeneratedExam(
   built: BuiltExam,
   totalTimeLimitMinutes: number,
   practiceMode?: 'practice' | 'practice-exam' | 'full-dat',
+  profile?: ExamProfile,
 ): GeneratedExam {
   const questions = built.questions.map(engineQuestionToDATQuestion);
 
   const sectionIds = Array.from(new Set(questions.map((q) => q.sectionId)));
   const sections: ExamConfiguration["sections"] = sectionIds.map((sectionId) => {
-    const def = DAT_SECTIONS.find((s) => s.id === sectionId);
+    const profileSection = profile?.sections.find((s) => s.id === sectionId);
+    const datSection = DAT_SECTIONS.find((s) => s.id === sectionId);
     return {
       sectionId,
       enabled: true,
       questionCount: questions.filter((q) => q.sectionId === sectionId).length,
-      timeLimit: def?.timeLimit ?? 30,
+      timeLimit: profileSection?.defaultTimeLimitMinutes ?? datSection?.timeLimit ?? 30,
     };
   });
 

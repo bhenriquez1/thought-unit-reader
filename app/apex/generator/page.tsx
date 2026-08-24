@@ -290,6 +290,7 @@ function ExamGeneratorPage() {
         built,
         modeConfig.timed ? modeConfig.defaultTimeMinutes : 999,
         practiceMode,
+        selectedProfile,
       );
       setGeneratedExam(exam);
     } catch (err: unknown) {

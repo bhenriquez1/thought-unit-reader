@@ -31,7 +31,13 @@ export const CUSTOM_EXAM_PROFILE: ExamProfile = {
       name: "General",
       shortName: "General",
       defaultQuestionCount: 20,
-      defaultTimeLimitMinutes: 30,
+      // P1 fix — must match timingRules.totalTimeLimitMinutes below: Custom
+      // Exam has exactly one section, so its own time limit IS the whole
+      // exam's time limit. This used to be 30 while totalTimeLimitMinutes
+      // was 60 — an internal inconsistency that mattered once the proctor's
+      // live countdown started reading a section's own limit instead of a
+      // DAT-only fallback (see legacyAdapter.ts's builtExamToGeneratedExam).
+      defaultTimeLimitMinutes: 60,
       topics: [],
     },
   ],
