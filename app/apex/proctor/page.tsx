@@ -157,6 +157,7 @@ export default function ExamProctorPage() {
         sectionTimeRemaining: number;
         responses: Record<string, string>;
         flagged: string[];
+        savedAt?: string;
       } | null = null;
       try {
         const rawProgress = localStorage.getItem("examProgress");
@@ -178,12 +179,30 @@ export default function ExamProctorPage() {
         ? Math.min(Math.max(restoredState.currentQuestionIdx, 0), Math.max((sections[clampedSectionIdx]?.questions.length ?? 1) - 1, 0))
         : 0;
 
+      const restoredTimeRemaining = restoredState?.sectionTimeRemaining
+        ?? (sections[0]?.timeLimitSeconds ?? exam.config.totalTimeLimit * 60);
+
+      // P1 fix — a proctored/strict session explicitly disallows pausing
+      // (isProctored/allowPause: false), but resume restored the saved
+      // countdown value verbatim with no regard for how much real
+      // wall-clock time had actually passed. A student could close the tab
+      // right after an auto-save, wait arbitrarily long, and come back with
+      // the exact same remaining time — silently defeating the no-pause
+      // rule. Only strict sessions deduct elapsed time; practice/non-strict
+      // resume keeps its original, intentional "pausing is fine" behavior.
+      const elapsedSinceLastSave = restoredState?.savedAt
+        ? Math.max(0, Math.floor((Date.now() - new Date(restoredState.savedAt).getTime()) / 1000))
+        : 0;
+      const sectionTimeRemaining = isProctored
+        ? Math.max(0, restoredTimeRemaining - elapsedSinceLastSave)
+        : restoredTimeRemaining;
+
       const s: ProctorState = {
         exam,
         sections,
         currentSectionIdx:    clampedSectionIdx,
         currentQuestionIdx:   clampedQuestionIdx,
-        sectionTimeRemaining: restoredState?.sectionTimeRemaining ?? (sections[0]?.timeLimitSeconds ?? exam.config.totalTimeLimit * 60),
+        sectionTimeRemaining,
         responses:            restoredState?.responses ?? {},
         flagged:              new Set(restoredState?.flagged ?? []),
         isPaused:             false,
@@ -396,6 +415,10 @@ export default function ExamProctorPage() {
             sectionTimeRemaining: s.sectionTimeRemaining,
             responses:            s.responses,
             flagged:              Array.from(s.flagged),
+            // Real wall-clock timestamp of this save — resume uses it to
+            // deduct elapsed time from a strict/proctored section's
+            // remaining time, so closing the tab can't pause the clock.
+            savedAt:              new Date().toISOString(),
           },
         }));
         setAutoSaveStatus("saved");
