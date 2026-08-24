@@ -51,3 +51,36 @@ export async function verifyParentPin(parentAccountId: string, pin: string): Pro
   const candidateHash = await hashPin(pin, record.salt);
   return candidateHash === record.pinHash;
 }
+
+/* ─── Enrollment gate ─────────────────────────────────────────────────────────
+ * P1 fix — "no PIN record exists yet" used to be treated as authorization to
+ * create one: the child-visible Parent button led straight into "pick a PIN"
+ * for whoever tapped it first, self-authorizing into the dashboard on a
+ * fresh/upgraded install (or after any transient IDB read failure, which
+ * also fell through to create mode). A real identity check isn't available
+ * here (this is a local, backend-less app), so this is the same standard
+ * mitigation apps aimed at kids use before letting a session self-provision
+ * something a parent should own — the app's own COPPA-style "parental
+ * gate": a simple arithmetic question a young child is unlikely to solve.
+ * It's not meant to stop a determined adult impostor; it stops the much
+ * more likely case — a child tapping around and landing on PIN creation
+ * by accident. */
+
+export interface GateChallenge {
+  a: number;
+  b: number;
+}
+
+/** Two double-digit addends — simple for an adult, non-trivial for a young
+ *  child. Not cryptographic; see the module comment above. */
+export function generateGateChallenge(): GateChallenge {
+  const a = 10 + Math.floor(Math.random() * 40);
+  const b = 10 + Math.floor(Math.random() * 40);
+  return { a, b };
+}
+
+export function verifyGateChallenge(challenge: GateChallenge, answer: string): boolean {
+  const parsed = Number(answer.trim());
+  if (!Number.isFinite(parsed)) return false;
+  return parsed === challenge.a + challenge.b;
+}

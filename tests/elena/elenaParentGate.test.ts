@@ -58,9 +58,17 @@ describe("lib/elena/idbStore.ts — parent-gate store is real, versioned persist
 });
 
 describe("components/elena/ParentGate.tsx — a real create/enter PIN flow, not a placeholder", () => {
-  it("REQUIRED: checks hasParentPin on mount to choose between create and enter mode", () => {
+  it("REQUIRED: checks hasParentPin on mount to choose between enter mode and the parental-gate challenge — never a direct route to create mode", () => {
     expect(GATE_COMPONENT_SRC).toMatch(/hasParentPin\(parentAccountId\)/);
-    expect(GATE_COMPONENT_SRC).toMatch(/setMode\(exists \? "enter" : "create"\)/);
+    expect(GATE_COMPONENT_SRC).toMatch(/setMode\(exists \? "enter" : "gate"\)/);
+    expect(GATE_COMPONENT_SRC).not.toMatch(/setMode\(exists \? "enter" : "create"\)/);
+  });
+
+  it("REQUIRED: an IDB read failure also routes to the gate challenge, not directly to create — a transient error must never be treated as authorization", () => {
+    const idx = GATE_COMPONENT_SRC.indexOf(".catch(() => {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = GATE_COMPONENT_SRC.slice(idx, idx + 60);
+    expect(block).toMatch(/setMode\("gate"\)/);
   });
 
   it("REQUIRED: create mode requires the PIN to be entered twice and matched before it's persisted", () => {

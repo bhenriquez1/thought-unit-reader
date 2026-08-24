@@ -6,7 +6,11 @@
 // component never sees a persisted PIN, only whatever the person just typed).
 
 import React, { useEffect, useRef, useState } from "react";
-import { hasParentPin, isValidPin, setParentPin, verifyParentPin } from "@/lib/elena/parentGate";
+import {
+  hasParentPin, isValidPin, setParentPin, verifyParentPin,
+  generateGateChallenge, verifyGateChallenge,
+} from "@/lib/elena/parentGate";
+import type { GateChallenge } from "@/lib/elena/parentGate";
 
 interface ParentGateProps {
   parentAccountId: string;
@@ -14,7 +18,7 @@ interface ParentGateProps {
   onCancel: () => void;
 }
 
-type Mode = "loading" | "create" | "confirm" | "enter";
+type Mode = "loading" | "gate" | "create" | "confirm" | "enter";
 
 export default function ParentGate({ parentAccountId, onUnlock, onCancel }: ParentGateProps) {
   const [mode, setMode] = useState<Mode>("loading");
@@ -23,17 +27,41 @@ export default function ParentGate({ parentAccountId, onUnlock, onCancel }: Pare
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const gateInputRef = useRef<HTMLInputElement>(null);
+
+  // P1 fix — "no PIN record exists yet" (or a transient IDB read failure,
+  // which used to fall through the same way) is not proof a parent is the
+  // one asking to create one. Route both cases through a parental-gate
+  // arithmetic challenge first; only a correct answer reaches "create".
+  const [gateChallenge, setGateChallenge] = useState<GateChallenge>(() => generateGateChallenge());
+  const [gateAnswer, setGateAnswer] = useState("");
+  const [gateError, setGateError] = useState("");
 
   useEffect(() => {
     let alive = true;
     hasParentPin(parentAccountId)
-      .then((exists) => { if (alive) setMode(exists ? "enter" : "create"); })
-      .catch(() => { if (alive) setMode("create"); });
+      .then((exists) => { if (alive) setMode(exists ? "enter" : "gate"); })
+      .catch(() => { if (alive) setMode("gate"); });
     return () => { alive = false; };
   }, [parentAccountId]);
 
+  function handleGateSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (verifyGateChallenge(gateChallenge, gateAnswer)) {
+      setGateAnswer("");
+      setGateError("");
+      setMode("create");
+      return;
+    }
+    // Fresh numbers on every attempt — don't let repeated guesses converge.
+    setGateChallenge(generateGateChallenge());
+    setGateAnswer("");
+    setGateError("That's not quite right — ask a parent for help.");
+  }
+
   useEffect(() => {
-    if (mode !== "loading") inputRef.current?.focus();
+    if (mode === "gate") gateInputRef.current?.focus();
+    else if (mode !== "loading") inputRef.current?.focus();
   }, [mode]);
 
   function handlePinChange(value: string) {
@@ -85,11 +113,13 @@ export default function ParentGate({ parentAccountId, onUnlock, onCancel }: Pare
   }
 
   const heading =
+    mode === "gate" ? "Quick check" :
     mode === "create" ? "Set a Parent PIN" :
     mode === "confirm" ? "Confirm your PIN" :
     "Enter Parent PIN";
 
   const subtext =
+    mode === "gate" ? "Solve this to continue — this step just makes sure a parent is setting things up." :
     mode === "create" ? "This keeps the Parent dashboard and settings private from the learner. Pick a 4-digit PIN." :
     mode === "confirm" ? "Type it once more to confirm." :
     "Enter your 4-digit PIN to open the Parent dashboard.";
@@ -115,6 +145,31 @@ export default function ParentGate({ parentAccountId, onUnlock, onCancel }: Pare
 
           {mode === "loading" ? (
             <div className="text-center text-slate-500 text-sm py-6">Loading…</div>
+          ) : mode === "gate" ? (
+            <form onSubmit={handleGateSubmit} className="space-y-4">
+              <p className="text-center text-white text-2xl font-semibold tabular-nums">
+                {gateChallenge.a} + {gateChallenge.b} = ?
+              </p>
+              <input
+                ref={gateInputRef}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={gateAnswer}
+                onChange={(e) => { setGateAnswer(e.target.value); setGateError(""); }}
+                placeholder="Your answer"
+                className="w-full rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-center text-xl text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                aria-label="Answer"
+              />
+              {gateError && <p className="text-red-400 text-sm text-center">{gateError}</p>}
+              <button
+                type="submit"
+                disabled={gateAnswer.trim().length === 0}
+                className="w-full rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 font-semibold text-white transition-colors"
+              >
+                Continue
+              </button>
+            </form>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
