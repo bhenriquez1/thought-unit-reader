@@ -27,7 +27,7 @@ describe("lib/examEngine/profileGeneration.ts — book-grounded generation (prod
 
   it("REQUIRED: both exports require a bookId — no path generates without one", () => {
     expect(WRAPPER_SRC).toMatch(/export async function generateWeakTopicsPracticeExam\(\s*bookId: string,/);
-    expect(WRAPPER_SRC).toMatch(/export async function generateFullSimulationExam\(bookId: string, bookTitle\?: string\)/);
+    expect(WRAPPER_SRC).toMatch(/export async function generateFullSimulationExam\(\s*bookId: string,\s*bookTitle: string \| undefined,\s*profile: ExamProfile,\s*\)/);
   });
 
   it("narrows weak-topics practice to the DAT sections implicated by the target patterns, not a fabricated chapter mapping", () => {
@@ -61,12 +61,12 @@ describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book befo
     const idx = PAGE_SRC.indexOf("const handleStartRecommended");
     expect(idx).toBeGreaterThan(-1);
     const block = PAGE_SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(!currentRecommendation \|\| !primaryBook\) return;/);
+    expect(block).toMatch(/if \(!currentRecommendation \|\| !primaryBook \|\| !isDatActive\) return;/);
     expect(block).toMatch(/generateWeakTopicsPracticeExam\(\s*primaryBook\.bookId,\s*primaryBook\.bookTitle,/);
     const buttonIdx = PAGE_SRC.indexOf("onClick={handleStartRecommended}");
     expect(buttonIdx).toBeGreaterThan(-1);
     const buttonBlock = PAGE_SRC.slice(buttonIdx, buttonIdx + 200);
-    expect(buttonBlock).toMatch(/disabled=\{launching \|\| !primaryBook\}/);
+    expect(buttonBlock).toMatch(/disabled=\{launching \|\| !primaryBook \|\| !isDatActive\}/);
   });
 
   it("REQUIRED: handleStartSimulation bails out and both simulation buttons are disabled with no eligible book", () => {
@@ -74,7 +74,7 @@ describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book befo
     expect(idx).toBeGreaterThan(-1);
     const block = PAGE_SRC.slice(idx, idx + 700);
     expect(block).toMatch(/if \(!primaryBook\) return;/);
-    expect(block).toMatch(/generateFullSimulationExam\(primaryBook\.bookId, primaryBook\.bookTitle\)/);
+    expect(block).toMatch(/generateFullSimulationExam\(primaryBook\.bookId, primaryBook\.bookTitle, resolveExamProfile\(activeProfileId\)\)/);
     const occurrences = (PAGE_SRC.match(/disabled=\{seeding \|\| !primaryBook\}/g) ?? []).length;
     expect(occurrences).toBe(2); // Start Practice Simulation + Prometric Mode
   });

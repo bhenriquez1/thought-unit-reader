@@ -21,6 +21,7 @@ import { totalTestingMinutes } from "@/lib/datApex/blueprint";
 import type { GeneratedExam } from "@/lib/apex/examGenerator";
 import type { UserPattern } from "@/lib/apex/datApexTypes";
 import type { AdaptiveDifficulty } from "@/lib/stores/apexEngineStore";
+import type { ExamProfile } from "@/lib/examEngine/types";
 
 /** UserPattern.section (bio/gc/orgo/pat/rc/qr) -> DAT_EXAM_PROFILE section id.
  *  Biology/Gen Chem/Organic Chem are three sub-parts of DAT's one Natural
@@ -77,11 +78,23 @@ export async function generateWeakTopicsPracticeExam(
   return builtExamToGeneratedExam(built, Math.round(questionCount * 1.5), "practice");
 }
 
-export async function generateFullSimulationExam(bookId: string, bookTitle?: string): Promise<GeneratedExam> {
+// P0 fix: this used to hardcode DAT_EXAM_PROFILE into buildExam() regardless
+// of which profile app/apex/page.tsx's ExamProfileSwitcher showed as active,
+// so picking Custom Exam and clicking "Start Practice Simulation" silently
+// generated a DAT exam anyway. buildExam() itself is already profile-generic
+// (see examBuilder.ts), so the fix is just to stop overriding the caller's
+// choice with a constant. Timing falls back to the profile's own
+// timingRules when it isn't DAT's blueprint-timed ACTIVE_DAT_BLUEPRINT,
+// since that blueprint's per-section timing is DAT-specific.
+export async function generateFullSimulationExam(
+  bookId: string,
+  bookTitle: string | undefined,
+  profile: ExamProfile,
+): Promise<GeneratedExam> {
   const built = await buildExam({
     bookId,
     bookTitle,
-    profile: DAT_EXAM_PROFILE,
+    profile,
     difficulty: "simulation",
     questionCount: 280, // matches PRACTICE_MODES' "full-dat" defaultQuestions
   });
@@ -90,5 +103,8 @@ export async function generateFullSimulationExam(bookId: string, bookTitle?: str
   if (built.questions.length === 0) {
     throw new Error("No questions could be generated for a full simulation yet — read and synthesize more of this book first.");
   }
-  return builtExamToGeneratedExam(built, totalTestingMinutes(ACTIVE_DAT_BLUEPRINT), "full-dat");
+  const timeLimitMinutes = profile.id === DAT_EXAM_PROFILE.id
+    ? totalTestingMinutes(ACTIVE_DAT_BLUEPRINT)
+    : profile.timingRules.totalTimeLimitMinutes;
+  return builtExamToGeneratedExam(built, timeLimitMinutes, "full-dat");
 }
