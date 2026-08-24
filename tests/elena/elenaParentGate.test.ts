@@ -48,7 +48,9 @@ describe("lib/elena/idbStore.ts — parent-gate store is real, versioned persist
   });
 
   it("REQUIRED: the DB version was bumped so existing users get the upgrade", () => {
-    expect(IDB_SRC).toMatch(/const DB_VERSION\s*= 4;/);
+    const match = IDB_SRC.match(/const DB_VERSION\s*=\s*(\d+);/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(4);
   });
 
   it("REQUIRED: saveParentGate and loadParentGate are real, exported functions", () => {

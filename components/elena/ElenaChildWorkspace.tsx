@@ -26,7 +26,10 @@ import {
   saveVocabWord,
   loadVocabWords,
   deleteVocabWord,
+  loadParentControlSettings,
+  saveParentControlSettings,
 } from "@/lib/elena/idbStore";
+import { addDailyMinutes, isDailyLimitReached } from "@/lib/elena/dailyLimit";
 import {
   uploadChildBook,
   loadChildBookFileUrl,
@@ -43,6 +46,7 @@ import type {
   ChildRewardState,
   ChildProgress,
   ChildLibraryEntry,
+  ParentControlSettings,
 } from "@/lib/elena/types";
 import type { VocabWord, VocabStatus } from "@/lib/elena/vocabulary";
 import { VOCAB_STATUS_META } from "@/lib/elena/vocabulary";
@@ -1339,6 +1343,24 @@ function WeeklyChallengeTab({
   );
 }
 
+/* ─── Daily limit reached (Reading tab) ──────────────────────────────────────── */
+
+function DailyLimitReachedCard({ limitMinutes }: { limitMinutes: number | null }) {
+  return (
+    <div className="h-full flex items-center justify-center p-6">
+      <div className="max-w-sm text-center rounded-2xl border border-amber-400/25 bg-amber-500/8 p-6">
+        <div className="text-4xl mb-3">⏰</div>
+        <h3 className="text-white font-bold text-lg mb-1.5">Reading time is up for today!</h3>
+        <p className="text-amber-200/80 text-sm">
+          {limitMinutes
+            ? `You've reached your ${limitMinutes}-minute reading limit for today. Come back tomorrow for more adventures!`
+            : "Come back tomorrow for more adventures!"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Storage helpers ────────────────────────────────────────────────────────── */
 
 const STORAGE_KEY = "elena-active-profile-id";
@@ -1379,6 +1401,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   // and resets on every close, so re-opening always re-prompts for the PIN.
   const [parentUnlocked,     setParentUnlocked]      = useState(false);
   const [showSwitcher,       setShowSwitcher]       = useState(false);
+  const [dailyLimitMinutes,  setDailyLimitMinutes]  = useState<number | null>(null);
 
   const [library,     setLibrary]     = useState<ChildLibraryEntry[]>([]);
   const [activeBook,  setActiveBook]  = useState<ChildLibraryEntry | null>(null);
@@ -1435,6 +1458,28 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     }).catch(() => { if (!cancelled) setLibrary([]); });
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  // Load this child's parent-set daily reading limit whenever the active
+  // profile changes — a limit is per-child, never global.
+  useEffect(() => {
+    if (!profile) { setDailyLimitMinutes(null); return; }
+    let cancelled = false;
+    loadParentControlSettings(profile.id).then(settings => {
+      if (!cancelled) setDailyLimitMinutes(settings?.dailyTimeLimitMinutes ?? null);
+    }).catch(() => { if (!cancelled) setDailyLimitMinutes(null); });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
+
+  const handleSetDailyLimit = useCallback(async (minutes: number | null) => {
+    if (!profile) return;
+    setDailyLimitMinutes(minutes);
+    const settings: ParentControlSettings = {
+      parentAccountId: PARENT_ACCOUNT_ID,
+      childProfileId:  profile.id,
+      dailyTimeLimitMinutes: minutes,
+    };
+    await saveParentControlSettings(settings).catch(() => {});
+  }, [profile]);
 
   // Revoke the previous blob: URL whenever it's replaced or the component unmounts.
   useEffect(() => { bookFileUrlRef.current = bookFileUrl; }, [bookFileUrl]);
@@ -1568,8 +1613,15 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   const progressRef = useRef(progress);
   useEffect(() => { progressRef.current = progress; }, [progress]);
 
+  // P1 fix — parental daily reading-time limit. totalMinutes alone can't
+  // answer "has today's limit been reached" (see lib/elena/dailyLimit.ts's
+  // module comment), so isDailyLimitReached rolls todayMinutes over to the
+  // current date before comparing against the parent-set limit.
+  const dailyLimitReached = isDailyLimitReached(progress, dailyLimitMinutes, isoToday());
+
   useEffect(() => {
     if (!(activeTab === "reading" && activeBook && profile)) return;
+    if (dailyLimitReached) return;
     const startedAt = Date.now();
     const activeProfileId = profile.id;
     return () => {
@@ -1577,12 +1629,12 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
       if (elapsedMinutes <= 0) return;
       const base = progressRef.current ?? makeDefaultProgress(activeProfileId);
       const now = new Date().toISOString();
-      const next: ChildProgress = { ...base, totalMinutes: base.totalMinutes + elapsedMinutes, lastActiveAt: now, updatedAt: now };
+      const next: ChildProgress = { ...addDailyMinutes(base, elapsedMinutes, isoToday()), lastActiveAt: now, updatedAt: now };
       progressRef.current = next;
       setProgress(next);
       saveChildProgress(next).catch(() => {});
     };
-  }, [activeTab, activeBook?.id, profile]);
+  }, [activeTab, activeBook?.id, profile, dailyLimitReached]);
 
   const handleSave = useCallback(async (p: ChildProfile) => {
     // Write the active profile ID so the next mount can load it.
@@ -1719,6 +1771,8 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
           rewards={rewards}
           progress={progress}
           onClose={() => { setShowParent(false); setParentUnlocked(false); }}
+          dailyLimitMinutes={dailyLimitMinutes}
+          onSetDailyLimit={handleSetDailyLimit}
         />
       )}
 
@@ -1809,7 +1863,10 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
               onSwitchProfile={() => setShowSwitcher(true)}
             />
           )}
-          {activeTab === "reading" && (
+          {activeTab === "reading" && dailyLimitReached && (
+            <DailyLimitReachedCard limitMinutes={dailyLimitMinutes} />
+          )}
+          {activeTab === "reading" && !dailyLimitReached && (
             <ChildReaderTab
               profile={profile}
               activeBook={activeBook}

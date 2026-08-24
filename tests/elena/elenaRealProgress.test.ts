@@ -35,7 +35,7 @@ describe("ElenaChildWorkspace.tsx — real session-time tracking (totalMinutes)"
     const block = SRC.slice(idx, idx + 900);
     expect(block).toMatch(/return \(\) => \{/);
     expect(block).toMatch(/const elapsedMinutes = Math\.round\(\(Date\.now\(\) - startedAt\) \/ 60000\);/);
-    expect(block).toMatch(/totalMinutes: base\.totalMinutes \+ elapsedMinutes,/);
+    expect(block).toMatch(/addDailyMinutes\(base, elapsedMinutes, isoToday\(\)\)/);
     expect(block).toMatch(/saveChildProgress\(next\)\.catch\(\(\) => \{\}\);/);
   });
 
@@ -45,10 +45,54 @@ describe("ElenaChildWorkspace.tsx — real session-time tracking (totalMinutes)"
     expect(block).toMatch(/if \(elapsedMinutes <= 0\) return;/);
   });
 
-  it("the effect re-keys on activeTab, activeBook?.id, and profile — switching books while reading correctly closes out the previous book's session", () => {
+  it("the effect re-keys on activeTab, activeBook?.id, profile, and dailyLimitReached — switching books while reading correctly closes out the previous book's session, and the timer stops the instant the daily limit is hit", () => {
     const idx = SRC.indexOf("if (!(activeTab === \"reading\" && activeBook && profile)) return;");
     const block = SRC.slice(idx, idx + 1100);
-    expect(block).toMatch(/\}, \[activeTab, activeBook\?\.id, profile\]\);/);
+    expect(block).toMatch(/\}, \[activeTab, activeBook\?\.id, profile, dailyLimitReached\]\);/);
+  });
+});
+
+describe("ElenaChildWorkspace.tsx — parental daily reading-time limit (P1)", () => {
+  it("REQUIRED: imports addDailyMinutes and isDailyLimitReached from lib/elena/dailyLimit instead of hand-rolling the roll-over logic", () => {
+    expect(SRC).toMatch(/import \{ addDailyMinutes, isDailyLimitReached \} from "@\/lib\/elena\/dailyLimit";/);
+  });
+
+  it("REQUIRED: dailyLimitReached is derived from isDailyLimitReached(progress, dailyLimitMinutes, isoToday()) and gates the session timer", () => {
+    const idx = SRC.indexOf("const dailyLimitReached = isDailyLimitReached(progress, dailyLimitMinutes, isoToday());");
+    expect(idx).toBeGreaterThan(-1);
+    const timerIdx = SRC.indexOf("if (!(activeTab === \"reading\" && activeBook && profile)) return;");
+    expect(timerIdx).toBeGreaterThan(idx);
+    const block = SRC.slice(timerIdx, timerIdx + 200);
+    expect(block).toMatch(/if \(dailyLimitReached\) return;/);
+  });
+
+  it("REQUIRED: the parent-set limit is loaded per-profile via loadParentControlSettings, keyed by profile.id — a limit is per-child, not global", () => {
+    const idx = SRC.indexOf("loadParentControlSettings(profile.id)");
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("REQUIRED: handleSetDailyLimit persists via saveParentControlSettings, keyed by the active profile", () => {
+    const idx = SRC.indexOf("const handleSetDailyLimit = useCallback");
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 500);
+    expect(block).toMatch(/childProfileId:\s*profile\.id,/);
+    expect(block).toMatch(/dailyTimeLimitMinutes: minutes,/);
+    expect(block).toMatch(/saveParentControlSettings\(settings\)/);
+  });
+
+  it("REQUIRED: the Reading tab renders a blocked state instead of ChildReaderTab once the limit is reached", () => {
+    const idx = SRC.indexOf('{activeTab === "reading" && dailyLimitReached && (');
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 200);
+    expect(block).toMatch(/<DailyLimitReachedCard/);
+  });
+
+  it("REQUIRED: ParentDashboard receives dailyLimitMinutes and onSetDailyLimit so the parent can view/change the limit", () => {
+    const idx = SRC.indexOf("<ParentDashboard");
+    expect(idx).toBeGreaterThan(-1);
+    const block = SRC.slice(idx, idx + 400);
+    expect(block).toMatch(/dailyLimitMinutes=\{dailyLimitMinutes\}/);
+    expect(block).toMatch(/onSetDailyLimit=\{handleSetDailyLimit\}/);
   });
 });
 
