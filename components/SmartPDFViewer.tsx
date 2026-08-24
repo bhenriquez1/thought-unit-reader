@@ -816,7 +816,7 @@ export default function SmartPDFViewer({
           // already-correct match worse.
           const searchFrom = startIdx + prefix.length;
           const searchWindow = concatText.substring(searchFrom, searchFrom + baseText.length * 3 + 300);
-          let endIdx = startIdx + baseText.length; // estimated fallback
+          let endIdx: number | null = null;
 
           for (let sCount = maxSuffix; sCount >= 2; sCount -= 1) {
             if (sCount > suffixWords.length) continue;
@@ -828,6 +828,18 @@ export default function SmartPDFViewer({
               break;
             }
           }
+
+          // P0 fix — this prefix match used to fall back to a blind
+          // startIdx + baseText.length estimate whenever no suffix word run
+          // could be pinned in the page text, and returned that guess
+          // immediately without ever trying a different prefix length. An
+          // unverified end offset can overshoot into the next sentence or
+          // undershoot mid-word — geometry built from it renders as a wrong
+          // or fragmented highlight rather than a coarser-but-correct one.
+          // Only accept a match whose END was actually found in the page
+          // text; if this prefix length can't pin an end, try a shorter one
+          // instead of accepting the guess.
+          if (endIdx === null) continue;
 
           return { startIdx, endIdx: Math.min(endIdx, concatText.length) };
         }
