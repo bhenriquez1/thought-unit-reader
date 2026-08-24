@@ -40,10 +40,20 @@ function resolveExamProfile(id: string): ExamProfile {
  *  ExamProfileSwitcher showed as active, e.g. clicking "Create Practice
  *  Exam" while Custom Exam was selected still opened the generator in DAT
  *  mode. Every dashboard entry point into the generator should carry the
- *  active profile forward instead of the generator having to guess. */
+ *  active profile forward instead of the generator having to guess.
+ *
+ *  activeProfileId is validated against EXAM_PROFILE_CATALOG's hardcoded
+ *  ids everywhere it's ever set (readStoredActiveProfileId's localStorage
+ *  read, ExamProfileSwitcher's onSelect), so it can never actually be
+ *  attacker-controlled — but CodeQL's taint analysis (correctly) can't
+ *  verify that across those call sites, since localStorage is a generic
+ *  taint source and a raw string flowing into a Link href is a generic
+ *  DOM/URL-XSS sink. encodeURIComponent here is the real, permanent fix:
+ *  it makes this helper safe on its own terms, independent of whatever
+ *  validation callers do or stop doing. */
 function generatorLink(path: string, activeProfileId: string): string {
   const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}examType=${activeProfileId}`;
+  return `${path}${separator}examType=${encodeURIComponent(activeProfileId)}`;
 }
 
 function readStoredActiveProfileId(): string {

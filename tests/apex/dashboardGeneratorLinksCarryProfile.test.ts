@@ -24,7 +24,11 @@ describe("app/apex/page.tsx — a generatorLink helper threads the active profil
     expect(idx).toBeGreaterThan(-1);
     const block = SRC.slice(idx, idx + 300);
     expect(block).toMatch(/path\.includes\("\?"\)/);
-    expect(block).toMatch(/examType=\$\{activeProfileId\}/);
+    // REQUIRED: encodeURIComponent, not a raw interpolation — activeProfileId
+    // traces back to localStorage (see readStoredActiveProfileId), and this
+    // is what actually breaks that taint flow before it reaches a Link href,
+    // independent of whatever validation callers do upstream.
+    expect(block).toMatch(/examType=\$\{encodeURIComponent\(activeProfileId\)\}/);
   });
 
   it("REQUIRED: TodayTab's 'Build Your First Exam' link uses generatorLink", () => {
