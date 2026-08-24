@@ -13,6 +13,7 @@ import { normalizePageRanges } from "@/lib/apex/bookCatalogue";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 import { canonicalUnitsToDatStubs } from "@/lib/datApex/canonicalQuestionMapper";
 import { getNodesByBookAndPage } from "@/lib/knowledge/knowledgeGraphStore";
+import type { KnowledgeNode } from "@/lib/knowledge/knowledgeGraphSchema";
 
 export interface ExamBuildOptions {
   bookId: string;
@@ -81,6 +82,37 @@ function deduplicateQuestions(questions: EngineQuestion[]): EngineQuestion[] {
     seen.add(fp);
     return true;
   });
+}
+
+/** P1 fix — getNodesByBookAndPage is scoped to the filename-derived bookId,
+ *  which multiple *different* documentIds can share (a re-upload, or two
+ *  PDFs that happen to have the same filename — see lib/insights/
+ *  resolveDocumentIdentity.ts's module comment on this identity duality).
+ *  Taking nodes[0]'s documentId arbitrarily — effectively "whichever
+ *  document's node happened to be created first" — mixed node ids from
+ *  unrelated documents under one wrong identity, misattributing
+ *  learning-state writes to a document the student never actually
+ *  answered a question about. examBuilder has no documentId of its own
+ *  to disambiguate with (UltraNotes are bookId-scoped, not
+ *  documentId-scoped), so this picks the one document with the most
+ *  nodes for this page — correct with certainty whenever only one
+ *  document ever created nodes here (the overwhelming common case), and
+ *  at least deterministic and internally consistent instead of arbitrary
+ *  when it doesn't. All of sourceKnowledgeNodeIds/sourceDocumentId below
+ *  are then guaranteed to describe the SAME document. */
+function pickDominantDocumentNodes(nodes: KnowledgeNode[]): KnowledgeNode[] {
+  if (nodes.length === 0) return [];
+  const byDocument = new Map<string, KnowledgeNode[]>();
+  for (const node of nodes) {
+    const list = byDocument.get(node.documentId) ?? [];
+    list.push(node);
+    byDocument.set(node.documentId, list);
+  }
+  let dominant: KnowledgeNode[] = [];
+  for (const list of byDocument.values()) {
+    if (list.length > dominant.length) dominant = list;
+  }
+  return dominant;
 }
 
 /** Aggregates one UltraNote's teaching content into grounding text for the
@@ -179,7 +211,8 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   const knowledgeNodesByNote = await Promise.all(
     pool.map(async (note) => {
       try {
-        return await getNodesByBookAndPage(opts.bookId, note.pageNumber);
+        const nodes = await getNodesByBookAndPage(opts.bookId, note.pageNumber);
+        return pickDominantDocumentNodes(nodes);
       } catch {
         return [];
       }
@@ -202,6 +235,9 @@ export async function buildExam(opts: ExamBuildOptions): Promise<BuiltExam> {
   // of the note's own teaching content.
   const canonicalUnitsByNote = await Promise.all(
     pool.map(async (note, i) => {
+      // Safe to index [0] here — pickDominantDocumentNodes above already
+      // scoped knowledgeNodesByNote[i] to a single document, so every node
+      // in it (if any) shares the same documentId.
       const resolvedDocumentId = knowledgeNodesByNote[i][0]?.documentId ?? opts.bookId;
       try {
         return await getCanonicalUnitsByPage(resolvedDocumentId, note.pageNumber - 1);
