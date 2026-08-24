@@ -167,6 +167,11 @@ export type ChildLibraryEntry = {
   addedAt:         string;
   updatedAt:       string;
   lastOpenedAt:    string;
+  /** P1 fix — set once, the first time currentPage reaches totalPages; never
+   *  cleared by paging backward afterward, so re-reading doesn't "uncomplete"
+   *  a finished book. The guard ChildProgress.booksCompleted needs to only
+   *  increment once per book instead of once per page-turn-into-the-last-page. */
+  completedAt?:    string;
 };
 
 /* ─── Parent controls ────────────────────────────────────────────────────────── */

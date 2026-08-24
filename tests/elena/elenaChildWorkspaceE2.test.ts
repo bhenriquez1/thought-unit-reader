@@ -71,7 +71,10 @@ describe("ElenaChildWorkspace — profile switcher", () => {
 
 describe("ElenaChildWorkspace — Reader tab is a real PDF reader", () => {
   it("REQUIRED: the 'reading' tab renders ChildReaderTab, not the removed ContinueReadingTab", () => {
-    const idx = SRC.indexOf('activeTab === "reading"');
+    // Matches only the JSX conditional render, not the P1 session-timer
+    // effect's `if (!(activeTab === "reading" ...))` guard, which uses
+    // different surrounding syntax and appears earlier in the file.
+    const idx = SRC.indexOf('{activeTab === "reading" && (');
     expect(idx).toBeGreaterThan(-1);
     const block = SRC.slice(idx, idx + 500);
     expect(block).toMatch(/<ChildReaderTab/);

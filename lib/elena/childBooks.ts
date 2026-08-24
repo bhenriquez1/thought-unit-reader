@@ -39,18 +39,33 @@ export function buildChildLibraryEntry(
   };
 }
 
-/** Pure — merges a reading-position/page-count update into an existing entry. */
+/** Pure — merges a reading-position/page-count update into an existing entry.
+ *  P1 fix — also stamps completedAt the first time currentPage reaches
+ *  totalPages, so callers can detect "this book just became complete" by
+ *  diffing entry.completedAt before/after (see isNewlyCompleted below). */
 export function mergeLibraryEntryProgress(
   entry: ChildLibraryEntry,
   patch: { currentPage?: number; totalPages?: number },
   now: string,
 ): ChildLibraryEntry {
+  const currentPage = patch.currentPage ?? entry.currentPage;
+  const totalPages = patch.totalPages ?? entry.totalPages;
+  const completedAt = entry.completedAt
+    ?? (totalPages > 0 && currentPage >= totalPages ? now : entry.completedAt);
   return {
     ...entry,
-    currentPage: patch.currentPage ?? entry.currentPage,
-    totalPages: patch.totalPages ?? entry.totalPages,
+    currentPage,
+    totalPages,
+    completedAt,
     updatedAt: now,
   };
+}
+
+/** Pure — true when `updated` just crossed into "complete" and `previous`
+ *  hadn't yet (i.e. this specific merge is the one that finished the book,
+ *  not a re-read of an already-finished one). */
+export function isNewlyCompleted(previous: ChildLibraryEntry, updated: ChildLibraryEntry): boolean {
+  return !previous.completedAt && !!updated.completedAt;
 }
 
 /** Pure — the book to resume is whichever entry was opened most recently. */
