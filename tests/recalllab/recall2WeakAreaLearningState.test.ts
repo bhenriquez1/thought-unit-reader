@@ -31,6 +31,7 @@ function makeBlueprint(overrides: Partial<RecallBlueprint> = {}): RecallBlueprin
     reviewCount: 5,
     consecutiveCorrect: 5,
     confidenceHistory: ["easy", "easy", "easy"],
+    createdAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
 }
