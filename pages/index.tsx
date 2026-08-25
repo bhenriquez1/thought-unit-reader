@@ -55,7 +55,7 @@ import { splitParagraphs } from "@/lib/textNormalize";
 import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
 import { outlineItemsToTocNodes } from "@/lib/toc/tocNodeConverter";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
-import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
+import { useActivePageIntelligence, buildPageTruthKey } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
@@ -2552,6 +2552,13 @@ export default function ThoughtUnitReader() {
       }
       note.knowledgeNodeId    = pageKgNodeIdRef.current ?? undefined;
       note.canonicalAnchorId  = activeUnit?.id ?? undefined;
+      if (resolvedDocumentId) {
+        note.documentId = resolvedDocumentId;
+        note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, currentPage);
+      }
+      if (canonicalLeftPanelUnits.length) {
+        note.thoughtUnitIds = canonicalLeftPanelUnits.map((u) => u.id);
+      }
       await saveUltraNote(note);
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       DEV && console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
@@ -2568,7 +2575,7 @@ export default function ThoughtUnitReader() {
     } catch (err: any) {
       console.error("[NOTELAB_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
     }
-  }, [currentPageStudyModel, currentPage, bookId, uploadedFile, activeCanonicalThoughtUnit, canonicalLeftPanelUnits]);
+  }, [currentPageStudyModel, currentPage, bookId, uploadedFile, activeCanonicalThoughtUnit, canonicalLeftPanelUnits, resolvedDocumentId]);
 
   // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
   const sendCurrentPageToRecallLab = useCallback(async () => {
@@ -3076,6 +3083,11 @@ export default function ThoughtUnitReader() {
       }));
       note.knowledgeNodeId   = pageKgNodeIdRef.current ?? undefined;
       note.canonicalAnchorId = unit.id;
+      if (resolvedDocumentId) {
+        note.documentId = resolvedDocumentId;
+        note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, unit.page);
+      }
+      note.thoughtUnitIds = [unit.id];
       await saveUltraNote(note);
       setNoteLabRefreshKey((k) => k + 1);
       trySwitchShellTab("notelab", "notelab");
@@ -3101,10 +3113,15 @@ export default function ThoughtUnitReader() {
     note.sections = sections;
     note.knowledgeNodeId   = pageKgNodeIdRef.current ?? undefined;
     note.canonicalAnchorId = anchor.id;
+    if (resolvedDocumentId) {
+      note.documentId = resolvedDocumentId;
+      note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, detail.pageNumber);
+    }
+    note.thoughtUnitIds = [anchor.id];
     await saveUltraNote(note);
     setNoteLabRefreshKey((k) => k + 1);
     trySwitchShellTab("notelab", "notelab");
-  }, [canonicalLeftPanelUnits, currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab]);
+  }, [canonicalLeftPanelUnits, currentPageStudyModel, bookId, uploadedFile, trySwitchShellTab, resolvedDocumentId]);
 
   // "Visualize" — on-demand diagram scoped to just this thought unit (triggers
   // WhiteboardPanel's secondary concept+context path rather than the prebuilt page diagram).
@@ -3155,10 +3172,14 @@ export default function ThoughtUnitReader() {
     if (parsed.commonMistake) sections.push({ label: "Common Mistake", content: parsed.commonMistake });
     note.sections = sections;
     note.knowledgeNodeId = pageKgNodeIdRef.current ?? undefined;
+    if (resolvedDocumentId) {
+      note.documentId = resolvedDocumentId;
+      note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, ctx.pageNumber);
+    }
     await saveUltraNote(note);
     DEV && console.log("[EXPLAIN_STEP_NOTELAB_SAVE]", { id: note.id, page: ctx.pageNumber, sectionLabels: sections.map((s) => s.label) });
     setNoteLabRefreshKey((k) => k + 1);
-  }, [explainStepContext, bookId, uploadedFile]);
+  }, [explainStepContext, bookId, uploadedFile, resolvedDocumentId]);
 
   // Convert the tutor conversation into a clean RecallLab flashcard:
   // front = the concept/selected text, back = the Direct Answer, hint =

@@ -1941,6 +1941,8 @@ export function RightPanel({
                 pageNumber={ctx.pageNumber}
                 onNoteSaved={onNoteSaved}
                 studyModel={studyModel}
+                resolvedDocumentId={resolvedDocumentId}
+                canonicalLeftPanelUnits={canonicalLeftPanelUnits}
               />
               <GenerateStudySetButton
                 view={displayView!}
@@ -4304,6 +4306,8 @@ function GenerateNoteButton({
   pageNumber,
   onNoteSaved,
   studyModel,
+  resolvedDocumentId,
+  canonicalLeftPanelUnits,
 }: {
   view: UltraPageView;
   bookId: string;
@@ -4311,6 +4315,10 @@ function GenerateNoteButton({
   pageNumber: number;
   onNoteSaved?: () => void;
   studyModel?: CurrentPageStudyModel | null;
+  /** Resolved, collision-resistant document identity — see UltraNote.documentId. */
+  resolvedDocumentId?: string;
+  /** Grounds the saved note's thoughtUnitIds in what's actually on this page. */
+  canonicalLeftPanelUnits?: ExpertAnchor[];
 }) {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -4325,6 +4333,14 @@ function GenerateNoteButton({
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
       const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
+
+      if (resolvedDocumentId) {
+        note.documentId = resolvedDocumentId;
+        note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, pageNumber);
+      }
+      if (canonicalLeftPanelUnits?.length) {
+        note.thoughtUnitIds = canonicalLeftPanelUnits.map((u) => u.id);
+      }
 
       await saveUltraNote(note);
 

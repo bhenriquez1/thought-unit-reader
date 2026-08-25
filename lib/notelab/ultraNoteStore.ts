@@ -96,6 +96,19 @@ export interface UltraNote {
   knowledgeNodeId?:    string;
   canonicalAnchorId?:  string;
   chapterCandidateId?: string;
+  // ── Document/page identity (C2 — Phase 0 audit) ───────────────────────────
+  // Optional, same reasoning as the KG fields above: notes saved before this
+  // fix will not have these, and that's fine — they simply can't be linked
+  // by resolved identity yet. Back-filled the same way knowledgeNodeId/
+  // canonicalAnchorId are: set right before saveUltraNote() at each call
+  // site, never inferred from bookId (a filename), which is a DIFFERENT
+  // identity space — see lib/insights/resolveDocumentIdentity.ts.
+  /** Resolved, collision-resistant document identity. */
+  documentId?: string;
+  /** `${documentId}::${pageNumber}::${textReady}` — lib/useActivePageIntelligence.ts's buildPageTruthKey convention. */
+  pageTruthKey?: string;
+  /** CanonicalThoughtUnit ids this note is actually grounded in. */
+  thoughtUnitIds?: string[];
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
