@@ -19,6 +19,7 @@ function makeBlueprint(id: string, knowledgeNodeId?: string): RecallBlueprint {
     id, bookId: "book-1", category: "understanding", front: "f", back: "b",
     canonicalHash: `hash-${id}`, interval: 1, easeFactor: 2.5, dueDate: "2099-01-01",
     reviewCount: 0, consecutiveCorrect: 0, confidenceHistory: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
     knowledgeNodeId,
   };
 }
