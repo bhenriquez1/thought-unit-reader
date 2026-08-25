@@ -46,6 +46,7 @@ import PodcastLab from "@/components/reader/PodcastLab";
 import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
+import KnowledgeStatePanel from "@/components/learningHub/KnowledgeStatePanel";
 import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
 import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
@@ -5935,6 +5936,18 @@ export default function ThoughtUnitReader() {
                       <span className="text-xs text-slate-400 shrink-0 font-medium">View →</span>
                     </button>
                   )}
+
+                  {/* Knowledge State — C8: the first Learning Hub surface sourced
+                      directly from the shared Learning State (KnowledgeNodeProgress),
+                      the same store TestLab/Recall/Whiteboard already read/write. */}
+                  <KnowledgeStatePanel
+                    nodes={kgNodes}
+                    onOpenNode={(node) => {
+                      const page = node.sourcePages[0];
+                      if (page) syncToPage(page, { reason: 'PROGRAMMATIC' });
+                      trySwitchShellTab("reader", "reader");
+                    }}
+                  />
 
                   {/* Session launcher — adaptive guide is pre-loaded in reader (Adaptive tab default) */}
                   <LearningHubLaunchPanel
