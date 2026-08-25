@@ -4,18 +4,19 @@ Audited on 2026-08-25 from `main` at `08db9c6f`. `Production reachable` means re
 
 | File/component | Product | Purpose | Latest/legacy | Production reachable | Shared dependency | Action |
 |---|---|---|---|---|---|---|
-| `app/apex/page.tsx` | TestLab | Canonical dashboard and profile selection | Latest | Yes, `/apex` | exam profiles, Apex store, Reader catalogue | KEEP |
+| `app/apex/page.tsx` | TestLab | Canonical source-first workspace: exam purpose → Reader source → configuration | Latest | Yes, `/apex` | exam profiles, attempt/readiness stores, Reader catalogue | KEEP |
 | `app/apex/generator/page.tsx` | TestLab | Source selection and exam generation | Latest | Yes | exam engine, document store | KEEP |
 | `app/apex/proctor/page.tsx` | TestLab | Timed/practice exam runner | Latest | Yes | pending exam store, session state | KEEP |
 | `app/apex/results/page.tsx` | TestLab | Scoring, review, Recall handoff | Latest | Yes | scoring, misconception capture | KEEP |
 | `app/apex/review/page.tsx` | TestLab | Mistake review | Latest | Yes | attempt/mistake stores | KEEP |
-| `app/apex/patterns/**` | TestLab | Decision-pattern training | Current supporting route | Yes | pattern library | KEEP |
+| `app/apex/patterns/**` | TestLab | Old DAT-pattern URLs retained only as safe redirects | Legacy route | Redirect only | none | MIGRATE |
 | `lib/datApex/**` | TestLab | DAT blueprint, persistence, readiness | Latest | Indirect | IndexedDB, Learning State | KEEP |
 | `lib/apex/**` | TestLab | Catalogue, scoring, training helpers | Current shared layer | Indirect | Reader notes/documents | KEEP |
 | `lib/examEngine/**` | TestLab | Profile-generic generation and proctor contracts | Latest | Indirect | AI routes, source knowledge | KEEP |
-| `lib/stores/apexEngineStore.ts` | TestLab | Current dashboard state | Current | Indirect | local persistence | KEEP |
+| `components/apex/TrainingArena.tsx` | TestLab | DAT-pattern training dashboard embedded in the old `/apex` shell | Legacy | Previously | Apex pattern/readiness stores | REMOVE |
+| `lib/stores/apexEngineStore.ts` | TestLab | Historical pattern-training state retained for stored-data compatibility | Legacy data source | No canonical landing-page dependency | local persistence | MIGRATE |
 | `app/elena/page.tsx` | Elena | Canonical route boundary | Latest | Yes, `/elena` | `ElenaChildWorkspace` | KEEP |
-| `components/elena/ElenaChildWorkspace.tsx` | Elena | Canonical onboarding and child workspace | Latest | Yes | Elena IndexedDB, child books | KEEP |
+| `components/elena/ElenaChildWorkspace.tsx` | Elena | Canonical reader-first onboarding and child workspace | Latest | Yes | Elena IndexedDB, child books | KEEP |
 | `components/elena/ParentGate.tsx` | Elena | Protected parent access | Latest | Yes | salted PIN store | KEEP |
 | `components/elena/ParentDashboard.tsx` | Elena | Parent settings and real progress | Latest | Yes | child progress/vocabulary | KEEP |
 | `components/elena/ChildReaderTab.tsx` | Elena | Child reading experience | Latest | Yes | shared document store | KEEP |
@@ -33,8 +34,8 @@ Audited on 2026-08-25 from `main` at `08db9c6f`. `Production reachable` means re
 
 ## Canonical routing decisions
 
-- `/apex` is the only TestLab dashboard. Supporting `/apex/*` routes belong to the same exam workflow; none redirects to a second dashboard.
-- `/elena` directly renders `ElenaChildWorkspace`. The adult Reader action routes there rather than embedding an alternate Elena dashboard.
+- `/apex` is the only TestLab entry. It begins with exam purpose and an uploaded Reader source; the former Today/Learn/Practice/Full-Length dashboard and Training Arena are not rendered.
+- `/elena` directly renders `ElenaChildWorkspace` and opens on the child Reader. Home/Today/Challenge are not primary navigation destinations; Books, Vocabulary, Practice, Progress, and Adventures support the reading workflow.
 - The Reader imports only `components/recalllab/RecallLab.tsx`, which renders `Recall2Lab`. Classic Recall UI code is removed, while `RecallSet` persistence remains as an explicit, document-scoped migration input so existing student cards are not discarded.
 
 ## Storage safety
