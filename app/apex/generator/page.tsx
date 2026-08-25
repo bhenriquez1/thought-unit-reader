@@ -115,6 +115,13 @@ function ExamGeneratorPage() {
   // examScope/practiceMode/questionCount, all of which buildExam() already
   // consumes generically.
   const [courseExamType, setCourseExamType] = useState<CourseExamType | null>(null);
+  // Mirrors courseExamType for the bookId-load effect below to read without
+  // depending on it — depending on it directly would re-run the whole
+  // effect (re-fetching nodes/progress) every time a Course Exam type is
+  // picked, which is unnecessary and would itself re-trigger the very
+  // scope overwrite this ref exists to prevent.
+  const courseExamTypeRef = useRef<CourseExamType | null>(null);
+  useEffect(() => { courseExamTypeRef.current = courseExamType; }, [courseExamType]);
   const [readingProgress, setReadingProgress] = useState<ReadingProgressRecord | null>(null);
   const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
   const [nodeProgressById, setNodeProgressById] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
@@ -132,7 +139,15 @@ function ExamGeneratorPage() {
       .then((progress) => {
         if (!alive) return;
         setReadingProgress(progress);
-        setExamScope(defaultScopeFor(progress));
+        // C6 fix — a Course Exam type picked BEFORE the book loads (e.g.
+        // Chapter Quiz's 'selected-chapters' scope) must not be silently
+        // overwritten by the book's default scope once progress resolves.
+        // Picking a type AFTER the book is already loaded is unaffected —
+        // handleCourseExamTypeSelect sets examScope directly, and this
+        // effect doesn't re-run just because courseExamType changed.
+        if (courseExamTypeRef.current === null) {
+          setExamScope(defaultScopeFor(progress));
+        }
       })
       .catch(() => { if (alive) setReadingProgress(null); });
     getNodesByBook(bookId)

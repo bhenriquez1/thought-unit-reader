@@ -85,6 +85,24 @@ export function builtExamToGeneratedExam(
 ): GeneratedExam {
   const questions = built.questions.map(engineQuestionToDATQuestion);
 
+  // C6 fix — a single-section profile (Custom Exam, Course Exam) has no
+  // real per-section distinction: the one section's timer IS the whole
+  // exam's timer. Course Exam's 4 types (Chapter Quiz/Unit Exam/Midterm/
+  // Cumulative Final) all shared COURSE_EXAM_PROFILE's own fixed
+  // defaultTimeLimitMinutes here regardless of which PracticeMode the type
+  // actually mapped to — an untimed Chapter Quiz (999-minute practice
+  // mode) still auto-submitted at a hardcoded 90 minutes, and a Cumulative
+  // Final (255-minute full-dat mode) also got capped at 90. The proctor's
+  // live countdown reads exactly this per-section value, not
+  // totalTimeLimitMinutes. totalTimeLimitMinutes already reflects the real
+  // chosen mode (see generator/page.tsx's generateExam and
+  // profileGeneration.ts's generateFullSimulationExam) — for a
+  // single-section profile it's the correct per-section value too, so use
+  // it instead of the profile's own static default. Multi-section profiles
+  // (DAT, Board/Licensure) keep their real distinct per-section defaults,
+  // since dividing one total evenly across sections of different real
+  // length would be wrong for those.
+  const isSingleSectionProfile = profile?.sections.length === 1;
   const sectionIds = Array.from(new Set(questions.map((q) => q.sectionId)));
   const sections: ExamConfiguration["sections"] = sectionIds.map((sectionId) => {
     const profileSection = profile?.sections.find((s) => s.id === sectionId);
@@ -93,7 +111,9 @@ export function builtExamToGeneratedExam(
       sectionId,
       enabled: true,
       questionCount: questions.filter((q) => q.sectionId === sectionId).length,
-      timeLimit: profileSection?.defaultTimeLimitMinutes ?? datSection?.timeLimit ?? 30,
+      timeLimit: isSingleSectionProfile
+        ? totalTimeLimitMinutes
+        : profileSection?.defaultTimeLimitMinutes ?? datSection?.timeLimit ?? 30,
     };
   });
 
