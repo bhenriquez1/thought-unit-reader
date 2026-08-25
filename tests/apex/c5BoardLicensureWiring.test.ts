@@ -27,12 +27,10 @@ describe("lib/examEngine/profiles/profileCatalog.ts — board-licensure is real,
     expect(entry.available).toBe(true);
   });
 
-  it("mcat and course-exam remain visible 'coming soon' placeholders — C5 only implements board-licensure", () => {
+  it("mcat remains a visible 'coming soon' placeholder — C5 only implements board-licensure (course-exam followed in C6)", () => {
     const { EXAM_PROFILE_CATALOG } = require("@/lib/examEngine/profiles/profileCatalog");
     const mcat = EXAM_PROFILE_CATALOG.find((p: { id: string }) => p.id === "mcat");
-    const course = EXAM_PROFILE_CATALOG.find((p: { id: string }) => p.id === "course-exam");
     expect(mcat.available).toBe(false);
-    expect(course.available).toBe(false);
   });
 });
 

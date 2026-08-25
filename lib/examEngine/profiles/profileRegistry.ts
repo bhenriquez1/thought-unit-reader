@@ -12,11 +12,13 @@ import type { ExamProfile } from "@/lib/examEngine/types";
 import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from "./datProfile";
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from "./customProfile";
 import { BOARD_LICENSURE_EXAM_PROFILE, BOARD_LICENSURE_EXAM_PROFILE_ID } from "./boardLicensureProfile";
+import { COURSE_EXAM_PROFILE, COURSE_EXAM_PROFILE_ID } from "./courseExamProfile";
 
 const PROFILES_BY_ID: Record<string, ExamProfile> = {
   [DAT_EXAM_PROFILE_ID]: DAT_EXAM_PROFILE,
   [CUSTOM_EXAM_PROFILE_ID]: CUSTOM_EXAM_PROFILE,
   [BOARD_LICENSURE_EXAM_PROFILE_ID]: BOARD_LICENSURE_EXAM_PROFILE,
+  [COURSE_EXAM_PROFILE_ID]: COURSE_EXAM_PROFILE,
 };
 
 /** Unknown/undefined ids (including legacy pre-profile-field attempts) fall
