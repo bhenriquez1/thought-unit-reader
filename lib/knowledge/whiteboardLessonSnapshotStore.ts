@@ -21,12 +21,47 @@
 //     lessonId collision across documents should already be near-impossible
 //     by construction — defense in depth, not the primary guarantee.
 
-import type { ProfessorLessonPlan } from "@/lib/whiteboard/professorLessonPlan";
+import type { ProfessorLessonPlan, Bounds, Point, RelationshipKind } from "@/lib/whiteboard/professorLessonPlan";
 import {
   totalTeachingSteps, stepStartIndex, stepEndIndex, stepMisconceptionLabel,
 } from "@/lib/whiteboard/professorTimelineEngine";
 
 // ── Types ─────────────────────────────────────────────────────────────────
+
+// C4 (Phase 0 audit) — a step used to reduce to lossy text (label + a
+// flattened narration string), discarding every draw-shape/draw-arrow
+// action's actual geometry. That was enough to build a text flashcard
+// ("Reconstruct Professor step N") but not enough to build a real Visual
+// Recall task — hiding one node, removing one arrow, or reconstructing the
+// diagram from memory all need to know WHICH shapes/arrows existed and
+// where. shapes/labels/arrows below are the minimum structured data that
+// preserves; a snapshot's teachingSteps are still lossy relative to the
+// full ProfessorLessonPlan (no freehand strokes, no emphasize/camera
+// choreography, no timing) — this captures exactly what a static replay-
+// and-occlude task needs, not a full lesson re-render.
+
+export interface TeachingStepShape {
+  shapeId: string;
+  targetId?: string;
+  kind: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud";
+  bounds: Bounds;
+}
+
+export interface TeachingStepLabel {
+  shapeId: string;
+  targetId?: string;
+  text: string;
+  x: number;
+  y: number;
+}
+
+export interface TeachingStepArrow {
+  shapeId: string;
+  targetId?: string;
+  from: Point;
+  to: Point;
+  relationshipKind?: RelationshipKind;
+}
 
 export interface TeachingStepSummary {
   stepId: number;
@@ -38,6 +73,22 @@ export interface TeachingStepSummary {
   /** Present only when this step's emphasize treatment was "crossOut" — see
    *  stepMisconceptionLabel in professorTimelineEngine.ts. */
   misconceptionLabel: string | null;
+  // Optional, same reasoning as every other incrementally-added field in
+  // this codebase (UltraNote's documentId/pageTruthKey, KnowledgeNode's KG
+  // refs): snapshots saved before this fix genuinely don't have geometry
+  // data, and marking these required would misrepresent that — a caller
+  // building a Visual Recall task must treat an absent/empty array as "no
+  // occlusion task possible for this step," not assume it's always there.
+  /** Every shape (node) this step drew, with its real bounds — enough to
+   *  render and selectively hide/reveal it in a replay-and-occlude task. */
+  shapes?: TeachingStepShape[];
+  /** Every write action this step drew, i.e. every label on the canvas —
+   *  the full set, not just the first one label above summarizes. */
+  labels?: TeachingStepLabel[];
+  /** Every arrow this step drew, with its endpoints and relationship kind
+   *  (when the lesson script supplied one) — enough to hide/remove or
+   *  reconstruct a specific connection. */
+  arrows?: TeachingStepArrow[];
 }
 
 export interface WhiteboardLessonSnapshot {
@@ -112,11 +163,23 @@ export function buildTeachingStepsSummary(plan: ProfessorLessonPlan): TeachingSt
       .map(a => (a.type === "speak" ? a.text : ""))
       .join(" ")
       .trim();
+    const shapes: TeachingStepShape[] = stepActions
+      .filter((a): a is Extract<typeof a, { type: "draw-shape" }> => a.type === "draw-shape")
+      .map(a => ({ shapeId: a.shapeId, targetId: a.targetId, kind: a.shape, bounds: a.bounds }));
+    const labels: TeachingStepLabel[] = stepActions
+      .filter((a): a is Extract<typeof a, { type: "write" }> => a.type === "write")
+      .map(a => ({ shapeId: a.shapeId, targetId: a.targetId, text: a.text, x: a.x, y: a.y }));
+    const arrows: TeachingStepArrow[] = stepActions
+      .filter((a): a is Extract<typeof a, { type: "draw-arrow" }> => a.type === "draw-arrow")
+      .map(a => ({ shapeId: a.shapeId, targetId: a.targetId, from: a.from, to: a.to, relationshipKind: a.relationshipKind }));
     steps.push({
       stepId,
       label: firstWrite && firstWrite.type === "write" ? firstWrite.text : `Step ${stepId + 1}`,
       narration,
       misconceptionLabel: stepMisconceptionLabel(plan.actions, stepId),
+      shapes,
+      labels,
+      arrows,
     });
   }
   return steps;
