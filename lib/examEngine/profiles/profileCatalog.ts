@@ -1,11 +1,11 @@
 // lib/examEngine/profiles/profileCatalog.ts
 // TestLab legacy-fallback audit — the product surface (dashboard header,
 // exam-type picker) must show that TestLab supports more than one exam
-// profile. DAT, Custom Exam, and (C5) Board/Licensure have a real
-// ExamProfile implementation today (see datProfile.ts / customProfile.ts /
-// boardLicensureProfile.ts); MCAT and Course Exam remain "coming soon"
-// placeholders. This catalog is the single source of truth both
-// app/apex/page.tsx (dashboard header switcher) and
+// profile. DAT, Custom Exam, (C5) Board/Licensure, and (C6) Course Exam have
+// a real ExamProfile implementation today (see datProfile.ts /
+// customProfile.ts / boardLicensureProfile.ts / courseExamProfile.ts); MCAT
+// remains a "coming soon" placeholder. This catalog is the single source of
+// truth both app/apex/page.tsx (dashboard header switcher) and
 // app/apex/generator/page.tsx (Exam Type picker) render from, so the two
 // surfaces can't drift into listing different profiles.
 //
@@ -16,6 +16,7 @@
 import { DAT_EXAM_PROFILE_ID } from "./datProfile";
 import { CUSTOM_EXAM_PROFILE_ID } from "./customProfile";
 import { BOARD_LICENSURE_EXAM_PROFILE_ID } from "./boardLicensureProfile";
+import { COURSE_EXAM_PROFILE_ID } from "./courseExamProfile";
 
 export interface ExamProfileCatalogEntry {
   id: string;
@@ -48,11 +49,11 @@ export const EXAM_PROFILE_CATALOG: ExamProfileCatalogEntry[] = [
     available: true,
   },
   {
-    id: "course-exam",
+    id: COURSE_EXAM_PROFILE_ID,
     label: "Course Exam",
     shortLabel: "Course",
-    description: "Your class midterm or final",
-    available: false,
+    description: "Chapter quiz, unit exam, midterm, or cumulative final",
+    available: true,
   },
   {
     id: CUSTOM_EXAM_PROFILE_ID,

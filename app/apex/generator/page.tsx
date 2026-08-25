@@ -10,6 +10,9 @@ import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
 import { DAT_EXAM_PROFILE } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
 import { BOARD_LICENSURE_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/boardLicensureProfile';
+import { COURSE_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/courseExamProfile';
+import { COURSE_EXAM_TYPES } from '@/lib/examEngine/courseExamTypes';
+import type { CourseExamType } from '@/lib/examEngine/courseExamTypes';
 import { EXAM_PROFILE_CATALOG } from '@/lib/examEngine/profiles/profileCatalog';
 import { resolveProfileById } from '@/lib/examEngine/profiles/profileRegistry';
 import type { ExamProfile } from '@/lib/examEngine/types';
@@ -106,6 +109,12 @@ function ExamGeneratorPage() {
   // whatever scope the student picks) must never let buildExam() draw on
   // pages the student hasn't reached. See lib/examEngine/examScope.ts.
   const [examScope, setExamScope] = useState<ExamScope>('entire-book');
+  // C6 — which Course Exam type is active (Chapter Quiz/Unit Exam/Midterm/
+  // Cumulative Final), only meaningful when examProfileId === COURSE_EXAM_PROFILE_ID.
+  // Not itself sent to buildExam() — it's a UI-only preset that sets
+  // examScope/practiceMode/questionCount, all of which buildExam() already
+  // consumes generically.
+  const [courseExamType, setCourseExamType] = useState<CourseExamType | null>(null);
   const [readingProgress, setReadingProgress] = useState<ReadingProgressRecord | null>(null);
   const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
   const [nodeProgressById, setNodeProgressById] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
@@ -192,6 +201,20 @@ function ExamGeneratorPage() {
     setGenerationError(null);
   }
 
+  // C6 — sets scope/practiceMode/questionCount together from one Course
+  // Exam type preset, rather than routing through handleModeChange (which
+  // would reset questionCount to the mode's own generic default and
+  // override the type's specific count).
+  function handleCourseExamTypeSelect(type: CourseExamType) {
+    const cfg = COURSE_EXAM_TYPES.find((t) => t.id === type)!;
+    setCourseExamType(type);
+    setExamScope(cfg.scope);
+    setPracticeMode(cfg.practiceMode);
+    setQuestionCount(cfg.questionCount);
+    setGeneratedExam(null);
+    setGenerationError(null);
+  }
+
   function handleBookSelect(id: string) {
     setBookId(id);
     setSelectedChapterIds(new Set());
@@ -219,6 +242,7 @@ function ExamGeneratorPage() {
   // the stale one. Same reset shape as handleModeChange/handleBookSelect above.
   function handleProfileChange(id: string) {
     setExamProfileId(id);
+    setCourseExamType(null);
     setGeneratedExam(null);
     setGenerationError(null);
   }
@@ -389,6 +413,17 @@ function ExamGeneratorPage() {
                   <div className="font-medium text-white text-sm">Board / Licensure</div>
                   <div className="text-xs text-gray-400 mt-0.5">Pass/fail — foundational + clinical sections</div>
                 </button>
+                <button
+                  onClick={() => handleProfileChange(COURSE_EXAM_PROFILE_ID)}
+                  className={`text-left p-3 rounded-lg border-2 transition-all ${
+                    examProfileId === COURSE_EXAM_PROFILE_ID
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                  }`}
+                >
+                  <div className="font-medium text-white text-sm">Course Exam</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Your class — chapter quiz, unit exam, midterm, final</div>
+                </button>
                 {/* TestLab is built to support more than the DAT — these
                     profiles are visibly part of the product even before
                     they have a real ExamProfile implementation, so the
@@ -408,6 +443,32 @@ function ExamGeneratorPage() {
                 ))}
               </div>
             </section>
+
+            {/* 1b — Course Exam Type (only when Course Exam is the active profile) */}
+            {examProfileId === COURSE_EXAM_PROFILE_ID && (
+              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 Course Exam Type</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Picks a starting scope, timing, and size below — you can still adjust any of them afterward.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {COURSE_EXAM_TYPES.map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => handleCourseExamTypeSelect(type.id)}
+                      className={`text-left p-3 rounded-lg border-2 transition-all ${
+                        courseExamType === type.id
+                          ? 'border-blue-500 bg-blue-500/10'
+                          : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="font-medium text-white text-sm">{type.icon} {type.label}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{type.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* 2 — Source Book */}
             <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
