@@ -43,11 +43,12 @@ describe("recordDatQuestionAnswered", () => {
     expect(block).not.toMatch(/question\.sourceBookId/);
   });
 
-  it("REQUIRED: fires one event per Knowledge Graph node id (sourceKnowledgeNodeIds), not per CanonicalThoughtUnit id", () => {
+  it("REQUIRED: fires at least one event per Knowledge Graph node id (sourceKnowledgeNodeIds), not per CanonicalThoughtUnit id", () => {
     const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
-    const block = SRC.slice(idx, idx + 700);
+    const block = SRC.slice(idx, idx + 2000);
     expect(block).toMatch(/const nodeIds = question\.sourceKnowledgeNodeIds;/);
-    expect(block).toMatch(/nodeIds\.map\(\(nodeId\) =>\s*\n\s*recordLearningEvent\(nodeId, documentId, \{/);
+    expect(block).toMatch(/nodeIds\.map\(async \(nodeId\) => \{/);
+    expect(block).toMatch(/await recordLearningEvent\(nodeId, documentId, event\);/);
     expect(block).not.toMatch(/sourceThoughtUnitIds/);
   });
 
@@ -58,26 +59,34 @@ describe("recordDatQuestionAnswered", () => {
     expect(block).toMatch(/correct,/);
     expect(block).toMatch(/timeMs: null,/);
     expect(block).toMatch(/occurredAt,/);
-    expect(block).toMatch(/sourceId: question\.id,/);
+    expect(block).toMatch(/sourceId: question\.id \},/);
+  });
+
+  it("REQUIRED (C7): a wrong answer with misconceptionTested also queues a misconception-observed event, applied sequentially per node (not raced)", () => {
+    const idx = SRC.indexOf("export async function recordDatQuestionAnswered");
+    const block = SRC.slice(idx, idx + 2000);
+    expect(block).toMatch(/if \(!correct && question\.misconceptionTested\) \{/);
+    expect(block).toMatch(/kind: "misconception-observed", misconception: question\.misconceptionTested/);
+    expect(block).toMatch(/for \(const event of events\) \{/);
   });
 });
 
 describe("recordDatAttemptLearningState", () => {
   it("REQUIRED: skips unanswered responses (selectedChoiceId === null) before doing any lookup", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 900);
+    const block = SRC.slice(idx, idx + 1400);
     expect(block).toMatch(/if \(r\.selectedChoiceId === null\) return null;/);
   });
 
   it("REQUIRED: correctness is computed by comparing the response to the question's own correctAnswer", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 900);
+    const block = SRC.slice(idx, idx + 1400);
     expect(block).toMatch(/const correct = r\.selectedChoiceId === q\.correctAnswer;/);
   });
 
   it("REQUIRED: a single question's write failure is caught per-question, not allowed to reject the whole Promise.all", () => {
     const idx = SRC.indexOf("export async function recordDatAttemptLearningState");
-    const block = SRC.slice(idx, idx + 900);
+    const block = SRC.slice(idx, idx + 1400);
     expect(block).toMatch(/try \{\s*\n\s*await recordDatQuestionAnswered\(q, correct, occurredAt\);\s*\n\s*return true;\s*\n\s*\} catch \{\s*\n\s*return false;\s*\n\s*\}/);
   });
 

@@ -115,6 +115,20 @@ export default function ExamResultsPage() {
     router.push('/');
   }
 
+  // C7 — exam completion must not dead-end at a score screen. This was
+  // computed by buildStudyRecommendation and then just rendered as inert
+  // text ("review page X"), with no click-through — same view-source
+  // handoff handleViewSource above already uses, reused for the
+  // recommendation's own page list instead of a per-question one.
+  function handleViewReaderPage(rp: { bookId: string; pageNumber: number; topic: string }) {
+    writeViewSourceLink({
+      documentId: rp.bookId,
+      pageNumber: rp.pageNumber,
+      bookTitle: rp.bookId,
+    });
+    router.push('/');
+  }
+
   useEffect(() => {
     const loadResults = () => {
       try {
@@ -516,9 +530,16 @@ export default function ExamResultsPage() {
                   {recommendation.readerPages.length > 0 && (
                     <div className="mt-4 bg-black/20 rounded-lg p-4">
                       <div className="text-xs font-semibold text-gray-400 uppercase mb-2">Review in the Reader</div>
-                      <ul className="space-y-1 text-sm text-gray-200">
+                      <ul className="space-y-1 text-sm">
                         {recommendation.readerPages.map((rp, i) => (
-                          <li key={i}>📖 {rp.topic} — page {rp.pageNumber}</li>
+                          <li key={i}>
+                            <button
+                              onClick={() => handleViewReaderPage(rp)}
+                              className="text-gray-200 hover:text-teal-300 underline decoration-dotted underline-offset-2 transition-colors text-left"
+                            >
+                              📖 {rp.topic} — page {rp.pageNumber}
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </div>
