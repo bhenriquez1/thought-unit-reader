@@ -1,5 +1,5 @@
 // components/elena/ElenaChildWorkspace.tsx
-// Elena Mode workspace — child-learning hub with 9 sections.
+// Elena Mode workspace — a reader-first child learning experience.
 // Uses getChildDisplayCopy() for all labels; never hard-codes child names.
 
 const DEV = process.env.NODE_ENV === "development";
@@ -36,7 +36,6 @@ import {
   recordBookOpened,
   updateBookProgress,
   listChildLibraryEntries,
-  pickMostRecentEntry,
   mergeLibraryEntryProgress,
   isNewlyCompleted,
 } from "@/lib/elena/childBooks";
@@ -101,26 +100,20 @@ const ACHIEVEMENTS: {
 /* ─── Tab config ─────────────────────────────────────────────────────────────── */
 
 type ElenaTab =
-  | "home"
   | "reading"
-  | "today"
   | "adventures"
   | "achievements"
   | "library"
   | "vocabulary"
-  | "games"
-  | "challenge";
+  | "games";
 
 const ELENA_TABS: { id: ElenaTab; icon: string; label: string }[] = [
-  { id: "home",         icon: "🏠", label: "Home"       },
-  { id: "reading",      icon: "📖", label: "Reading"    },
-  { id: "today",        icon: "⭐", label: "Today"      },
+  { id: "reading",      icon: "📖", label: "Reader"     },
+  { id: "library",      icon: "📚", label: "Books"      },
+  { id: "vocabulary",   icon: "🔤", label: "Vocabulary" },
+  { id: "games",        icon: "🧠", label: "Practice"   },
+  { id: "achievements", icon: "🏆", label: "Progress"   },
   { id: "adventures",   icon: "🗺",  label: "Adventures" },
-  { id: "achievements", icon: "🏆", label: "Badges"     },
-  { id: "library",      icon: "📚", label: "Library"    },
-  { id: "vocabulary",   icon: "🔤", label: "Words"      },
-  { id: "games",        icon: "🧠", label: "Games"      },
-  { id: "challenge",    icon: "🎯", label: "Challenge"  },
 ];
 
 /* ─── Helpers ────────────────────────────────────────────────────────────────── */
@@ -191,8 +184,13 @@ export function SetupForm({ onSave }: { onSave: (profile: ChildProfile) => void 
   }
 
   return (
-    <div className="h-full w-full overflow-auto bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 flex items-start justify-center p-8">
+    <div className="min-h-dvh w-full overflow-auto bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 flex items-start justify-center p-8">
       <div className="w-full max-w-lg">
+        <div className="mb-5 flex justify-start">
+          <Link href="/" aria-label="Back to Avrrio Reader" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-indigo-100 hover:bg-white/10">
+            ← Avrrio Reader
+          </Link>
+        </div>
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">✨</div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome to Elena Mode</h1>
@@ -323,392 +321,6 @@ function LogSessionButton({
       >
         {logging ? "Logging…" : compact ? "+1 ⭐  Log Reading Session" : "✅ Log Reading Session  (+1 ⭐)"}
       </button>
-    </div>
-  );
-}
-
-/* ─── Home tab (dashboard hub) ──────────────────────────────────────────────── */
-
-interface HomeTabProps {
-  profile:      ChildProfile;
-  rewards:      ChildRewardState;
-  progress:     ChildProgress | null;
-  activeBook:   ChildLibraryEntry | null;
-  onReset:      () => void;
-  onLogSession: () => Promise<void>;
-  onNav:        (tab: ElenaTab) => void;
-  onContinueReading: () => void;
-  onUploadClick:     () => void;
-  onSwitchProfile:   () => void;
-}
-
-function TodayAdventureCard({
-  rewards, progress, readToday, onNav,
-}: {
-  rewards: ChildRewardState;
-  progress: ChildProgress | null;
-  readToday: boolean;
-  onNav: (tab: ElenaTab) => void;
-}) {
-  const wordsLearned = (progress?.totalSessions ?? 0) > 0;
-  const task1Done    = readToday;
-  const task2Done    = wordsLearned;
-  const allDone      = task1Done && task2Done;
-
-  return (
-    <div className="mb-5 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-500/8 to-orange-500/5 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🌟</span>
-          <span className="text-amber-200 font-bold text-sm">Today's Adventure</span>
-        </div>
-        <div className="flex items-center gap-1 bg-amber-400/15 border border-amber-400/25 rounded-lg px-2 py-0.5">
-          <span className="text-xs">Reward:</span>
-          <span className="text-amber-200 text-xs font-bold">⭐⭐</span>
-        </div>
-      </div>
-
-      <div className="space-y-2 mb-3">
-        <button
-          onClick={() => !task1Done && onNav("reading")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors ${
-            task1Done ? "bg-emerald-500/10 border border-emerald-400/25" : "bg-white/5 border border-white/10 hover:bg-white/8"
-          }`}
-        >
-          <span className={`text-lg flex-shrink-0 ${task1Done ? "" : "opacity-40"}`}>{task1Done ? "✅" : "📖"}</span>
-          <div className="min-w-0">
-            <div className={`text-sm font-medium ${task1Done ? "text-emerald-300 line-through opacity-70" : "text-white"}`}>
-              Read for 10 minutes
-            </div>
-            {!task1Done && <div className="text-[10px] text-slate-500">Tap to open Reading tab</div>}
-          </div>
-        </button>
-
-        <button
-          onClick={() => !task2Done && onNav("vocabulary")}
-          className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors ${
-            task2Done ? "bg-emerald-500/10 border border-emerald-400/25" : "bg-white/5 border border-white/10 hover:bg-white/8"
-          }`}
-        >
-          <span className={`text-lg flex-shrink-0 ${task2Done ? "" : "opacity-40"}`}>{task2Done ? "✅" : "🔤"}</span>
-          <div className="min-w-0">
-            <div className={`text-sm font-medium ${task2Done ? "text-emerald-300 line-through opacity-70" : "text-white"}`}>
-              Learn 3 new words
-            </div>
-            {!task2Done && <div className="text-[10px] text-slate-500">Tap to open Words tab</div>}
-          </div>
-        </button>
-      </div>
-
-      {allDone ? (
-        <div className="rounded-xl bg-emerald-500/15 border border-emerald-400/25 px-3 py-2 text-center">
-          <span className="text-emerald-300 font-bold text-sm">🎉 Adventure complete! ⭐⭐ earned</span>
-        </div>
-      ) : (
-        <div className="flex gap-1">
-          {[task1Done, task2Done].map((done, i) => (
-            <div key={i} className={`flex-1 h-1.5 rounded-full ${done ? "bg-emerald-400" : "bg-white/10"}`} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HomeTab({
-  profile, rewards, progress, activeBook, onReset, onLogSession, onNav,
-  onContinueReading, onUploadClick, onSwitchProfile,
-}: HomeTabProps) {
-  const earned     = ACHIEVEMENTS.filter(a => a.test(rewards));
-  const nextUp     = ACHIEVEMENTS.find(a => !a.test(rewards));
-  const level      = progress?.currentLevel ?? "developing";
-  const levelInfo  = LEVEL_INFO[level] ?? LEVEL_INFO.developing;
-  const readToday  = rewards.updatedAt.split("T")[0] === isoToday() && rewards.totalStars > 0;
-  const bookPct    = activeBook && activeBook.totalPages > 0
-    ? Math.round((activeBook.currentPage / activeBook.totalPages) * 100)
-    : null;
-
-  const EXPLORE_NAV: { tab: ElenaTab; icon: string; label: string; color: string }[] = [
-    { tab: "reading",      icon: "📚", label: "My Books",         color: "from-blue-600/30 to-blue-700/20 border-blue-500/30"       },
-    { tab: "today",        icon: "⭐", label: "Today's Learning", color: "from-yellow-600/30 to-amber-700/20 border-yellow-500/30"  },
-    { tab: "vocabulary",   icon: "🔤", label: "Vocabulary",       color: "from-teal-600/30 to-teal-700/20 border-teal-500/30"      },
-    { tab: "games",        icon: "🧠", label: "Practice",         color: "from-green-600/30 to-emerald-700/20 border-green-500/30" },
-    { tab: "achievements", icon: "🏆", label: "Progress",         color: "from-purple-600/30 to-purple-700/20 border-purple-500/30" },
-    { tab: "adventures",   icon: "🗺",  label: "Adventures",       color: "from-rose-600/30 to-pink-700/20 border-rose-500/30"      },
-  ];
-
-  return (
-    <div className="h-full overflow-auto p-5">
-      <p className="text-[11px] font-bold tracking-[0.15em] text-indigo-400/70 uppercase mb-3">
-        {(profile.preferredName || profile.displayName)}'s Learning Space
-      </p>
-
-      {/* Identity + current-book side by side on wider viewports instead of
-          always stacking — the workspace now uses the space a wide screen
-          actually gives it rather than staying pinned to a narrow column. */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-5 gap-4">
-        {/* Child identity — large, unmistakably the top of the page */}
-        <div className="md:col-span-2 flex items-center gap-4 rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/12 to-purple-500/8 p-4">
-          <button
-            onClick={onSwitchProfile}
-            className="text-5xl leading-none flex-shrink-0 w-16 h-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/15 transition-colors"
-            aria-label="Switch learner"
-            title="Switch learner"
-          >
-            {getAvatarEmoji(profile.id)}
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-white truncate">{profile.preferredName || profile.displayName}</h1>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-base">{levelInfo.icon}</span>
-              <span className={`text-sm font-semibold ${levelInfo.color}`}>{levelInfo.label}</span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-            <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-2.5 py-1">
-              <span className="text-sm">⭐</span>
-              <span className="text-yellow-200 font-bold text-sm tabular-nums">{rewards.totalStars}</span>
-            </div>
-            {rewards.currentStreak > 0 && (
-              <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-400/30 rounded-xl px-2 py-0.5">
-                <span className="text-xs">🔥</span>
-                <span className="text-orange-200 font-semibold text-xs">{rewards.currentStreak}d</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Primary action — Continue Reading when a book exists, a full
-            "choose your next adventure" invitation when it doesn't. This is
-            Elena's own new-product empty state: it never falls back to a
-            bare/blank card just because no book is loaded yet. */}
-        <div className="md:col-span-3 rounded-2xl border border-blue-400/25 bg-blue-500/8 p-4">
-          {activeBook ? (
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-2xl flex-shrink-0">📘</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-white font-semibold text-sm truncate">{activeBook.title}</p>
-                <p className="text-blue-300/70 text-xs mt-0.5">
-                  {activeBook.totalPages > 0 ? `Page ${activeBook.currentPage} of ${activeBook.totalPages}` : "Ready to open"}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-2xl flex-shrink-0">🧭</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-white font-semibold text-sm">Let's choose your next adventure!</p>
-                <p className="text-blue-300/70 text-xs mt-0.5">Upload a book or pick one from your library to start reading.</p>
-              </div>
-            </div>
-          )}
-          {bookPct !== null && (
-            <div className="mb-3">
-              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all" style={{ width: `${bookPct}%` }} />
-              </div>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={onContinueReading}
-              className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-400 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
-            >
-              {activeBook ? "📖 Continue Reading" : "📖 Choose or Start Reading"}
-            </button>
-            <button
-              onClick={onUploadClick}
-              className="flex-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-2.5 text-sm font-semibold text-white transition-colors"
-            >
-              📤 Upload a Book
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Today's Goal + Progress — compact stats */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
-        {[
-          { icon: "⭐", value: String(rewards.totalStars),           label: "Stars"    },
-          { icon: "🔥", value: String(rewards.currentStreak),        label: "Streak"   },
-          { icon: "📚", value: String(progress?.totalSessions ?? 0), label: "Sessions" },
-        ].map(({ icon, value, label }) => (
-          <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-            <div className="text-xl mb-0.5">{icon}</div>
-            <div className="text-xl font-bold text-white tabular-nums">{value}</div>
-            <div className="text-[10px] text-slate-400">{label}</div>
-          </div>
-        ))}
-      </div>
-
-      <TodayAdventureCard rewards={rewards} progress={progress} readToday={readToday} onNav={onNav} />
-
-      {!readToday && (
-        <div className="mb-4">
-          <LogSessionButton onLog={onLogSession} compact />
-        </div>
-      )}
-
-      {/* Explore grid — My Books / Today's Learning / Vocabulary / Practice / Progress */}
-      <div className="mb-5">
-        <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-3">Explore</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {EXPLORE_NAV.map(({ tab, icon, label, color }) => (
-            <button
-              key={tab}
-              onClick={() => onNav(tab)}
-              className={`bg-gradient-to-br ${color} rounded-2xl border p-4 text-left hover:opacity-90 transition-opacity`}
-            >
-              <div className="text-2xl mb-1.5">{icon}</div>
-              <div className="text-white font-semibold text-sm">{label}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Next achievement teaser */}
-      {nextUp && (
-        <div className="rounded-2xl border border-yellow-400/20 bg-yellow-500/5 p-3 mb-4">
-          <div className="text-[11px] text-yellow-400/60 font-semibold mb-2 uppercase tracking-wide">Next Badge</div>
-          <div className="flex items-center gap-2.5">
-            <span className="text-2xl opacity-50">{nextUp.icon}</span>
-            <div>
-              <div className="text-yellow-200 font-semibold text-sm">{nextUp.label}</div>
-              <div className="text-yellow-400/60 text-[11px]">{nextUp.desc}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Earned badges strip */}
-      {earned.length > 0 && (
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-2">
-            {earned.map(a => (
-              <div key={a.id}
-                className="flex items-center gap-1.5 bg-yellow-400/15 border border-yellow-400/25 rounded-xl px-2.5 py-1.5"
-                title={a.desc}>
-                <span className="text-base">{a.icon}</span>
-                <span className="text-yellow-200 text-xs font-medium">{a.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <button
-        onClick={onReset}
-        className="mt-2 text-xs text-white/20 hover:text-white/50 transition-colors block mx-auto"
-      >
-        Reset profile
-      </button>
-    </div>
-  );
-}
-
-/* ─── Today's Goal tab ───────────────────────────────────────────────────────── */
-
-function TodayGoalTab({
-  rewards,
-  progress,
-  onLogSession,
-}: {
-  rewards: ChildRewardState;
-  progress: ChildProgress | null;
-  onLogSession: () => Promise<void>;
-}) {
-  const todayStr    = isoToday();
-  const readToday   = rewards.updatedAt.split("T")[0] === todayStr && rewards.totalStars > 0;
-  const streak      = rewards.currentStreak;
-
-  const ENCOURAGEMENTS = [
-    "Every page makes you smarter! 🌟",
-    "You're doing amazing — keep reading! 🚀",
-    "Reading is a superpower. You've got this! 💪",
-    "Each session brings a new adventure! 📖",
-    "You're building your reading muscles! 🏋️",
-  ];
-  const encouragement = ENCOURAGEMENTS[rewards.totalStars % ENCOURAGEMENTS.length];
-
-  // Weekly goal: read 5 days this week (approximate from streak)
-  const weekProgress = Math.min(streak, 5);
-
-  return (
-    <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-4">⭐ Today's Goal</h2>
-
-      {/* Today's status */}
-      <div className={`mb-4 rounded-2xl border p-5 text-center ${
-        readToday
-          ? "border-green-400/40 bg-green-500/10"
-          : "border-yellow-400/30 bg-yellow-500/8"
-      }`}>
-        <div className="text-4xl mb-2">{readToday ? "🎉" : "📖"}</div>
-        <h3 className={`text-lg font-bold mb-1 ${readToday ? "text-green-200" : "text-yellow-200"}`}>
-          {readToday ? "Goal complete for today!" : "Today's goal: Read one session"}
-        </h3>
-        <p className="text-sm text-slate-300">{encouragement}</p>
-      </div>
-
-      {/* Log CTA (shown when not yet read today) */}
-      {!readToday && (
-        <div className="mb-4 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-4">
-          <p className="text-indigo-200 text-sm mb-3">
-            Open the Reader, read for a few minutes, then log your session to earn a ⭐ star!
-          </p>
-          <LogSessionButton onLog={onLogSession} />
-        </div>
-      )}
-
-      {/* Streak card */}
-      <div className="mb-4 rounded-2xl border border-orange-400/25 bg-orange-500/8 p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <span className="text-3xl">🔥</span>
-          <div>
-            <div className="text-orange-200 font-bold text-lg">{streak} day streak</div>
-            <div className="text-orange-400/60 text-xs">
-              {streak === 0 ? "Start your streak today!" : streak === 1 ? "Great start! Keep it going!" : "Awesome — don't break it!"}
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {Array.from({ length: 7 }).map((_, i) => {
-            const filled = i < Math.min(streak, 7);
-            return (
-              <div key={i} className={`h-7 rounded-lg flex items-center justify-center text-sm ${
-                filled ? "bg-orange-500/40 border border-orange-400/50" : "bg-white/5 border border-white/10"
-              }`}>
-                {filled ? "🔥" : ""}
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex justify-between mt-1.5 text-[9px] text-slate-500">
-          {["M","T","W","T","F","S","S"].map((d, i) => <span key={i}>{d}</span>)}
-        </div>
-      </div>
-
-      {/* Weekly goal progress */}
-      <div className="rounded-2xl border border-purple-400/25 bg-purple-500/8 p-4">
-        <h3 className="text-sm font-bold text-purple-200 mb-3">🎯 This Week's Mission</h3>
-        <p className="text-slate-300 text-sm mb-3">Read for 5 days this week</p>
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex-1 h-3 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all"
-              style={{ width: `${(weekProgress / 5) * 100}%` }}
-            />
-          </div>
-          <span className="text-purple-300 text-sm font-semibold tabular-nums whitespace-nowrap">
-            {weekProgress}/5
-          </span>
-        </div>
-        {weekProgress >= 5 ? (
-          <p className="text-green-300 text-xs">🎉 Weekly mission complete! Amazing work!</p>
-        ) : (
-          <p className="text-purple-400/60 text-xs">{5 - weekProgress} more reading {5 - weekProgress === 1 ? "day" : "days"} to go!</p>
-        )}
-      </div>
     </div>
   );
 }
@@ -1250,99 +862,6 @@ function GamesTab({
   );
 }
 
-/* ─── Weekly Challenge tab ───────────────────────────────────────────────────── */
-
-function WeeklyChallengeTab({
-  rewards,
-  progress,
-  onLogSession,
-}: {
-  rewards: ChildRewardState;
-  progress: ChildProgress | null;
-  onLogSession: () => Promise<void>;
-}) {
-  const streak       = rewards.currentStreak;
-  const weekProgress = Math.min(streak, 5);
-  const done         = weekProgress >= 5;
-
-  const PAST_CHALLENGES = [
-    { label: "First Session",  completed: (progress?.totalSessions ?? 0) >= 1, icon: "📖" },
-    { label: "3-Day Streak",   completed: rewards.longestStreak >= 3,           icon: "🔥" },
-    { label: "5 Stars Earned", completed: rewards.totalStars >= 5,              icon: "⭐" },
-  ];
-
-  return (
-    <div className="h-full overflow-auto p-5">
-      <h2 className="text-lg font-bold text-white mb-4">🎯 Weekly Challenge</h2>
-
-      {/* This week */}
-      <div className={`mb-5 rounded-2xl border p-5 ${
-        done ? "border-green-400/40 bg-green-500/10" : "border-purple-400/30 bg-purple-500/8"
-      }`}>
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-3xl">{done ? "🏆" : "🎯"}</span>
-          <div>
-            <h3 className={`font-bold ${done ? "text-green-200" : "text-purple-200"}`}>
-              {done ? "Challenge complete! 🎉" : "This Week's Challenge"}
-            </h3>
-            <p className={`text-sm ${done ? "text-green-300/70" : "text-purple-300/70"}`}>
-              Read for 5 different days this week
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 mb-3">
-          <div className="flex-1 h-4 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                done ? "bg-gradient-to-r from-green-500 to-emerald-400" : "bg-gradient-to-r from-purple-500 to-indigo-500"
-              }`}
-              style={{ width: `${(weekProgress / 5) * 100}%` }}
-            />
-          </div>
-          <span className={`font-bold text-sm tabular-nums ${done ? "text-green-300" : "text-purple-300"}`}>
-            {weekProgress}/5
-          </span>
-        </div>
-
-        <div className="flex gap-1.5 justify-center mb-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg border ${
-              i < weekProgress
-                ? "bg-purple-500/40 border-purple-400/50"
-                : "bg-white/5 border-white/10"
-            }`}>
-              {i < weekProgress ? "✓" : ""}
-            </div>
-          ))}
-        </div>
-
-        {done ? (
-          <p className="text-center text-green-300 text-sm font-semibold">Amazing! You crushed it this week! 🌟</p>
-        ) : (
-          <LogSessionButton onLog={onLogSession} compact />
-        )}
-      </div>
-
-      {/* Milestone challenges */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <h3 className="text-sm font-bold text-white mb-3">🏅 Milestone Challenges</h3>
-        <div className="space-y-2.5">
-          {PAST_CHALLENGES.map(({ label, completed, icon }) => (
-            <div key={label} className="flex items-center gap-3">
-              <span className={`text-xl ${completed ? "" : "grayscale opacity-40"}`}>{icon}</span>
-              <span className={`flex-1 text-sm ${completed ? "text-white" : "text-slate-500"}`}>{label}</span>
-              <span className={`text-sm ${completed ? "text-green-400" : "text-slate-600"}`}>
-                {completed ? "✓ Done" : "—"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Daily limit reached (Reading tab) ──────────────────────────────────────── */
 
 function DailyLimitReachedCard({ limitMinutes }: { limitMinutes: number | null }) {
@@ -1394,7 +913,10 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   const [idbError,           setIdbError]           = useState<string | null>(null);
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
   const [loadAttempt,        setLoadAttempt]        = useState(0);
-  const [activeTab,          setActiveTab]          = useState<ElenaTab>("home");
+  // Elena opens directly in her Reader. The former rewards dashboard is no
+  // longer the product's entry point; progress and activities remain
+  // available as supporting tabs without competing with reading.
+  const [activeTab,          setActiveTab]          = useState<ElenaTab>("reading");
   const [showParent,         setShowParent]         = useState(false);
   // P0 fix — showParent alone used to render ParentDashboard directly with
   // no authentication step; parentUnlocked now gates it behind ParentGate
@@ -1536,13 +1058,6 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     if (file) void handleUpload(file);
   }, [handleUpload]);
 
-  const handleContinueReading = useCallback(() => {
-    if (activeBook) { setActiveTab("reading"); return; }
-    const mostRecent = pickMostRecentEntry(library);
-    if (mostRecent) void openBook(mostRecent);
-    else triggerUpload();
-  }, [activeBook, library, openBook, triggerUpload]);
-
   // P1 fix — a real book-completion signal instead of booksCompleted being
   // permanently stuck at 0. mergeLibraryEntryProgress stamps completedAt the
   // first time currentPage reaches totalPages; isNewlyCompleted tells us
@@ -1647,7 +1162,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     setProgress(null);
     setIdbError(null);
     setPersistenceWarning(null);
-    setActiveTab("home");
+    setActiveTab("reading");
     resetBookState();
     setShowSwitcher(false);
 
@@ -1675,17 +1190,11 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
     setProfile(null);
     setRewards(null);
     setProgress(null);
-    setActiveTab("home");
+    setActiveTab("reading");
     resetBookState();
     setShowSwitcher(false);
     setLoadAttempt(a => a + 1);
   }, [profile, resetBookState]);
-
-  const handleReset = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setProfile(null); setRewards(null); setProgress(null);
-    resetBookState();
-  }, [resetBookState]);
 
   const handleAwardStar = useCallback(async () => {
     if (!profile || !rewards) return;
@@ -1746,7 +1255,7 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
   if (!profile || !rewards) return <SetupForm onSave={handleSave} />;
 
   return (
-    <div className="h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 overflow-hidden">
+    <div className="min-h-dvh h-full w-full flex flex-col bg-gradient-to-br from-violet-950 via-indigo-950 to-slate-950 overflow-hidden">
       {/* Hidden file input — shared by every "Upload a Book" entry point */}
       <input
         ref={fileInputRef}
@@ -1848,42 +1357,37 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
         </div>
       )}
 
-      {/* Tab content — uses the available viewport width instead of a narrow
-          centered column with a huge empty field on either side; max-w-6xl
-          matches the width TestLab's dashboard (app/apex/page.tsx) uses. */}
+      {/* Canonical reader-first workspace. The old rewards dashboard is not
+          a navigation destination; learning tools support the open book. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="h-full max-w-6xl mx-auto w-full px-4 sm:px-6 py-4">
-          {activeTab === "home" && (
-            <HomeTab
-              profile={profile} rewards={rewards} progress={progress} activeBook={activeBook}
-              onReset={handleReset} onLogSession={handleLogSession}
-              onNav={setActiveTab}
-              onContinueReading={handleContinueReading}
-              onUploadClick={triggerUpload}
-              onSwitchProfile={() => setShowSwitcher(true)}
-            />
-          )}
           {activeTab === "reading" && dailyLimitReached && (
             <DailyLimitReachedCard limitMinutes={dailyLimitMinutes} />
           )}
           {activeTab === "reading" && !dailyLimitReached && (
-            <ChildReaderTab
-              profile={profile}
-              activeBook={activeBook}
-              bookFileUrl={bookFileUrl}
-              library={library}
-              uploading={uploading}
-              uploadError={uploadError}
-              pageText={activeBook ? bookPageTexts.get(activeBook.currentPage) : undefined}
-              onUploadClick={triggerUpload}
-              onOpenBook={openBook}
-              onPageChange={handleBookPageChange}
-              onPageCount={handleBookPageCount}
-              onPageTextExtracted={handleBookPageTextExtracted}
-            />
-          )}
-          {activeTab === "today" && (
-            <TodayGoalTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
+            <div className="flex h-full min-h-0 flex-col">
+              {activeBook && (
+                <div className="flex-shrink-0 px-4 pb-2">
+                  <LogSessionButton onLog={handleLogSession} compact />
+                </div>
+              )}
+              <div className="min-h-0 flex-1">
+                <ChildReaderTab
+                  profile={profile}
+                  activeBook={activeBook}
+                  bookFileUrl={bookFileUrl}
+                  library={library}
+                  uploading={uploading}
+                  uploadError={uploadError}
+                  pageText={activeBook ? bookPageTexts.get(activeBook.currentPage) : undefined}
+                  onUploadClick={triggerUpload}
+                  onOpenBook={openBook}
+                  onPageChange={handleBookPageChange}
+                  onPageCount={handleBookPageCount}
+                  onPageTextExtracted={handleBookPageTextExtracted}
+                />
+              </div>
+            </div>
           )}
           {activeTab === "adventures"   && <AdventuresTab rewards={rewards} progress={progress} />}
           {activeTab === "achievements" && <AchievementsTab rewards={rewards} progress={progress} />}
@@ -1903,9 +1407,6 @@ export default function ElenaChildWorkspace(_props: ElenaChildWorkspaceProps) {
           )}
           {activeTab === "games"        && (
             <GamesTab profile={profile} rewards={rewards} onAwardStar={handleAwardStar} />
-          )}
-          {activeTab === "challenge"    && (
-            <WeeklyChallengeTab rewards={rewards} progress={progress} onLogSession={handleLogSession} />
           )}
         </div>
       </div>

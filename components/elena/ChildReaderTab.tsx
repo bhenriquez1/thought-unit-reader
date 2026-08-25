@@ -29,14 +29,30 @@ interface ChildReaderTabProps {
 }
 
 function EmptyReaderState({
-  library, uploading, uploadError, onUploadClick, onOpenBook,
-}: Pick<ChildReaderTabProps, "library" | "uploading" | "uploadError" | "onUploadClick" | "onOpenBook">) {
+  profile, library, uploading, uploadError, onUploadClick, onOpenBook,
+}: Pick<ChildReaderTabProps, "profile" | "library" | "uploading" | "uploadError" | "onUploadClick" | "onOpenBook">) {
+  const learnerName = profile.preferredName || profile.displayName;
   return (
-    <div className="h-full overflow-auto p-5">
-      <div className="rounded-2xl border border-white/10 bg-white/3 p-6 text-center">
-        <div className="text-4xl mb-2">📚</div>
-        <h3 className="text-white font-bold text-base mb-1">No book open yet</h3>
-        <p className="text-slate-400 text-sm mb-4">Upload a PDF to start reading.</p>
+    <div className="min-h-full overflow-auto p-5 sm:p-8">
+      <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+        <section className="rounded-3xl border border-indigo-300/20 bg-gradient-to-br from-indigo-500/15 to-violet-500/5 p-6">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">{learnerName}&apos;s Reader</div>
+          <h2 className="mt-3 text-3xl font-bold text-white">Choose a book and begin.</h2>
+          <p className="mt-3 text-sm leading-relaxed text-indigo-100/65">Books, vocabulary, practice, and progress all stay connected to this learning space.</p>
+          <div className="mt-6 rounded-2xl border border-white/10 bg-black/10 p-4 text-sm text-slate-300">
+            <div className="font-semibold text-white">What happens next?</div>
+            <ol className="mt-2 space-y-2 text-xs leading-relaxed text-slate-400">
+              <li>1. Upload or choose a PDF.</li>
+              <li>2. Read with page controls and Reading Buddy.</li>
+              <li>3. Practice words and track real reading progress.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-950/35 p-6">
+          <div className="text-4xl mb-2">📚</div>
+          <h3 className="text-white font-bold text-lg mb-1">{library.length ? "Continue from your bookshelf" : "Add the first book"}</h3>
+          <p className="text-slate-400 text-sm mb-4">Upload a PDF here. Elena Mode keeps its own library and reading position.</p>
         <button
           onClick={onUploadClick}
           disabled={uploading}
@@ -45,10 +61,8 @@ function EmptyReaderState({
           {uploading ? "Uploading…" : "📤 Upload a Book"}
         </button>
         {uploadError && <p className="text-red-400 text-xs mt-3">{uploadError}</p>}
-      </div>
-
-      {library.length > 0 && (
-        <div className="mt-5">
+          {library.length > 0 && (
+            <div className="mt-6">
           <h4 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-2.5">My Books</h4>
           <div className="space-y-2">
             {library.map(entry => (
@@ -67,8 +81,10 @@ function EmptyReaderState({
               </button>
             ))}
           </div>
-        </div>
-      )}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -80,7 +96,7 @@ export default function ChildReaderTab({
   if (!activeBook || !bookFileUrl) {
     return (
       <EmptyReaderState
-        library={library} uploading={uploading} uploadError={uploadError}
+        profile={profile} library={library} uploading={uploading} uploadError={uploadError}
         onUploadClick={onUploadClick} onOpenBook={onOpenBook}
       />
     );
