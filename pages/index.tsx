@@ -33,6 +33,7 @@ import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommen
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
+import StickyNotesRail     from "@/components/reader/StickyNotesRail";
 import { resolveElenaModeFlagsFromEnv } from "@/lib/elena/featureFlags";
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 
@@ -5700,6 +5701,19 @@ export default function ThoughtUnitReader() {
                   pageThesis={currentPageStudyModel?.pageThesis ?? null}
                   packTierLabels={activePack.tierLabels}
                 />
+
+                {/* C1 — Sticky Notes: quick, page-linked annotations in the
+                    Reader's left panel. resolvedDocumentId (not bookId) is
+                    the identity key — see lib/stickyNotes/stickyNoteStore.ts's
+                    module comment for why. */}
+                {resolvedDocumentId && (
+                  <StickyNotesRail
+                    documentId={resolvedDocumentId}
+                    pageTruthKey={pageTruthKey}
+                    pageNumber={currentPage}
+                    onJumpToPage={(page) => syncToPage(page, { reason: 'TOC_JUMP' })}
+                  />
+                )}
 
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
                 {ELENA_ENABLED && (
