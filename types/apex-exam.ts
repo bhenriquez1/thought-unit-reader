@@ -69,6 +69,12 @@ export interface DATQuestion {
    *  question — app/apex/results/page.tsx uses this to score/report against
    *  the real profile instead of assuming DAT for every attempt. */
   examProfileId?: string;
+  /** The misconception a wrong answer to this question would reveal (C7 —
+   *  Test Lab -> Learning State feedback loop). Generation-time metadata
+   *  from EngineQuestion.misconceptionTested, carried through so a wrong
+   *  answer can be recorded as observed evidence on the node — see
+   *  lib/datApex/datLearningState.ts. */
+  misconceptionTested?: string;
 }
 
 export interface ExamConfiguration {

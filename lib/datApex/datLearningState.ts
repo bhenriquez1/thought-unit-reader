@@ -69,6 +69,7 @@
 // failure instead of a blanket .catch(() => {}).
 
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
+import type { LearningStateEvent } from "@/lib/knowledge/learningStateEvents";
 import type { DATQuestion } from "@/types/apex-exam";
 
 interface DatResponseLike {
@@ -96,16 +97,31 @@ export async function recordDatQuestionAnswered(
   const nodeIds = question.sourceKnowledgeNodeIds;
   if (!documentId || !nodeIds || nodeIds.length === 0) return;
 
+  // C7 — Test Lab -> Learning State feedback loop. misconceptionTested is
+  // generation-time metadata describing the misconception a WRONG answer to
+  // this question would reveal; a correct answer is no evidence of holding
+  // it. The misconception-observed event kind + reducer already existed
+  // (lib/knowledge/learningStateEvents.ts) but nothing in the exam-grading
+  // path ever fired it — every event kind below writes through the same
+  // recordLearningEvent call already used for dat-question-answered, so a
+  // node's observedMisconceptions and its mastery evidence stay consistent.
+  const events: LearningStateEvent[] = [
+    { kind: "dat-question-answered", correct, timeMs: null, occurredAt, sourceId: question.id },
+  ];
+  if (!correct && question.misconceptionTested) {
+    events.push({ kind: "misconception-observed", misconception: question.misconceptionTested, occurredAt, sourceId: question.id });
+  }
+
+  // recordLearningEvent does its own read-modify-write per call — two events
+  // for the SAME node must be applied sequentially (not Promise.all'd), or
+  // both would read the same base progress and the second save would
+  // silently clobber the first's update. Different nodes stay parallel.
   await Promise.all(
-    nodeIds.map((nodeId) =>
-      recordLearningEvent(nodeId, documentId, {
-        kind: "dat-question-answered",
-        correct,
-        timeMs: null,
-        occurredAt,
-        sourceId: question.id,
-      }),
-    ),
+    nodeIds.map(async (nodeId) => {
+      for (const event of events) {
+        await recordLearningEvent(nodeId, documentId, event);
+      }
+    }),
   );
 }
 
