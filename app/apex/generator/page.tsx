@@ -90,10 +90,16 @@ function ExamGeneratorPage() {
   });
   const selectedProfile: ExamProfile = resolveProfileById(examProfileId);
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
-  const [bookId, setBookId] = useState<string>(books[0]?.bookId ?? '');
+  const requestedSourceBookId = searchParams?.get('sourceBookId') ?? '';
+  const [bookId, setBookId] = useState<string>('');
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [chaptersExpanded, setChaptersExpanded] = useState(false);
-  const [practiceMode, setPracticeMode] = useState<PracticeMode>('practice-exam');
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>(() => {
+    const requestedMode = searchParams?.get('mode');
+    if (requestedMode === 'quick') return 'practice';
+    if (requestedMode === 'full') return 'full-dat';
+    return 'practice-exam';
+  });
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('simulation');
   const [sectionIds, setSectionIds] = useState<string[]>(DAT_SECTIONS.map((s) => s.id));
   const [questionCount, setQuestionCount] = useState(40);
@@ -126,6 +132,16 @@ function ExamGeneratorPage() {
   const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
   const [nodeProgressById, setNodeProgressById] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // A source chosen on the canonical TestLab landing page must remain
+  // selected when the student enters the detailed builder. Validate the
+  // URL value against the loaded catalogue so a stale/deleted book id can
+  // never create a phantom selection or widen generation to another book.
+  useEffect(() => {
+    if (books.length === 0 || bookId) return;
+    const requested = books.find((book) => book.bookId === requestedSourceBookId);
+    setBookId(requested?.bookId ?? books[0].bookId);
+  }, [books, bookId, requestedSourceBookId]);
 
   // Reload Reader progress + Knowledge Graph nodes whenever the selected
   // book changes, and default the scope to "Completed material only" when

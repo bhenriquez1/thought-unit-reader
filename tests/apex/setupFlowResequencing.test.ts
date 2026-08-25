@@ -13,50 +13,23 @@ import path from "path";
 const PAGE_SRC = fs.readFileSync(path.resolve(__dirname, "../../app/apex/page.tsx"), "utf8");
 const RESULTS_SRC = fs.readFileSync(path.resolve(__dirname, "../../app/apex/results/page.tsx"), "utf8");
 
-describe("app/apex/page.tsx — first-time user gets a guided 3-step path, not a dashboard of zeros", () => {
-  it("REQUIRED: TodayTab shows a Get Started card gated on having no book yet, offering both Reader and generator as next steps", () => {
-    const idx = PAGE_SRC.indexOf("🚀 Get Started");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(Math.max(0, idx - 300), idx + 900);
-    expect(block).toMatch(/\{!primaryBook && booksLoaded && \(/);
-    expect(block).toMatch(/href="\/"/);
-    // P1 fix — the generator link now carries the active exam profile
-    // forward (generatorLink) instead of a bare href, so the generator
-    // doesn't silently default back to DAT when Custom Exam is active.
-    expect(block).toMatch(/href=\{generatorLink\("\/apex\/generator", activeProfileId\)\}/);
-  });
-
-  it("the Get Started card renders before the Blueprint snapshot, not buried below the empty stat cards", () => {
-    const getStartedIdx = PAGE_SRC.indexOf("🚀 Get Started");
-    const blueprintIdx = PAGE_SRC.indexOf("Blueprint snapshot");
-    expect(getStartedIdx).toBeGreaterThan(-1);
-    expect(blueprintIdx).toBeGreaterThan(getStartedIdx);
-  });
-});
-
-describe("app/apex/page.tsx — the active tab can be deep-linked via ?tab=", () => {
-  it("REQUIRED: reads the tab from useSearchParams, validated against the real TABS list, defaulting to 'today'", () => {
-    expect(PAGE_SRC).toMatch(/const searchParams = useSearchParams\(\);/);
-    expect(PAGE_SRC).toContain('const requestedTab = searchParams?.get("tab") ?? null;');
-    expect(PAGE_SRC).toMatch(/TABS\.some\(t => t\.id === requestedTab\) \? \(requestedTab as TabId\) : "today"/);
-  });
-
-  it("REQUIRED: useSearchParams is wrapped in a Suspense boundary, or the route would opt out of static generation", () => {
-    const idx = PAGE_SRC.indexOf("export default function DatApexPage() {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(idx, idx + 200);
-    expect(block).toMatch(/<Suspense fallback=\{null\}>/);
-    expect(block).toMatch(/<DatApexPageInner \/>/);
+describe("app/apex/page.tsx — first-time user gets a source-first path, not the old dashboard of zeros", () => {
+  it("REQUIRED: explains the three real setup decisions and directs missing-source users to Reader", () => {
+    expect(PAGE_SRC).toMatch(/Step 1/);
+    expect(PAGE_SRC).toMatch(/Step 2/);
+    expect(PAGE_SRC).toMatch(/Step 3/);
+    expect(PAGE_SRC).toMatch(/Add a source in Avrrio Reader first/);
+    expect(PAGE_SRC).toMatch(/disabled=\{!selectedBook\}/);
   });
 });
 
 describe("app/apex/results/page.tsx — closes the review-weaknesses / regenerate-targeted-practice loop", () => {
   it("REQUIRED: offers a direct link to the Mistakes tab, not just a generic Back to Hub", () => {
-    expect(RESULTS_SRC).toMatch(/href="\/apex\?tab=mistakes"/);
+    expect(RESULTS_SRC).toMatch(/href="\/apex\/review"/);
   });
 
-  it("REQUIRED: offers a direct link back to Today (where targeted weak-topics practice already lives via Start Now)", () => {
-    expect(RESULTS_SRC).toMatch(/href="\/apex\?tab=today"/);
+  it("REQUIRED: offers a direct link back to the canonical source-first builder", () => {
+    expect(RESULTS_SRC).toMatch(/href="\/apex"/);
   });
 
   it("Back to Hub link is still present as a fallback", () => {
