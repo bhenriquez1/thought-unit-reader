@@ -1,11 +1,13 @@
 // lib/examEngine/profiles/profileCatalog.ts
 // TestLab legacy-fallback audit — the product surface (dashboard header,
 // exam-type picker) must show that TestLab supports more than one exam
-// profile even though only DAT and Custom Exam have a real ExamProfile
-// implementation today (see datProfile.ts / customProfile.ts). This catalog
-// is the single source of truth both app/apex/page.tsx (dashboard header
-// switcher) and app/apex/generator/page.tsx (Exam Type picker) render from,
-// so the two surfaces can't drift into listing different profiles.
+// profile. DAT, Custom Exam, and (C5) Board/Licensure have a real
+// ExamProfile implementation today (see datProfile.ts / customProfile.ts /
+// boardLicensureProfile.ts); MCAT and Course Exam remain "coming soon"
+// placeholders. This catalog is the single source of truth both
+// app/apex/page.tsx (dashboard header switcher) and
+// app/apex/generator/page.tsx (Exam Type picker) render from, so the two
+// surfaces can't drift into listing different profiles.
 //
 // `available: false` entries are real, visible, selectable-looking options
 // that resolve to an explicit "not built yet" state rather than silently
@@ -13,6 +15,7 @@
 
 import { DAT_EXAM_PROFILE_ID } from "./datProfile";
 import { CUSTOM_EXAM_PROFILE_ID } from "./customProfile";
+import { BOARD_LICENSURE_EXAM_PROFILE_ID } from "./boardLicensureProfile";
 
 export interface ExamProfileCatalogEntry {
   id: string;
@@ -38,11 +41,11 @@ export const EXAM_PROFILE_CATALOG: ExamProfileCatalogEntry[] = [
     available: false,
   },
   {
-    id: "board-licensure",
+    id: BOARD_LICENSURE_EXAM_PROFILE_ID,
     label: "Board / Licensure",
     shortLabel: "Board",
-    description: "Board and licensure exams",
-    available: false,
+    description: "Pass/fail board exam — foundational + clinical sections",
+    available: true,
   },
   {
     id: "course-exam",

@@ -17,8 +17,8 @@ import { getUserBookCatalogue } from "@/lib/apex/bookCatalogue";
 import type { CatalogueBook } from "@/lib/apex/bookCatalogue";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 import { EXAM_PROFILE_CATALOG } from "@/lib/examEngine/profiles/profileCatalog";
-import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
-import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/customProfile";
+import { DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
+import { resolveProfileById } from "@/lib/examEngine/profiles/profileRegistry";
 import type { ExamProfile } from "@/lib/examEngine/types";
 
 // P0 fix — the dashboard used to hardcode DAT_EXAM_PROFILE into every
@@ -31,7 +31,7 @@ import type { ExamProfile } from "@/lib/examEngine/types";
 const ACTIVE_PROFILE_STORAGE_KEY = "avrrio:testlab:activeProfileId";
 
 function resolveExamProfile(id: string): ExamProfile {
-  return id === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
+  return resolveProfileById(id);
 }
 
 /** P1 fix — /apex/generator only reads its initial profile from the

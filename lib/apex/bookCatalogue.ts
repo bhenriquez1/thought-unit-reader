@@ -142,8 +142,8 @@ export const PRACTICE_MODES: PracticeModeConfig[] = [
   {
     id: "full-dat",
     icon: "🎯",
-    label: "Full DAT Exam",
-    description: "Complete Prometric simulation · all sections",
+    label: "Full Simulation",
+    description: "Complete timed simulation · all sections",
     questionRange: [60, 280],
     timed: true,
     immediateReview: false,

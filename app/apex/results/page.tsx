@@ -13,6 +13,7 @@ import { buildStudyRecommendation } from '@/lib/examEngine/recommendationEngine'
 import type { WrongAnswerForReview } from '@/lib/examEngine/recommendationEngine';
 import { DAT_EXAM_PROFILE, DAT_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
+import { resolveProfileById } from '@/lib/examEngine/profiles/profileRegistry';
 import { legacyToDifficulty } from '@/lib/examEngine/legacyAdapter';
 import type { QuestionAttempt, QuestionType, StudyRecommendation } from '@/lib/examEngine/types';
 import type { ExamProfile } from '@/lib/examEngine/types';
@@ -25,7 +26,7 @@ import type { ExamProfile } from '@/lib/examEngine/types';
 // back silently empty and its weakness report was thresholded using DAT's
 // numbers. Resolve the real profile from the exam's own questions instead.
 function resolveExamProfile(examProfileId: string | undefined): ExamProfile {
-  return examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
+  return resolveProfileById(examProfileId);
 }
 import { useTocStore } from '@/lib/stores/tocStore';
 import { chapterForPage } from '@/lib/apex/bookCatalogue';

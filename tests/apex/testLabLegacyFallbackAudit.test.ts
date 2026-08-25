@@ -53,15 +53,16 @@ describe("TestLab legacy-fallback audit — /apex has exactly one live render pa
 });
 
 describe("TestLab legacy-fallback audit — TestLab visibly supports more than DAT", () => {
-  it("REQUIRED: the exam profile catalog lists more than the two implemented profiles", () => {
+  it("REQUIRED: the exam profile catalog lists more than the three implemented profiles", () => {
     const { EXAM_PROFILE_CATALOG } = require("@/lib/examEngine/profiles/profileCatalog");
-    expect(EXAM_PROFILE_CATALOG.length).toBeGreaterThan(2);
+    expect(EXAM_PROFILE_CATALOG.length).toBeGreaterThan(3);
     const ids = EXAM_PROFILE_CATALOG.map((p: { id: string }) => p.id);
     expect(ids).toContain("dat");
     expect(ids).toContain("custom");
+    expect(ids).toContain("board-licensure");
     const available = EXAM_PROFILE_CATALOG.filter((p: { available: boolean }) => p.available);
     const unavailable = EXAM_PROFILE_CATALOG.filter((p: { available: boolean }) => !p.available);
-    expect(available.length).toBe(2);
+    expect(available.length).toBe(3);
     expect(unavailable.length).toBeGreaterThan(0);
   });
 
