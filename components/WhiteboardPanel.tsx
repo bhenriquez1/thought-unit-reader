@@ -318,6 +318,13 @@ export default function WhiteboardPanel({
         // unrelated) thesis the moment they click Save.
         pageThesisOverride: pageTitle ?? undefined,
       });
+      if (resolvedDocumentId) {
+        note.documentId = resolvedDocumentId;
+        note.pageTruthKey = buildPageTruthKey(resolvedDocumentId, currentPage ?? 0);
+      }
+      if (canonicalEntries?.length) {
+        note.thoughtUnitIds = canonicalEntries.map((e) => e.id);
+      }
       await saveUltraNote(note);
       flashAction("✅ Saved to NoteLab");
     } catch (err) {
