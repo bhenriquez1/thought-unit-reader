@@ -51,59 +51,15 @@ describe("lib/examEngine/profileGeneration.ts — book-grounded generation (prod
   });
 });
 
-describe("app/apex/page.tsx — Today/Full-Length Exams tabs require a book before generating (product split, Phase 1 item 1)", () => {
-  it("REQUIRED: loads the user's book catalogue via getUserBookCatalogue, the same source app/apex/generator/page.tsx uses", () => {
-    expect(PAGE_SRC).toMatch(/import \{ getUserBookCatalogue \} from "@\/lib\/apex\/bookCatalogue";/);
-    expect(PAGE_SRC).toMatch(/function usePrimaryApexBook\(\)/);
+describe("app/apex/page.tsx — canonical builder entry requires a grounded Reader source", () => {
+  it("loads the same catalogue as the detailed generator and disables both build actions without a selected book", () => {
+    expect(PAGE_SRC).toMatch(/getUserBookCatalogue\(\)/);
+    expect(PAGE_SRC).toMatch(/setSelectedBookId/);
+    expect((PAGE_SRC.match(/disabled=\{!selectedBook\}/g) ?? []).length).toBe(2);
   });
 
-  it("REQUIRED: handleStartRecommended bails out and the Start Now button is disabled with no eligible book", () => {
-    const idx = PAGE_SRC.indexOf("const handleStartRecommended");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(!currentRecommendation \|\| !primaryBook \|\| !isDatActive\) return;/);
-    expect(block).toMatch(/generateWeakTopicsPracticeExam\(\s*primaryBook\.bookId,\s*primaryBook\.bookTitle,/);
-    const buttonIdx = PAGE_SRC.indexOf("onClick={handleStartRecommended}");
-    expect(buttonIdx).toBeGreaterThan(-1);
-    const buttonBlock = PAGE_SRC.slice(buttonIdx, buttonIdx + 200);
-    expect(buttonBlock).toMatch(/disabled=\{launching \|\| !primaryBook \|\| !isDatActive\}/);
-  });
-
-  it("REQUIRED: handleStartSimulation bails out and both simulation buttons are disabled with no eligible book", () => {
-    const idx = PAGE_SRC.indexOf("const handleStartSimulation");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(idx, idx + 700);
-    expect(block).toMatch(/if \(!primaryBook\) return;/);
-    expect(block).toMatch(/generateFullSimulationExam\(primaryBook\.bookId, primaryBook\.bookTitle, resolveExamProfile\(activeProfileId\)\)/);
-    const occurrences = (PAGE_SRC.match(/disabled=\{seeding \|\| !primaryBook\}/g) ?? []).length;
-    expect(occurrences).toBe(2); // Start Practice Simulation + Prometric Mode
-  });
-
-  it("shows an empty-state message pointing back to the Reader, matching the existing generator page's wording, instead of a silently-disabled button with no explanation", () => {
-    const occurrences = (PAGE_SRC.match(/No book with notes yet/g) ?? []).length;
-    expect(occurrences).toBe(2); // TodayTab + FullExamsTab
-  });
-
-  it("REQUIRED: Start Now surfaces a launch error to the user (e.g. an empty-build rejection from profileGeneration.ts) instead of just silently re-enabling the button", () => {
-    const idx = PAGE_SRC.indexOf("const handleStartRecommended");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(idx, idx + 900);
-    expect(block).toMatch(/setLaunchError\(err instanceof Error \? err\.message : "Could not prepare the exam\. Please try again\."\);/);
-    expect(PAGE_SRC).toMatch(/\{launchError && \(/);
-  });
-
-  it("REQUIRED: FullExamsTab no longer badges the panel 'Official Format' — generateFullSimulationExam sources one book only (usePrimaryApexBook picks the single book with the most notes), buildExam neither combines multiple subject books nor fills every blueprint section's quota, so labeling it an official-format simulation was misleading", () => {
-    const idx = PAGE_SRC.indexOf("{/* Full simulation panel */}");
-    expect(idx).toBeGreaterThan(-1);
-    const block = PAGE_SRC.slice(idx, idx + 1200);
-    expect(block).not.toMatch(/Official Format/);
-    expect(block).toMatch(/DAT Blueprint/);
-  });
-
-  it("REQUIRED: names the single source book and warns that section coverage may be thin/defaulted, instead of implying full official coverage", () => {
-    const idx = PAGE_SRC.indexOf("{/* Full simulation panel */}");
-    const block = PAGE_SRC.slice(idx, idx + 1700);
-    expect(block).toMatch(/Questions are generated from \{primaryBook \? <span className="text-gray-300 font-medium">\{primaryBook\.bookTitle\}<\/span> : "your primary book"\} only/);
-    expect(block).toMatch(/default to Survey of Natural Sciences/);
+  it("routes generation through the detailed source-grounded builder rather than launching a legacy static bank", () => {
+    expect(PAGE_SRC).toMatch(/router\.push\(buildGeneratorUrl\(profileId, selectedBookId \|\| undefined, mode\)\)/);
+    expect(PAGE_SRC).not.toMatch(/ExamGenerator|generateWeakTopicsPracticeExam|generateFullSimulationExam/);
   });
 });

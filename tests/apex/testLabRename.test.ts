@@ -16,7 +16,7 @@ function read(relPath: string): string {
 describe("TestLab rename — visible copy only, URL stays /apex", () => {
   it("REQUIRED: app/apex/page.tsx dashboard header reads 'Avrrio TestLab' — the active exam profile (DAT) is a switcher, not baked into the wordmark", () => {
     const src = read("app/apex/page.tsx");
-    expect(src).toMatch(/🎯 Avrrio TestLab<\/h1>/);
+    expect(src).toMatch(/Avrrio TestLab<\/h1>/);
     expect(src).not.toMatch(/Avrrio TestLab <span className="text-blue-300 font-bold">— DAT<\/span>/);
     expect(src).not.toMatch(/Avrrio Exam Forge/);
   });
@@ -26,14 +26,12 @@ describe("TestLab rename — visible copy only, URL stays /apex", () => {
     expect(src).toMatch(/📊 Avrrio TestLab Results/);
   });
 
-  it("pattern pages' back-links renamed, without touching the /apex route they link to", () => {
+  it("retired pattern pages preserve old bookmarks by redirecting to canonical /apex", () => {
     const patterns = read("app/apex/patterns/page.tsx");
-    expect(patterns).toMatch(/← TestLab/);
-    expect(patterns).toMatch(/href="\/apex"/);
+    expect(patterns).toMatch(/redirect\("\/apex"\)/);
 
     const flashcards = read("app/apex/patterns/flashcards/page.tsx");
-    expect(flashcards).toMatch(/← Back to TestLab/);
-    expect(flashcards).toMatch(/href="\/apex"/);
+    expect(flashcards).toMatch(/redirect\("\/apex"\)/);
   });
 
   it("pages/index.tsx nav button, tooltip, confirm dialog, and the Practice Exams card all renamed consistently", () => {
@@ -57,7 +55,7 @@ describe("TestLab rename — visible copy only, URL stays /apex", () => {
     // above still targeting /apex. Spot-check that the internal lib/store
     // directory names referenced from the dashboard weren't touched either.
     const src = read("app/apex/page.tsx");
-    expect(src).toMatch(/from "@\/lib\/stores\/apexEngineStore"/);
-    expect(src).toMatch(/from "@\/lib\/datApex\/activeBlueprint"/);
+    expect(src).toMatch(/from "@\/lib\/datApex\/idbStore"/);
+    expect(src).toMatch(/from "@\/lib\/apex\/bookCatalogue"/);
   });
 });

@@ -3,7 +3,6 @@
 // localStorage data (the "readiness" store, the mistake log). Before this,
 // three call sites used three different hardcoded literals:
 //   app/apex/proctor/page.tsx  → "demo-user"  (writes readiness + attempt)
-//   components/apex/TrainingArena.tsx → "demo-user"  (reads readiness)
 //   app/apex/page.tsx          → "default"    (reads readiness)
 //   app/apex/results/page.tsx  → "demo-user"  (writes mistake log)
 // Since the readiness IDB store is keyed by userId, the dashboard

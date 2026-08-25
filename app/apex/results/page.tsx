@@ -456,13 +456,13 @@ export default function ExamResultsPage() {
         <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-3">
           <span className="text-sm text-gray-400">Next:</span>
           <Link
-            href="/apex?tab=mistakes"
+            href="/apex/review"
             className="text-sm px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
           >
             🔍 Review Weaknesses
           </Link>
           <Link
-            href="/apex?tab=today"
+            href="/apex"
             className="text-sm px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg font-medium transition-colors"
           >
             🎯 Practice Weak Areas

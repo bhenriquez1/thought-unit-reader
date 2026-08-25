@@ -34,7 +34,7 @@ describe("ElenaChildWorkspace — owns its own document identity (no longer mirr
     expect(SRC).toMatch(/uploadChildBook/);
     expect(SRC).toMatch(/loadChildBookFileUrl/);
     expect(SRC).toMatch(/listChildLibraryEntries/);
-    expect(SRC).toMatch(/pickMostRecentEntry/);
+    expect(SRC).toMatch(/recordBookOpened/);
   });
 
   it("REQUIRED: library entries are (re)loaded whenever the active profile id changes — switching learners must not leak books across children", () => {

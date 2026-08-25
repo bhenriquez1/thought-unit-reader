@@ -51,12 +51,6 @@ describe("Every former demo-user/default call site now routes through getCurrent
     expect(src).toMatch(/updateReadinessAfterAttempt\(getCurrentApexUserId\(\), result\)/);
   });
 
-  it("REQUIRED: components/apex/TrainingArena.tsx — readiness read", () => {
-    const src = read("components/apex/TrainingArena.tsx");
-    expect(src).not.toMatch(/"demo-user"/);
-    expect(src).toMatch(/loadReadinessState\(getCurrentApexUserId\(\)\)/);
-  });
-
   it("REQUIRED: app/apex/page.tsx — readiness read, previously the mismatched \"default\" key", () => {
     const src = read("app/apex/page.tsx");
     expect(src).not.toMatch(/loadReadinessState\("default"\)/);

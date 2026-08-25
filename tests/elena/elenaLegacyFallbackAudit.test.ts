@@ -33,6 +33,34 @@ describe("Elena legacy-fallback audit — /elena has exactly one live render pat
   });
 });
 
+describe("Elena canonical experience — reader first, not the old rewards dashboard", () => {
+  it("opens the active learner directly in Reading", () => {
+    const src = read(WORKSPACE_FILE);
+    expect(src).toMatch(/useState<ElenaTab>\("reading"\)/);
+    expect(src).not.toMatch(/setActiveTab\("home"\)/);
+  });
+
+  it("the primary navigation contains learning destinations, not old Home/Today/Challenge dashboard tabs", () => {
+    const src = read(WORKSPACE_FILE);
+    const start = src.indexOf("const ELENA_TABS");
+    const block = src.slice(start, start + 900);
+    expect(block).toMatch(/label: "Reader"/);
+    expect(block).toMatch(/label: "Books"/);
+    expect(block).toMatch(/label: "Vocabulary"/);
+    expect(block).toMatch(/label: "Practice"/);
+    expect(block).toMatch(/label: "Progress"/);
+    expect(block).not.toMatch(/label: "Home"|label: "Today"|label: "Challenge"/);
+  });
+
+  it("uses a full viewport background and a learner-specific Reader empty state", () => {
+    const workspace = read(WORKSPACE_FILE);
+    const reader = read("components/elena/ChildReaderTab.tsx");
+    expect(workspace).toMatch(/min-h-dvh h-full w-full/);
+    expect(reader).toMatch(/learnerName/);
+    expect(reader).toMatch(/Choose a book and begin/);
+  });
+});
+
 describe("Elena legacy-fallback audit — the main workspace uses the available viewport width", () => {
   it("REQUIRED: the tab-content wrapper is no longer pinned to max-w-2xl", () => {
     const src = read(WORKSPACE_FILE);
@@ -45,13 +73,22 @@ describe("Elena legacy-fallback audit — the main workspace uses the available 
     expect(src).toMatch(/flex overflow-x-auto scrollbar-hide max-w-6xl mx-auto/);
   });
 
-  it("REQUIRED: the Explore destinations grid uses more columns on wider viewports instead of staying a fixed 2-column list", () => {
+  it("REQUIRED: removed dashboard destinations cannot remain as hidden render branches", () => {
     const src = read(WORKSPACE_FILE);
-    expect(src).toMatch(/grid grid-cols-2 md:grid-cols-3 gap-3/);
+    expect(src).not.toMatch(/activeTab === "home"|activeTab === "today"|activeTab === "challenge"/);
+    expect(src).not.toMatch(/function HomeTab|function TodayGoalTab|function WeeklyChallengeTab/);
   });
 });
 
 describe("Elena legacy-fallback audit — visible ← Reader control, distinct from Parent", () => {
+  it("REQUIRED: onboarding also has a visible route back to Avrrio Reader", () => {
+    const src = read(WORKSPACE_FILE);
+    const setupStart = src.indexOf("export function SetupForm");
+    const setup = src.slice(setupStart, setupStart + 7000);
+    expect(setup).toMatch(/aria-label="Back to Avrrio Reader"/);
+    expect(setup).toMatch(/href="\/"/);
+  });
+
   it("REQUIRED: the header renders a Link back to the main Avrrio Reader route", () => {
     const src = read(WORKSPACE_FILE);
     expect(src).toMatch(/import Link from "next\/link";/);
@@ -71,9 +108,10 @@ describe("Elena legacy-fallback audit — visible ← Reader control, distinct f
 });
 
 describe("Elena legacy-fallback audit — no-book state is a full kid-friendly invitation, not a bare line of text", () => {
-  it("REQUIRED: HomeTab's no-book state uses the 'choose your next adventure' framing with a real CTA, inside the same full workspace shell (not a separate tiny dashboard)", () => {
-    const src = read(WORKSPACE_FILE);
-    expect(src).toMatch(/Let's choose your next adventure!/);
-    expect(src).toMatch(/Choose or Start Reading/);
+  it("REQUIRED: the canonical Reader owns the no-book state and exposes real library/upload actions", () => {
+    const src = read("components/elena/ChildReaderTab.tsx");
+    expect(src).toMatch(/Choose a book and begin/);
+    expect(src).toMatch(/Upload a Book/);
+    expect(src).toMatch(/onOpenBook/);
   });
 });

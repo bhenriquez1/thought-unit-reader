@@ -14,7 +14,7 @@ import path from "path";
 const STORE_FILE       = path.resolve(__dirname, "../../lib/recalllab/recallStore.ts");
 const RIGHT_PANEL_FILE = path.resolve(__dirname, "../../components/reader/RightPanel.tsx");
 const INDEX_FILE       = path.resolve(__dirname, "../../pages/index.tsx");
-const RECALL_LAB_FILE  = path.resolve(__dirname, "../../components/recalllab/LegacyRecallLab.tsx");
+const RECALL_LAB_FILE  = path.resolve(__dirname, "../../components/recalllab/RecallLab.tsx");
 const RECALL2_SESSION_FILE = path.resolve(__dirname, "../../components/recalllab/Recall2Session.tsx");
 
 describe("recallStore.ts — RecallSet carries documentId, and buildRecallSetFromView threads opts through", () => {
@@ -104,35 +104,23 @@ describe("pages/index.tsx — the RightPanel call site and Focus-Cycle auto-save
   });
 });
 
-describe("RecallLab.tsx — Quiz Me and Quick Recall persist the set before opening the session", () => {
+describe("RecallLab.tsx — the canonical Recall 2 surface preserves legacy data as a migration source", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(RECALL_LAB_FILE, "utf8"); });
 
-  it("saveRecallSet is imported", () => {
-    expect(src).toMatch(/saveRecallSet,/);
+  it("loads both synchronous and IndexedDB-backed RecallSet data", () => {
+    expect(src).toMatch(/getAllRecallSets,/);
+    expect(src).toMatch(/getAllRecallSetsAsync,/);
   });
 
-  it("REQUIRED: onQuizMe awaits saveRecallSet before calling setView({ kind: \"session\" })", () => {
-    const idx = src.indexOf("onQuizMe={async (detail) => {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 900);
-    const saveIdx = block.indexOf("await saveRecallSet(set);");
-    const setViewIdx = block.indexOf('setView({ kind: "session", set });');
-    expect(saveIdx).toBeGreaterThan(-1);
-    expect(setViewIdx).toBeGreaterThan(-1);
-    expect(saveIdx).toBeLessThan(setViewIdx);
+  it("REQUIRED: scopes migration input to the collision-resistant document identity", () => {
+    expect(src).toMatch(/function forDocument\(sets: RecallSet\[\], documentId: string\)/);
+    expect(src).toMatch(/set\.documentId === documentId/);
   });
 
-  it("REQUIRED: Quick Recall's onClick awaits saveRecallSet before calling setView({ kind: \"session\" })", () => {
-    const idx = src.indexOf("onClick={async () => {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 1100);
-    expect(block).toMatch(/buildRecallSetFromTeachingSequence\(currentPageNoteCards, \{/);
-    const saveIdx = block.indexOf("await saveRecallSet(set);");
-    const setViewIdx = block.indexOf('setView({ kind: "session", set });');
-    expect(saveIdx).toBeGreaterThan(-1);
-    expect(setViewIdx).toBeGreaterThan(-1);
-    expect(saveIdx).toBeLessThan(setViewIdx);
+  it("REQUIRED: renders Recall2Lab and does not restore the classic dashboard/session UI", () => {
+    expect(src).toMatch(/<Recall2Lab/);
+    expect(src).not.toMatch(/setView\(\{ kind: "session"|RecallTabBar|LegacyRecallLab/);
   });
 });
 
