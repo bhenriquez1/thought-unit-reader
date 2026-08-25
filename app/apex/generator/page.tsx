@@ -9,7 +9,9 @@ import { buildExam } from '@/lib/examEngine/examBuilder';
 import { builtExamToGeneratedExam } from '@/lib/examEngine/legacyAdapter';
 import { DAT_EXAM_PROFILE } from '@/lib/examEngine/profiles/datProfile';
 import { CUSTOM_EXAM_PROFILE, CUSTOM_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/customProfile';
+import { BOARD_LICENSURE_EXAM_PROFILE_ID } from '@/lib/examEngine/profiles/boardLicensureProfile';
 import { EXAM_PROFILE_CATALOG } from '@/lib/examEngine/profiles/profileCatalog';
+import { resolveProfileById } from '@/lib/examEngine/profiles/profileRegistry';
 import type { ExamProfile } from '@/lib/examEngine/types';
 import {
   getUserBookCatalogue,
@@ -72,14 +74,18 @@ function ExamGeneratorPage() {
 
   // --- State ---
   // Product-split Phase 1, item 2 — proves ExamProfile generalizes beyond
-  // DAT: 'dat' (the official blueprint) or 'custom' (no external
-  // standardized-test blueprint, draws entirely from the selected source).
+  // DAT: 'dat' (the official blueprint), 'custom' (no external
+  // standardized-test blueprint, draws entirely from the selected source),
+  // or (C5) 'board-licensure' (pass/fail, foundational + clinical sections).
   // Deep-links from the TestLab dashboard's exam-profile switcher
-  // (/apex/generator?examType=custom) preselect the profile here.
-  const [examProfileId, setExamProfileId] = useState<'dat' | typeof CUSTOM_EXAM_PROFILE_ID>(
-    () => (searchParams?.get('examType') === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE_ID : 'dat'),
-  );
-  const selectedProfile: ExamProfile = examProfileId === CUSTOM_EXAM_PROFILE_ID ? CUSTOM_EXAM_PROFILE : DAT_EXAM_PROFILE;
+  // (/apex/generator?examType=custom) preselect the profile here — any
+  // examType that isn't a real, available catalog entry falls back to 'dat',
+  // same guard app/apex/page.tsx's readStoredActiveProfileId uses.
+  const [examProfileId, setExamProfileId] = useState<string>(() => {
+    const param = searchParams?.get('examType');
+    return param && EXAM_PROFILE_CATALOG.some((p) => p.id === param && p.available) ? param : 'dat';
+  });
+  const selectedProfile: ExamProfile = resolveProfileById(examProfileId);
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
   const [bookId, setBookId] = useState<string>(books[0]?.bookId ?? '');
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
@@ -211,7 +217,7 @@ function ExamGeneratorPage() {
   // built under the previous profile must not survive the switch, or the
   // summary panel can show the newly selected profile while Start launches
   // the stale one. Same reset shape as handleModeChange/handleBookSelect above.
-  function handleProfileChange(id: 'dat' | typeof CUSTOM_EXAM_PROFILE_ID) {
+  function handleProfileChange(id: string) {
     setExamProfileId(id);
     setGeneratedExam(null);
     setGenerationError(null);
@@ -371,6 +377,17 @@ function ExamGeneratorPage() {
                 >
                   <div className="font-medium text-white text-sm">Custom Exam</div>
                   <div className="text-xs text-gray-400 mt-0.5">No external blueprint — your source only</div>
+                </button>
+                <button
+                  onClick={() => handleProfileChange(BOARD_LICENSURE_EXAM_PROFILE_ID)}
+                  className={`text-left p-3 rounded-lg border-2 transition-all ${
+                    examProfileId === BOARD_LICENSURE_EXAM_PROFILE_ID
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                  }`}
+                >
+                  <div className="font-medium text-white text-sm">Board / Licensure</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Pass/fail — foundational + clinical sections</div>
                 </button>
                 {/* TestLab is built to support more than the DAT — these
                     profiles are visibly part of the product even before
@@ -777,7 +794,9 @@ function ExamGeneratorPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Exam Type:</span>
-                  <span className="text-white font-medium">{examProfileId === 'dat' ? 'DAT' : 'Custom'}</span>
+                  <span className="text-white font-medium">
+                    {EXAM_PROFILE_CATALOG.find((p) => p.id === examProfileId)?.shortLabel ?? 'DAT'}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span className="text-gray-400">Book:</span>
