@@ -4,8 +4,9 @@
 // phase cards for targeted sessions, blueprint list grouped by category,
 // and import from existing RecallSets.
 
-import React, { useCallback, useMemo, useState } from "react";
-import { computeRecall2Stats, buildSessionQueue } from "@/lib/recalllab/recall2Srs";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { computeRecall2Stats, buildSessionQueue, type RecallWeaknessSignal } from "@/lib/recalllab/recall2Srs";
+import { fetchRecallWeaknessSignals } from "@/lib/recalllab/recall2LearningStateSignals";
 import { saveBlueprintsDedup } from "@/lib/recalllab/recall2Store";
 import { recallSetToBlueprints } from "@/lib/recalllab/recall2Builder";
 import type { RecallBlueprint, RecallCategory, SessionPhase, Recall2Stats } from "@/lib/recalllab/recall2Types";
@@ -80,7 +81,21 @@ export default function Recall2Dashboard({
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [expandedCat, setExpandedCat] = useState<RecallCategory | null>(null);
 
-  const stats  = useMemo(() => computeRecall2Stats(blueprints), [blueprints]);
+  // C3 fix — Weak-Area Drill signal from the shared Learning State Engine
+  // (TestLab/Elena performance on the same concept, not just Recall's own
+  // history). Best-effort and non-blocking: stats/queues render with the
+  // prior local-only behavior until this resolves, then re-derive once it
+  // does — never a loading gate on the dashboard itself.
+  const [nodeSignals, setNodeSignals] = useState<Map<string, RecallWeaknessSignal>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    fetchRecallWeaknessSignals(blueprints).then((signals) => {
+      if (!cancelled) setNodeSignals(signals);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [blueprints]);
+
+  const stats  = useMemo(() => computeRecall2Stats(blueprints, nodeSignals), [blueprints, nodeSignals]);
   const today  = new Date().toISOString().slice(0, 10);
   const hasDue = blueprints.some(bp => bp.dueDate <= today);
 
@@ -124,19 +139,19 @@ export default function Recall2Dashboard({
   // ── Session launchers ────────────────────────────────────────────────
 
   function startPhase(phase: SessionPhase) {
-    const queue = buildSessionQueue(blueprints, [phase]);
+    const queue = buildSessionQueue(blueprints, [phase], nodeSignals);
     if (queue.length === 0) return;
     onStartSession(queue, [phase]);
   }
 
   function startFullSession() {
-    const queue = buildSessionQueue(blueprints, ["warmup", "weak", "clinical", "mixed", "mastery"]);
+    const queue = buildSessionQueue(blueprints, ["warmup", "weak", "clinical", "mixed", "mastery"], nodeSignals);
     if (queue.length === 0) return;
     onStartSession(queue, ["warmup", "weak", "clinical", "mixed", "mastery"]);
   }
 
   function startDueOnly() {
-    const queue = buildSessionQueue(blueprints, ["mixed"]);
+    const queue = buildSessionQueue(blueprints, ["mixed"], nodeSignals);
     if (queue.length === 0) return;
     onStartSession(queue, ["mixed"]);
   }
@@ -190,7 +205,7 @@ export default function Recall2Dashboard({
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {PHASE_CARDS.map(pc => {
-              const count = buildSessionQueue(blueprints, [pc.phase]).length;
+              const count = buildSessionQueue(blueprints, [pc.phase], nodeSignals).length;
               const active = count > 0;
               return (
                 <button

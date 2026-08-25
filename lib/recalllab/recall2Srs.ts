@@ -76,11 +76,42 @@ function retention(bp: RecallBlueprint): number {
   return Math.exp(-daysSince / stability);
 }
 
-function isWeak(bp: RecallBlueprint): boolean {
-  return (
+// C3 fix — Weak-Area Drill used to read only Recall's own local SM-2 state
+// (easeFactor/confidenceHistory), never the shared Learning State Engine a
+// card's knowledgeNodeId already links to (lib/knowledge/knowledgeGraphSchema.ts's
+// KnowledgeNodeProgress, the SAME record TestLab/Elena/Recall itself all
+// write into). A concept a student keeps missing on TestLab exams never
+// surfaced here unless it ALSO happened to look weak by Recall's own
+// history — "Test Lab errors" was silently absent from the signal list the
+// roadmap calls for. nodeSignals is optional and keyed by knowledgeNodeId
+// so every existing caller that doesn't fetch it is unaffected — falls back
+// to exactly the prior local-only behavior.
+
+/** The subset of KnowledgeNodeProgress Weak-Area Drill actually needs —
+ *  callers build this from lib/knowledge/knowledgeGraphStore.ts's
+ *  getNodeProgress(), never invented independently (no second mastery
+ *  model — see lib/recalllab/recall2LearningStateSignals.ts). */
+export interface RecallWeaknessSignal {
+  masteryScore: number; // 0-100, the shared composite mastery score
+  datPerformance: { attempts: number; correct: number } | null;
+}
+
+function isWeakByLearningState(signal: RecallWeaknessSignal | undefined): boolean {
+  if (!signal) return false;
+  if (signal.masteryScore < 40) return true;
+  if (signal.datPerformance && signal.datPerformance.attempts >= 2) {
+    const missRate = 1 - signal.datPerformance.correct / signal.datPerformance.attempts;
+    if (missRate >= 0.5) return true;
+  }
+  return false;
+}
+
+function isWeak(bp: RecallBlueprint, nodeSignals?: Map<string, RecallWeaknessSignal>): boolean {
+  const locallyWeak =
     bp.easeFactor < 1.7 ||
-    bp.confidenceHistory.slice(-3).filter(c => c === "guessed" || c === "blank").length >= 2
-  );
+    bp.confidenceHistory.slice(-3).filter(c => c === "guessed" || c === "blank").length >= 2;
+  if (locallyWeak) return true;
+  return isWeakByLearningState(bp.knowledgeNodeId ? nodeSignals?.get(bp.knowledgeNodeId) : undefined);
 }
 
 function isMastered(bp: RecallBlueprint): boolean {
@@ -89,7 +120,10 @@ function isMastered(bp: RecallBlueprint): boolean {
 
 // ── Dashboard stats ───────────────────────────────────────────────────────
 
-export function computeRecall2Stats(blueprints: RecallBlueprint[]): Recall2Stats {
+export function computeRecall2Stats(
+  blueprints: RecallBlueprint[],
+  nodeSignals?: Map<string, RecallWeaknessSignal>,
+): Recall2Stats {
   const today = isoToday();
   let due = 0, weak = 0, forgotten = 0, mastered = 0;
 
@@ -98,14 +132,14 @@ export function computeRecall2Stats(blueprints: RecallBlueprint[]): Recall2Stats
       mastered++;
     } else if (retention(bp) < 0.5) {
       forgotten++;
-    } else if (isWeak(bp)) {
+    } else if (isWeak(bp, nodeSignals)) {
       weak++;
     } else if (bp.dueDate <= today) {
       due++;
     }
   }
 
-  const activeCount = blueprints.filter(bp => bp.dueDate <= today || isWeak(bp)).length;
+  const activeCount = blueprints.filter(bp => bp.dueDate <= today || isWeak(bp, nodeSignals)).length;
   return {
     due,
     weak,
@@ -125,6 +159,7 @@ export function computeRecall2Stats(blueprints: RecallBlueprint[]): Recall2Stats
 export function buildSessionQueue(
   blueprints: RecallBlueprint[],
   phases: SessionPhase[],
+  nodeSignals?: Map<string, RecallWeaknessSignal>,
 ): RecallBlueprint[] {
   const today  = isoToday();
   const added  = new Set<string>();
@@ -143,7 +178,7 @@ export function buildSessionQueue(
 
   if (phases.includes("weak")) {
     blueprints
-      .filter(bp => isWeak(bp))
+      .filter(bp => isWeak(bp, nodeSignals))
       .sort((a, b) => a.easeFactor - b.easeFactor)
       .forEach(add);
   }
