@@ -22,6 +22,7 @@ import DecisionProcessMap from './reader/DecisionProcessMap';
 import { extractDecisionProcessMap } from '@/lib/insights/extractDecisionProcessMap';
 import { detectDomainPreset, getDomainPreset, getKindGroups } from '@/lib/insights/domainPresets';
 import { useReadingFocusStore } from '@/lib/readingFocus/readingFocusStore';
+import { detectContentProfile } from '@/lib/content/contentProfile';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -258,6 +259,10 @@ export default function PureReaderView({
   // Navigator) below it — collapsed by default to keep the sidebar compact.
   const [legendCollapsed, setLegendCollapsed] = useState(true);
   const [pageGuideOpen, setPageGuideOpen] = useState(false);
+  const contentProfile = useMemo(
+    () => detectContentProfile({ bookTitle, pageText }),
+    [bookTitle, pageText],
+  );
   // Level 4 — manual domain-preset override; null means "follow auto-detection".
   const [domainPresetOverride, setDomainPresetOverride] = useState<string | null>(null);
 
@@ -586,7 +591,12 @@ export default function PureReaderView({
   });
 
   return (
-    <div className="h-full flex flex-col bg-gray-900" data-testid="pure-reader-view">
+    <div
+      className="h-full flex flex-col bg-gray-900"
+      data-testid="pure-reader-view"
+      data-content-profile={contentProfile.id}
+      data-thought-unit-engine="active"
+    >
       {/* Minimal Toolbar - Only essential reading controls */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
         {/* Page Navigation */}
@@ -626,9 +636,11 @@ export default function PureReaderView({
             type="button"
             onClick={() => setPageGuideOpen((open) => !open)}
             aria-expanded={pageGuideOpen}
-            className="absolute left-0 top-3 z-40 rounded-r-xl border border-l-0 border-cyan-400/25 bg-slate-950/95 px-3 py-2 text-xs font-semibold text-cyan-200 shadow-lg hover:bg-slate-900"
+            aria-label={pageGuideOpen ? "Close Page Guide" : "Open Page Guide"}
+            title="Page Guide - optional view of the hidden Thought Unit engine"
+            className="absolute left-0 top-3 z-40 rounded-r-lg border border-l-0 border-cyan-400/20 bg-slate-950/90 px-2 py-1.5 text-[10px] font-semibold text-cyan-200/80 shadow-lg hover:bg-slate-900 hover:text-cyan-100"
           >
-            {pageGuideOpen ? "Close Page Guide" : "Page Guide"}
+            {pageGuideOpen ? "× Guide" : "Guide"}
           </button>
 
         {/* Thought Units belong to the source. They open as a drawer attached

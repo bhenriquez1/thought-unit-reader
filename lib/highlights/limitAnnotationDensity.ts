@@ -186,9 +186,12 @@ export function limitAnnotationDensity(
   if (Array.isArray(pageRole)) {
     const roles = new Set(pageRole);
     const dense = roles.has("procedure-sequence") || roles.has("clinical-diagnostic");
+    const visuallyStructured = roles.has("equation-calculation") || roles.has("worked-example") || roles.has("table-figure-driven");
     const mixed = roles.has("mixed") || roles.size > 1;
     const simple = roles.size === 1 && (roles.has("definition-heavy") || roles.has("narrative-history"));
-    const ceiling = dense ? 15 : mixed ? 12 : simple ? 4 : 10;
+    // Math/graph pages need a few exact anchors plus region outlines; coloring
+    // every explanatory sentence makes the equation and figure harder to see.
+    const ceiling = dense ? 15 : visuallyStructured ? 6 : mixed ? 8 : simple ? 4 : 8;
     const seen = new Set<string>();
     const deduped = grounded.filter(item => {
       const key = item.groundedText.toLowerCase().replace(/\s+/g, " ").trim();
