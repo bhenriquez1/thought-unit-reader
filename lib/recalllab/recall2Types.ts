@@ -15,6 +15,19 @@ export type RecallCategory =
 /** 4-level confidence rating replacing Easy / Medium / Hard. */
 export type ConfidenceLevel = "easy" | "unsure" | "guessed" | "blank";
 
+/** Retrieval interaction selected for the evidence and Learning State. This
+ * remains separate from exam simulation: every activity teaches or repairs. */
+export type RecallActivityType =
+  | "flashcard"
+  | "active-recall"
+  | "explain-back"
+  | "fill-blank"
+  | "sequencing"
+  | "diagram-recall"
+  | "misconception-repair"
+  | "application"
+  | "exam-style";
+
 /** Provenance for cards assembled by the canonical Phase 4 retrieval path. */
 export type RecallSourceKind =
   | "canonical-thought-unit"
@@ -48,6 +61,8 @@ export interface RecallBlueprint {
   hint?: string;
   /** One sentence describing what mastering this card proves. */
   learningObjective?: string;
+  /** How the learner should retrieve this evidence, chosen adaptively. */
+  activityType?: RecallActivityType;
 
   // Provenance
   /** Human-readable source (e.g. "right-panel", "notelab"). */

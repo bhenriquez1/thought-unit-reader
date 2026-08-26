@@ -38,6 +38,18 @@ const CATEGORY_COLOR: Record<string, string> = {
   transfer:      "#c084fc",
 };
 
+const ACTIVITY_LABEL: Record<string, string> = {
+  "flashcard": "Flashcard",
+  "active-recall": "Active recall",
+  "explain-back": "Explain back",
+  "fill-blank": "Fill in the blank",
+  "sequencing": "Sequence",
+  "diagram-recall": "Whiteboard reconstruction",
+  "misconception-repair": "Misconception repair",
+  "application": "Application",
+  "exam-style": "Targeted exam-style",
+};
+
 // ── Phase labels ──────────────────────────────────────────────────────────
 
 const PHASE_LABEL: Record<SessionPhase, string> = {
@@ -255,7 +267,7 @@ export default function Recall2Session({
         <div style={{ fontSize: 16, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}>Session complete</div>
         <div style={{ fontSize: 13, color: "rgba(148,163,184,0.8)", lineHeight: 1.6, maxWidth: 280 }}>
           {accuracy >= 90
-            ? "Excellent recall! Your study model is solid."
+            ? "Excellent recall! Learning Hub can now recommend retesting this concept in TestLab."
             : accuracy >= 70
               ? `Good session — ${sessionMissed} card${sessionMissed !== 1 ? "s" : ""} to revisit.`
               : `${sessionMissed} card${sessionMissed !== 1 ? "s" : ""} re-queued for tomorrow. Steady improvement counts.`}
@@ -362,6 +374,11 @@ export default function Recall2Session({
           }}>
             {catLabel}
           </span>
+          {card.activityType && (
+            <span style={{ fontSize: 8, fontWeight: 700, color: "#a5b4fc", padding: "2px 6px", borderRadius: 4, background: "rgba(99,102,241,0.12)", border: "1px solid rgba(129,140,248,0.2)" }}>
+              {ACTIVITY_LABEL[card.activityType] ?? card.activityType}
+            </span>
+          )}
           {card.pageNumber != null && onNavigateToPage && (
             <button
               type="button"
@@ -377,6 +394,12 @@ export default function Recall2Session({
         {card.learningObjective && (
           <div style={{ fontSize: 9, color: "rgba(148,163,184,0.5)", fontStyle: "italic", flexShrink: 0 }}>
             {card.learningObjective}
+          </div>
+        )}
+
+        {card.activityType === "diagram-recall" && !flipped && (
+          <div style={{ borderRadius: 9, border: "1px dashed rgba(167,139,250,0.35)", background: "rgba(109,40,217,0.08)", padding: "10px 12px", fontSize: 10, color: "rgba(221,214,254,0.8)" }}>
+            Labels are hidden. Sketch or explain the saved Whiteboard step before revealing it.
           </div>
         )}
 

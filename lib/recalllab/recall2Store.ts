@@ -39,6 +39,7 @@ export function newBlueprint(
     sourceLabel?: string;
     hint?: string;
     learningObjective?: string;
+    activityType?: RecallBlueprint["activityType"];
     sourceKind?: RecallBlueprint["sourceKind"];
     sourceSnapshotId?: string;
     misconception?: string;
@@ -57,6 +58,7 @@ export function newBlueprint(
     back,
     hint:                opts.hint,
     learningObjective:   opts.learningObjective,
+    activityType:        opts.activityType,
     sourceLabel:         opts.sourceLabel,
     canonicalUnitId:     opts.canonicalUnitId,
     sourceKind:          opts.sourceKind,

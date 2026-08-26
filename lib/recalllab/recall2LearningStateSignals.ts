@@ -34,6 +34,9 @@ export async function fetchRecallWeaknessSignals(
         datPerformance: progress.datPerformance
           ? { attempts: progress.datPerformance.attempts, correct: progress.datPerformance.correct }
           : null,
+        testLabWeak: !!progress.datPerformance
+          && progress.datPerformance.attempts >= 1
+          && progress.datPerformance.correct / progress.datPerformance.attempts < 0.6,
       });
     } catch {
       // Best-effort — a lookup failure just leaves this node's signal absent.

@@ -94,6 +94,8 @@ function retention(bp: RecallBlueprint): number {
 export interface RecallWeaknessSignal {
   masteryScore: number; // 0-100, the shared composite mastery score
   datPerformance: { attempts: number; correct: number } | null;
+  /** Explicit TestLab-to-Recall handoff derived from that same progress row. */
+  testLabWeak?: boolean;
 }
 
 function isWeakByLearningState(signal: RecallWeaknessSignal | undefined): boolean {
@@ -203,6 +205,18 @@ export function buildSessionQueue(
   }
 
   return queue;
+}
+
+/** TestLab errors enter Recall through shared concept identity. This selector
+ * never imports exam questions or duplicates the simulator; it returns only
+ * grounded Recall activities for concepts TestLab showed were weak. */
+export function buildTestLabRemediationQueue(
+  blueprints: RecallBlueprint[],
+  nodeSignals: Map<string, RecallWeaknessSignal>,
+): RecallBlueprint[] {
+  return blueprints
+    .filter((blueprint) => !!blueprint.knowledgeNodeId && nodeSignals.get(blueprint.knowledgeNodeId)?.testLabWeak)
+    .sort((a, b) => a.easeFactor - b.easeFactor);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
