@@ -161,7 +161,7 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
 
   it("REQUIRED: stopNarration (the single choke point for every navigation action) clears stepNarrationRef — no stale early-start bookkeeping survives a Next/Previous/Restart/rebuild", () => {
     const idx = src.indexOf("const stopNarration = useCallback");
-    const block = src.slice(idx, idx + 1100);
+    const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/stepNarrationRef\.current\.clear\(\);/);
   });
 

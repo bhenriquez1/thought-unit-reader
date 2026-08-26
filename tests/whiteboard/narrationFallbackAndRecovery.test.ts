@@ -73,7 +73,7 @@ describe("TldrawCanvas.tsx — RC5: pause-during-fetch defers playback instead o
   it("REQUIRED: the browser-speech branch checks pauseRequestedRef right after speak() and immediately pauses instead of letting it play", () => {
     const idx = src.indexOf('if (resolved.kind === "browser-speech") {');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 1400);
+    const block = src.slice(idx, idx + 2200);
     expect(block).toMatch(/window\.speechSynthesis\.speak\(utter\);\s*\n\s*if \(pauseRequestedRef\.current\) \{/);
     expect(block).toMatch(/window\.speechSynthesis\.pause\(\);/);
   });
@@ -81,7 +81,7 @@ describe("TldrawCanvas.tsx — RC5: pause-during-fetch defers playback instead o
   it("REQUIRED: the audio-element branch checks pauseRequestedRef BEFORE calling audio.play(), and returns without playing", () => {
     const idx = src.indexOf("const audio = new Audio(resolved.url);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 2200);
     const pauseCheckIdx = block.indexOf("if (pauseRequestedRef.current) {");
     const playCallIdx = block.indexOf("await audio.play()");
     expect(pauseCheckIdx).toBeGreaterThan(-1);

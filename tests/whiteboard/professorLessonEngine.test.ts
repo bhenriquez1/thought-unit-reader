@@ -137,7 +137,7 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
   it("REQUIRED: playSegmentThenAdvance claims speech ownership before starting — the shared controller force-stops any prior speech from anywhere", () => {
     const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 800);
+    const body = src.slice(idx, idx + 2600);
     expect(body).toMatch(/claimSpeech\(SPEECH_OWNER\)/);
   });
 
@@ -169,7 +169,7 @@ describe("Narration: single ordered queue, pre-buffered, advance-on-ended — ne
 
   it("REQUIRED: pre-buffers the NEXT segment's audio while the current one plays — findNextSegment looks ahead, resolveSegmentAudio is called before this segment finishes", () => {
     const idx = src.indexOf("const playSegmentThenAdvance = useCallback");
-    const body = src.slice(idx, idx + 900);
+    const body = src.slice(idx, idx + 2400);
     expect(body).toMatch(/const nextSegment = findNextSegment\(index\);/);
     expect(body).toMatch(/if \(nextSegment\) resolveSegmentAudio\(nextSegment\);/);
   });

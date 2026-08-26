@@ -5153,12 +5153,25 @@ export default function ThoughtUnitReader() {
       const unit = canonicalLeftPanelUnits.find(
         (u) => u.evidenceRefId === focusedEvidenceId || u.id === focusedEvidenceId
       );
+      // R4 — resume from the ACTUAL last-spoken position, not always word 0.
+      // TldrawCanvas now writes wordIndex/sentenceText into the same shared
+      // reading-focus store on every SOURCE_VERBATIM tick, exactly like
+      // StudySpeechPanel does for Current Page (see playSegmentThenAdvance).
+      // Only trust it when the store's live anchor still matches the unit
+      // we're resuming into — a stale word position from a PREVIOUS anchor
+      // must never bleed into an unrelated one. clearWord() on any full stop
+      // (or on entering a PROFESSOR_EXPLANATION segment) means sentenceText
+      // is null whenever Professor closed mid-explanation or before ever
+      // reading this unit's source aloud, correctly falling back to word 0.
+      const liveFocus = useReadingFocusStore.getState();
+      const liveAnchorId = unit?.evidenceRefId ?? unit?.id ?? null;
+      const hasLiveWordPosition = !!liveAnchorId && liveFocus.thoughtUnitId === liveAnchorId && !!liveFocus.sentenceText;
       const cursor: ReadingCursor | null = unit?.exactText
         ? {
-            canonicalAnchorId: unit.evidenceRefId ?? unit.id ?? null,
+            canonicalAnchorId: liveAnchorId,
             sourcePage: currentPage,
-            sourceText: unit.exactText,
-            sourceWordIndex: 0,
+            sourceText: hasLiveWordPosition ? liveFocus.sentenceText! : unit.exactText,
+            sourceWordIndex: hasLiveWordPosition ? liveFocus.wordIndex : 0,
             sourceCharOffset: 0,
           }
         : null;
