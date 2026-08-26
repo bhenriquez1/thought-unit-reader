@@ -28,12 +28,18 @@ describe("SmartPDFViewer.tsx — OCR only runs when the native text layer is unu
   let src: string;
   beforeAll(() => { src = fs.readFileSync(VIEWER_FILE, "utf8"); });
 
-  it("REQUIRED: onGetTextSuccess calls attemptOcrFallback only in the else branch of the existing text.length > 20 check — never on a normal text PDF", () => {
+  it("REQUIRED: onGetTextSuccess calls attemptOcrFallback in the else branch of the text.length > 20 check — never on a normal, uncorrupted text PDF", () => {
     const idx = src.indexOf("onGetTextSuccess={(textContent: any)");
-    const block = src.slice(idx, idx + 1200);
-    expect(block).toMatch(/if \(text\.length > 20\) \{/);
+    const block = src.slice(idx, idx + 1800);
+    expect(block).toMatch(/if \(text\.length > 20 && !shouldUseOCR\(text\)\) \{/);
     expect(block).toMatch(/onPageTextExtracted\(currentPage, text\);/);
     expect(block).toMatch(/\} else \{[\s\S]*void attemptOcrFallback\(text\);[\s\S]*\}/);
+  });
+
+  it("REQUIRED (post-merge fix): the native-text-usable branch also checks shouldUseOCR, not just length — a long-but-corrupted page (unmapped-glyph marker characters) must fall through to OCR instead of being passed through as if clean", () => {
+    const idx = src.indexOf("onGetTextSuccess={(textContent: any)");
+    const block = src.slice(idx, idx + 1200);
+    expect(block).toMatch(/!shouldUseOCR\(text\)/);
   });
 
   it("REQUIRED: attemptOcrFallback itself re-checks shouldUseOCR before doing any OCR work — defense in depth against unnecessary OCR", () => {
