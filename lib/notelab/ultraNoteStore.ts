@@ -7,6 +7,7 @@ import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
+import { detectContentProfile } from "@/lib/content/contentProfile";
 
 // Re-export NoteSubject so callers that import it from here don't need to change.
 export type { NoteSubject };
@@ -109,6 +110,10 @@ export interface UltraNote {
   pageTruthKey?: string;
   /** CanonicalThoughtUnit ids this note is actually grounded in. */
   thoughtUnitIds?: string[];
+  /** Student-authored layer. AI regeneration never overwrites this field. */
+  studentNotes?: string;
+  /** Optional printed-page label when it differs from the electronic PDF page. */
+  printedPageLabel?: string;
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -162,6 +167,7 @@ function compact(note: UltraNote): UltraNote {
       reason: a.reason.slice(0, 100),
     })),
     tags: note.tags?.slice(0, 8),
+    studentNotes: note.studentNotes?.slice(0, 4000),
     // Strip both sheet types from LS mirror — they can be several KB; IDB holds the full copy.
     datStudySheet:     undefined,
     adaptiveStudySheet: undefined,
@@ -434,6 +440,82 @@ export function buildNoteFromStudyModel(
   const effectiveThesis = pageThesisOverride || model.pageThesis;
   const sn = model.studyNotes;
   const sections: NoteSection[] = [];
+  const contentProfile = detectContentProfile({ bookTitle, pageText: [effectiveThesis, ...model.visualAnchors.map((a) => a.exactText)].join(" ") });
+
+  if (contentProfile.id === "math-textbook") {
+    if (effectiveThesis) sections.push({ label: "Big Idea", content: effectiveThesis });
+
+    const coreConcepts = model.conceptBlocks
+      .slice(0, 6)
+      .map((block, index) => `${index + 1}. ${block.title}: ${block.pattern}`)
+      .join("\n");
+    if (coreConcepts) sections.push({ label: "Core Concepts", content: coreConcepts });
+
+    const definitions = model.visualAnchors
+      .filter((anchor) => anchor.role === "definition")
+      .slice(0, 4)
+      .map((anchor) => anchor.exactText)
+      .join("\n");
+    if (definitions) sections.push({ label: "Definitions", content: definitions });
+
+    const equations = model.visualAnchors
+      .filter((anchor) => anchor.kind === "formula" || /[=∫∑√]|\bf\s*\(/i.test(anchor.exactText))
+      .slice(0, 4)
+      .map((anchor) => anchor.exactText)
+      .join("\n");
+    if (equations) sections.push({ label: "Equations and Variables", content: equations });
+
+    const examples = model.visualAnchors
+      .filter((anchor) => anchor.role === "exampleEvidence")
+      .slice(0, 3)
+      .map((anchor) => anchor.exactText)
+      .join("\n");
+    if (examples) sections.push({ label: "Worked Example", content: examples });
+
+    const figureEvidence = model.visualAnchors
+      .filter((anchor) => /\b(fig(?:ure)?|graph|diagram|table|curve|axis|axes)\b/i.test(anchor.exactText))
+      .slice(0, 3)
+      .map((anchor) => anchor.exactText)
+      .join("\n");
+    if (figureEvidence) sections.push({ label: "Graph / Figure", content: figureEvidence });
+
+    if (sn.whyThisMatters) sections.push({ label: "Biological / Real-World Application", content: sn.whyThisMatters });
+    if (sn.commonMistake || sn.commonConfusion) sections.push({ label: "Common Mistakes", content: sn.commonMistake || sn.commonConfusion || "" });
+    if (sn.quickMemory) sections.push({ label: "Memory Trick", content: sn.quickMemory });
+    if (sn.examSignal || sn.examStrategy) sections.push({ label: "Exam Signal", content: sn.examSignal || sn.examStrategy || "" });
+    if (model.miniTest?.length) sections.push({ label: "Recall Questions", content: model.miniTest.slice(0, 4).map((q, i) => `${i + 1}. ${q}`).join("\n") });
+    sections.push({ label: "Source Evidence", content: [bookTitle ? `Book: ${bookTitle}` : null, `PDF page: ${pageNumber}`, `Topic: ${topic}`].filter(Boolean).join(" · ") });
+
+    const concepts: UltraNoteConcept[] = model.conceptBlocks.map((block, index) => ({
+      ordinal: index + 1,
+      title: block.title,
+      pattern: block.pattern,
+      surgicalReason: block.mechanism ?? "",
+      trap: block.trap ?? "",
+      rule: block.rule ?? "",
+    }));
+    return {
+      id: `note-${bookId}-p${pageNumber}`,
+      bookId,
+      bookTitle: bookTitle || undefined,
+      pageNumber,
+      topic,
+      coreIdea: effectiveThesis,
+      concepts,
+      memoryShortcuts: concepts.filter((concept) => concept.rule.length > 10).map((concept) => `${concept.title}: ${concept.rule}`).slice(0, 3),
+      sections,
+      subject: inferSubject(bookId, bookTitle),
+      createdAt: Date.now(),
+      pageThesis: effectiveThesis,
+      miniTest: model.miniTest?.length ? model.miniTest : undefined,
+      externalStudyLinks: model.externalStudyLinks?.length ? model.externalStudyLinks : undefined,
+      relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,
+      highlightAnchors: model.highlightAnchors?.length ? model.highlightAnchors : undefined,
+      noteCards: model.noteCards?.length ? model.noteCards : undefined,
+      visualAnchors: model.visualAnchors?.length ? model.visualAnchors : undefined,
+      tags: model.tags,
+    };
+  }
 
   // 1. Chief Concern / Problem — the governing idea of the page
   if (effectiveThesis) {

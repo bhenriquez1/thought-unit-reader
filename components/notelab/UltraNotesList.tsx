@@ -547,6 +547,25 @@ function NoteCard({
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
   const [noteView, setNoteView] = useState<"notes" | "studySheet">("notes");
+  const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
+  const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    setStudentDraft(note.studentNotes ?? "");
+  }, [note.id, note.studentNotes]);
+
+  async function handleSaveStudentNotes() {
+    if (studentSaveState === "saving") return;
+    setStudentSaveState("saving");
+    try {
+      await saveUltraNote({ ...note, studentNotes: studentDraft.trim() || undefined });
+      setStudentSaveState("saved");
+      setTimeout(() => setStudentSaveState("idle"), 1800);
+    } catch (error) {
+      console.error("[NOTELAB_STUDENT_LAYER_SAVE_FAILED]", String(error));
+      setStudentSaveState("error");
+    }
+  }
 
   async function handleGenerateCards() {
     if (cardsSaving) return;
@@ -714,20 +733,9 @@ function NoteCard({
             </div>
           )}
 
-          {/* Adaptive Notebook cards (AI-curated or derived) — takes priority over both
-              older tiers below, which remain as fallbacks for notes synthesized before
-              noteCards existed. */}
-          {note.noteCards?.length ? (
-            <NoteCardGrid
-              noteCards={note.noteCards}
-              note={note}
-              onNavigateToPage={onNavigate}
-              onGenerateCard={(n, c) => handleGenerateCardFromNoteCard(c)}
-              onOpenWhiteboard={onOpenWhiteboard ? (n, c) => onOpenWhiteboard(n, c) : undefined}
-              onExplainCard={onExplainCard}
-              focusedAnchorText={focusedAnchorText}
-            />
-          ) : hasNewSchema(note.sections) ? (
+          {/* The structured notebook is canonical. Adaptive cards supplement it;
+              they never replace the note or push provenance into the foreground. */}
+          {hasNewSchema(note.sections) ? (
             <SectionsView sections={note.sections!} mode={mode} />
           ) : (
             <>
@@ -761,6 +769,63 @@ function NoteCard({
               ))}
             </>
           )}
+
+          {note.noteCards?.length ? (
+            <details style={{ borderRadius: 10, border: "1px solid rgba(129,140,248,0.22)", background: "rgba(79,70,229,0.05)", padding: "10px 12px" }}>
+              <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
+                ADAPTIVE STUDY CARDS ({note.noteCards.length})
+              </summary>
+              <div style={{ marginTop: 10 }}>
+                <NoteCardGrid
+                  noteCards={note.noteCards}
+                  note={note}
+                  onNavigateToPage={onNavigate}
+                  onGenerateCard={(n, c) => handleGenerateCardFromNoteCard(c)}
+                  onOpenWhiteboard={onOpenWhiteboard ? (n, c) => onOpenWhiteboard(n, c) : undefined}
+                  onExplainCard={onExplainCard}
+                  focusedAnchorText={focusedAnchorText}
+                />
+              </div>
+            </details>
+          ) : null}
+
+          <NoteBlock accent="#38bdf8" bg="rgba(56,189,248,0.04)" icon="✍️" label="MY NOTES">
+            <textarea
+              value={studentDraft}
+              onChange={(event) => { setStudentDraft(event.target.value); setStudentSaveState("idle"); }}
+              placeholder="Write your own explanation, worked steps, questions, or memory cues. AI regeneration will not overwrite this layer."
+              rows={5}
+              style={{ width: "100%", resize: "vertical", borderRadius: 8, border: "1px solid rgba(125,211,252,0.2)", background: "rgba(2,6,23,0.6)", color: "rgba(255,255,255,0.9)", padding: "10px 11px", fontSize: 13, lineHeight: 1.6 }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button type="button" onClick={handleSaveStudentNotes} disabled={studentSaveState === "saving"} style={TOOL_BTN}>
+                {studentSaveState === "saving" ? "Saving…" : studentSaveState === "saved" ? "✓ Saved" : studentSaveState === "error" ? "Retry save" : "Save my notes"}
+              </button>
+            </div>
+          </NoteBlock>
+
+          {(note.visualAnchors?.length || note.highlightAnchors?.length) ? (
+            <details style={{ borderRadius: 10, border: "1px solid rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.4)", padding: "10px 12px" }}>
+              <summary style={{ cursor: "pointer", color: "rgba(203,213,225,0.72)", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
+                SOURCE EVIDENCE · PDF PAGE {note.pageNumber}
+              </summary>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
+                {(note.visualAnchors?.map((anchor) => ({ id: anchor.id, text: anchor.exactText, kind: anchor.role }))
+                  ?? note.highlightAnchors?.map((anchor, index) => ({ id: `legacy-${index}`, text: anchor.text, kind: anchor.anchorType }))
+                  ?? []).slice(0, 6).map((anchor) => (
+                    <button
+                      type="button"
+                      key={anchor.id}
+                      onClick={() => onNavigate?.(note.pageNumber)}
+                      style={{ textAlign: "left", borderRadius: 8, border: "1px solid rgba(148,163,184,0.12)", background: "rgba(255,255,255,0.025)", color: "rgba(226,232,240,0.78)", padding: "8px 10px", fontSize: 12, lineHeight: 1.5, cursor: "pointer" }}
+                    >
+                      <span style={{ color: "#67e8f9", fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{anchor.kind}</span>
+                      <br />{anchor.text}
+                    </button>
+                  ))}
+              </div>
+            </details>
+          ) : null}
 
           {/* Memory shortcuts + Mini Test — only for legacy notes (noteCards/new-schema sections embed these) */}
           {!note.noteCards?.length && !hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (() => {
@@ -854,6 +919,18 @@ function NoteCard({
 // ── SectionsView — renders new-schema sections (Core Idea, Must Know, etc.) ───
 
 const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }> = {
+  "Big Idea":                       { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "💡" },
+  "Core Concepts":                  { accent: "#60a5fa", bg: "rgba(96,165,250,0.05)",  icon: "🧩" },
+  "Definitions":                    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📖" },
+  "Equations and Variables":        { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "∑" },
+  "Worked Example":                 { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "✏️" },
+  "Graph / Figure":                 { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "📈" },
+  "Biological / Real-World Application": { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)", icon: "🧬" },
+  "Common Mistakes":                { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "⚠️" },
+  "Memory Trick":                   { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
+  "Exam Signal":                    { accent: "#f59e0b", bg: "rgba(245,158,11,0.05)", icon: "🎯" },
+  "Recall Questions":               { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "❓" },
+  "Source Evidence":                { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📍" },
   "Chief Concern / Problem":        { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
   "Why This Matters Clinically":    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
   "Diagnostic Reasoning":           { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧩" },
@@ -875,6 +952,9 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
 // any label absent from this list (future section) still renders, just last,
 // instead of silently disappearing (the lesson from Phase 4's SUBJECT_ORDER).
 const SECTION_ORDER = [
+  "Big Idea", "Core Concepts", "Definitions", "Equations and Variables",
+  "Worked Example", "Graph / Figure", "Biological / Real-World Application",
+  "Common Mistakes", "Memory Trick", "Exam Signal", "Recall Questions", "Source Evidence",
   "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
   "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
   "Clinical Pearl", "Common Mistake", "Case-Style Recall Questions",
@@ -914,6 +994,9 @@ function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultr
 // render via SectionsView instead of silently falling back to the legacy
 // coreIdea/concept-block layout.
 const NEW_SCHEMA_LABELS = new Set([
+  "Big Idea", "Core Concepts", "Definitions", "Equations and Variables",
+  "Worked Example", "Graph / Figure", "Biological / Real-World Application",
+  "Common Mistakes", "Memory Trick", "Exam Signal", "Source Evidence",
   "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
   "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
   "Case-Style Recall Questions",
