@@ -16,6 +16,7 @@ import { useReadingFocusStore, type ReadingCursor } from "@/lib/readingFocus/rea
 import { resolveTargetGeometry, resolveWordGeometry } from "@/lib/pdf/resolveAnchorGeometry";
 import { generateSmartTOC, type SmartTOCEntry } from "@/lib/smartTocGenerator";
 import { extractPageText, renderPdfPageToDataUrl, shouldUseOCR } from "@/lib/page-intelligence/extractor";
+import { TextLayerRegistry, buildPageTextIndexFromOCR } from "@/lib/page-intelligence/textLayerIndex";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -23,6 +24,15 @@ import { extractPageText, renderPdfPageToDataUrl, shouldUseOCR } from "@/lib/pag
 // of effectiveZoom/the visible canvas. Tuned to keep the long edge under ~1536px for
 // OpenAI vision cost/quality at detail:"high".
 const SURGEON_CAPTURE_SCALE = 1.5;
+
+// Fixed render scale for the OCR fallback's page-image capture (independent of
+// effectiveZoom/the visible canvas, same reasoning as SURGEON_CAPTURE_SCALE).
+// Shared by the renderPdfPageToDataUrl() call AND the OCR word-bbox ->
+// viewport-space conversion in attemptOcrFallback below — both MUST use the
+// same value, since Tesseract's returned bboxes are pixel coordinates within
+// exactly this rendered image and buildPageTextIndexFromOCR divides by this
+// scale to normalize them into TextLayerRegistry's scale=1 convention.
+const OCR_RENDER_SCALE = 2.0;
 
 /** Use the same-origin worker we ship in /public to avoid CDN/CORS issues */
 try {
@@ -1274,6 +1284,11 @@ export default function SmartPDFViewer({
     if (ocrAttemptedKeysRef.current.has(requestKey)) return;
     ocrAttemptedKeysRef.current.add(requestKey);
 
+    // Captured before the async Tesseract pass — see the TextLayerRegistry.set()
+    // call below for why this matters (guards against a document switch that
+    // clears the registry while OCR is still running).
+    const requestTextEpoch = TextLayerRegistry.currentEpoch();
+
     ocrAbortRef.current?.abort();
     const controller = new AbortController();
     ocrAbortRef.current = controller;
@@ -1283,7 +1298,7 @@ export default function SmartPDFViewer({
         pageNumber: requestPage,
         docId,
         getNativeText: async () => nativeText,
-        getPageImageDataUrl: () => renderPdfPageToDataUrl(pdfDocument, requestPage, 2.0),
+        getPageImageDataUrl: () => renderPdfPageToDataUrl(pdfDocument, requestPage, OCR_RENDER_SCALE),
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
@@ -1296,6 +1311,21 @@ export default function SmartPDFViewer({
       if (ocrText.length > 20) {
         console.log("[OCR_FALLBACK_APPLIED]", { page: requestPage, source: result.source, confidence: result.confidence, chars: ocrText.length });
         onPageTextExtracted?.(requestPage, ocrText);
+
+        // R5 — an OCR'd page has no PDF.js text-layer items (a scanned page's
+        // textContent.items is empty), so without this, every highlight/eye-
+        // guide geometry lookup on this page would silently resolve to
+        // nothing even though the text above is now correct. Registers the
+        // SAME viewport-space-at-scale-1 convention native pages use — see
+        // buildPageTextIndexFromOCR's header comment — so every downstream
+        // consumer (Surgeon highlights, word-level eye guide, Professor's
+        // SOURCE_VERBATIM tracking) works unmodified.
+        if (result.ocrWords?.length) {
+          TextLayerRegistry.set(
+            buildPageTextIndexFromOCR(requestPage - 1, result.ocrWords, OCR_RENDER_SCALE, ocrText),
+            requestTextEpoch,
+          );
+        }
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;

@@ -112,3 +112,53 @@ describe("SmartPDFViewer.tsx — page identity preservation and stale OCR result
     expect(block).toMatch(/const requestKey = `\$\{docId\}:\$\{requestPage\}`;/);
   });
 });
+
+describe("SmartPDFViewer.tsx — R5: OCR'd pages register PDF-highlight/eye-guide geometry, not just text", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(VIEWER_FILE, "utf8"); });
+
+  it("REQUIRED: imports TextLayerRegistry and buildPageTextIndexFromOCR from the same canonical geometry module native pages already use", () => {
+    expect(src).toMatch(/import \{ TextLayerRegistry, buildPageTextIndexFromOCR \} from "@\/lib\/page-intelligence\/textLayerIndex";/);
+  });
+
+  it("REQUIRED: the OCR page-image render and the geometry conversion share ONE named scale constant — a silent mismatch between them would misplace every highlight on an OCR'd page", () => {
+    expect(src).toMatch(/const OCR_RENDER_SCALE = 2\.0;/);
+    const idx = src.indexOf("const attemptOcrFallback = useCallback(");
+    const block = src.slice(idx, idx + 2600);
+    expect(block).toMatch(/renderPdfPageToDataUrl\(pdfDocument, requestPage, OCR_RENDER_SCALE\)/);
+    expect(block).toMatch(/buildPageTextIndexFromOCR\(requestPage - 1, result\.ocrWords, OCR_RENDER_SCALE, ocrText\)/);
+  });
+
+  it("REQUIRED: registers geometry only inside the same ocrText.length > 20 gate that guards onPageTextExtracted — never for a near-empty/rejected OCR result", () => {
+    const idx = src.indexOf("const attemptOcrFallback = useCallback(");
+    const block = src.slice(idx, idx + 2600);
+    const gateIdx = block.indexOf("if (ocrText.length > 20) {");
+    expect(gateIdx).toBeGreaterThan(-1);
+    // Search for the actual call site starting after the gate — an earlier
+    // occurrence of the same string inside a comment (e.g. "see the
+    // TextLayerRegistry.set() call below") must not count as the real one.
+    const registerIdx = block.indexOf("TextLayerRegistry.set(\n", gateIdx);
+    expect(registerIdx).toBeGreaterThan(gateIdx);
+  });
+
+  it("REQUIRED: only registers when Tesseract actually returned words — no empty-tokens index silently overwrites a page that might already have (better) geometry", () => {
+    const idx = src.indexOf("const attemptOcrFallback = useCallback(");
+    const block = src.slice(idx, idx + 2600);
+    expect(block).toMatch(/if \(result\.ocrWords\?\.length\) \{[\s\S]{0,200}TextLayerRegistry\.set\(/);
+  });
+
+  it("REQUIRED: the registry write is epoch-guarded against a document switch that clears TextLayerRegistry while OCR is still running — captured BEFORE the async OCR call, matching pdfjs-handler.ts's own epoch discipline for the native path", () => {
+    const idx = src.indexOf("const attemptOcrFallback = useCallback(");
+    const block = src.slice(idx, idx + 2600);
+    const epochCaptureIdx = block.indexOf("const requestTextEpoch = TextLayerRegistry.currentEpoch();");
+    const extractCallIdx = block.indexOf("const result = await extractPageText(");
+    const setCallIdx = block.indexOf("requestTextEpoch,");
+    expect(epochCaptureIdx).toBeGreaterThan(-1);
+    expect(epochCaptureIdx).toBeLessThan(extractCallIdx);
+    expect(setCallIdx).toBeGreaterThan(extractCallIdx);
+  });
+
+  it("pageIndex passed to buildPageTextIndexFromOCR is 0-based (requestPage - 1) — matches every other TextLayerRegistry caller in this file (e.g. currentPage - 1 for resolveTargetGeometry)", () => {
+    expect(src).toMatch(/buildPageTextIndexFromOCR\(requestPage - 1,/);
+  });
+});

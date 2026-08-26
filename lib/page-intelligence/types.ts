@@ -8,6 +8,15 @@
 
 export type PageSource = "native" | "ocr" | "mixed";
 
+/** One OCR-recognized word and its pixel bounding box within the rendered
+ *  page image Tesseract processed — see ocrDataUrlToText in extractor.ts.
+ *  x0/y0/x1/y1 are in that image's own pixel space (top-left origin, same
+ *  convention canvas/DOM already use), NOT PDF user-space points. */
+export interface OCRWordBox {
+  text: string;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
 export interface PageText {
   pageNumber: number;
   text: string;
@@ -16,6 +25,12 @@ export interface PageText {
   mergedText?: string;
   source: PageSource;
   confidence?: number; // OCR confidence avg if available (0-100)
+  /** Word-level bounding boxes from OCR, when available — lets the Reader
+   *  resolve on-page highlight/eye-guide geometry for OCR'd pages the same
+   *  way it does for native PDF text (see textLayerIndex.ts's
+   *  buildPageTextIndexFromOCR). Absent for native-text pages and for OCR
+   *  runs where Tesseract returned no words (e.g. a blank page). */
+  ocrWords?: OCRWordBox[];
 }
 
 // ============================================================================
@@ -486,6 +501,9 @@ export interface OCRCacheEntry {
   text: string;
   confidence: number;
   extractedAt: number;
+  /** See PageText.ocrWords — cached alongside the text so a revisited page
+   *  gets geometry back from cache without re-running Tesseract. */
+  words?: OCRWordBox[];
 }
 
 // ============================================================================

@@ -106,6 +106,129 @@ describe("extractPageText — OCR failure", () => {
   });
 });
 
+describe("extractPageText — R5: OCR word bounding boxes flow through to the result", () => {
+  it("REQUIRED: recognize() is called with { blocks: true } — the default output format silently discards every word's bbox even though tesseract.js computes it", async () => {
+    mockRecognize.mockResolvedValueOnce({ data: { text: "Some scanned text here.", confidence: 88, blocks: [] } });
+    await extractPageText({
+      pageNumber: 4,
+      docId: "doc-scan-blocks",
+      getNativeText: async () => "",
+      getPageImageDataUrl: async () => "data:image/png;base64,fakepageimage",
+    });
+    expect(mockRecognize).toHaveBeenCalledWith(
+      "data:image/png;base64,fakepageimage",
+      {},
+      { blocks: true },
+    );
+  });
+
+  it("REQUIRED: word bboxes from data.blocks are flattened onto the result as ocrWords, in reading order", async () => {
+    mockRecognize.mockResolvedValueOnce({
+      data: {
+        text: "Ethanol reacts with oxygen.",
+        confidence: 90,
+        blocks: [
+          {
+            paragraphs: [
+              {
+                lines: [
+                  {
+                    words: [
+                      { text: "Ethanol", bbox: { x0: 10, y0: 20, x1: 60, y1: 34 } },
+                      { text: "reacts", bbox: { x0: 65, y0: 20, x1: 100, y1: 34 } },
+                      { text: "with", bbox: { x0: 105, y0: 20, x1: 130, y1: 34 } },
+                      { text: "oxygen.", bbox: { x0: 135, y0: 20, x1: 180, y1: 34 } },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const result = await extractPageText({
+      pageNumber: 5,
+      docId: "doc-scan-blocks-2",
+      getNativeText: async () => "",
+      getPageImageDataUrl: async () => "data:image/png;base64,fakepageimage",
+    });
+    expect(result.ocrWords).toEqual([
+      { text: "Ethanol", bbox: { x0: 10, y0: 20, x1: 60, y1: 34 } },
+      { text: "reacts", bbox: { x0: 65, y0: 20, x1: 100, y1: 34 } },
+      { text: "with", bbox: { x0: 105, y0: 20, x1: 130, y1: 34 } },
+      { text: "oxygen.", bbox: { x0: 135, y0: 20, x1: 180, y1: 34 } },
+    ]);
+  });
+
+  it("empty/whitespace-only words and words missing a bbox are dropped, never passed through as unusable geometry", async () => {
+    mockRecognize.mockResolvedValueOnce({
+      data: {
+        text: "Real word.",
+        confidence: 80,
+        blocks: [{
+          paragraphs: [{
+            lines: [{
+              words: [
+                { text: "  ", bbox: { x0: 0, y0: 0, x1: 5, y1: 5 } },
+                { text: "Real", bbox: null },
+                { text: "word.", bbox: { x0: 10, y0: 10, x1: 40, y1: 24 } },
+              ],
+            }],
+          }],
+        }],
+      },
+    });
+    const result = await extractPageText({
+      pageNumber: 6,
+      docId: "doc-scan-blocks-3",
+      getNativeText: async () => "",
+      getPageImageDataUrl: async () => "data:image/png;base64,fakepageimage",
+    });
+    expect(result.ocrWords).toEqual([{ text: "word.", bbox: { x0: 10, y0: 10, x1: 40, y1: 24 } }]);
+  });
+
+  it("REQUIRED: a cache hit also returns ocrWords — a revisited page gets geometry back without re-running Tesseract", async () => {
+    mockRecognize.mockResolvedValueOnce({
+      data: {
+        text: "Cached scanned text.",
+        confidence: 85,
+        blocks: [{
+          paragraphs: [{
+            lines: [{ words: [{ text: "Cached", bbox: { x0: 1, y0: 2, x1: 3, y1: 4 } }] }],
+          }],
+        }],
+      },
+    });
+    const options = {
+      pageNumber: 8,
+      docId: "doc-scan-cache",
+      getNativeText: async () => "",
+      getPageImageDataUrl: async () => "data:image/png;base64,fakepageimage",
+    };
+    const first = await extractPageText(options);
+    expect(first.ocrWords).toEqual([{ text: "Cached", bbox: { x0: 1, y0: 2, x1: 3, y1: 4 } }]);
+
+    // Second call for the same docId/pageNumber — IDB is unavailable in this
+    // sandbox (see file header), so getCachedOCR degrades to a miss and this
+    // re-runs recognize() rather than truly hitting cache; either way the
+    // resulting ocrWords must still be populated, never silently dropped.
+    mockRecognize.mockResolvedValueOnce({
+      data: {
+        text: "Cached scanned text.",
+        confidence: 85,
+        blocks: [{
+          paragraphs: [{
+            lines: [{ words: [{ text: "Cached", bbox: { x0: 1, y0: 2, x1: 3, y1: 4 } }] }],
+          }],
+        }],
+      },
+    });
+    const second = await extractPageText(options);
+    expect(second.ocrWords).toEqual([{ text: "Cached", bbox: { x0: 1, y0: 2, x1: 3, y1: 4 } }]);
+  });
+});
+
 describe("shouldUseOCR", () => {
   it("true for empty/near-empty native text", () => {
     expect(shouldUseOCR("")).toBe(true);
