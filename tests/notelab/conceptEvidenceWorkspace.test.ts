@@ -150,4 +150,10 @@ describe("pages/index.tsx — NoteLab sources sub-tab", () => {
     expect(block).toMatch(/surgeonPageTruthKey=\{surgeonAnnotations\.plan\?\.pageTruthKey/);
     expect(block).toMatch(/groundedAnnotations=\{surgeonAnnotations\.groundedAnnotations\}/);
   });
+
+  it("opens to structured saved notes and renders UltraNotesList as the canonical workspace", () => {
+    expect(src).toMatch(/useState<"notes" \| "teaching" \| "sources">\("notes"\)/);
+    expect(src).toMatch(/<UltraNotesList/);
+    expect(src).not.toMatch(/<PersonalWorkspaceTab/);
+  });
 });

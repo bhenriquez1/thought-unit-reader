@@ -22,6 +22,8 @@ interface Props {
   documentId: string;
   pageTruthKey: string;
   pageNumber: number;
+  /** Permanent Reader rail. Overlay mode remains available to older callers. */
+  embedded?: boolean;
   /** Navigates the Reader to a given page — wired to pages/index.tsx's syncToPage. */
   onJumpToPage: (page: number) => void;
 }
@@ -29,12 +31,12 @@ interface Props {
 const QUICK_PROMPTS = [
   "Ask Professor about this",
   "I don't understand this mechanism",
-  "Important for DAT",
+  "Important for exam",
   "Review before exam",
 ];
 
-export default function StickyNotesRail({ documentId, pageTruthKey, pageNumber, onJumpToPage }: Props) {
-  const [open, setOpen] = useState(false);
+export default function StickyNotesRail({ documentId, pageTruthKey, pageNumber, onJumpToPage, embedded = false }: Props) {
+  const [open, setOpen] = useState(embedded);
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [scope, setScope] = useState<"page" | "book">("page");
@@ -56,6 +58,7 @@ export default function StickyNotesRail({ documentId, pageTruthKey, pageNumber, 
   // Re-fetches on open, and again on every page turn while open, so a note
   // created on another page this session shows up without re-opening the rail.
   useEffect(() => { if (open) refresh(); }, [open, pageNumber, refresh]);
+  useEffect(() => { if (embedded) setOpen(true); }, [embedded]);
 
   const handleAdd = useCallback(async (text: string) => {
     const trimmed = text.trim();
@@ -86,7 +89,7 @@ export default function StickyNotesRail({ documentId, pageTruthKey, pageNumber, 
   return (
     <>
       {/* Always-visible toggle tab, fixed to the left edge of the PDF pane. */}
-      <button
+      {!embedded && <button
         onClick={() => setOpen((o) => !o)}
         className={`absolute left-0 top-24 z-30 flex items-center gap-1.5 rounded-r-lg border border-l-0 border-amber-500/30 bg-slate-950/90 px-2.5 py-2 text-xs font-semibold text-amber-200 shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 ${open ? "opacity-0 pointer-events-none" : ""}`}
         aria-label="Open sticky notes"
@@ -94,21 +97,23 @@ export default function StickyNotesRail({ documentId, pageTruthKey, pageNumber, 
       >
         <span>📝</span>
         {pageCount > 0 && <span className="tabular-nums">{pageCount}</span>}
-      </button>
+      </button>}
 
       {open && (
-        <div className="absolute left-0 top-0 bottom-0 z-40 flex w-[300px] flex-col border-r border-white/10 bg-slate-950/97 shadow-2xl backdrop-blur-md">
+        <div className={embedded
+          ? "flex h-full w-[260px] shrink-0 flex-col border-r border-white/10 bg-slate-950/95"
+          : "absolute bottom-0 left-0 top-0 z-40 flex w-[300px] flex-col border-r border-white/10 bg-slate-950/97 shadow-2xl backdrop-blur-md"}>
           {/* Header */}
           <div className="flex-shrink-0 border-b border-white/10 px-3 py-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-widest text-amber-300">📝 Sticky Notes</span>
-              <button
+              {!embedded && <button
                 onClick={() => setOpen(false)}
                 className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-white"
                 aria-label="Close sticky notes"
               >
                 ✕
-              </button>
+              </button>}
             </div>
             <div className="mt-2 flex gap-1">
               <button

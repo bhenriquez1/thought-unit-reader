@@ -185,7 +185,6 @@ const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTr
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
-const PersonalWorkspaceTab = dynamic(() => import("@/components/workspace/PersonalWorkspaceTab"), { ssr: false });
 const LearningSourcesManager = dynamic(() => import("@/components/notelab/LearningSourcesManager"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
@@ -724,7 +723,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching" | "sources">("sources");
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching" | "sources">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
@@ -5677,6 +5676,15 @@ export default function ThoughtUnitReader() {
 
                 <PureReaderView
                   fileUrl={fileUrl}
+                  leftRail={resolvedDocumentId ? (
+                    <StickyNotesRail
+                      embedded
+                      documentId={resolvedDocumentId}
+                      pageTruthKey={pageTruthKey}
+                      pageNumber={currentPage}
+                      onJumpToPage={(page) => syncToPage(page, { reason: 'TOC_JUMP' })}
+                    />
+                  ) : undefined}
                   docId={resolvedDocumentId}
                   currentPage={currentPage}
                   pdfPageCount={pdfPageCount}
@@ -5744,19 +5752,6 @@ export default function ThoughtUnitReader() {
                   packTierLabels={activePack.tierLabels}
                 />
 
-                {/* C1 — Sticky Notes: quick, page-linked annotations in the
-                    Reader's left panel. resolvedDocumentId (not bookId) is
-                    the identity key — see lib/stickyNotes/stickyNoteStore.ts's
-                    module comment for why. */}
-                {resolvedDocumentId && (
-                  <StickyNotesRail
-                    documentId={resolvedDocumentId}
-                    pageTruthKey={pageTruthKey}
-                    pageNumber={currentPage}
-                    onJumpToPage={(page) => syncToPage(page, { reason: 'TOC_JUMP' })}
-                  />
-                )}
-
                 {/* Ask About This Page — floats over Reader when Elena Mode feature flag is enabled */}
                 {ELENA_ENABLED && (
                   <div className="absolute bottom-4 right-4 z-20">
@@ -5820,7 +5815,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1 flex-wrap">
-              {(["sources", "notes", "teaching"] as const).map(v => (
+              {(["notes", "sources", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
@@ -5830,7 +5825,7 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "✍️ Workspace" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Sources"}
+                  {v === "notes" ? "📝 Notes" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Evidence"}
                 </button>
               ))}
             </div>
@@ -5868,12 +5863,24 @@ export default function ThoughtUnitReader() {
             />
           </div>
 
-          {/* Personal Workspace sub-tab — student's own digital notebook */}
+          {/* Canonical saved-note workspace. This is the immediate destination
+              for every Save to NoteLab action; the old generic Personal
+              Workspace no longer hides the structured study notes. */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
-            <PersonalWorkspaceTab
+            <UltraNotesList
               bookId={bookId}
-              currentPage={currentPage}
               onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
+              refreshKey={noteLabRefreshKey}
+              onCardsGenerated={(setId) => {
+                setLastRecallSetId(setId);
+                setRecallLabRefreshKey((key) => key + 1);
+              }}
+              onActiveNoteChange={(note) => {
+                setActiveNote(note);
+                setNotelabActiveNote(note);
+              }}
+              focusedAnchorText={notelabFocusedAnchorText}
+              focusedKnowledgeNodeId={selectedKgNodeId}
             />
           </div>
         </div>
