@@ -145,6 +145,13 @@ Rules:
    "workflow"/"procedure" page as an ordered sequence, a "classification" page as a
    taxonomy of related categories. Don't ignore pageTeachingType and default to a generic
    "concept-map" when a more specific grammar clearly fits it.
+   On equation/calculation and worked-example pages, visibly build the mathematical
+   relationship: identify variables, transform the expression one step at a time, and
+   connect it to the relevant axes, graph, mapping, or application when those nodes are
+   present. Do not reduce a mathematics page to generic labeled rectangles.
+   On narrative-event-sequence pages, teach characters, event order, motivation, and
+   consequences as a light story board. Use reading-coach language rather than an adult
+   clinical lecture, and never invent events that are not represented by the supplied nodes.
 7. title is a short, hand-written page title — 2 to 6 words, written in your own words for
    what this page is fundamentally about (e.g. "ASPIRIN OVERDOSE"), not copied verbatim
    from a heading. "definition" is also a valid visualGrammar choice — use it when the page

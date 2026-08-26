@@ -9,6 +9,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTocStore, type TocItem, type DocumentToc } from '@/lib/stores/tocStore';
+import { inferPrintedPageNumber } from '@/lib/toc/printedPagination';
 
 interface PureTocViewProps {
   documentId: string;
@@ -155,6 +156,7 @@ export default function PureTocView({
     const isCurrent = currentChapter?.id === item.id;
     const isExpanded = expandedIds.has(item.id);
     const hasChildren = item.children && item.children.length > 0;
+    const printedPage = inferPrintedPageNumber(toc?.items ?? [], item.pageNumber);
     
     return (
       <div key={item.id} className="select-none">
@@ -184,8 +186,9 @@ export default function PureTocView({
               <span className={`text-sm truncate ${isCurrent ? 'text-white font-medium' : 'text-gray-300'}`}>
                 {item.title}
               </span>
-              <span className="text-xs text-gray-500 shrink-0">
-                p. {item.pageNumber}
+              <span className="text-right text-[10px] leading-tight text-gray-500 shrink-0">
+                <span className="block">PDF {item.pageNumber}</span>
+                {printedPage !== null && <span className="block text-gray-600">print {printedPage}</span>}
               </span>
             </div>
           </div>
@@ -337,7 +340,10 @@ export default function PureTocView({
         <div className="px-4 py-2 bg-purple-900/30 border-b border-purple-800/30">
           <p className="text-xs text-purple-400">
             📍 Current: <span className="text-white font-medium">{currentChapter.title}</span>
-            <span className="text-purple-300 ml-2">p. {currentChapter.pageNumber}</span>
+            <span className="text-purple-300 ml-2">PDF {currentChapter.pageNumber}</span>
+            {inferPrintedPageNumber(toc.items, currentPage) !== null && (
+              <span className="text-purple-400/70 ml-2">printed {inferPrintedPageNumber(toc.items, currentPage)}</span>
+            )}
           </p>
         </div>
       )}

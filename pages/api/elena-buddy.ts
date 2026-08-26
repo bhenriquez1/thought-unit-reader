@@ -85,6 +85,11 @@ function buildContextMessages(body: ReadingBuddyRequest): Anthropic.MessageParam
   if (body.currentPage) {
     contextText += `\nCurrent page: ${body.currentPage}`;
   }
+  if (body.contentProfileId === "child-comic") {
+    contextText += "\nReading mode: comic reading coach. Follow the supplied dialogue in source order, distinguish dialogue from sound effects when possible, ask about speaker clues and event sequence, and never turn the page into an adult lecture.";
+  } else if (body.contentProfileId === "child-story") {
+    contextText += "\nReading mode: story reading coach. Focus on characters, event sequence, vocabulary, feelings, and one prediction question.";
+  }
   // Prefer the canonical-unit-grounded context (real CanonicalThoughtUnits,
   // ranked by importance — see lib/elena/childTeachingAdapter.ts) over raw
   // PDF text-layer output when it's available; fall back to pageText when
@@ -115,6 +120,9 @@ function sanitise(body: ReadingBuddyRequest): ReadingBuddyRequest {
     pageText:    (body.pageText ?? "").slice(0, 3000),
     groundedContext: body.groundedContext ? body.groundedContext.slice(0, 3000) : undefined,
     currentPage: typeof body.currentPage === "number" ? body.currentPage : undefined,
+    contentProfileId: body.contentProfileId === "child-comic" || body.contentProfileId === "child-story"
+      ? body.contentProfileId
+      : undefined,
   };
 }
 

@@ -16,6 +16,7 @@ interface LaunchCard {
   accentColor: string;       // Tailwind color name for border + accent
   onLaunch: () => void;
   disabled?: boolean;
+  disabledReason?: string;
 }
 
 interface LearningHubLaunchPanelProps {
@@ -39,6 +40,7 @@ function LaunchCard({
   accentColor,
   onLaunch,
   disabled,
+  disabledReason,
 }: LaunchCard) {
   const accentClass: Record<string, { border: string; text: string; btn: string; bg: string }> = {
     indigo:  { border: "border-indigo-500/30",  text: "text-indigo-300",  btn: "bg-indigo-700/40 hover:bg-indigo-600/50 border-indigo-500/40 text-indigo-200",  bg: "bg-indigo-950/30"  },
@@ -53,7 +55,7 @@ function LaunchCard({
   return (
     <div
       className={`flex flex-col gap-2.5 rounded-xl border p-3.5 transition-colors ${cls.border} ${cls.bg} ${
-        disabled ? "opacity-40 pointer-events-none" : ""
+        disabled ? "opacity-50" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-1.5">
@@ -70,10 +72,18 @@ function LaunchCard({
       </div>
       <button
         onClick={onLaunch}
-        className={`mt-auto w-full rounded-lg border px-3 py-1.5 text-[10px] font-semibold transition-colors ${cls.btn}`}
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
+        aria-describedby={disabled && disabledReason ? `${title.replace(/\s+/g, "-").toLowerCase()}-requirement` : undefined}
+        className={`mt-auto w-full rounded-lg border px-3 py-1.5 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:hover:bg-inherit ${cls.btn}`}
       >
-        Launch →
+        {disabled ? "Locked" : "Launch →"}
       </button>
+      {disabled && disabledReason && (
+        <p id={`${title.replace(/\s+/g, "-").toLowerCase()}-requirement`} className="text-[9px] leading-snug text-slate-500">
+          {disabledReason}
+        </p>
+      )}
     </div>
   );
 }
@@ -109,6 +119,7 @@ export default function LearningHubLaunchPanel({
           accentColor="indigo"
           onLaunch={onAdaptiveStudy}
           disabled={!bookLoaded}
+          disabledReason="Open a book before starting adaptive study."
         />
         <LaunchCard
           icon="📅"
@@ -117,6 +128,7 @@ export default function LearningHubLaunchPanel({
           accentColor="amber"
           onLaunch={onTodaySession}
           disabled={!bookLoaded}
+          disabledReason="Open a book before starting today's plan."
         />
         <LaunchCard
           icon="📖"
@@ -125,6 +137,7 @@ export default function LearningHubLaunchPanel({
           accentColor="emerald"
           onLaunch={onContinueReading}
           disabled={!bookLoaded}
+          disabledReason="Open a book to continue reading."
         />
         <LaunchCard
           icon="⚠️"
@@ -133,6 +146,7 @@ export default function LearningHubLaunchPanel({
           accentColor="rose"
           onLaunch={onWeakAreaReview}
           disabled={!bookLoaded || !hasWeakAreas}
+          disabledReason={!bookLoaded ? "Open a book first." : "Complete Recall attempts before weak areas can be identified."}
         />
         <LaunchCard
           icon="🎯"
@@ -141,6 +155,7 @@ export default function LearningHubLaunchPanel({
           accentColor="violet"
           onLaunch={onExamPrep}
           disabled={!bookLoaded}
+          disabledReason="Open a book and build grounded concepts before exam preparation."
         />
         <LaunchCard
           icon="🤖"
@@ -149,6 +164,7 @@ export default function LearningHubLaunchPanel({
           accentColor="slate"
           onLaunch={onAiCoach}
           disabled={!bookLoaded}
+          disabledReason="Open a book before asking the study coach for a plan."
         />
       </div>
     </div>

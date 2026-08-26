@@ -5,6 +5,7 @@
 // not a search engine.
 
 import type { ChildAgeRange } from "./types";
+import type { ContentProfileId } from "@/lib/content/contentProfile";
 
 /* ─── Message history ────────────────────────────────────────────────────────── */
 
@@ -54,6 +55,8 @@ export type ReadingBuddyRequest = {
   bookTitle?: string;
   /** 1-indexed page number */
   currentPage?: number;
+  /** Server-validated reading behavior; child books use story/comic coaching. */
+  contentProfileId?: ContentProfileId;
 };
 
 export type ReadingBuddyResponse = {

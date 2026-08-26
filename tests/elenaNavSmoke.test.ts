@@ -14,19 +14,17 @@ const PAGE_SRC = fs.readFileSync(
   "utf-8",
 );
 
-describe("NoteLab tab state preservation", () => {
-  it('Study Sheet is always mounted (display:none not conditional)', () => {
+describe("NoteLab canonical surface", () => {
+  it('opens on Notes and keeps the notebook mounted while switching canonical tools', () => {
     const notelab = PAGE_SRC.indexOf('activeShellTab === "notelab"');
-    const studySection = PAGE_SRC.indexOf('notesSubTab === "studyguide"', notelab);
-    // Should use display:none style, not {notesSubTab === "studyguide" && (
-    const snippet = PAGE_SRC.slice(studySection, studySection + 120);
-    expect(snippet).not.toMatch(/&&\s*\(\s*$/m);
-    expect(PAGE_SRC).toContain('display: notesSubTab === "studyguide"');
+    expect(PAGE_SRC).toContain('useState<"notes" | "teaching" | "sources">("notes")');
+    expect(PAGE_SRC.indexOf('display: notesSubTab === "notes"', notelab)).toBeGreaterThan(-1);
+    expect(PAGE_SRC.indexOf("<UltraNotesList", notelab)).toBeGreaterThan(-1);
   });
 
-  it('Listen tab is always mounted (display:none not conditional)', () => {
-    const notelab = PAGE_SRC.indexOf('activeShellTab === "notelab"');
-    expect(PAGE_SRC.indexOf('display: notesSubTab === "podcast"', notelab)).toBeGreaterThan(-1);
+  it('does not restore the retired Study Sheet or Listen fallback tabs', () => {
+    expect(PAGE_SRC).not.toContain('notesSubTab === "studyguide"');
+    expect(PAGE_SRC).not.toContain('notesSubTab === "podcast"');
   });
 });
 

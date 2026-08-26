@@ -906,6 +906,21 @@ export function RightPanel({
   const pageTruth = intelligence.pageTruth;
   const isCurrentPageModel = Boolean(intelligence.isCurrentPage && pageModel && intelligence.status === "ready");
   const panelScrollRef = useRef<HTMLElement>(null);
+  const [groundedEvidenceOpen, setGroundedEvidenceOpen] = useState(false);
+
+  // Evidence is provenance for the active concept, not a competing page-wide
+  // dashboard. Prefer the annotation that overlaps the selected Thought Unit;
+  // otherwise show a small page preview only after the student expands it.
+  const activeGroundedAnnotations = useMemo(() => {
+    if (!activeThoughtUnit) return groundedAnnotations.slice(0, 3);
+    const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const unit = norm(activeThoughtUnit.exactText);
+    const matched = groundedAnnotations.filter((annotation) => {
+      const evidence = norm(annotation.groundedText);
+      return Boolean(unit && evidence && (unit.includes(evidence) || evidence.includes(unit)));
+    });
+    return (matched.length ? matched : groundedAnnotations.slice(0, 1)).slice(0, 2);
+  }, [activeThoughtUnit, groundedAnnotations]);
 
   // One-click integration: when the left panel/PDF focuses a thought unit,
   // scroll its matching card into view here too — same focusedEvidenceId
@@ -1774,21 +1789,24 @@ export function RightPanel({
           </button>
         </div>
 
-        {/* ── Grounded on This Page ────────────────────────────────────────
-            Renders directly from groundedAnnotations — the SAME array
-            SmartPDFViewer draws PDF highlights from (see the prop doc above).
-            This is deliberately a SEPARATE list from the "CORE IDEAS"/Active
-            Concept content above (canonicalLeftPanelUnits, an older,
-            independent pipeline) — everything shown here is guaranteed to
-            have a corresponding PDF highlight by construction, not by
-            coincidence between two unrelated analyses of the page. */}
+        {/* Source evidence is a secondary inspector over the same grounded
+            annotations SmartPDFViewer paints. It never becomes a competing
+            concept feed and stays collapsed until the student requests it. */}
         {groundedAnnotations.length > 0 && (
           <div className="rounded-2xl border border-white/8 bg-[#0a1322] p-3 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-300/70 px-0.5">
-              🔬 Grounded on This Page
-            </div>
-            <div className="space-y-1.5">
-              {groundedAnnotations.map((a, i) => (
+            <button
+              type="button"
+              onClick={() => setGroundedEvidenceOpen((open) => !open)}
+              aria-expanded={groundedEvidenceOpen}
+              className="flex w-full items-center justify-between text-left text-[10px] font-bold uppercase tracking-widest text-amber-300/70 px-0.5"
+            >
+              <span>🔬 Source evidence</span>
+              <span className="text-amber-200/45 normal-case tracking-normal">
+                {activeGroundedAnnotations.length} linked {groundedEvidenceOpen ? "▾" : "▸"}
+              </span>
+            </button>
+            {groundedEvidenceOpen && <div className="space-y-1.5">
+              {activeGroundedAnnotations.map((a, i) => (
                 <div
                   key={i}
                   className="flex items-start gap-2 rounded-lg border border-white/6 bg-white/2 px-2.5 py-2"
@@ -1802,7 +1820,7 @@ export function RightPanel({
                   </span>
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
         )}
 
