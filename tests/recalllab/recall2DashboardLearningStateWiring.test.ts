@@ -1,5 +1,5 @@
 // tests/recalllab/recall2DashboardLearningStateWiring.test.ts
-// C3 (Phase 0 audit) — confirms Recall2Dashboard actually fetches and
+// Confirms the canonical Recall home actually fetches and
 // threads the shared Learning State signal into every stats/queue call
 // site, not just the pure lib functions it calls. No jsdom/render harness
 // for this component in this repo — source inspection, matching this
@@ -8,14 +8,14 @@
 import fs from "fs";
 import path from "path";
 
-const SRC = fs.readFileSync(path.resolve(__dirname, "../../components/recalllab/Recall2Dashboard.tsx"), "utf8");
+const SRC = fs.readFileSync(path.resolve(__dirname, "../../components/recalllab/Recall2Lab.tsx"), "utf8");
 
-describe("components/recalllab/Recall2Dashboard.tsx — Weak-Area Drill signal wiring", () => {
+describe("components/recalllab/Recall2Lab.tsx — canonical Recall home", () => {
   it("REQUIRED: fetches node signals via fetchRecallWeaknessSignals whenever blueprints change", () => {
     expect(SRC).toMatch(/import \{ fetchRecallWeaknessSignals \} from "@\/lib\/recalllab\/recall2LearningStateSignals";/);
     const idx = SRC.indexOf("fetchRecallWeaknessSignals(blueprints)");
     expect(idx).toBeGreaterThan(-1);
-    const block = SRC.slice(Math.max(0, idx - 300), idx + 200);
+    const block = SRC.slice(Math.max(0, idx - 300), idx + 400);
     expect(block).toMatch(/useEffect\(/);
     expect(block).toMatch(/\}, \[blueprints\]\);/);
   });
@@ -24,11 +24,17 @@ describe("components/recalllab/Recall2Dashboard.tsx — Weak-Area Drill signal w
     expect(SRC).toMatch(/computeRecall2Stats\(blueprints, nodeSignals\)/);
   });
 
-  it("REQUIRED: every buildSessionQueue call site (phase buttons, full session, due-only, per-phase-card counts) passes nodeSignals", () => {
+  it("REQUIRED: every stored-card queue passes shared nodeSignals", () => {
     const matches = SRC.match(/buildSessionQueue\([^)]*\)/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(4);
+    expect(matches.length).toBeGreaterThanOrEqual(3);
     for (const call of matches) {
       expect(call).toMatch(/nodeSignals/);
     }
+  });
+
+  it("removes the competing Recall2Dashboard and silently migrates legacy sets as data", () => {
+    expect(fs.existsSync(path.resolve(__dirname, "../../components/recalllab/Recall2Dashboard.tsx"))).toBe(false);
+    expect(SRC).toMatch(/saveBlueprintsDedup\(recallSetToBlueprints\(set\), set\.bookId\)/);
+    expect(SRC).not.toMatch(/IMPORT FROM RECALL LAB 1\.0/);
   });
 });
