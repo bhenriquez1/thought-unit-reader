@@ -4,7 +4,7 @@
 // a SourceRef (char offsets) can be mapped back to on-canvas coordinates
 // for scroll-to-highlight and TTS cursor positioning.
 
-import type { SourceRef } from './types';
+import type { SourceRef, OCRWordBox } from './types';
 import { orderItemsForReading, buildStructuredPageTextFull, locateItemOffsetsInText } from '../pdf/structuredPageText';
 
 // ============================================================================
@@ -164,6 +164,76 @@ export function buildPageTextIndex(
   }
 
   return { pageIndex, fullText, tokens };
+}
+
+/**
+ * R5 — the OCR-page analog of buildPageTextIndex above. An OCR'd page has no
+ * PDF.js text-layer items at all (a scanned page's textContent.items is
+ * empty), so TextLayerRegistry previously had nothing to store for it —
+ * every highlight/eye-guide geometry lookup on such a page silently
+ * resolved to nothing, even after the page's TEXT was correctly OCR'd.
+ * Tesseract.js already computes a word-level bbox for every recognized word
+ * (Word.bbox — see extractor.ts's ocrDataUrlToText); this just needed to be
+ * requested (`{ blocks: true }`) and converted into the same PageTextIndex
+ * shape resolveAnchorGeometry.ts/resolveWordGeometry already consume — no
+ * changes needed anywhere downstream of TextLayerRegistry.
+ *
+ * Coordinate space: `ocrWords[].bbox` are pixel coordinates within the
+ * rendered page image Tesseract processed (renderPdfPageToDataUrl's canvas
+ * — top-left origin, y down, same convention PDF.js's own viewport space
+ * already uses). That canvas was drawn directly from
+ * `page.getViewport({ scale: ocrRenderScale })`, i.e. it already IS
+ * PDF.js viewport space at `ocrRenderScale`. Per resolveAnchorGeometry.ts's
+ * header comment, TextLayerRegistry stores bboxes in viewport space at
+ * scale=1, and viewport space is linear in scale for a fixed rotation — so
+ * converting an OCR bbox into the registry's convention is a single scalar
+ * divide by `ocrRenderScale`. No matrix inversion, DPI lookup, or rotation
+ * handling is needed beyond that division.
+ *
+ * `canonicalPageText` MUST be the exact same string this page's pageText
+ * ends up being elsewhere (extractPageText's mergedText/ocrText) — same
+ * discipline buildPageTextIndex's own header comment documents for the
+ * native case, and for the same reason: a quote resolved against the
+ * canonical pageText must be findable in this index's fullText, which is
+ * why fullText is set to canonicalPageText directly rather than rebuilt
+ * from the word list (Tesseract's own line/paragraph joining in `data.text`
+ * is not guaranteed byte-identical to a hand-rebuilt join). Each word's own
+ * char offset within that text is then recovered via
+ * locateItemOffsetsInText's proven sequential forward search — the exact
+ * same utility (and safety property: an unlocatable word is omitted, never
+ * guessed at) buildPageTextIndex already relies on for native PDF items.
+ */
+export function buildPageTextIndexFromOCR(
+  pageIndex: number,
+  ocrWords: OCRWordBox[],
+  ocrRenderScale: number,
+  canonicalPageText: string,
+): PageTextIndex {
+  if (!ocrWords.length || !canonicalPageText || !ocrRenderScale) {
+    return { pageIndex, fullText: canonicalPageText, tokens: [] };
+  }
+
+  const syntheticItems = ocrWords.map((word, itemIndex) => ({ str: word.text, itemIndex }));
+  const offsets = locateItemOffsetsInText(canonicalPageText, syntheticItems);
+
+  const tokens: TextToken[] = offsets.map(({ itemIndex, start, end }) => {
+    const word = ocrWords[itemIndex];
+    const { x0, y0, x1, y1 } = word.bbox;
+    return {
+      str: word.text,
+      startChar: start,
+      endChar: end,
+      bbox: {
+        x: x0 / ocrRenderScale,
+        y: y0 / ocrRenderScale,
+        w: (x1 - x0) / ocrRenderScale,
+        h: (y1 - y0) / ocrRenderScale,
+      },
+      itemIndex,
+    };
+  });
+
+  return { pageIndex, fullText: canonicalPageText, tokens };
 }
 
 // ============================================================================

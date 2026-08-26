@@ -3,7 +3,7 @@
 // Uses native PDF text when available, falls back to tesseract.js OCR
 
 import { get, set } from 'idb-keyval';
-import type { PageText, PageSource, OCRCacheEntry } from './types';
+import type { PageText, PageSource, OCRCacheEntry, OCRWordBox } from './types';
 
 // ============================================================================
 // Configuration
@@ -70,28 +70,53 @@ async function getTesseractWorker(): Promise<any> {
 }
 
 /**
- * OCR a data URL image and return extracted text with confidence.
- * Passing signal allows the caller to cancel before recognition starts;
- * throws AbortError when cancelled so callers can distinguish it from
- * OCR failures.
+ * Flattens Tesseract's blocks -> paragraphs -> lines -> words hierarchy
+ * (only present when recognize() is asked for `{ blocks: true }` output —
+ * the default is `blocks: false`, which silently discards every word's
+ * bbox even though the library computes it) into a flat reading-order list.
+ * Empty/whitespace-only words are dropped — they carry no useful position.
+ */
+function flattenOcrWords(data: any): OCRWordBox[] {
+  const words: OCRWordBox[] = [];
+  for (const block of data?.blocks ?? []) {
+    for (const paragraph of block?.paragraphs ?? []) {
+      for (const line of paragraph?.lines ?? []) {
+        for (const word of line?.words ?? []) {
+          const text = typeof word?.text === 'string' ? word.text.trim() : '';
+          if (!text || !word?.bbox) continue;
+          words.push({ text, bbox: word.bbox });
+        }
+      }
+    }
+  }
+  return words;
+}
+
+/**
+ * OCR a data URL image and return extracted text with confidence and,
+ * when Tesseract found any, word-level bounding boxes in that image's own
+ * pixel space (see OCRWordBox). Passing signal allows the caller to cancel
+ * before recognition starts; throws AbortError when cancelled so callers
+ * can distinguish it from OCR failures.
  */
 export async function ocrDataUrlToText(
   dataUrl: string,
   signal?: AbortSignal,
-): Promise<{ text: string; confidence: number }> {
+): Promise<{ text: string; confidence: number; words: OCRWordBox[] }> {
   if (signal?.aborted) throw new DOMException('OCR cancelled', 'AbortError');
   try {
     const worker = await getTesseractWorker();
     if (signal?.aborted) throw new DOMException('OCR cancelled', 'AbortError');
-    const { data } = await worker.recognize(dataUrl);
+    const { data } = await worker.recognize(dataUrl, {}, { blocks: true });
     return {
       text: data.text || '',
-      confidence: data.confidence || 0
+      confidence: data.confidence || 0,
+      words: flattenOcrWords(data),
     };
   } catch (error) {
     if ((error as any)?.name === 'AbortError') throw error;
     console.error('[PageIntelligence] OCR recognition failed:', error);
-    return { text: '', confidence: 0 };
+    return { text: '', confidence: 0, words: [] };
   }
 }
 
@@ -275,7 +300,8 @@ ${cachedText}`.trim()
       ocrText: cachedText,
       mergedText,
       source: shouldMergeNativeAndOCR ? 'mixed' as PageSource : 'ocr' as PageSource,
-      confidence: cached.confidence
+      confidence: cached.confidence,
+      ocrWords: cached.words,
     };
   }
 
@@ -287,13 +313,15 @@ ${cachedText}`.trim()
     const ocrResult = await ocrDataUrlToText(imageDataUrl, signal);
     const sanitizedOcrText = sanitizeExtractionText(ocrResult.text);
 
-    // Cache the result
+    // Cache the result (words alongside text, so a revisited page gets
+    // geometry back from cache without re-running Tesseract).
     await cacheOCR({
       docId,
       pageNumber,
       text: sanitizedOcrText,
       confidence: ocrResult.confidence,
-      extractedAt: Date.now()
+      extractedAt: Date.now(),
+      words: ocrResult.words,
     });
 
     onOCRComplete?.(sanitizedOcrText, ocrResult.confidence);
@@ -315,7 +343,8 @@ ${sanitizedOcrText}`.trim()
       ocrText: sanitizedOcrText,
       mergedText,
       source: isMixed ? 'mixed' as PageSource : 'ocr' as PageSource,
-      confidence: ocrResult.confidence
+      confidence: ocrResult.confidence,
+      ocrWords: ocrResult.words,
     };
   } catch (error) {
     if ((error as any)?.name === 'AbortError') throw error;
