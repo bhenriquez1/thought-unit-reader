@@ -108,8 +108,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
     pageThesis:    typeof pageThesis    === "string" ? pageThesis    : undefined,
     pageSummary:   typeof pageSummary   === "string" ? pageSummary   : undefined,
-    pageText:      typeof pageText      === "string" ? pageText.slice(0, 1500) : undefined,
-    rankedConcepts: rankedConcepts.slice(0, 6),
+    pageText:      typeof pageText      === "string" ? pageText.slice(0, 8000) : undefined,
+    rankedConcepts: rankedConcepts.slice(0, 15),
   };
 
   // ── Stage 1: Fast path ─────────────────────────────────────────────────────
