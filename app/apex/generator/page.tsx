@@ -385,30 +385,28 @@ function ExamGeneratorPage() {
   const canGenerate = !!bookId && sectionIds.length > 0 && !isGenerating && !resolvedScope.blocked;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
+    <div className="min-h-dvh bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white">
+      <header className="border-b border-white/10 bg-slate-950/70 backdrop-blur-xl">
+        <div className="mx-auto max-w-6xl px-5 py-5">
           <Link
             href="/apex"
-            className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-4"
+            className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors"
           >
             ← TestLab
           </Link>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            ⚡ Build Practice Exam
-          </h1>
-          <p className="text-gray-300 mt-1 text-sm">
+          <h1 className="mt-2 text-2xl font-bold tracking-tight">⚡ Build Practice Exam</h1>
+          <p className="mt-1 text-xs text-slate-400">
             AI questions grounded in your uploaded book — never a copied question bank.
           </p>
         </div>
-
+      </header>
+      <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* ── Left panel ── */}
           <div className="lg:col-span-2 space-y-6">
 
             {/* 1 — Exam Type */}
-            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+            <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">🎯 Exam Type</h3>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -477,7 +475,7 @@ function ExamGeneratorPage() {
 
             {/* 1b — Course Exam Type (only when Course Exam is the active profile) */}
             {examProfileId === COURSE_EXAM_PROFILE_ID && (
-              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+              <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
                 <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 Course Exam Type</h3>
                 <p className="text-xs text-gray-400 mb-4">
                   Picks a starting scope, timing, and size below — you can still adjust any of them afterward.
@@ -502,7 +500,7 @@ function ExamGeneratorPage() {
             )}
 
             {/* 2 — Source Book */}
-            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+            <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📖 Source Book</h3>
 
               {books.length === 0 ? (
@@ -722,7 +720,7 @@ function ExamGeneratorPage() {
 
             {/* 3 — Exam Scope */}
             {bookId && (
-              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+              <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
                 <h3 className="text-lg font-semibold mb-1 text-blue-400">🧭 Exam Scope</h3>
                 <p className="text-xs text-gray-400 mb-4">
                   {readingProgress
@@ -784,7 +782,7 @@ function ExamGeneratorPage() {
             )}
 
             {/* 4 — Practice Mode */}
-            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+            <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">🎓 Practice Mode</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {PRACTICE_MODES.map((mode) => (
@@ -809,7 +807,7 @@ function ExamGeneratorPage() {
             </section>
 
             {/* 5 — Difficulty */}
-            <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+            <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📊 Difficulty</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {DIFFICULTY_OPTIONS.map((d) => (
@@ -832,7 +830,7 @@ function ExamGeneratorPage() {
 
             {/* 6 — DAT Sections (collapsed for Practice mode; DAT profile only) */}
             {examProfileId === 'dat' ? (
-              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+              <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
                 <h3 className="text-lg font-semibold mb-4 text-blue-400">📚 DAT Sections</h3>
                 <div className="space-y-3">
                   {DAT_SECTIONS.map((section) => {
@@ -869,7 +867,7 @@ function ExamGeneratorPage() {
                 </div>
               </section>
             ) : (
-              <section className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+              <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
                 <h3 className="text-lg font-semibold mb-2 text-blue-400">📚 Sections</h3>
                 <p className="text-sm text-gray-400">
                   Custom Exam draws from your entire selected source (or selected chapters, above) — no fixed exam sections or external blueprint.
@@ -881,7 +879,7 @@ function ExamGeneratorPage() {
           {/* ── Right panel: summary + actions ── */}
           <div className="space-y-5">
             {/* Exam summary */}
-            <div className="bg-gradient-to-br from-blue-900/50 to-purple-900/50 rounded-xl p-6 border border-blue-500/30">
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-cyan-500/10 to-violet-500/10 p-5 sm:p-6">
               <h3 className="text-lg font-semibold mb-4 text-blue-400">📋 Exam Summary</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -998,7 +996,7 @@ function ExamGeneratorPage() {
             <button
               onClick={generateExam}
               disabled={!canGenerate}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 shadow-lg"
+              className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 font-semibold py-4 px-6 rounded-xl transition-all duration-200 shadow-lg"
             >
               {isGenerating ? (
                 <span className="flex items-center justify-center gap-2">

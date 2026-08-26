@@ -497,7 +497,7 @@ export default function ExamProctorPage() {
 
   if (phase === "loading") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4" />
           <p className="text-gray-300">Loading exam…</p>
@@ -508,7 +508,7 @@ export default function ExamProctorPage() {
 
   if (phase === "no_exam" || !state) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">⚠️</div>
           <h1 className="text-2xl font-bold mb-4">No Exam Found</h1>
@@ -525,7 +525,7 @@ export default function ExamProctorPage() {
 
   if (phase === "submitting") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4" />
           <h1 className="text-xl font-semibold">Submitting exam…</h1>
@@ -540,7 +540,7 @@ export default function ExamProctorPage() {
     const nextSection = state.sections[state.currentSectionIdx];
     const cols = nextSection ? sectionColors(nextSection.sectionId) : DEFAULT_COLORS;
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="max-w-md w-full text-center px-6">
           <div className="text-5xl mb-4">✅</div>
           <h2 className="text-2xl font-bold mb-2">Section Complete!</h2>
@@ -580,7 +580,7 @@ export default function ExamProctorPage() {
   if (phase === "break") {
     const nextSection = state.sections[state.currentSectionIdx];
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="max-w-md w-full text-center px-6">
           <div className="text-5xl mb-4">☕</div>
           <h2 className="text-2xl font-bold mb-2">Optional Break</h2>
@@ -617,7 +617,7 @@ export default function ExamProctorPage() {
 
   if (!currentSection || !currentQuestion) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">❓</div>
           <h1 className="text-2xl font-bold mb-4">Question Not Found</h1>
@@ -641,7 +641,7 @@ export default function ExamProctorPage() {
   const isLastSection = state.currentSectionIdx === state.sections.length - 1;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 text-white flex flex-col">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex flex-col">
 
       {/* ── Pause overlay ─── */}
       {state.isPaused && (
