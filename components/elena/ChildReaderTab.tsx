@@ -6,10 +6,12 @@
 // Thought Units here — that is E3. ReadingBuddy is pre-existing (not new
 // wiring); it now runs against Elena's own document instead of the adult's.
 
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import ReadingBuddy from "@/components/elena/ReadingBuddy";
 import type { ChildProfile, ChildLibraryEntry } from "@/lib/elena/types";
+import { detectContentProfile } from "@/lib/content/contentProfile";
+import { buildChildReadAloudText } from "@/lib/elena/storyReading";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
@@ -93,6 +95,41 @@ export default function ChildReaderTab({
   profile, activeBook, bookFileUrl, library, uploading, uploadError, pageText,
   onUploadClick, onOpenBook, onPageChange, onPageCount, onPageTextExtracted,
 }: ChildReaderTabProps) {
+  const contentProfile = useMemo(
+    () => detectContentProfile({ bookTitle: activeBook?.title, pageText, childMode: true }),
+    [activeBook?.title, pageText],
+  );
+  const readAloudText = useMemo(() => buildChildReadAloudText(pageText ?? ""), [pageText]);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [reading, setReading] = useState(false);
+  const [spokenWord, setSpokenWord] = useState("");
+
+  const stopReadAloud = useCallback(() => {
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setReading(false);
+    setSpokenWord("");
+  }, []);
+
+  function startReadAloud() {
+    if (!readAloudText || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    stopReadAloud();
+    const utterance = new SpeechSynthesisUtterance(readAloudText);
+    utterance.rate = profile.ageRange === "3-4" || profile.ageRange === "5-6" ? 0.82 : 0.92;
+    utterance.pitch = 1.08;
+    utterance.onboundary = (event) => {
+      if (event.name !== "word") return;
+      setSpokenWord(readAloudText.slice(event.charIndex, event.charIndex + (event.charLength || 24)).split(/\s/)[0] ?? "");
+    };
+    utterance.onend = stopReadAloud;
+    utterance.onerror = stopReadAloud;
+    utteranceRef.current = utterance;
+    setReading(true);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  useEffect(() => stopReadAloud, [activeBook?.documentId, activeBook?.currentPage, stopReadAloud]);
+
   if (!activeBook || !bookFileUrl) {
     return (
       <EmptyReaderState
@@ -105,7 +142,12 @@ export default function ChildReaderTab({
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-shrink-0 px-4 pt-4 pb-2 flex items-center justify-between gap-2">
-        <h3 className="text-white font-bold text-sm truncate">{activeBook.title}</h3>
+        <div className="min-w-0">
+          <h3 className="text-white font-bold text-sm truncate">{activeBook.title}</h3>
+          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-300/70">
+            {contentProfile.id === "child-comic" ? "Comic reading coach" : "Story reading coach"}
+          </div>
+        </div>
         <button
           onClick={onUploadClick}
           disabled={uploading}
@@ -117,6 +159,20 @@ export default function ChildReaderTab({
       {uploadError && (
         <p className="flex-shrink-0 text-red-400 text-xs px-4 pb-2">{uploadError}</p>
       )}
+
+      <div className="mx-4 mb-3 flex flex-shrink-0 items-center gap-2 rounded-2xl border border-fuchsia-300/20 bg-fuchsia-500/8 px-3 py-2">
+        <button
+          type="button"
+          onClick={reading ? stopReadAloud : startReadAloud}
+          disabled={!readAloudText}
+          className="rounded-xl bg-fuchsia-500/20 px-3 py-1.5 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {reading ? "■ Stop reading" : "▶ Read this page"}
+        </button>
+        <div className="min-w-0 flex-1 truncate text-xs text-fuchsia-100/60">
+          {reading ? <>Reading in page order · <mark className="rounded bg-yellow-300/70 px-1 text-slate-950">{spokenWord || "…"}</mark></> : "Dialogue and story text stay in source order."}
+        </div>
+      </div>
 
       {library.length > 1 && (
         <div className="flex-shrink-0 flex gap-2 overflow-x-auto px-4 pb-3">

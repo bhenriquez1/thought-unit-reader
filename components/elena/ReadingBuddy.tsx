@@ -6,8 +6,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import type { ChildProfile } from "@/lib/elena/types";
 import type { BuddyMessage } from "@/lib/elena/readingBuddy";
-import { QUICK_PROMPTS } from "@/lib/elena/readingBuddy";
 import { loadGroundedPageContext } from "@/lib/elena/childTeachingAdapter";
+import { detectContentProfile } from "@/lib/content/contentProfile";
+import { getChildQuickPrompts } from "@/lib/elena/storyReading";
 
 /* ─── Props ──────────────────────────────────────────────────────────────────── */
 
@@ -45,6 +46,11 @@ export default function ReadingBuddy({
   defaultOpen,
   onRequestClose,
 }: ReadingBuddyProps) {
+  const contentProfile = React.useMemo(
+    () => detectContentProfile({ bookTitle, pageText, childMode: true }),
+    [bookTitle, pageText],
+  );
+  const quickPrompts = React.useMemo(() => getChildQuickPrompts(contentProfile.id), [contentProfile.id]);
   const [messages,  setMessages]  = useState<BuddyMessage[]>([]);
   const [input,     setInput]     = useState("");
   const [loading,   setLoading]   = useState(false);
@@ -122,6 +128,7 @@ export default function ReadingBuddy({
           groundedContext: groundedContext ?? undefined,
           bookTitle,
           currentPage,
+          contentProfileId: contentProfile.id,
         }),
         signal: abortRef.current.signal,
       });
@@ -240,7 +247,7 @@ export default function ReadingBuddy({
       {/* Quick prompts — only show when chat is fresh */}
       {messages.length <= 1 && !loading && (
         <div className="flex gap-1.5 px-3 py-2 overflow-x-auto scrollbar-hide flex-shrink-0">
-          {QUICK_PROMPTS.map(qp => (
+          {quickPrompts.map(qp => (
             <button
               key={qp.id}
               onClick={() => sendMessage(qp.text)}
