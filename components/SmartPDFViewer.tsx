@@ -1796,13 +1796,21 @@ export default function SmartPDFViewer({
                   // y-coordinates) rather than flattening to a single space-joined
                   // string — see lib/pdf/structuredPageText for why this matters.
                   const text = buildStructuredPageText(textContent?.items ?? []);
-                  if (text.length > 20) {
+                  // shouldUseOCR checks BOTH near-emptiness (scanned/image-only page)
+                  // AND unmapped-glyph corruption (a page with a broken embedded-font
+                  // CMap can be well over 20 chars — e.g. an entire paragraph — while
+                  // still having individual letters silently replaced with tofu/
+                  // replacement characters). This used to only check text.length,
+                  // so a long-but-corrupted page never reached the OCR fallback below
+                  // at all — the corrupted native text was passed straight through as
+                  // if it were clean. See lib/page-intelligence/extractor.ts.
+                  if (text.length > 20 && !shouldUseOCR(text)) {
                     console.log("[PARENT_WRITE:SmartPDFViewer] onPageTextExtracted page=" + currentPage + " chars=" + text.length);
                     onPageTextExtracted(currentPage, text);
                   } else {
-                    // Native PDF.js text layer produced (near-)nothing — a scanned/
-                    // image-only page. Fall back to OCR rather than leaving this
-                    // page's text permanently empty.
+                    // Native PDF.js text layer produced (near-)nothing, or is long but
+                    // corrupted — fall back to OCR rather than leaving this page's text
+                    // permanently empty or silently passing corrupted text downstream.
                     void attemptOcrFallback(text);
                   }
                 }}

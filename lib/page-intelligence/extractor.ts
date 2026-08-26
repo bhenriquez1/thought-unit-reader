@@ -18,6 +18,38 @@ const EXTRACTION_FAILURE_PATTERNS = [
   /no text available/i,
 ];
 
+// Characters PDF.js emits when it cannot map a glyph in the page's (often
+// custom/subset) font to a real Unicode codepoint -- the visible symptom is
+// literal "tofu" boxes substituted for real letters mid-word (e.g. an "m"
+// glyph coming back as a box character, corrupting "audiometric" into
+// something like "audio<box>etric"). None of these can be repaired by
+// generic text normalization -- there is no correct character to
+// reconstruct from an unmapped glyph. The only real fix is to re-read the
+// page from its rendered pixels via OCR, which never depends on the PDF's
+// own (broken) font CMap.
+//
+// Expressed as numeric codepoints (String.fromCodePoint / codePointAt), not
+// raw literals or \u escapes inside a string/regex, so the exact intended
+// characters survive regardless of file/editor/tooling encoding.
+const WHITE_SQUARE_CODEPOINT = 0x25a1; // "tofu" box glyph some fonts substitute
+const REPLACEMENT_CHAR_CODEPOINT = 0xfffd; // standard Unicode replacement character
+const PRIVATE_USE_AREA_START = 0xe000; // custom font subsets often reuse this range
+const PRIVATE_USE_AREA_END = 0xf8ff; // for glyph IDs never mapped to real text
+
+/** True when text contains one of PDF.js's own "I couldn't map this glyph
+ *  to real text" marker characters -- a distinct signal from mere shortness
+ *  or broken hyphenation, since a corrupted page can otherwise look long
+ *  enough and well-formed enough to pass every other quality check. */
+function hasUnmappedGlyphCorruption(text: string): boolean {
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    if (code === undefined) continue;
+    if (code === WHITE_SQUARE_CODEPOINT || code === REPLACEMENT_CHAR_CODEPOINT) return true;
+    if (code >= PRIVATE_USE_AREA_START && code <= PRIVATE_USE_AREA_END) return true;
+  }
+  return false;
+}
+
 function sanitizeExtractionText(text: string): string {
   if (!text) return '';
   const normalized = text.replace(/\s+/g, ' ').trim();
@@ -200,7 +232,7 @@ export interface ExtractPageTextOptions {
  *
  * Logic:
  * 1. Try native text extraction from PDF text layer
- * 2. If empty or too short, check OCR cache
+ * 2. If empty, too short, or corrupted (unmapped-glyph markers), check OCR cache
  * 3. If not cached, render page to image and OCR it
  * 4. Cache OCR result for future use
  */
@@ -224,7 +256,7 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     nativeText = sanitizeExtractionText((await getNativeText()) || '');
 
     const nativeQuality = scoreTextQuality(nativeText);
-    const shouldUseNative = nativeText.length >= minTextLength && nativeQuality >= 35;
+    const shouldUseNative = !shouldUseOCR(nativeText, minTextLength) && nativeQuality >= 35;
     if (shouldUseNative) {
       return {
         pageNumber,
@@ -336,9 +368,22 @@ ${sanitizedOcrText}`.trim()
 // Utility: Check if page likely needs OCR
 // ============================================================================
 
+/**
+ * True when the native PDF.js text layer is unusable for this page --
+ * either because it's (near-)empty (a scanned/image-only page) or because
+ * it contains PDF.js's own unmapped-glyph marker characters (a corrupted
+ * embedded-font page that LOOKS long enough but has individual letters
+ * silently replaced with tofu/replacement characters -- see
+ * hasUnmappedGlyphCorruption above). Both cases get the same fix: re-read
+ * the page via OCR instead of trusting the broken text layer. The single
+ * source of truth for this decision -- both extractPageText's own internal
+ * native-vs-OCR choice and SmartPDFViewer's caller-side gate before ever
+ * invoking OCR must use this same function, not independently re-derive it.
+ */
 export function shouldUseOCR(nativeText: string, minLength: number = MIN_TEXT_LENGTH): boolean {
   const trimmed = nativeText?.trim() || '';
-  return trimmed.length < minLength;
+  if (trimmed.length < minLength) return true;
+  return hasUnmappedGlyphCorruption(trimmed);
 }
 
 // ============================================================================

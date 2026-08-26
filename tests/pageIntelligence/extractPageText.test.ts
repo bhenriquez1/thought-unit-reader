@@ -116,4 +116,68 @@ describe("shouldUseOCR", () => {
   it("false for usable native text", () => {
     expect(shouldUseOCR(USABLE_NATIVE_TEXT)).toBe(false);
   });
+
+  // Post-merge fix — a page whose native text is well over the length
+  // floor but has individual letters replaced with PDF.js's own
+  // "unmapped glyph" marker characters (a broken embedded-font CMap) used
+  // to be treated as perfectly usable, since the old check was purely
+  // text.length-based. Codepoints are built with String.fromCodePoint
+  // rather than embedded as raw literals in this file's source, for the
+  // same encoding-safety reason lib/page-intelligence/extractor.ts itself
+  // avoids raw literals/\u escapes.
+  const WHITE_SQUARE = String.fromCodePoint(0x25a1);
+  const REPLACEMENT_CHAR = String.fromCodePoint(0xfffd);
+  const PRIVATE_USE_AREA_CHAR = String.fromCodePoint(0xe000);
+
+  it(`REQUIRED: true for otherwise-long native text containing a white-square (tofu) glyph mid-word — e.g. "audio${WHITE_SQUARE}etric"`, () => {
+    const corrupted = USABLE_NATIVE_TEXT.replace("multiple", `multi${WHITE_SQUARE}ple`);
+    expect(corrupted.length).toBeGreaterThan(40);
+    expect(shouldUseOCR(corrupted)).toBe(true);
+  });
+
+  it("REQUIRED: true for otherwise-long native text containing a Unicode replacement character", () => {
+    const corrupted = USABLE_NATIVE_TEXT.replace("real", `re${REPLACEMENT_CHAR}l`);
+    expect(shouldUseOCR(corrupted)).toBe(true);
+  });
+
+  it("REQUIRED: true for otherwise-long native text containing a Private Use Area glyph (common custom-font-subset corruption)", () => {
+    const corrupted = USABLE_NATIVE_TEXT.replace("words", `wor${PRIVATE_USE_AREA_CHAR}ds`);
+    expect(shouldUseOCR(corrupted)).toBe(true);
+  });
+});
+
+describe("extractPageText — long but corrupted native text", () => {
+  const WHITE_SQUARE = String.fromCodePoint(0x25a1);
+  const CORRUPTED_NATIVE_TEXT = USABLE_NATIVE_TEXT.replace("multiple", `multi${WHITE_SQUARE}ple`);
+
+  it("REQUIRED: routes to OCR instead of short-circuiting on the corrupted native text, even though it's well over the length floor", async () => {
+    mockRecognize.mockResolvedValueOnce({
+      data: { text: "Clean OCR text with the word multiple spelled correctly.", confidence: 88 },
+    });
+    const getPageImageDataUrl = jest.fn(async () => "data:image/png;base64,fakepageimage");
+    const result = await extractPageText({
+      pageNumber: 5,
+      docId: "doc-corrupted-1",
+      getNativeText: async () => CORRUPTED_NATIVE_TEXT,
+      getPageImageDataUrl,
+    });
+    expect(getPageImageDataUrl).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("ocr");
+    expect(result.text).toBe("Clean OCR text with the word multiple spelled correctly.");
+    expect(result.text).not.toContain(WHITE_SQUARE);
+  });
+
+  it("the corrupted native text is not merged back into the final text — nativeText.length is well above minTextLength, so shouldMergeNativeAndOCR is false and OCR output stands alone", async () => {
+    mockRecognize.mockResolvedValueOnce({
+      data: { text: "Pure clean OCR replacement text.", confidence: 90 },
+    });
+    const result = await extractPageText({
+      pageNumber: 6,
+      docId: "doc-corrupted-2",
+      getNativeText: async () => CORRUPTED_NATIVE_TEXT,
+      getPageImageDataUrl: async () => "data:image/png;base64,fakepageimage",
+    });
+    expect(result.text).toBe("Pure clean OCR replacement text.");
+    expect(result.nativeText).toBe(CORRUPTED_NATIVE_TEXT);
+  });
 });
