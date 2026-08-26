@@ -317,7 +317,28 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
 
   console.log("[NOTELAB_SOURCE_USED]", { bookId: note.bookId, pageNumber: note.pageNumber, bookTitle: note.bookTitle ?? "(none)" });
 
-  const c = compact(note);
+  // AI-generated page notes reuse a stable id. Preserve the student's own
+  // layer when a generator sends a replacement object without that field.
+  // An explicit `studentNotes` property (including undefined) still allows
+  // the notebook editor to update or clear the field intentionally.
+  let noteToSave = note;
+  if (!Object.prototype.hasOwnProperty.call(note, "studentNotes")) {
+    try {
+      const existing = (await idbGetAllNotes()).find((candidate) =>
+        candidate.id === note.id
+        || (candidate.bookId === note.bookId && candidate.pageNumber === note.pageNumber)
+      );
+      if (existing?.studentNotes) noteToSave = { ...note, studentNotes: existing.studentNotes };
+    } catch {
+      const existing = lsRead().find((candidate) =>
+        candidate.id === note.id
+        || (candidate.bookId === note.bookId && candidate.pageNumber === note.pageNumber)
+      );
+      if (existing?.studentNotes) noteToSave = { ...note, studentNotes: existing.studentNotes };
+    }
+  }
+
+  const c = compact(noteToSave);
 
   // Validate schema: must have at minimum a coreIdea or sections
   const hasContent = !!(c.coreIdea || (c.sections && c.sections.length > 0) || c.concepts.length > 0);
@@ -342,8 +363,8 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
   // Primary: IDB — full (uncompacted) note so large fields like adaptiveStudySheet
   // and datStudySheet survive. On failure, fall back to the localStorage mirror.
   try {
-    await idbPutNote(note);
-    console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, bookId: note.bookId, driver: "indexeddb" });
+    await idbPutNote(noteToSave);
+    console.log("[NOTE_SAVE_SUCCESS]", { id: noteToSave.id, page: noteToSave.pageNumber, bookId: noteToSave.bookId, driver: "indexeddb" });
   } catch (e) {
     console.error("[NOTELAB_IDB_PUT_FAIL]", { id: c.id, error: String(e) }, "— falling back to localStorage mirror");
   }

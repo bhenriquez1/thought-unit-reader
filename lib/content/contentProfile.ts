@@ -51,7 +51,25 @@ const PROFILES: Record<ContentProfileId, ContentProfile> = {
 const MATH_TITLE_RE = /\b(calculus|algebra|geometry|trigonometry|statistics|mathematics|biocalculus)\b/i;
 const CHILD_TITLE_RE = /\b(fox|comic|graphic novel|story|adventure|chapter book|picture book)\b/i;
 const COMIC_TEXT_RE = /\b(ding dong|bam|pow|wham|slurp|whoosh)\b|(?:\b[A-Z]{2,}\b[!?.]*){2,}/i;
-const MATH_TEXT_RE = /[∫∑√∞≤≥≈]|\bf\s*\(\s*x\s*\)|\b(domain|range|derivative|integral|function|equation|graph)\b/i;
+const STRONG_MATH_TEXT_RE = /[∫∑√∞≤≥≈]|\b(?:f|g|h)\s*\(\s*[a-z]\s*\)|\b(?:d[xy]\s*\/\s*d[xy]|lim\s*[_→]|[a-z]\s*=\s*[-+]?\d)/i;
+const MATH_TERMS = [
+  "domain", "range", "derivative", "integral", "equation", "graph",
+  "function", "variable", "slope", "axis", "limit", "coordinate",
+] as const;
+
+/** Ordinary scientific prose often contains one overloaded word such as
+ * "function", "range", or "graph". Require mathematical notation or several
+ * corroborating terms before changing the entire notebook schema. */
+function hasUnambiguousMathText(text: string): boolean {
+  if (STRONG_MATH_TEXT_RE.test(text)) return true;
+  const lower = text.toLowerCase();
+  const matches = MATH_TERMS.filter((term) => new RegExp(`\\b${term}\\b`, "i").test(lower));
+  const found = new Set(matches);
+  const hasDomainRangePair = found.has("domain") && found.has("range");
+  const hasTechnicalTerm = ["derivative", "integral", "equation", "slope", "axis", "limit", "coordinate"]
+    .some((term) => found.has(term as typeof MATH_TERMS[number]));
+  return found.size >= 3 && (hasDomainRangePair || hasTechnicalTerm);
+}
 
 export function detectContentProfile(input: {
   bookTitle?: string | null;
@@ -66,7 +84,7 @@ export function detectContentProfile(input: {
     return PROFILES[comic ? "child-comic" : "child-story"];
   }
 
-  if (MATH_TITLE_RE.test(title) || MATH_TEXT_RE.test(text)) return PROFILES["math-textbook"];
+  if (MATH_TITLE_RE.test(title) || hasUnambiguousMathText(text)) return PROFILES["math-textbook"];
   if (CHILD_TITLE_RE.test(title) && COMIC_TEXT_RE.test(text)) return PROFILES["child-comic"];
   return PROFILES["adult-textbook"];
 }
@@ -78,4 +96,3 @@ export function getContentProfile(id: ContentProfileId): ContentProfile {
 export function isChildProfile(id: ContentProfileId): boolean {
   return id === "child-story" || id === "child-comic";
 }
-
