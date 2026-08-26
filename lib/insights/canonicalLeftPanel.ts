@@ -115,7 +115,7 @@ function extractPageTextFallbackUnits(pageText: string, bookId: string, page: nu
     .map((text, index) => ({ text, index, score: scoreText(text), category: classifyText(text) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => (b.score - a.score) || (a.index - b.index))
-    .slice(0, 6)
+    .slice(0, 12)
     .sort((a, b) => a.index - b.index)
     .map((x, i) => {
       const priorityTier = Math.max(3, Math.min(5, x.score));

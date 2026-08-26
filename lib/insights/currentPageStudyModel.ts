@@ -270,7 +270,7 @@ function buildAnchorCandidates(
     deduped.push(a);
   }
 
-  const candidates = deduped.slice(0, 8);
+  const candidates = deduped.slice(0, 20);
   console.log("[ANCHORS_FROM_RIGHT_PANEL]", {
     pageType,
     count:         candidates.length,
@@ -508,7 +508,7 @@ export function buildStudyModel(
 
   const visualAnchors: VisualAnchor[] = seededWithMeta
     .sort((a, b) => a.adjustedPriority - b.adjustedPriority)
-    .slice(0, 6)
+    .slice(0, 14)
     .map(({ seed: s, thesisRelevance, basePriority, adjustedPriority, misconceptionRisk, proceduralImportance, connectionStrength }) => {
       const n = (fieldCounters.get(s.sourceField) ?? 0) + 1;
       fieldCounters.set(s.sourceField, n);

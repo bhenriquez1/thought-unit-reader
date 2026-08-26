@@ -379,20 +379,27 @@ const COMPREHENSION_PROMPTS = [
 // Prevents calculus/dense pages from painting every formula line.
 // ---------------------------------------------------------------------------
 
+// R3: these were flat, low ceilings tuned for "a few highlights per page" and
+// silently dropped material on dense mechanism/procedure/comparison pages —
+// the AI could select a full causal chain or every procedure step upstream,
+// then have it truncated back down here regardless. Raised to be generous
+// enough that a dense page's real content survives, modeled on the proven
+// values already used by the PDF-overlay pipeline's limitAnnotationDensity.ts
+// (global cap 8, up to 15 for procedure/workflow/decision-tree pages).
 const ANCHOR_TYPE_MAX: Record<string, number> = {
-  thesis:       2,
-  definition:   3,
-  mechanism:    2,
-  application:  2,
-  trap:         2,
-  formula:      2, // math alias — key rules only
-  example_step: 1, // one worked step max
-  conclusion:   1, // one conclusion max
+  thesis:       3,
+  definition:   4,
+  mechanism:    4, // a real causal chain can span several linked steps
+  application:  3,
+  trap:         3,
+  formula:      4, // math alias — the rule plus its key transformations
+  example_step: 4, // a procedure page must keep every essential step
+  conclusion:   2,
 };
 
-const BUDGET_TOTAL_MAX       = 6;
-const BUDGET_COVERAGE_TARGET = 0.12; // 12% of page text — sparse expert/surgeon style
-const BUDGET_COVERAGE_MAX    = 0.15; // hard cap 15%
+const BUDGET_TOTAL_MAX       = 15;
+const BUDGET_COVERAGE_TARGET = 0.12; // sparse pages still land near here naturally
+const BUDGET_COVERAGE_MAX    = 0.30; // dense pages may need up to ~30% coverage
 
 type BudgetAnchor = { text: string; anchorType: string; reason: string; spanStart: string | null; spanEnd: string | null };
 

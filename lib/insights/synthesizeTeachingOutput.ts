@@ -392,19 +392,24 @@ highlightAnchors: You are the REAL-TIME PAGE UNDERSTANDING ENGINE.
 Your job is NOT to annotate. Your job is to compress the entire page into the minimum
 set of spans that give a student instant, expert-guided understanding.
 
-THE GOAL IS NOT to highlight every important sentence. The goal is to highlight the
-MINIMUM amount of text necessary to understand the page. Target ratio: 85–90% of the
-page stays plain white text; only 10–15% becomes a highlighted anchor. If your anchors
-would visually read as "a student highlighted everything," you have failed this task.
-Prefer several SHORT anchors over one long sentence: e.g. for "ethanol reacts with
-oxygen to produce acetic acid through a multi-step oxidation...", highlight just
-"ethanol + oxygen → acetic acid" — not the surrounding sentence. Likewise prefer
-"chemical formula", "balanced equation", and "quantitative relationships" as separate
-short anchors rather than fusing them into one long highlighted block.
+THE GOAL IS NOT to highlight every sentence, and it is NOT to hit a fixed count. The
+goal is to highlight everything that materially helps a student learn THIS page —
+definitions, mechanisms, causes/effects, procedure steps, diagnostic criteria, warnings,
+comparisons, formulas, high-yield facts, misconceptions, and key relationships, when the
+page actually contains them. Prefer several SHORT anchors over one long sentence: e.g.
+for "ethanol reacts with oxygen to produce acetic acid through a multi-step oxidation...",
+highlight just "ethanol + oxygen → acetic acid" — not the surrounding sentence. Likewise
+prefer "chemical formula", "balanced equation", and "quantitative relationships" as
+separate short anchors rather than fusing them into one long highlighted block.
 
-DEFAULT: 2–4 highlights. Allow 5–6 ONLY when the page has multiple independent teaching
-sections (e.g., a page covering two unrelated mechanisms or a concept + a case + a contrast
-that cannot be represented with fewer spans). Over-highlighting defeats the purpose.
+DENSITY IS PAGE-ADAPTIVE, never a universal count. A sparse or narrative page may need
+only 2–4 highlights. A page with one clear mechanism plus a contrast may need 5–8. A
+dense procedure, multi-step mechanism, diagnostic-criteria, or comparison-table page
+must capture every essential step or distinguishing feature, even if that means 10+
+anchors — do not truncate a real causal chain or procedure to hit a smaller number.
+Under-annotation is a failure when it drops an essential instructional unit just as
+surely as over-annotation is a failure when it repeats the same idea twice or marks
+filler. Do not impose an arbitrary low cap that makes important material disappear.
 
 priorityTier: Assign every anchor a 1–5 importance rating, 5 = "Master This" (★★★★★,
 the single most exam-critical anchor on the page) down to 1 = "Optional" (★, nice-to-know
@@ -416,12 +421,13 @@ domainCategory: Tag every anchor with the specific extraction category it belong
 subject). If no domain-specific category list is given, use the closest matching
 anchorType name as the category.
 
-When a student looks only at the colored highlights, they must immediately understand:
-  1. What the page is about (thesis)
-  2. How or why it works (mechanism)
-  3. One application or example (application)
-  4. One trap or memorable fact if present (trap)
-Nothing else.
+When a student looks only at the colored highlights, they must immediately understand
+what the page is about (thesis), how or why it works (mechanism), where it applies
+(application), and what traps, warnings, or high-yield facts exist — plus, on a dense
+page, every essential step, criterion, or distinguishing comparison the page actually
+teaches. A sparse page may only have a thesis and one mechanism; a dense clinical,
+procedural, or comparison page needs the full set, repeated once per distinct step or
+item where the page itself repeats that structure.
 
 The left panel guides understanding. The right panel explains. That distinction is critical.
 
@@ -464,7 +470,10 @@ STAGE 3 — RANK ALL CANDIDATE SPANS:
   • Explanatory power     — does it explain HOW or WHY, not just state WHAT?
   • Mechanism density     — does it contain causal reasoning or a logical chain?
   • Visual importance     — is this what the page's structure is pointing toward?
-  Discard the bottom 80% of candidates. Only the top 2–4 survive (5–6 only for dense pages).
+  Discard low-scoring candidates that are redundant, generic, or don't prove a teaching
+  point. Keep every remaining candidate that materially helps the student learn the page —
+  a sparse page may keep only 2–4; a dense mechanism/procedure/comparison page should keep
+  every essential step or distinguishing feature, however many that is.
 
   UNIVERSAL SPECIFICITY SCORING (mandatory — applies to every subject):
   Score each span using these criteria before selecting. Higher = better anchor.
@@ -508,11 +517,13 @@ STAGE 3 — RANK ALL CANDIDATE SPANS:
 STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
   From your top candidates, keep only spans that together satisfy:
   "Could a student reconstruct the full page from these highlights alone, without rereading?"
-  If no → revise. One highlight per role (thesis required; others as applicable).
-  Default 2–4. Only exceed 4 if the page has multiple independent teaching sections.
-  Quality over quantity. 2 sharp anchors beat 6 weak ones.
+  If no → revise. Thesis is required; other roles apply as the page actually contains
+  them — a role may repeat across a page's several distinct steps, criteria, or
+  contrasts. Quality over quantity within each role: never repeat the same idea twice
+  under different types, but do not drop a distinct instructional unit to hit a smaller
+  count. A sparse page naturally lands at 2–4; a dense one may genuinely need 10+.
 
-══ 8-COLOR ROLE SYSTEM (2–5 anchors total) ══════════════════════════════════
+══ 8-COLOR ROLE SYSTEM (page-adaptive count) ════════════════════════════════
 
   anchorType "thesis"      🟡 Yellow — REQUIRED. The governing idea — what this page is fundamentally teaching.
                               Not a detail, not a list item — the one idea the whole page builds on.
@@ -730,7 +741,7 @@ export function buildUserPrompt(input: SynthesisInput): string {
 
   // Pass full concept text — no char limits. The model must see the full extracted sentence
   // to understand what the page is teaching, not truncated fragments.
-  const conceptList = rankedConcepts.slice(0, 5).map((c, i) => {
+  const conceptList = rankedConcepts.slice(0, 12).map((c, i) => {
     const isFigureCaption = /^(figure|fig\.|table|tab\.|box|plate|chart)\s+[\d.]/i.test(c.text);
     const parts = [`${i + 1}. [${c.role.toUpperCase()}] "${c.title}"`];
     if (isFigureCaption) {
@@ -752,7 +763,7 @@ export function buildUserPrompt(input: SynthesisInput): string {
   };
 
   const rawTextSection = pageText
-    ? `\n─── RAW PAGE TEXT (first 1200 chars — use this to select VERBATIM highlight spans) ───\n${pageText.slice(0, 1200)}`
+    ? `\n─── RAW PAGE TEXT (first 8000 chars — use this to select VERBATIM highlight spans) ───\n${pageText.slice(0, 8000)}`
     : "";
 
   return `DOMAIN: ${domain}
@@ -780,9 +791,12 @@ For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mec
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
 If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.
-highlightAnchors: 2–4 VERBATIM spans from the source. Adapt to pageType:
+highlightAnchors: VERBATIM spans from the source, page-adaptive count — as many as the
+page's density genuinely requires (a sparse page needs only 2–4; a dense mechanism,
+procedure, or comparison page should capture every essential step or feature, however
+many that is). Adapt to pageType:
 • "review_checkpoint" → return null (never highlight review questions)
-• "math_example" → prefer formula/theorem statement + key logical step
+• "math_example" → prefer formula/theorem statement + every key logical step
 • "figure_table" → prefer explanatory body sentence, not the figure label
 • Others → prefer definition, mechanism, causal, or contrast sentences
 For each anchor set spanStart + spanEnd (first/last 8–10 verbatim words). Return null if fewer than 3 real instructional sentences.`;
@@ -869,7 +883,10 @@ quickMemory — ONE analogy, mnemonic, or memorable pattern. Visceral and subjec
   BAD: "This is important for the exam." GOOD: "An ionic bond is like velcro — polar opposites grip each other and release in water."
   Null if nothing genuinely memorable applies to this specific page.
 
-highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never paraphrase.
+highlightAnchors — VERBATIM spans from the current page text ONLY. Never paraphrase.
+  Page-adaptive count: a sparse page needs only 2–4; a dense mechanism, procedure, or
+  comparison page should capture every essential step or distinguishing feature, however
+  many spans that takes. Do not truncate a real instructional sequence to hit a small number.
   UNIVERSAL SELECTION RULES (apply to any subject):
   PREFER:
   • Definition sentences (X is defined as Y because Z)
@@ -923,13 +940,13 @@ export function buildStage1UserPrompt(input: SynthesisInput): string {
     ? `PAGE CONTEXT:\n${contextLines.join("\n")}\n\n`
     : "";
   const rawSection = pageText
-    ? `PAGE TEXT (primary — extract all 8 fields from this verbatim source):\n${pageText.slice(0, 1400)}`
+    ? `PAGE TEXT (primary — extract all 8 fields from this verbatim source):\n${pageText.slice(0, 8000)}`
     : "(no page text — derive from key concepts below)";
   // Supplementary concept context — only included when concepts were passed
   const conceptsSection = rankedConcepts.length
     ? `\n\nSUPPLEMENTARY CONCEPTS (context only — do not copy verbatim into study fields):\n${
-        rankedConcepts.slice(0, 3).map((c, i) =>
-          `${i + 1}. [${c.role.toUpperCase()}] "${c.title}": "${c.text.slice(0, 180)}"`
+        rankedConcepts.slice(0, 12).map((c, i) =>
+          `${i + 1}. [${c.role.toUpperCase()}] "${c.title}": "${c.text.slice(0, 300)}"`
         ).join("\n")
       }`
     : "";
@@ -1245,7 +1262,7 @@ export function buildSynthesisInput(
     return rb - ra;
   });
 
-  const rankedConcepts: SynthesisConceptInput[] = sorted.slice(0, 5).map((b) => ({
+  const rankedConcepts: SynthesisConceptInput[] = sorted.slice(0, 15).map((b) => ({
     title: b.title,
     role: b.conceptRole ?? "detail",
     text: sanitizeConceptText(b.pattern),
@@ -1256,7 +1273,7 @@ export function buildSynthesisInput(
 
   // Chunk to high-signal content: if total concept text > 2000 chars, trim lower-priority concepts.
   // This prevents oversized prompts from causing timeouts on dense pages.
-  const MAX_CONCEPT_CHARS = 2000;
+  const MAX_CONCEPT_CHARS = 6000;
   const totalChars = rankedConcepts.reduce((s, c) => s + (c.text?.length ?? 0), 0);
   const chunkedConcepts = totalChars > MAX_CONCEPT_CHARS
     ? (() => {
