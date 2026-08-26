@@ -173,14 +173,14 @@ export const DIFFICULTY_OPTIONS: DifficultyOption[] = [
   {
     value: "simulation",
     emoji: "🟡",
-    label: "Standard DAT",
-    blurb: "Real-DAT pacing and style",
+    label: "Standard",
+    blurb: "Balanced depth and pacing",
   },
   {
     value: "advanced",
     emoji: "🟠",
-    label: "Advanced DAT",
-    blurb: "Above average DAT difficulty",
+    label: "Advanced",
+    blurb: "Harder synthesis and application",
   },
   {
     value: "mastery",

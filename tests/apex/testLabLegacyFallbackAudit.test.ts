@@ -46,6 +46,23 @@ describe("canonical TestLab — source-first workspace", () => {
     expect(generator).toMatch(/searchParams\?\.get\('sourceBookId'\)/);
     expect(generator).toMatch(/books\.find\(\(book\) => book\.bookId === requestedSourceBookId\)/);
   });
+
+  it("defaults the new source-first experience to Custom Exam instead of inheriting the old DAT dashboard preference", () => {
+    const dashboard = read(DASHBOARD);
+    const generator = read("app/apex/generator/page.tsx");
+    expect(dashboard).toMatch(/activeProfileId:v2/);
+    expect(dashboard).toMatch(/CUSTOM_EXAM_PROFILE_ID/);
+    expect(generator).toMatch(/: CUSTOM_EXAM_PROFILE_ID/);
+  });
+
+  it("locks Practice and Simulation into distinct guided experiences and removes DAT quick presets", () => {
+    const generator = read("app/apex/generator/page.tsx");
+    expect(generator).toMatch(/launchIntent === 'practice'/);
+    expect(generator).toMatch(/launchIntent === 'simulation'/);
+    expect(generator).toMatch(/Learn as you go/);
+    expect(generator).toMatch(/Simulation Conditions/);
+    expect(generator).not.toMatch(/Quick Presets|Full DAT Simulation|Standard DAT|Advanced DAT/);
+  });
 });
 
 describe("removed TestLab product fallbacks", () => {

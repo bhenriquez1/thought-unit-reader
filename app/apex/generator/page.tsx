@@ -82,15 +82,21 @@ function ExamGeneratorPage() {
   // or (C5) 'board-licensure' (pass/fail, foundational + clinical sections).
   // Deep-links from the TestLab dashboard's exam-profile switcher
   // (/apex/generator?examType=custom) preselect the profile here — any
-  // examType that isn't a real, available catalog entry falls back to 'dat',
+  // examType that isn't a real, available catalog entry falls back to the
+  // source-grounded Custom profile, not the legacy DAT dashboard default.
   // same guard app/apex/page.tsx's readStoredActiveProfileId uses.
   const [examProfileId, setExamProfileId] = useState<string>(() => {
     const param = searchParams?.get('examType');
-    return param && EXAM_PROFILE_CATALOG.some((p) => p.id === param && p.available) ? param : 'dat';
+    return param && EXAM_PROFILE_CATALOG.some((p) => p.id === param && p.available) ? param : CUSTOM_EXAM_PROFILE_ID;
   });
   const selectedProfile: ExamProfile = resolveProfileById(examProfileId);
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
   const requestedSourceBookId = searchParams?.get('sourceBookId') ?? '';
+  const launchIntent = searchParams?.get('mode') === 'full'
+    ? 'simulation'
+    : searchParams?.get('mode') === 'quick'
+      ? 'practice'
+      : null;
   const [bookId, setBookId] = useState<string>('');
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [chaptersExpanded, setChaptersExpanded] = useState(false);
@@ -132,6 +138,19 @@ function ExamGeneratorPage() {
   const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
   const [nodeProgressById, setNodeProgressById] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // Practice and Simulation share the question-generation engine, but they
+  // are distinct product paths. Lock the landing-page intent so entering one
+  // can never silently expose the old all-purpose mode chooser.
+  useEffect(() => {
+    if (launchIntent === 'practice') {
+      setPracticeMode('practice');
+      setQuestionCount((count) => Math.min(count, 30));
+    } else if (launchIntent === 'simulation') {
+      setPracticeMode('full-dat');
+      setQuestionCount((count) => Math.max(count, examProfileId === 'dat' ? 280 : 60));
+    }
+  }, [launchIntent, examProfileId]);
 
   // A source chosen on the canonical TestLab landing page must remain
   // selected when the student enters the detailed builder. Validate the
@@ -394,9 +413,13 @@ function ExamGeneratorPage() {
           >
             ← TestLab
           </Link>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight">⚡ Build Practice Exam</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight">
+            {launchIntent === 'simulation' ? '⏱ Configure Simulation' : '⚡ Build Practice Test'}
+          </h1>
           <p className="mt-1 text-xs text-slate-400">
-            AI questions grounded in your uploaded book — never a copied question bank.
+            {launchIntent === 'simulation'
+              ? 'Create a timed, end-of-session assessment grounded in the selected source.'
+              : 'Create an untimed learning set with immediate feedback from the selected source.'}
           </p>
         </div>
       </header>
@@ -781,29 +804,45 @@ function ExamGeneratorPage() {
               </section>
             )}
 
-            {/* 4 — Practice Mode */}
+            {/* 4 — Assessment experience. Landing-page intents are locked so
+                Practice and Simulation no longer open the same legacy picker. */}
             <section className="rounded-3xl border border-white/10 bg-slate-950/45 p-5 sm:p-6">
-              <h3 className="text-lg font-semibold mb-4 text-blue-400">🎓 Practice Mode</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {PRACTICE_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => handleModeChange(mode.id)}
-                    className={`text-left p-4 rounded-lg border-2 transition-all ${
-                      practiceMode === mode.id
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
-                    }`}
-                  >
-                    <div className="text-2xl mb-1">{mode.icon}</div>
-                    <div className="font-semibold text-white text-sm">{mode.label}</div>
-                    <div className="text-xs text-gray-400 mt-1">{mode.description}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {mode.questionRange[0]}–{mode.questionRange[1]} questions
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <h3 className="text-lg font-semibold mb-4 text-blue-400">
+                {launchIntent === 'simulation' ? '⏱ Simulation Conditions' : '🎓 Practice Experience'}
+              </h3>
+              {launchIntent ? (
+                <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4">
+                  <div className="font-semibold text-white">
+                    {launchIntent === 'simulation' ? 'Timed simulation' : 'Learn as you go'}
+                  </div>
+                  <p className="mt-1 text-sm text-gray-300">
+                    {launchIntent === 'simulation'
+                      ? 'Feedback is held until the session ends. Configure the source scope, difficulty, and length below.'
+                      : 'Questions are untimed and provide immediate feedback with source-linked explanations.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {PRACTICE_MODES.map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() => handleModeChange(mode.id)}
+                      className={`text-left p-4 rounded-lg border-2 transition-all ${
+                        practiceMode === mode.id
+                          ? 'border-blue-500 bg-blue-500/10'
+                          : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">{mode.icon}</div>
+                      <div className="font-semibold text-white text-sm">{mode.label}</div>
+                      <div className="text-xs text-gray-400 mt-1">{mode.description}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {mode.questionRange[0]}–{mode.questionRange[1]} questions
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* 5 — Difficulty */}
@@ -1046,52 +1085,6 @@ function ExamGeneratorPage() {
               </div>
             )}
 
-            {/* Quick presets */}
-            <div className="bg-gray-800/50 rounded-xl p-5 border border-gray-700">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3">⚡ Quick Presets</h4>
-              <div className="space-y-2">
-                {[
-                  {
-                    label: '🌱 Foundation Quick (10q)',
-                    mode: 'practice' as PracticeMode,
-                    difficulty: 'foundation' as DifficultyLevel,
-                    count: 10,
-                  },
-                  {
-                    label: '🎯 Standard Practice Exam (40q)',
-                    mode: 'practice-exam' as PracticeMode,
-                    difficulty: 'simulation' as DifficultyLevel,
-                    count: 40,
-                  },
-                  {
-                    label: '🔥 Mastery Drill (20q)',
-                    mode: 'practice-exam' as PracticeMode,
-                    difficulty: 'mastery' as DifficultyLevel,
-                    count: 20,
-                  },
-                  {
-                    label: '🎓 Full DAT Simulation',
-                    mode: 'full-dat' as PracticeMode,
-                    difficulty: 'simulation' as DifficultyLevel,
-                    count: 280,
-                  },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => {
-                      handleModeChange(preset.mode);
-                      setDifficulty(preset.difficulty);
-                      setQuestionCount(preset.count);
-                      setGeneratedExam(null);
-                      setGenerationError(null);
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors text-xs text-gray-200"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>
