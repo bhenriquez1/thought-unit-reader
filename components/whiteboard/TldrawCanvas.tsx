@@ -65,6 +65,7 @@ import {
 } from "@/lib/speech/speechController";
 import { buildSpeechCacheKey, type SpeechSessionIdentity } from "@/lib/speech/speechSessionIdentity";
 import type { SpeechState } from "@/lib/speech/speechState";
+import { tokenizeWords, estimateWordWeights, wordIndexForFraction, wordIndexForCharIndex } from "@/lib/speech/wordSync";
 import { colorForRelationship, colorForTeachingRole } from "@/lib/whiteboard/teachingVisualSemantics";
 import {
   buildProfessorTldrawAgentRequest,
@@ -1106,6 +1107,34 @@ export default function TldrawCanvas({
       return;
     }
 
+    // R4 — word-level eye guide for Professor, sharing the same reading-focus
+    // store and word-sync estimation Current Page uses (lib/speech/wordSync.ts).
+    // Only ever engaged for SOURCE_VERBATIM segments — PROFESSOR_EXPLANATION
+    // text is AI-generated commentary never extracted from the page, so
+    // word-matching it against the PDF text layer would be a coincidental
+    // false highlight at best (same reasoning StudySpeechPanel's
+    // activeContentRoleRef gate documents). Explanation segments keep the
+    // existing coarse whole-Thought-Unit glow from focusDirectorEvidence —
+    // that IS the "soft anchor during explanation" the source-reading brief
+    // asked for; it falls out of this gate without any separate branch.
+    const isVerbatimSegment = segment.contentRole === "SOURCE_VERBATIM";
+    const verbatimWords = isVerbatimSegment ? tokenizeWords(segment.text) : [];
+    const verbatimWeights = isVerbatimSegment ? estimateWordWeights(verbatimWords) : [];
+    let verbatimSourceId: string | null = null;
+    if (isVerbatimSegment) {
+      const resolvedStepId = opts?.stepId ?? planRef.current?.actions[index]?.stepId ?? null;
+      const directorStep = planRef.current?.directorSteps?.find(s => s.stepId === resolvedStepId);
+      verbatimSourceId = directorStep?.sourceEvidence[0]?.sourceId ?? null;
+      if (verbatimSourceId) {
+        useReadingFocusStore.getState().setWord(verbatimSourceId, 0, verbatimWords[0]?.word ?? "", segment.text);
+      }
+    } else {
+      // Leaving a verbatim passage (or a step with no speak-at-all) — drop
+      // any stale word-level box rather than leaving it painted over the
+      // whiteboard/explanation surface. The coarse anchor glow is untouched.
+      useReadingFocusStore.getState().clearWord();
+    }
+
     const nextSegment = findNextSegment(index);
     if (nextSegment) resolveSegmentAudio(nextSegment); // pre-buffer — fire-and-forget, cached by segment id
 
@@ -1199,6 +1228,18 @@ export default function TldrawCanvas({
       utter.onstart = () => { notifySpeechStart(token, SPEECH_OWNER); setSpeechState("playing"); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
       utter.onend   = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
       utter.onerror = (e) => { notifySpeechError(token, SPEECH_OWNER, e.error); onNaturalEnd("error"); };
+      if (isVerbatimSegment && verbatimSourceId) {
+        // Browser SpeechSynthesis gives real charIndex boundaries — tokenize
+        // the ACTUAL utterance text (resolved.script may differ from
+        // segment.text when the TTS API returns a rewritten browser-speech
+        // script), matching StudySpeechPanel's onboundary path.
+        const utterWords = tokenizeWords(resolved.script);
+        utter.onboundary = (e) => {
+          if (e.name !== "word") return;
+          const idx = wordIndexForCharIndex(utterWords, e.charIndex);
+          useReadingFocusStore.getState().setWord(verbatimSourceId, idx, utterWords[idx]?.word ?? "", segment.text);
+        };
+      }
       window.speechSynthesis.speak(utter);
       if (pauseRequestedRef.current) {
         // Pause was pressed while this segment's TTS fetch (which decided
@@ -1221,6 +1262,17 @@ export default function TldrawCanvas({
     audio.onplay  = () => { notifySpeechStart(token, SPEECH_OWNER); setSpeechState("playing"); console.log("[WHITEBOARD_NARRATION_TRACE]", { stepId, chunkIndex: index, audioStarted: true }); };
     audio.onended = () => { notifySpeechEnd(token, SPEECH_OWNER); onNaturalEnd("ended"); };
     audio.onerror = () => { notifySpeechError(token, SPEECH_OWNER, "audio-error"); onNaturalEnd("error"); };
+    if (isVerbatimSegment && verbatimSourceId) {
+      // Same estimation StudySpeechPanel's fetchAndPlayAudio uses for OpenAI
+      // TTS — no timing metadata, so the active word is inferred from
+      // playback position against per-word duration weights.
+      audio.ontimeupdate = () => {
+        if (!audio.duration || !isFinite(audio.duration)) return;
+        const frac = audio.currentTime / audio.duration;
+        const idx = wordIndexForFraction(verbatimWeights, frac);
+        useReadingFocusStore.getState().setWord(verbatimSourceId, idx, verbatimWords[idx]?.word ?? "", segment.text);
+      };
+    }
     if (pauseRequestedRef.current) {
       // Same reasoning as the browser-speech branch above — the audio is now
       // loaded/registered (activeAudioElRef + the shared controller both
@@ -1301,6 +1353,9 @@ export default function TldrawCanvas({
     setSpeechState("idle");
     activeAudioElRef.current = null;
     activeUtteranceRef.current = null;
+    // R4 — drop any word-level box left over from an in-progress SOURCE_VERBATIM
+    // segment; the coarse anchor glow (thoughtUnitId) is untouched.
+    useReadingFocusStore.getState().clearWord();
     if (stepTimerRef.current != null) { window.clearTimeout(stepTimerRef.current); stepTimerRef.current = null; }
     // Phase B2: every navigation action (Next/Previous/Restart/rebuild/
     // unmount) funnels through here — the single correct point to drop any
