@@ -665,9 +665,29 @@ function NoteCard({
         </div>
       )}
 
-      {/* Expanded body */}
+      {/* Expanded body — one permanent notebook page, not a second analysis dashboard. */}
       {isExpanded && (
-        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div
+          data-testid="visual-notebook-page"
+          style={{
+            margin: "0 12px 16px",
+            padding: "18px clamp(14px, 3vw, 30px) 24px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            borderRadius: 14,
+            border: "1px solid rgba(148,163,184,0.18)",
+            background: "linear-gradient(180deg, rgba(248,250,252,0.075), rgba(15,23,42,0.74))",
+            boxShadow: "0 18px 45px rgba(0,0,0,0.24), inset 3px 0 0 rgba(56,189,248,0.18)",
+          }}
+        >
+          <div style={{ borderBottom: "1px solid rgba(148,163,184,0.16)", paddingBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: "#67e8f9", textTransform: "uppercase" }}>Visual notebook</div>
+            <h2 style={{ margin: "5px 0 0", fontSize: 22, lineHeight: 1.25, color: "rgba(255,255,255,0.96)", fontWeight: 760 }}>{note.topic}</h2>
+            <div style={{ marginTop: 6, fontSize: 11, color: "rgba(203,213,225,0.62)" }}>
+              {note.bookTitle ?? note.bookId} · PDF page {note.pageNumber}{note.printedPageLabel ? ` · printed ${note.printedPageLabel}` : ""}
+            </div>
+          </div>
 
           {/* Tab bar */}
           <div style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
@@ -962,27 +982,29 @@ const SECTION_ORDER = [
 ];
 
 function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {
-  const ordered = [...sections].sort((a, b) => {
+  // Provenance belongs in the expandable evidence inspector below the page,
+  // not as a competing card inside the learner's notebook.
+  const ordered = sections.filter((section) => section.label !== "Source Evidence" && section.label !== "Source").sort((a, b) => {
     const ai = SECTION_ORDER.indexOf(a.label);
     const bi = SECTION_ORDER.indexOf(b.label);
     return (ai === -1 ? SECTION_ORDER.length : ai) - (bi === -1 ? SECTION_ORDER.length : bi);
   });
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+    <div data-testid="adaptive-notebook-sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, alignItems: "start" }}>
       {ordered.map((sec) => {
         const style = SECTION_STYLE[sec.label] ?? { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "•" };
         const lens = getSectionLens(mode, sec.label);
         const label = lens?.label ?? sec.label;
         const icon = lens?.icon ?? style.icon;
         return (
-          <div key={sec.label} style={{ borderRadius: 9, border: `1px solid ${style.accent}28`, background: style.bg, padding: "10px 13px" }}>
+          <section key={sec.label} style={{ borderRadius: 10, borderTop: `3px solid ${style.accent}80`, background: style.bg, padding: "12px 14px", breakInside: "avoid" }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: style.accent, marginBottom: 7 }}>
               {icon} {label.toUpperCase()}
             </div>
             <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {sec.content}
             </div>
-          </div>
+          </section>
         );
       })}
     </div>

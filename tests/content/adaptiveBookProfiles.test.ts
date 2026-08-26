@@ -29,6 +29,20 @@ describe("adaptive content profiles — real acceptance books", () => {
     expect(profile.teachingStyle).toBe("reading-coach");
   });
 
+  it("does not mistake ordinary clinical uses of function, range, or graph for mathematics", () => {
+    expect(detectContentProfile({
+      bookTitle: "Clinical Physiology",
+      pageText: "The function of the kidney can vary across the normal range. The graph below summarizes patient findings.",
+    }).id).toBe("adult-textbook");
+  });
+
+  it("can identify a math page from several corroborating terms without a math title", () => {
+    expect(detectContentProfile({
+      bookTitle: "Life Sciences",
+      pageText: "The domain and range of this function are shown on the graph and coordinate axes.",
+    }).id).toBe("math-textbook");
+  });
+
   it("keeps comic dialogue in source order and removes page furniture", () => {
     expect(buildChildReadAloudText("12\nDING DONG!\nWho is there?\nBanana Fox!\nCopyright 2021"))
       .toBe("DING DONG! Who is there? Banana Fox!");

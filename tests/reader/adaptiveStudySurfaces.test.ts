@@ -22,9 +22,24 @@ describe("canonical adaptive study surfaces", () => {
   it("makes the structured notebook and student-authored layer canonical in NoteLab", () => {
     const source = read("components/notelab/UltraNotesList.tsx");
     expect(source).toContain('label="MY NOTES"');
+    expect(source).toContain('data-testid="visual-notebook-page"');
+    expect(source).toContain('data-testid="adaptive-notebook-sections"');
     expect(source).toContain("SectionsView");
     expect(source).toContain("Source Evidence");
     expect(source.indexOf("<SectionsView")).toBeLessThan(source.indexOf("ADAPTIVE STUDY CARDS"));
+  });
+
+  it("keeps provenance out of the primary notebook section grid", () => {
+    const source = read("components/notelab/UltraNotesList.tsx");
+    expect(source).toContain('section.label !== "Source Evidence"');
+    expect(source).toContain("SOURCE EVIDENCE · PDF PAGE");
+  });
+
+  it("preserves the student-authored layer when AI regenerates a stable page note", () => {
+    const source = read("lib/notelab/ultraNoteStore.ts");
+    expect(source).toContain('hasOwnProperty.call(note, "studentNotes")');
+    expect(source).toContain("studentNotes: existing.studentNotes");
+    expect(source).toContain("idbPutNote(noteToSave)");
   });
 
   it("uses semantic disabled controls with visible prerequisites in Learning Hub", () => {
