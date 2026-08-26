@@ -230,7 +230,7 @@ export interface VerifiedProfessorAgentPass {
 export type ProfessorAgentFailureReason =
   | "missing_key" | "not_triggered" | "visual_needed_false" | "timeout"
   | "network_error" | "schema_reject" | "no_visual_actions"
-  | "verification_reject" | "aborted";
+  | "verification_reject" | "aborted" | "low_visual_richness";
 
 export class ProfessorAgentRequestError extends Error {
   constructor(public readonly reason: ProfessorAgentFailureReason, message = reason) {

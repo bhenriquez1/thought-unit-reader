@@ -51,11 +51,32 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
     expect(occurrences).toBe(2);
   });
 
-  it("does NOT use these new metrics to reject/gate a response — only the pre-existing nontrivialVisualCount === 0 check still throws no_visual_actions", () => {
+  // R2 — the richness ratio is now enforced, closing exactly the gap this
+  // file's Part 2 fixtures below documented ("9 boxes + 1 arrow" used to
+  // pass at a ratio of 0.10). Only behind PROFESSOR_AGENT_STRICT, per this
+  // file's own original caution not to promote a synthetic-fixture-derived
+  // threshold into the production fallback path without live telemetry —
+  // production/non-strict behavior is unchanged from before R2.
+  it("REQUIRED (R2): a new low_visual_richness rejection site exists, gated behind PROFESSOR_AGENT_STRICT, applied only after the zero-nontrivial case is already ruled out", () => {
     const rejectionSites = (src.match(/throw new ProfessorAgentRequestError\(/g) ?? []).length;
-    // Same count as before this stabilization item — no new throw site was added.
-    expect(rejectionSites).toBe(4);
-    expect(src).not.toMatch(/visualRichnessRatio\s*[<>]=?\s*0\.\d/); // no threshold comparison anywhere
+    expect(rejectionSites).toBe(5); // the pre-existing 4 plus this one
+    expect(src).toMatch(/throw new ProfessorAgentRequestError\("low_visual_richness"\);/);
+    const idx = src.indexOf('throw new ProfessorAgentRequestError("no_visual_actions");');
+    const block = src.slice(idx, idx + 600);
+    expect(block).toMatch(/if \(PROFESSOR_AGENT_STRICT && passIndex === 0\) \{/);
+  });
+
+  it("REQUIRED (R2): the richness floor matches this file's own original proposal — ratio >= 0.3 OR nontrivialVisualCount >= 3, whichever is looser", () => {
+    expect(src).toMatch(/const VISUAL_RICHNESS_RATIO_FLOOR = 0\.3;/);
+    expect(src).toMatch(/const VISUAL_RICHNESS_COUNT_FLOOR = 3;/);
+    expect(src).toMatch(
+      /richnessRatio >= VISUAL_RICHNESS_RATIO_FLOOR \|\| nontrivialVisualCount >= VISUAL_RICHNESS_COUNT_FLOOR/,
+    );
+  });
+
+  it("production/non-strict behavior is unchanged — the new check is unreachable when PROFESSOR_AGENT_STRICT is false", () => {
+    const idx = src.indexOf("if (PROFESSOR_AGENT_STRICT && passIndex === 0) {");
+    expect(idx).toBeGreaterThan(-1);
   });
 
   it("the DEV debug strip surfaces the new metrics for a developer inspecting a real run", () => {
@@ -136,18 +157,53 @@ describe("Visual richness — diverse fixtures reporting the current acceptance 
   });
 });
 
-// ── Part 3: the proposal — NOT enforced, written here as documentation only ──
+// ── Part 3 (R2): the proposal above is now implemented, strict-mode-only ────
 //
-// PROPOSED (not implemented): if live production data — once API keys are
-// available and this instrumentation has actually observed real Claude
-// responses — confirms the deployed agent is settling for the pass-0
-// "exactly one nontrivial action among many boxes" floor rather than
-// genuinely rich output, the smallest next step would be a SEPARATE ratio
-// floor (e.g. visualRichnessRatio >= 0.3 OR nontrivialVisualCount >= 3,
-// whichever is looser) applied ONLY alongside the existing
-// nontrivialVisualCount === 0 check, in development/strict mode first (same
-// rollout pattern PROFESSOR_AGENT_STRICT already uses) before ever touching
-// the production fallback path. That threshold number is a proposal for
-// review against real telemetry, not a value derived from these synthetic
-// fixtures — do not promote it into ensureRuntimeAgentVisualStep without
-// live data behind it.
+// TldrawCanvas.tsx's ensureRuntimeAgentVisualStep now applies exactly this
+// file's own original proposal — visualRichnessRatio >= 0.3 OR
+// nontrivialVisualCount >= 3, whichever is looser — as a SEPARATE check
+// alongside the pre-existing nontrivialVisualCount === 0 check, gated
+// behind PROFESSOR_AGENT_STRICT (the same rollout flag this file's Part 1
+// wiring guards already reference). Non-strict/production behavior is
+// unchanged: only the original binary floor applies there. These fixtures
+// mirror the SAME formula (not re-derived) so a change to the real
+// constants in TldrawCanvas.tsx is caught here too.
+
+/** Mirrors the R2 strict-mode gate in TldrawCanvas.tsx exactly — same
+ *  constants, same OR condition. richnessStrict !== passesCurrentGate for
+ *  a response that clears the binary floor but stays low-ratio (the
+ *  documented weakness above) — that's the point of this second gate. */
+function richnessStrict(actions: ProfessorTeachingAction[]): boolean {
+  const total = actions.length;
+  const nontrivial = actions.filter(isNontrivialProfessorAgentAction).length;
+  const ratio = total > 0 ? nontrivial / total : 0;
+  return ratio >= 0.3 || nontrivial >= 3;
+}
+
+describe("Visual richness — the R2 strict-mode gate correctly rejects what the binary floor let through", () => {
+  it("REQUIRED: 9 generic boxes + 1 real arrow — passes the binary floor but FAILS the strict richness gate (ratio 0.10 < 0.3, nontrivial 1 < 3)", () => {
+    const actions = [...Array.from({ length: 9 }, (_, i) => box(String(i))), arrow("hero")];
+    expect(richness(actions).passesCurrentGate).toBe(true); // unchanged production behavior
+    expect(richnessStrict(actions)).toBe(false); // R2: strict mode now rejects this
+  });
+
+  it("REQUIRED: a genuinely rich response (freehand + arrow + 2 labels) passes both gates", () => {
+    const actions = [freehand("sketch"), arrow("flow"), label("a"), label("b")];
+    expect(richness(actions).passesCurrentGate).toBe(true);
+    expect(richnessStrict(actions)).toBe(true); // ratio 0.5 >= 0.3
+  });
+
+  it("REQUIRED: 3+ nontrivial actions pass the strict gate via the count floor even at a low ratio", () => {
+    const actions = [
+      ...Array.from({ length: 10 }, (_, i) => box(String(i))),
+      arrow("a"), arrow("b"), arrow("c"),
+    ];
+    expect(richnessStrict(actions)).toBe(true); // nontrivial=3 >= VISUAL_RICHNESS_COUNT_FLOOR, ratio ~0.23 < 0.3
+  });
+
+  it("all-boxes response fails both gates identically — the strict gate never accepts what the binary floor already correctly rejects", () => {
+    const actions = Array.from({ length: 12 }, (_, i) => box(String(i)));
+    expect(richness(actions).passesCurrentGate).toBe(false);
+    expect(richnessStrict(actions)).toBe(false);
+  });
+});
