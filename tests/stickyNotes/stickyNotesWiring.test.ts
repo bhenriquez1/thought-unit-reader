@@ -29,7 +29,7 @@ describe("pages/index.tsx — StickyNotesRail is mounted with real identity prov
   it("REQUIRED: only mounts once a resolved document identity exists — never renders with an empty/undefined documentId", () => {
     const idx = SRC.indexOf("<StickyNotesRail");
     const block = SRC.slice(Math.max(0, idx - 60), idx);
-    expect(block).toMatch(/\{resolvedDocumentId && \(/);
+    expect(block).toMatch(/leftRail=\{resolvedDocumentId \? \(/);
   });
 
   it("REQUIRED: jump-to-page reuses the existing syncToPage navigation path, not a new one", () => {

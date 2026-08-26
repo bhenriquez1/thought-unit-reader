@@ -95,6 +95,9 @@ function universalSpecificityScore(
 
 interface PureReaderViewProps {
   fileUrl: string | null;
+  /** Student-authored rail outside the source canvas. Thought Units remain a
+   *  PDF-attached Page Guide drawer inside this component. */
+  leftRail?: React.ReactNode;
   /** Stable document ID forwarded to SmartPDFViewer for reliable Page keying */
   docId?: string;
   currentPage: number;
@@ -193,6 +196,7 @@ const LEGEND_TIER_STYLES = [
 
 export default function PureReaderView({
   fileUrl,
+  leftRail,
   docId,
   currentPage,
   pdfPageCount,
@@ -253,6 +257,7 @@ export default function PureReaderView({
   // Level 1 (Highlight Key legend) is now secondary to Level 2 (Thought Unit
   // Navigator) below it — collapsed by default to keep the sidebar compact.
   const [legendCollapsed, setLegendCollapsed] = useState(true);
+  const [pageGuideOpen, setPageGuideOpen] = useState(false);
   // Level 4 — manual domain-preset override; null means "follow auto-detection".
   const [domainPresetOverride, setDomainPresetOverride] = useState<string | null>(null);
 
@@ -613,11 +618,24 @@ export default function PureReaderView({
         </div>
       </div>
 
-      {/* Body: Highlight Key sidebar + PDF Viewer column */}
+      {/* Body ownership: permanent student rail + source canvas. */}
       <div className="flex flex-1 min-h-0">
+        {leftRail}
+        <div className="relative flex min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setPageGuideOpen((open) => !open)}
+            aria-expanded={pageGuideOpen}
+            className="absolute left-0 top-3 z-40 rounded-r-xl border border-l-0 border-cyan-400/25 bg-slate-950/95 px-3 py-2 text-xs font-semibold text-cyan-200 shadow-lg hover:bg-slate-900"
+          >
+            {pageGuideOpen ? "Close Page Guide" : "Page Guide"}
+          </button>
 
-        {/* ── LeftPanel: Highlight Key (Level 1) + Thought Unit Navigator (Level 2, MODE embedded) + Process/Decision Map (Level 3) + Page Roadmap (Level 4) ── */}
-        <div className="flex flex-col w-[220px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-1.5 gap-2 overflow-y-auto">
+        {/* Thought Units belong to the source. They open as a drawer attached
+            to the PDF canvas rather than competing with student notes for the
+            permanent left rail. */}
+        {pageGuideOpen && (
+        <div className="absolute inset-y-0 left-0 z-30 flex w-[260px] flex-col gap-2 overflow-y-auto border-r border-white/10 bg-[#0d1117]/[0.98] px-1.5 pb-3 pt-14 shadow-2xl">
           {/* Level 1 — compact, collapsible color legend. Secondary to the navigator below. */}
           <div className="px-1">
             <button
@@ -715,6 +733,7 @@ export default function PureReaderView({
             presetId={effectivePresetId}
           />
         </div>
+        )}
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}
         <div className="flex flex-col flex-1 min-w-0">
@@ -791,6 +810,7 @@ export default function PureReaderView({
               packTierLabels={packTierLabels}
             />
           </div>
+        </div>
         </div>
 
       </div>

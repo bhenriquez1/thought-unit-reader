@@ -9,18 +9,21 @@ import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
 import { EXAM_PROFILE_CATALOG, type ExamProfileCatalogEntry } from "@/lib/examEngine/profiles/profileCatalog";
-import { DAT_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/datProfile";
+import { CUSTOM_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/customProfile";
 
-const ACTIVE_PROFILE_STORAGE_KEY = "avrrio:testlab:activeProfileId";
+// V2 intentionally does not inherit the old DAT-dashboard preference. The
+// canonical TestLab is source-first, so a general uploaded textbook opens as
+// Custom Exam unless the learner explicitly chooses DAT again.
+const ACTIVE_PROFILE_STORAGE_KEY = "avrrio:testlab:activeProfileId:v2";
 
 function readStoredProfile(): string {
   try {
     const stored = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
     return stored && EXAM_PROFILE_CATALOG.some((profile) => profile.id === stored && profile.available)
       ? stored
-      : DAT_EXAM_PROFILE_ID;
+      : CUSTOM_EXAM_PROFILE_ID;
   } catch {
-    return DAT_EXAM_PROFILE_ID;
+    return CUSTOM_EXAM_PROFILE_ID;
   }
 }
 
