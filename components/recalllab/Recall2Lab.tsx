@@ -12,7 +12,7 @@ import {
   saveBlueprintsPreservingProgress,
 } from "@/lib/recalllab/recall2Store";
 import { recallSetToBlueprints } from "@/lib/recalllab/recall2Builder";
-import { buildSessionQueue, computeRecall2Stats, type RecallWeaknessSignal } from "@/lib/recalllab/recall2Srs";
+import { buildSessionQueue, buildTestLabRemediationQueue, computeRecall2Stats, type RecallWeaknessSignal } from "@/lib/recalllab/recall2Srs";
 import { fetchRecallWeaknessSignals } from "@/lib/recalllab/recall2LearningStateSignals";
 import { buildCanonicalTextbookEvidence } from "@/lib/notelab/conceptEvidenceWorkspace";
 import {
@@ -198,6 +198,7 @@ function CanonicalRecallHome({
   const dueQueue = useMemo(() => buildSessionQueue(blueprints, ["mixed"], nodeSignals), [blueprints, nodeSignals]);
   const weakQueue = useMemo(() => buildSessionQueue(blueprints, ["weak"], nodeSignals), [blueprints, nodeSignals]);
   const masteryQueue = useMemo(() => buildSessionQueue(blueprints, ["mastery"], nodeSignals), [blueprints, nodeSignals]);
+  const testLabQueue = useMemo(() => buildTestLabRemediationQueue(blueprints, nodeSignals), [blueprints, nodeSignals]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-5">
@@ -231,6 +232,16 @@ function CanonicalRecallHome({
         </div>
         {startError && <div role="alert" className="mt-3 text-xs text-rose-300">{startError}</div>}
       </section>
+
+      {testLabQueue.length > 0 && (
+        <section className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4" data-testid="testlab-remediation-queue">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-300">TestLab remediation</div>
+          <p className="mt-1 text-xs text-slate-400">TestLab found these concepts weak. Recall will repair them here without recreating the exam.</p>
+          <button type="button" onClick={() => onStartStored(testLabQueue, ["weak"], "TestLab remediation")} className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-300/15">
+            Train {testLabQueue.length} weak concept{testLabQueue.length === 1 ? "" : "s"}
+          </button>
+        </section>
+      )}
 
       <section className="mt-4 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
         <div className="flex items-start justify-between gap-4">

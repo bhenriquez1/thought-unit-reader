@@ -42,7 +42,11 @@ describe("fetchRecallWeaknessSignals", () => {
 
     const signals = await fetchRecallWeaknessSignals([makeBlueprint("bp-1", "kn-1")]);
 
-    expect(signals.get("kn-1")).toEqual({ masteryScore: 33, datPerformance: { attempts: 3, correct: 1 } });
+    expect(signals.get("kn-1")).toEqual({
+      masteryScore: 33,
+      datPerformance: { attempts: 3, correct: 1 },
+      testLabWeak: true,
+    });
   });
 
   it("REQUIRED: dedupes by knowledgeNodeId — two cards sharing a node only trigger one lookup", async () => {
