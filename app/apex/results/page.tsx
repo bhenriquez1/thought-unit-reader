@@ -376,7 +376,7 @@ export default function ExamResultsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
           <h1 className="text-xl font-semibold">Loading Results...</h1>
@@ -387,7 +387,7 @@ export default function ExamResultsPage() {
 
   if (!results) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">📊</div>
           <h1 className="text-2xl font-bold mb-4">No Results Found</h1>
@@ -418,13 +418,13 @@ export default function ExamResultsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white">
       {/* Header */}
-      <div className="bg-gray-800/90 border-b border-gray-700 px-6 py-4">
+      <div className="border-b border-white/10 bg-slate-950/70 backdrop-blur-xl px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-blue-400">📊 Avrrio TestLab Results</h1>
-            <p className="text-gray-300 text-sm mt-1">
+            <h1 className="text-2xl font-bold tracking-tight">📊 Avrrio TestLab Results</h1>
+            <p className="text-slate-400 text-sm mt-1">
               Completed: {new Date(results.attempt.endTime || '').toLocaleString()}
             </p>
           </div>
@@ -441,7 +441,7 @@ export default function ExamResultsPage() {
             </div>
             <Link
               href="/apex"
-              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-colors"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10 font-semibold transition-colors"
             >
               Back to Hub
             </Link>
