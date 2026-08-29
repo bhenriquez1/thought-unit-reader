@@ -125,6 +125,130 @@ export interface UltraNote {
   notebookScene?: VisualNotebookScene;
 }
 
+// ── Legacy note migration ─────────────────────────────────────────────────
+
+/** Labels from the retired dashboard/card implementations are translated at
+ * the NoteLab boundary. The original persisted fields remain on UltraNote so
+ * migration is non-destructive and older exports/integrations can still read
+ * them; the learner-facing notebook never renders those old layouts. */
+const CANONICAL_SECTION_LABELS: Record<string, string | null> = {
+  "Chief Concern / Problem": "Big Idea",
+  "Chief Concern / Core Problem": "Big Idea",
+  "Core Idea": "Big Idea",
+  "Page Thesis": "Big Idea",
+  "Why This Matters": "Clinical / Application Connection",
+  "Why This Matters Clinically": "Clinical / Application Connection",
+  "Diagnostic Reasoning": "Clinical Reasoning",
+  "Procedure Logic": "Mechanism / Process",
+  "Key Mechanism": "Mechanism / Process",
+  "Mechanism": "Mechanism / Process",
+  "Decision Tree": "Decision / Concept Map",
+  "Connection Map": "Decision / Concept Map",
+  "Danger Zone": "Common Mistakes / Clinical Risks",
+  "Complication Risk": "Common Mistakes / Clinical Risks",
+  "Common Mistake": "Common Mistakes / Clinical Risks",
+  "Common Mistakes": "Common Mistakes / Clinical Risks",
+  "Confusions & Traps": "Common Mistakes / Clinical Risks",
+  "DAT/Dental Trap": "Common Mistakes / Clinical Risks",
+  "Clinical Pearl": "Key Facts / Clinical Pearls",
+  "Must Know": "Key Facts / Clinical Pearls",
+  "Exam Strategy": "Exam-Important Concepts",
+  "Exam Signal": "Exam-Important Concepts",
+  "Memory Hook": "Memory Trick",
+  "Case-Style Recall Questions": "Recall Questions",
+  "Summary": "Structured Notes",
+  // Provenance is rendered by the expandable evidence inspector, never as a
+  // competing notebook section.
+  "Source": null,
+  "Source Evidence": null,
+};
+
+function pushCanonicalSection(target: Map<string, string[]>, label: string, content?: string | null): void {
+  const clean = content?.trim();
+  if (!clean) return;
+  const canonicalLabel = Object.prototype.hasOwnProperty.call(CANONICAL_SECTION_LABELS, label)
+    ? CANONICAL_SECTION_LABELS[label]
+    : label;
+  if (!canonicalLabel) return;
+  const values = target.get(canonicalLabel) ?? [];
+  if (!values.includes(clean)) values.push(clean);
+  target.set(canonicalLabel, values);
+}
+
+/** Convert every historical UltraNote shape into the one canonical notebook
+ * page model. This never invents facts and never deletes the legacy fields;
+ * it only reorganizes content the student already saved. */
+export function getCanonicalNotebookSections(note: UltraNote): NoteSection[] {
+  const grouped = new Map<string, string[]>();
+
+  for (const section of note.sections ?? []) {
+    pushCanonicalSection(grouped, section.label, section.content);
+  }
+
+  if (!grouped.has("Big Idea")) {
+    pushCanonicalSection(grouped, "Big Idea", note.pageThesis || note.coreIdea);
+  }
+
+  const professor = note.professorNotes;
+  if (professor) {
+    pushCanonicalSection(grouped, "Clinical / Application Connection", professor.whyItMatters);
+    pushCanonicalSection(grouped, "Mechanism / Process", professor.keyMechanism);
+    pushCanonicalSection(grouped, "Common Mistakes / Clinical Risks", professor.commonConfusion);
+    pushCanonicalSection(grouped, "Memory Trick", professor.memoryAnchor);
+    pushCanonicalSection(grouped, "Clinical Reasoning", professor.reasoningFlow);
+    pushCanonicalSection(grouped, "Exam-Important Concepts", professor.examSignal);
+  }
+
+  if (note.concepts.length) {
+    const facts = note.concepts.map((concept) => {
+      const parts = [concept.title, concept.pattern].filter(Boolean);
+      return parts.join(": ");
+    }).filter(Boolean);
+    pushCanonicalSection(grouped, "Key Facts / Clinical Pearls", facts.join("\n"));
+
+    const mechanisms = note.concepts
+      .filter((concept) => concept.surgicalReason)
+      .map((concept) => `${concept.title}: ${concept.surgicalReason}`);
+    pushCanonicalSection(grouped, "Mechanism / Process", mechanisms.join("\n"));
+
+    const risks = note.concepts
+      .filter((concept) => concept.trap)
+      .map((concept) => `${concept.title}: ${concept.trap}`);
+    pushCanonicalSection(grouped, "Common Mistakes / Clinical Risks", risks.join("\n"));
+
+    const rules = note.concepts
+      .filter((concept) => concept.rule)
+      .map((concept) => `${concept.title}: ${concept.rule}`);
+    pushCanonicalSection(grouped, "Exam-Important Concepts", rules.join("\n"));
+  }
+
+  pushCanonicalSection(grouped, "Memory Trick", note.memoryShortcuts.join("\n"));
+  pushCanonicalSection(grouped, "Recall Questions", note.miniTest?.map((q, index) => `${index + 1}. ${q}`).join("\n"));
+
+  const preferredOrder = [
+    "Big Idea",
+    "Structured Notes",
+    "Key Facts / Clinical Pearls",
+    "Definitions",
+    "Mechanism / Process",
+    "Clinical Reasoning",
+    "Decision / Concept Map",
+    "Clinical / Application Connection",
+    "Common Mistakes / Clinical Risks",
+    "Memory Trick",
+    "Exam-Important Concepts",
+    "Recall Questions",
+  ];
+
+  return [...grouped.entries()]
+    .map(([label, values]) => ({ label, content: values.join("\n\n") }))
+    .sort((a, b) => {
+      const ai = preferredOrder.indexOf(a.label);
+      const bi = preferredOrder.indexOf(b.label);
+      return (ai === -1 ? preferredOrder.length : ai) - (bi === -1 ? preferredOrder.length : bi);
+    });
+}
+
 // ── Storage constants ─────────────────────────────────────────────────────
 // New DB name avoids inheriting a broken schema from any old version-1 database.
 const IDB_DB_NAME    = "avrrio_notes_v2";

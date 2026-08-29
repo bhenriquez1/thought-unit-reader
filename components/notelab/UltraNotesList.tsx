@@ -9,16 +9,16 @@ import {
   deleteUltraNote,
   saveUltraNote,
   formatUltraNoteText,
+  getCanonicalNotebookSections,
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromNote, buildRecallSetFromNoteCard, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { buildRecallSetFromNote, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
 import type { FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
 import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
 import type { NoteCard as NoteCardData } from "@/lib/insights/synthesizeTeachingOutput";
-import NoteCardGrid from "@/components/notelab/NoteCardGrid";
 import {
   PROFESSION_MODES,
   getStoredProfessionMode,
@@ -28,11 +28,7 @@ import {
   getConceptFieldLabel,
   type ProfessionMode,
 } from "@/lib/notelab/professionModes";
-import AdaptiveStudySheetCard from "@/components/notelab/AdaptiveStudySheetCard";
-import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
 import NotebookCanvas from "@/components/notelab/NotebookCanvas";
-import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
-import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import KnowledgeNodeBadge from "@/components/knowledge/KnowledgeNodeBadge";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 
@@ -53,8 +49,7 @@ interface UltraNotesListProps {
   /** Fires whenever a note expands/collapses — lets the NoteLab 3-column shell
    *  bind its left ThoughtUnitNavigator rail to whichever note is open. */
   onActiveNoteChange?: (note: UltraNote | null) => void;
-  /** Verbatim text of a left-rail thought unit the user just clicked — passed
-   *  through to NoteCardGrid so the matching card scrolls into view + highlights. */
+  /** Verbatim text of a left-rail thought unit the user just clicked. */
   focusedAnchorText?: string | null;
   /** When set, auto-expands and scrolls to the note with this knowledgeNodeId. */
   focusedKnowledgeNodeId?: string | null;
@@ -96,7 +91,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onAskProfessorAboutBlock, onActiveNoteChange, focusedAnchorText, focusedKnowledgeNodeId }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onAskProfessorAboutBlock, onActiveNoteChange, focusedKnowledgeNodeId }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -198,32 +193,6 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
     } catch (e) {
       console.error("[NOTELAB_DUPLICATE_FAILED]", String(e));
       await reload();
-    }
-  }
-
-  // ── Concept star toggle ──────────────────────────────────────────────────
-
-  async function handleToggleConceptStar(note: UltraNote, ordinal: number) {
-    const current = note.starredConcepts ?? [];
-    const next = current.includes(ordinal) ? current.filter((o) => o !== ordinal) : [...current, ordinal];
-    const updated: UltraNote = { ...note, starredConcepts: next };
-    setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
-    try {
-      await saveUltraNote(updated);
-    } catch (e) {
-      console.error("[NOTELAB_STAR_SAVE_FAILED]", String(e));
-    }
-  }
-
-  // ── Save study sheet ─────────────────────────────────────────────────────
-
-  async function handleSaveStudySheet(note: UltraNote, sheet: AdaptiveStudySheet) {
-    const updated: UltraNote = { ...note, adaptiveStudySheet: sheet };
-    setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
-    try {
-      await saveUltraNote(updated);
-    } catch (e) {
-      console.error("[NOTELAB_SHEET_SAVE_FAILED]", String(e));
     }
   }
 
@@ -432,12 +401,8 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onNavigate={onNavigateToPage}
                               onCardsGenerated={onCardsGenerated}
                               onOpenWhiteboard={onOpenWhiteboard}
-                              onExplainCard={onExplainCard}
                               onAskProfessorAboutBlock={onAskProfessorAboutBlock}
-                              onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
                               onJumpToNote={handleJumpToNote}
-                              onSaveStudySheet={(sheet) => handleSaveStudySheet(note, sheet)}
-                              focusedAnchorText={isExpanded ? focusedAnchorText : null}
                             />
                           );
                         })}
@@ -529,7 +494,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onAskProfessorAboutBlock, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onAskProfessorAboutBlock, onJumpToNote,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -545,23 +510,20 @@ function NoteCard({
   onNavigate?: (page: number) => void;
   onCardsGenerated?: (setId: string) => void;
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
-  onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
   onAskProfessorAboutBlock?: (note: UltraNote, block: FinalizedNotebookBlock) => void;
-  onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
-  onSaveStudySheet: (sheet: AdaptiveStudySheet) => void;
-  focusedAnchorText?: string | null;
 }) {
   const setSelectedKgNodeId = useKnowledgeSelectionStore((s) => s.setSelectedNodeId);
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
-  const [noteView, setNoteView] = useState<"notes" | "studySheet" | "notebook">("notes");
+  const [noteView, setNoteView] = useState<"page" | "notebook">(() => note.notebookScene ? "notebook" : "page");
   const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
   const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     setStudentDraft(note.studentNotes ?? "");
-  }, [note.id, note.studentNotes]);
+    setNoteView(note.notebookScene ? "notebook" : "page");
+  }, [note.id, note.studentNotes, note.notebookScene]);
 
   async function handleSaveStudentNotes() {
     if (studentSaveState === "saving") return;
@@ -592,16 +554,6 @@ function NoteCard({
     }
   }
 
-  async function handleGenerateCardFromNoteCard(noteCard: NoteCardData) {
-    try {
-      const set = buildRecallSetFromNoteCard(note, noteCard, { sourceLabel: "notelab" });
-      await saveRecallSet(set);
-      onCardsGenerated?.(set.id);
-    } catch (e) {
-      console.error("[NOTELAB_NOTECARD_CARDS_SAVE_FAILED]", String(e));
-    }
-  }
-
   // N4 — "Practice in Recall" on a selected notebook-canvas object.
   async function handlePracticeRecallBlock(block: FinalizedNotebookBlock) {
     try {
@@ -625,6 +577,16 @@ function NoteCard({
   function handleJumpToReaderBlock(block: FinalizedNotebookBlock) {
     onNavigate?.(block.page ?? note.pageNumber);
   }
+
+  const canonicalSections = getCanonicalNotebookSections(note);
+  const sectionEvidence = (note.sections ?? [])
+    .filter((section) => section.label === "Source" || section.label === "Source Evidence")
+    .map((section, index) => ({ id: `section-source-${index}`, text: section.content, kind: "source" }));
+  const sourceEvidence = [
+    ...(note.visualAnchors?.map((anchor) => ({ id: anchor.id, text: anchor.exactText, kind: anchor.role })) ?? []),
+    ...(note.highlightAnchors?.map((anchor, index) => ({ id: `highlight-${index}`, text: anchor.text, kind: anchor.anchorType })) ?? []),
+    ...sectionEvidence,
+  ].filter((entry, index, entries) => entry.text.trim() && entries.findIndex((candidate) => candidate.text === entry.text) === index);
 
   return (
     <div
@@ -722,12 +684,12 @@ function NoteCard({
             </div>
           </div>
 
-          {/* Tab bar — "🖊️ Notebook" only appears once a NotebookPlanner scene has
-              been composed for this page (note.notebookScene); older notes and
-              pages the planner hasn't run for yet show exactly the same two
-              tabs as before, no visible change. */}
-          <div style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
-            {(note.notebookScene ? (["notes", "studySheet", "notebook"] as const) : (["notes", "studySheet"] as const)).map((tab) => {
+          {/* A composed canvas is the primary notebook. The structured study
+              page is its accessible/readable companion, never the retired
+              Study Sheet or generated-card dashboard. */}
+          {note.notebookScene && (
+          <div data-testid="notebook-view-switcher" style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
+            {(["notebook", "page"] as const).map((tab) => {
               const active = noteView === tab;
               return (
                 <button
@@ -746,31 +708,11 @@ function NoteCard({
                     transition: "all 0.15s",
                   }}
                 >
-                  {tab === "notes" ? "📋 Notes" : tab === "studySheet" ? "📊 Study Sheet" : "🖊️ Notebook"}
+                  {tab === "notebook" ? "🖊️ Visual notebook" : "📄 Study page"}
                 </button>
               );
             })}
           </div>
-
-          {/* Study Sheet tab */}
-          {noteView === "studySheet" && (
-            note.datStudySheet && !note.adaptiveStudySheet
-              ? (
-                // Backward compat: notes generated before the adaptive system
-                <DATStudySheetCard
-                  note={note}
-                  sheet={note.datStudySheet}
-                  onSheet={() => { /* legacy — no save path */ }}
-                />
-              )
-              : (
-                <AdaptiveStudySheetCard
-                  note={note}
-                  sheet={note.adaptiveStudySheet ?? null}
-                  onSheet={onSaveStudySheet}
-                  onNavigateToPage={onNavigate}
-                />
-              )
           )}
 
           {/* Notebook tab — the real, persistent, student-editable tldraw
@@ -787,8 +729,10 @@ function NoteCard({
             />
           )}
 
-          {/* Notes tab */}
-          {noteView === "notes" && <>
+          {/* Canonical permanent study page. Historical note shapes are
+              migrated by getCanonicalNotebookSections; no old renderer can
+              become the learner-facing fallback. */}
+          {noteView === "page" && <>
 
           {note.tags && note.tags.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -803,61 +747,7 @@ function NoteCard({
             </div>
           )}
 
-          {/* The structured notebook is canonical. Adaptive cards supplement it;
-              they never replace the note or push provenance into the foreground. */}
-          {hasNewSchema(note.sections) ? (
-            <SectionsView sections={note.sections!} mode={mode} />
-          ) : (
-            <>
-              {/* Core Idea */}
-              {note.coreIdea && (() => {
-                const lens = getSectionLens(mode, "Core Idea");
-                return (
-                  <NoteBlock accent="#fbbf24" bg="rgba(251,191,36,0.06)" icon={lens?.icon ?? "🧠"} label={(lens?.label ?? "Core Idea").toUpperCase()}>
-                    <div style={{ fontSize: 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.7 }}>{note.coreIdea}</div>
-                  </NoteBlock>
-                );
-              })()}
-
-              {/* Professor Notes */}
-              {note.professorNotes && <ProfessorSection notes={note.professorNotes} mode={mode} />}
-
-              {/* Mini Table — condensed pattern/trap/rule overview across all concepts */}
-              {note.concepts.length > 1 && <ConceptMiniTable concepts={note.concepts} mode={mode} />}
-
-              {/* Concept blocks — each collapsible */}
-              {note.concepts.length > 0 && note.concepts.map((c) => (
-                <ConceptBlock
-                  key={c.ordinal}
-                  concept={c}
-                  mode={mode}
-                  note={note}
-                  starred={note.starredConcepts?.includes(c.ordinal) ?? false}
-                  onToggleStar={() => onToggleConceptStar(c.ordinal)}
-                  onCardsGenerated={onCardsGenerated}
-                />
-              ))}
-            </>
-          )}
-
-          {note.noteCards?.length ? (
-            <details style={{ borderRadius: 10, border: "1px solid rgba(129,140,248,0.22)", background: "rgba(79,70,229,0.05)", padding: "10px 12px" }}>
-              <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
-                ADAPTIVE STUDY CARDS ({note.noteCards.length})
-              </summary>
-              <div style={{ marginTop: 10 }}>
-                <NoteCardGrid
-                  noteCards={note.noteCards}
-                  note={note}
-                  onNavigateToPage={onNavigate}
-                  onGenerateCard={(n, c) => handleGenerateCardFromNoteCard(c)}
-                  onOpenWhiteboard={onOpenWhiteboard ? (n, c) => onOpenWhiteboard(n, c) : undefined}
-                  onExplainCard={onExplainCard}
-                  focusedAnchorText={focusedAnchorText}
-                />
-              </div>
-            </details>
-          ) : null}
+          <SectionsView sections={canonicalSections} mode={mode} />
 
           <NoteBlock accent="#38bdf8" bg="rgba(56,189,248,0.04)" icon="✍️" label="MY NOTES">
             <textarea
@@ -874,15 +764,13 @@ function NoteCard({
             </div>
           </NoteBlock>
 
-          {(note.visualAnchors?.length || note.highlightAnchors?.length) ? (
+          {sourceEvidence.length ? (
             <details style={{ borderRadius: 10, border: "1px solid rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.4)", padding: "10px 12px" }}>
               <summary style={{ cursor: "pointer", color: "rgba(203,213,225,0.72)", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
                 SOURCE EVIDENCE · PDF PAGE {note.pageNumber}
               </summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
-                {(note.visualAnchors?.map((anchor) => ({ id: anchor.id, text: anchor.exactText, kind: anchor.role }))
-                  ?? note.highlightAnchors?.map((anchor, index) => ({ id: `legacy-${index}`, text: anchor.text, kind: anchor.anchorType }))
-                  ?? []).slice(0, 6).map((anchor) => (
+                {sourceEvidence.slice(0, 8).map((anchor) => (
                     <button
                       type="button"
                       key={anchor.id}
@@ -897,32 +785,6 @@ function NoteCard({
             </details>
           ) : null}
 
-          {/* Memory shortcuts + Mini Test — only for legacy notes (noteCards/new-schema sections embed these) */}
-          {!note.noteCards?.length && !hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (() => {
-            const lens = getSectionLens(mode, "Memory Hook");
-            return (
-              <NoteBlock accent="#a78bfa" bg="rgba(167,139,250,0.05)" icon={lens?.icon ?? "🧠"} label={(lens?.label ?? "Memory Hooks").toUpperCase()}>
-                {note.memoryShortcuts.map((s, i) => (
-                  <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: i < note.memoryShortcuts.length - 1 ? 6 : 0 }}>
-                    👉 {s}
-                  </div>
-                ))}
-              </NoteBlock>
-            );
-          })()}
-
-          {!note.noteCards?.length && !hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (() => {
-            const lens = getSectionLens(mode, "Recall Questions");
-            return (
-              <NoteBlock accent="#6ee7b7" bg="rgba(52,211,153,0.05)" icon={lens?.icon ?? "📝"} label={(lens?.label ?? "Recall Questions").toUpperCase()}>
-                {note.miniTest.map((q, i) => (
-                  <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 4 }}>
-                    {i + 1}. {q}
-                  </div>
-                ))}
-              </NoteBlock>
-            );
-          })()}
 
           {/* External Study Links */}
           {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
@@ -970,7 +832,7 @@ function NoteCard({
             );
           })()}
 
-          </> /* end noteView === "notes" */}
+          </> /* end noteView === "page" */}
 
           {/* Export options */}
           <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
@@ -1000,6 +862,14 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
   "Memory Trick":                   { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
   "Exam Signal":                    { accent: "#f59e0b", bg: "rgba(245,158,11,0.05)", icon: "🎯" },
   "Recall Questions":               { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "❓" },
+  "Structured Notes":               { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "📝" },
+  "Key Facts / Clinical Pearls":    { accent: "#facc15", bg: "rgba(250,204,21,0.05)", icon: "💎" },
+  "Mechanism / Process":            { accent: "#34d399", bg: "rgba(52,211,153,0.05)", icon: "⚙️" },
+  "Clinical Reasoning":             { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧠" },
+  "Decision / Concept Map":         { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)", icon: "↔️" },
+  "Clinical / Application Connection": { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)", icon: "🦷" },
+  "Common Mistakes / Clinical Risks": { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "⚠️" },
+  "Exam-Important Concepts":        { accent: "#f59e0b", bg: "rgba(245,158,11,0.05)", icon: "🎯" },
   "Source Evidence":                { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📍" },
   "Chief Concern / Problem":        { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
   "Why This Matters Clinically":    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
@@ -1022,7 +892,7 @@ const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }
 // any label absent from this list (future section) still renders, just last,
 // instead of silently disappearing (the lesson from Phase 4's SUBJECT_ORDER).
 const SECTION_ORDER = [
-  "Big Idea", "Core Concepts", "Definitions", "Equations and Variables",
+  "Big Idea", "Structured Notes", "Key Facts / Clinical Pearls", "Core Concepts", "Definitions", "Mechanism / Process", "Clinical Reasoning", "Decision / Concept Map", "Clinical / Application Connection", "Common Mistakes / Clinical Risks", "Exam-Important Concepts", "Equations and Variables",
   "Worked Example", "Graph / Figure", "Biological / Real-World Application",
   "Common Mistakes", "Memory Trick", "Exam Signal", "Recall Questions", "Source Evidence",
   "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
@@ -1047,7 +917,7 @@ function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultr
         const label = lens?.label ?? sec.label;
         const icon = lens?.icon ?? style.icon;
         return (
-          <section key={sec.label} style={{ borderRadius: 10, borderTop: `3px solid ${style.accent}80`, background: style.bg, padding: "12px 14px", breakInside: "avoid" }}>
+          <section key={sec.label} style={{ gridColumn: sec.label === "Big Idea" || sec.label === "Mechanism / Process" || sec.label === "Decision / Concept Map" ? "1 / -1" : undefined, borderRadius: 10, borderTop: `3px solid ${style.accent}80`, background: style.bg, padding: sec.label === "Big Idea" ? "16px 18px" : "12px 14px", breakInside: "avoid" }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: style.accent, marginBottom: 7 }}>
               {icon} {label.toUpperCase()}
             </div>

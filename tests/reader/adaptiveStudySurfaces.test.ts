@@ -26,7 +26,9 @@ describe("canonical adaptive study surfaces", () => {
     expect(source).toContain('data-testid="adaptive-notebook-sections"');
     expect(source).toContain("SectionsView");
     expect(source).toContain("Source Evidence");
-    expect(source.indexOf("<SectionsView")).toBeLessThan(source.indexOf("ADAPTIVE STUDY CARDS"));
+    expect(source).toContain("getCanonicalNotebookSections(note)");
+    expect(source).not.toContain("<NoteCardGrid");
+    expect(source).not.toContain("ADAPTIVE STUDY CARDS");
   });
 
   it("keeps provenance out of the primary notebook section grid", () => {

@@ -125,8 +125,12 @@ describe("UltraNotesList.tsx — Notebook tab wiring", () => {
     expect(src).toMatch(/<NotebookCanvas\s*\n\s*scene=\{note\.notebookScene\}/);
   });
 
-  it("REQUIRED: the Notebook tab only appears when note.notebookScene is present — a note without a composed scene shows exactly the same two tabs as before N3", () => {
-    expect(src).toMatch(/note\.notebookScene \? \(\["notes", "studySheet", "notebook"\] as const\) : \(\["notes", "studySheet"\] as const\)/);
+  it("REQUIRED: a composed visual notebook opens first and the retired Study Sheet tab is absent", () => {
+    expect(src).toContain('note.notebookScene ? "notebook" : "page"');
+    expect(src).toContain('(["notebook", "page"] as const)');
+    expect(src).not.toContain('"studySheet"');
+    expect(src).not.toContain("<AdaptiveStudySheetCard");
+    expect(src).not.toContain("<DATStudySheetCard");
   });
 
   it("REQUIRED: the notebook tab body is gated on both the active tab AND the scene actually being present, so it can never render with an undefined scene", () => {
