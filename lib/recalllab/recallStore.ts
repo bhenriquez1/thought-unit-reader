@@ -7,6 +7,7 @@ import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
+import type { FinalizedNotebookBlock, NotebookPrimitive } from "@/lib/notelab/notebookScene";
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
@@ -622,6 +623,62 @@ export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, 
     pageNumber:   note.pageNumber,
     subject:      note.subject ?? "General Notes",
     topic:        noteCard.title,
+    cards,
+    createdAt:    Date.now(),
+    sourceNoteId: note.id,
+    knowledgeNodeId: opts?.knowledgeNodeId ?? note.knowledgeNodeId,
+  };
+}
+
+// ── Build from a single Notebook block (N4 — "Practice in Recall" per-object
+// canvas action) ────────────────────────────────────────────────────────────
+// Scoped to one FinalizedNotebookBlock rather than the whole note, same
+// single-anchor scoping as buildRecallSetFromNoteCard above — built
+// in-memory, not persisted by this function (caller decides whether to save).
+
+const PRIMITIVE_RECALL_PROMPT: Partial<Record<NotebookPrimitive, string>> = {
+  formula:        "Write this formula/expression from memory:",
+  equation_work:  "Work through this derivation/calculation from memory:",
+  highlight:      "Recall this highlighted point from the source:",
+  underline:      "Recall this underlined point from the source:",
+  source_anchor:  "Recall this exact source passage:",
+  example:        "Work through this example from memory:",
+  callout:        "Recall this warning, exception, or high-yield note:",
+  diagram:        "Describe or redraw this diagram from memory:",
+  concept_map:    "Reconstruct this concept map from memory:",
+  timeline:       "Recall this sequence of events, in order:",
+  flow:           "Recall this process/procedure, in order:",
+  table:          "Recall this table's data:",
+  comparison:     "Recall this comparison:",
+  text:           "Explain this in your own words:",
+  heading:        "What does this section cover?",
+  label:          "What does this label refer to?",
+  image:          "Describe this figure from memory:",
+  freehand:       "Recall this sketch/annotation:",
+};
+
+export function buildRecallSetFromNotebookBlock(note: UltraNote, block: FinalizedNotebookBlock, opts?: BuildRecallSetOpts): RecallSet {
+  const cardType: CardType =
+    block.primitive === "equation_work" || block.primitive === "flow" ? "mechanism"
+    : block.primitive === "example" ? "application"
+    : block.primitive === "highlight" || block.primitive === "underline" || block.primitive === "source_anchor" || block.primitive === "formula" ? "fact"
+    : "concept";
+
+  const front = PRIMITIVE_RECALL_PROMPT[block.primitive] ?? "Recall this notebook block:";
+  const back = [block.content, block.detail].filter(Boolean).join("\n\n");
+
+  const cards: RecallCard[] = [card(`nb-${block.primitive}`, cardType, front, back)];
+
+  return {
+    id:           stableRecallId(opts?.documentId ?? note.bookId, note.pageNumber, `notebook-${note.id}-${block.id}`),
+    bookId:       note.bookId,
+    documentId:   opts?.documentId,
+    pageTruthKey: opts?.pageTruthKey,
+    bookTitle:    note.bookTitle ?? opts?.bookTitle,
+    sourceLabel:  opts?.sourceLabel ?? "notelab",
+    pageNumber:   block.page ?? note.pageNumber,
+    subject:      note.subject ?? "General Notes",
+    topic:        note.topic,
     cards,
     createdAt:    Date.now(),
     sourceNoteId: note.id,

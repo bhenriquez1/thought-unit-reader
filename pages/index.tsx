@@ -5886,6 +5886,11 @@ export default function ThoughtUnitReader() {
                 setLastRecallSetId(setId);
                 setRecallLabRefreshKey((key) => key + 1);
               }}
+              onAskProfessorAboutBlock={(note, block) => {
+                setWbConcept(truncate(`${note.topic} — ${block.primitive.replace(/_/g, " ")}`, 600));
+                setWbContext(truncate([block.content, block.detail].filter(Boolean).join("\n\n"), 1200));
+                setShowWhiteboardPanel(true);
+              }}
               onActiveNoteChange={(note) => {
                 setActiveNote(note);
                 setNotelabActiveNote(note);
