@@ -20,8 +20,9 @@ import { buildProfessorLessonCacheKey, type ProfessorLessonPlan, type ProfessorS
 import type { ProfessorSurfaceReason } from "@/lib/whiteboard/professorTimelineEngine";
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import {
-  buildWhiteboardLessonSnapshot, saveWhiteboardLessonSnapshot,
+  buildWhiteboardLessonSnapshot, saveWhiteboardLessonSnapshot, getWhiteboardLessonSnapshot,
 } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
+import { buildNotebookSceneFromLessonSnapshot } from "@/lib/notelab/lessonToNotebookScene";
 
 // SOLE Whiteboard rendering pipeline: Current Page -> Professor Lesson
 // Planner (TldrawCanvas + useProfessorLesson) -> tldraw Lesson -> Render.
@@ -325,6 +326,27 @@ export default function WhiteboardPanel({
       if (canonicalEntries?.length) {
         note.thoughtUnitIds = canonicalEntries.map((e) => e.id);
       }
+
+      // N5 — if this page's lesson was actually taught and completed, its
+      // real captured geometry (lib/knowledge/whiteboardLessonSnapshotStore.ts)
+      // recomposes into the note's persistent notebook canvas, instead of
+      // the note carrying only the flat-text sections above. Never fatal to
+      // the save itself: a note with no lesson snapshot (or a lookup
+      // failure) still saves exactly as it always has.
+      if (lessonId) {
+        try {
+          const snapshot = await getWhiteboardLessonSnapshot(lessonId, effectiveLearningDocumentId);
+          if (snapshot) {
+            note.notebookScene = buildNotebookSceneFromLessonSnapshot(snapshot, {
+              bookId: note.bookId,
+              pageNumber: note.pageNumber,
+            });
+          }
+        } catch (err) {
+          console.error("[WHITEBOARD_SAVE_NOTELAB_SCENE_ERROR]", err);
+        }
+      }
+
       await saveUltraNote(note);
       flashAction("✅ Saved to NoteLab");
     } catch (err) {
