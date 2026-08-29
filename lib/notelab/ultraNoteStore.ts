@@ -7,6 +7,7 @@ import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
+import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
 
 // Re-export NoteSubject so callers that import it from here don't need to change.
 export type { NoteSubject };
@@ -113,6 +114,15 @@ export interface UltraNote {
   studentNotes?: string;
   /** Optional printed-page label when it differs from the electronic PDF page. */
   printedPageLabel?: string;
+  // ── N3 — adaptive tldraw notebook ─────────────────────────────────────────
+  /** NotebookPlanner's composed scene for this page (see
+   *  lib/notelab/notebookScene.ts) — the input NotebookCanvas.tsx renders
+   *  onto a real, persistent, student-editable tldraw canvas. Optional and
+   *  additive: notes saved before N3 (or any page the planner hasn't run
+   *  for yet) simply have none, and UltraNotesList only offers the
+   *  notebook-view toggle when this is present. Never generated in this
+   *  phase — that's a later increment; N3 is the renderer. */
+  notebookScene?: VisualNotebookScene;
 }
 
 // ── Storage constants ─────────────────────────────────────────────────────
@@ -170,6 +180,8 @@ function compact(note: UltraNote): UltraNote {
     // Strip both sheet types from LS mirror — they can be several KB; IDB holds the full copy.
     datStudySheet:     undefined,
     adaptiveStudySheet: undefined,
+    // Same reasoning — a notebook scene's blocks can also run several KB; IDB holds the full copy.
+    notebookScene: undefined,
   };
 }
 
