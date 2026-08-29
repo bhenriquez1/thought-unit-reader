@@ -2527,25 +2527,30 @@ export default function ThoughtUnitReader() {
           .slice(0, 3)
           .map((u) => `• ${u.title}: ${u.exactText}`)
           .join("\n");
-        note.sections = [
-          { label: "Chief Concern / Problem", content: activeUnit.exactText },
-          { label: "Why This Matters Clinically", content: activeUnit.reason },
-          { label: "Diagnostic Reasoning", content: activeUnit.category === "trap" ? `Danger Zone: ${activeUnit.exactText}` : `Use this unit to decide what matters next on page ${currentPage}.` },
-          { label: "Procedure Logic", content: activeUnit.category === "mechanism" || activeUnit.category === "application" ? activeUnit.exactText : "Connect this anchor to the neighboring expert units before moving on." },
-          { label: "Decision Tree", content: neighbors || activeUnit.exactText },
-          { label: "Danger Zone", content: activeUnit.category === "trap" ? activeUnit.exactText : "Do not treat this as isolated trivia; connect it to the page's ranked units." },
-          { label: "Complication Risk", content: "Missing this unit can cause the downstream reasoning chain to fail." },
-          { label: "Clinical Pearl", content: activeUnit.category === "clinical" ? activeUnit.exactText : activeUnit.reason },
-          { label: "Common Mistake", content: "Reading the page summary without anchoring this exact source text." },
-          { label: "Connection Map", content: neighbors || "No neighboring canonical units available yet." },
-          { label: "Case-Style Recall Questions", content: `In a case, when would "${activeUnit.title}" change the answer?` },
-          { label: "Recall Questions", content: [
-            `Why is this a ${activeUnit.importanceLabel}?`,
-            "What detail in the source text proves it?",
-            "What would you confuse it with?",
-          ].join("\n") },
-          { label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` },
-        ];
+        // N1 (NoteLab adaptivity correction) — this used to force this ONE
+        // thought unit's single exactText/reason into 12 fixed slots
+        // regardless of relevance, manufacturing filler ("Connect this
+        // anchor to the neighboring expert units before moving on",
+        // "Missing this unit can cause the downstream reasoning chain to
+        // fail") for whichever slots the unit's category didn't genuinely
+        // fill. A single thought unit legitimately has one real content
+        // section (labeled by what it actually is), an optional distinct
+        // reason, and optional real neighboring context — never a fixed
+        // section count with generated padding.
+        const primaryLabel =
+          activeUnit.category === "trap" ? "Danger Zone"
+          : activeUnit.category === "clinical" ? "Clinical Pearl"
+          : activeUnit.category === "mechanism" || activeUnit.category === "application" ? "Mechanism"
+          : activeUnit.title || "Key Point";
+        const sections: NoteSection[] = [{ label: primaryLabel, content: activeUnit.exactText }];
+        if (activeUnit.reason && activeUnit.reason !== activeUnit.exactText) {
+          sections.push({ label: "Why This Matters", content: activeUnit.reason });
+        }
+        if (neighbors) {
+          sections.push({ label: "Connection Map", content: neighbors });
+        }
+        sections.push({ label: "Source", content: `Page ${currentPage} · thoughtUnitId: ${activeUnit.id}` });
+        note.sections = sections;
         note.visualAnchors = canonicalLeftPanelUnits.map((u) => ({
           id: u.id,
           sourceField: "conceptBlock",
@@ -3063,21 +3068,27 @@ export default function ThoughtUnitReader() {
         fallbackUsed: unit.source !== "canonical_left_panel",
       });
       const note = buildUltraNote(bookId, unit.page, unit.title, unit.exactText, [], uploadedFile?.name);
-      note.sections = [
-        { label: "Chief Concern / Core Problem", content: unit.exactText },
-        { label: "Why This Matters", content: unit.reason },
-        { label: "Diagnostic Reasoning", content: `This is a ${unit.importanceLabel} unit on page ${unit.page}.` },
-        { label: "Procedure Logic", content: unit.category === "mechanism" || unit.category === "application" ? unit.exactText : "Connect this unit to the surrounding canonical units." },
-        { label: "Decision Tree", content: canonicalLeftPanelUnits.filter((u) => u.id !== unit.id).slice(0, 3).map((u) => `• ${u.title}`).join("\n") || unit.title },
-        { label: "Danger Zone", content: unit.category === "trap" ? unit.exactText : "Do not memorize this without linking it to the source text." },
-        { label: "Complication Risk", content: "Losing this anchor weakens downstream recall and explanation." },
-        { label: "Clinical Pearl", content: unit.category === "clinical" ? unit.exactText : unit.reason },
-        { label: "Common Mistake", content: "Using page-level summary instead of this exact thought unit." },
-        { label: "Connection Map", content: canonicalLeftPanelUnits.slice(0, 5).map((u) => `• ${u.importanceLabel}: ${u.title}`).join("\n") },
-        { label: "Case Recall", content: `When would "${unit.title}" change a decision?` },
-        { label: "Recall Questions", content: `1. What makes this high-value?\n2. What is the key phrase?\n3. What trap does it prevent?` },
-        { label: "Source", content: `Page ${unit.page} · thoughtUnitId: ${unit.id}` },
-      ];
+      // N1 (NoteLab adaptivity correction) — same fix as sendCurrentPageToNoteLab
+      // above: one thought unit gets one real content section (labeled by
+      // what it actually is), an optional distinct reason, and optional real
+      // neighboring context — never a fixed 12-slot template padded with
+      // generated filler ("Connect this unit to the surrounding canonical
+      // units", "Losing this anchor weakens downstream recall...").
+      const noteNeighbors = canonicalLeftPanelUnits.filter((u) => u.id !== unit.id).slice(0, 3).map((u) => `• ${u.title}: ${u.exactText}`).join("\n");
+      const notePrimaryLabel =
+        unit.category === "trap" ? "Danger Zone"
+        : unit.category === "clinical" ? "Clinical Pearl"
+        : unit.category === "mechanism" || unit.category === "application" ? "Mechanism"
+        : unit.title || "Key Point";
+      const noteSections: NoteSection[] = [{ label: notePrimaryLabel, content: unit.exactText }];
+      if (unit.reason && unit.reason !== unit.exactText) {
+        noteSections.push({ label: "Why This Matters", content: unit.reason });
+      }
+      if (noteNeighbors) {
+        noteSections.push({ label: "Connection Map", content: noteNeighbors });
+      }
+      noteSections.push({ label: "Source", content: `Page ${unit.page} · thoughtUnitId: ${unit.id}` });
+      note.sections = noteSections;
       note.visualAnchors = canonicalLeftPanelUnits.map((u) => ({
         id: u.id,
         sourceField: "conceptBlock",
