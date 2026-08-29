@@ -27,6 +27,7 @@ import {
   type VisualNotebookScene,
   type FinalizedNotebookBlock,
 } from "@/lib/notelab/notebookScene";
+import { describeNotebookStyleProfile, type NotebookStyleProfile } from "@/lib/notelab/notebookStyleProfile";
 
 // ── AI-facing schema ─────────────────────────────────────────────────────────
 // Deliberately narrower than FinalizedNotebookBlockSchema: no canonicalUnitId/
@@ -57,8 +58,14 @@ export type NotebookPlan = z.infer<typeof NotebookPlanSchema>;
 
 // ── Prompts ───────────────────────────────────────────────────────────────
 
-export function buildNotebookPlannerSystemPrompt(): string {
-  return `You are the NotebookPlanner for Avrrio's NoteLab — an adaptive visual notebook, not a card generator.
+// N6 — styleProfile is always optional and always additive: every existing
+// caller (buildNotebookPlannerSystemPrompt()) still gets the identical base
+// prompt it always has. It's computed from the student's OWN past notebooks
+// (lib/notelab/notebookStyleProfile.ts) and appended as one more paragraph
+// the model weighs — never a rule that can relax the grounding contract
+// above it in the same prompt.
+export function buildNotebookPlannerSystemPrompt(opts?: { styleProfile?: NotebookStyleProfile | null }): string {
+  const base = `You are the NotebookPlanner for Avrrio's NoteLab — an adaptive visual notebook, not a card generator.
 
 YOUR ONLY JOB: decide how THIS page's material should be visually represented, using the primitive vocabulary below. You are NOT filling in a fixed set of labeled sections. There is no "Chief Concern" slot, no "Danger Zone" slot, no required count or required set of primitives. A sparse page might use 2-3 blocks. A dense page might use many. Decide based on what the material actually contains — never pad, never force content into a primitive that doesn't fit it, never invent filler to make the page "feel complete."
 
@@ -103,6 +110,9 @@ For every other primitive, \`content\` (and \`detail\` where relevant) is your o
 These are illustrations of the REASONING, not a menu to pick one from. A page rarely matches one of these exactly — compose from the primitives based on what THIS page's own content actually is.
 
 Return ONLY the JSON matching the required schema. teachingStructure should reflect the page's own content — null is fine when no single structure fits.`;
+
+  if (!opts?.styleProfile) return base;
+  return `${base}\n\n${describeNotebookStyleProfile(opts.styleProfile)}`;
 }
 
 function summarizeUnitForPrompt(unit: CanonicalThoughtUnit, index: number): string {
