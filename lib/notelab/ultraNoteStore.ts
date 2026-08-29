@@ -7,7 +7,6 @@ import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
-import { detectContentProfile } from "@/lib/content/contentProfile";
 import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
 
 // Re-export NoteSubject so callers that import it from here don't need to change.
@@ -445,11 +444,26 @@ export function buildUltraNote(
 }
 
 /**
- * Primary NoteLab entry point — builds a structured note directly from PageBrain,
- * shaped like surgeon notes: Chief Concern, Why This Matters Clinically,
+ * Primary NoteLab entry point — builds a structured note directly from PageBrain.
+ *
+ * N1 (NoteLab adaptivity correction) — this used to force EVERY page through
+ * the same fixed 14-slot template (Chief Concern, Why This Matters Clinically,
  * Diagnostic Reasoning, Procedure Logic, Decision Tree, Danger Zone,
  * Complication Risk, Clinical Pearl, Common Mistake, Case-Style Recall
- * Questions, Connection Map, then a closing Memory Hook/Summary/Source.
+ * Questions, Connection Map, Exam Strategy, Memory Hook, Summary), each slot
+ * either filled from a studyNotes.* field or simply omitted — never actually
+ * varying WHICH kinds of content a page gets beyond that fixed skeleton. That
+ * recreates the same "predefined card the knowledge must fit inside" problem
+ * the Adaptive Notebook cards (model.noteCards) were built to solve.
+ *
+ * `sections` is now derived directly from model.noteCards — already the
+ * genuinely adaptive path: AI-chosen when synthesis resolves it (2-5 cards,
+ * whichever card TYPES the page actually calls for, from a 24-type schema),
+ * or deterministically derived per populated field when it doesn't
+ * (deriveNoteCardsFromStudyModel — see that file's own header comment: pure,
+ * conditional-per-field, never manufactures filler for an empty field). A
+ * sparse page legitimately gets fewer sections; a dense one gets more —
+ * never a fixed count with generic content padded into whatever's left.
  *
  * All content comes from the same StudyModel that powers the right panel and
  * left-panel highlights — NoteLab is a different view of the same brain.
@@ -472,171 +486,23 @@ export function buildNoteFromStudyModel(
   const { bookId, pageNumber, topic, bookTitle, pageThesisOverride } = opts;
   const effectiveThesis = pageThesisOverride || model.pageThesis;
   const sn = model.studyNotes;
-  const sections: NoteSection[] = [];
-  const contentProfile = detectContentProfile({ bookTitle, pageText: [effectiveThesis, ...model.visualAnchors.map((a) => a.exactText)].join(" ") });
 
-  if (contentProfile.id === "math-textbook") {
-    if (effectiveThesis) sections.push({ label: "Big Idea", content: effectiveThesis });
+  // N1 — a second, content-profile-gated fixed template ("Big Idea", "Core
+  // Concepts", "Equations and Variables", "Worked Example", ... for
+  // contentProfile.id === "math-textbook") used to live here as an early
+  // return, alongside the generic 14-slot template below. Same anti-pattern,
+  // just gated behind a detector instead of applying to every page — still a
+  // predefined set of labeled slots content gets forced into. Content-
+  // profile-aware adaptation belongs in the NotebookPlanner's primitive
+  // selection (a genuinely adaptive per-page decision), not a second
+  // hand-authored template competing with the first. Removed; the single
+  // noteCards-derived path below already adapts per page without a profile
+  // detector, since noteCards themselves already vary by what the page
+  // (math, clinical, historical, or anything else) actually contains.
+  const sections: NoteSection[] = (model.noteCards ?? []).map((c) => ({ label: c.title, content: c.body }));
 
-    const coreConcepts = model.conceptBlocks
-      .slice(0, 6)
-      .map((block, index) => `${index + 1}. ${block.title}: ${block.pattern}`)
-      .join("\n");
-    if (coreConcepts) sections.push({ label: "Core Concepts", content: coreConcepts });
-
-    const definitions = model.visualAnchors
-      .filter((anchor) => anchor.role === "definition")
-      .slice(0, 4)
-      .map((anchor) => anchor.exactText)
-      .join("\n");
-    if (definitions) sections.push({ label: "Definitions", content: definitions });
-
-    const equations = model.visualAnchors
-      .filter((anchor) => anchor.kind === "formula" || /[=∫∑√]|\bf\s*\(/i.test(anchor.exactText))
-      .slice(0, 4)
-      .map((anchor) => anchor.exactText)
-      .join("\n");
-    if (equations) sections.push({ label: "Equations and Variables", content: equations });
-
-    const examples = model.visualAnchors
-      .filter((anchor) => anchor.role === "exampleEvidence")
-      .slice(0, 3)
-      .map((anchor) => anchor.exactText)
-      .join("\n");
-    if (examples) sections.push({ label: "Worked Example", content: examples });
-
-    const figureEvidence = model.visualAnchors
-      .filter((anchor) => /\b(fig(?:ure)?|graph|diagram|table|curve|axis|axes)\b/i.test(anchor.exactText))
-      .slice(0, 3)
-      .map((anchor) => anchor.exactText)
-      .join("\n");
-    if (figureEvidence) sections.push({ label: "Graph / Figure", content: figureEvidence });
-
-    if (sn.whyThisMatters) sections.push({ label: "Biological / Real-World Application", content: sn.whyThisMatters });
-    if (sn.commonMistake || sn.commonConfusion) sections.push({ label: "Common Mistakes", content: sn.commonMistake || sn.commonConfusion || "" });
-    if (sn.quickMemory) sections.push({ label: "Memory Trick", content: sn.quickMemory });
-    if (sn.examSignal || sn.examStrategy) sections.push({ label: "Exam Signal", content: sn.examSignal || sn.examStrategy || "" });
-    if (model.miniTest?.length) sections.push({ label: "Recall Questions", content: model.miniTest.slice(0, 4).map((q, i) => `${i + 1}. ${q}`).join("\n") });
-    sections.push({ label: "Source Evidence", content: [bookTitle ? `Book: ${bookTitle}` : null, `PDF page: ${pageNumber}`, `Topic: ${topic}`].filter(Boolean).join(" · ") });
-
-    const concepts: UltraNoteConcept[] = model.conceptBlocks.map((block, index) => ({
-      ordinal: index + 1,
-      title: block.title,
-      pattern: block.pattern,
-      surgicalReason: block.mechanism ?? "",
-      trap: block.trap ?? "",
-      rule: block.rule ?? "",
-    }));
-    return {
-      id: `note-${bookId}-p${pageNumber}`,
-      bookId,
-      bookTitle: bookTitle || undefined,
-      pageNumber,
-      topic,
-      coreIdea: effectiveThesis,
-      concepts,
-      memoryShortcuts: concepts.filter((concept) => concept.rule.length > 10).map((concept) => `${concept.title}: ${concept.rule}`).slice(0, 3),
-      sections,
-      subject: inferSubject(bookId, bookTitle),
-      createdAt: Date.now(),
-      pageThesis: effectiveThesis,
-      miniTest: model.miniTest?.length ? model.miniTest : undefined,
-      externalStudyLinks: model.externalStudyLinks?.length ? model.externalStudyLinks : undefined,
-      relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,
-      highlightAnchors: model.highlightAnchors?.length ? model.highlightAnchors : undefined,
-      noteCards: model.noteCards?.length ? model.noteCards : undefined,
-      visualAnchors: model.visualAnchors?.length ? model.visualAnchors : undefined,
-      tags: model.tags,
-    };
-  }
-
-  // 1. Chief Concern / Problem — the governing idea of the page
-  if (effectiveThesis) {
-    sections.push({ label: "Chief Concern / Problem", content: effectiveThesis });
-  }
-
-  // 2. Why This Matters Clinically
-  if (sn.whyThisMatters) {
-    sections.push({ label: "Why This Matters Clinically", content: sn.whyThisMatters });
-  }
-
-  // 3. Diagnostic Reasoning
-  if (sn.clinicalReasoning) {
-    sections.push({ label: "Diagnostic Reasoning", content: sn.clinicalReasoning });
-  }
-
-  // 4. Procedure Logic — numbered steps from keyMechanism + concept mechanisms
-  const procedureParts = [
-    sn.keyMechanism,
-    ...model.conceptBlocks.map((b) => b.mechanism).filter(Boolean),
-  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 5);
-  if (procedureParts.length) {
-    sections.push({ label: "Procedure Logic", content: procedureParts.map((m, i) => `${i + 1}. ${m}`).join("\n") });
-  }
-
-  // 5. Decision Tree — the page's causal/reasoning flow, when one exists
-  if (sn.reasoningFlow) {
-    sections.push({ label: "Decision Tree", content: sn.reasoningFlow });
-  }
-
-  // 6. Danger Zone — the page-level misconception/trap
-  if (sn.commonConfusion) {
-    sections.push({ label: "Danger Zone", content: `⚠ ${sn.commonConfusion}` });
-  }
-
-  // 7. Complication Risk — per-concept traps (distinct from the page-level Danger Zone)
-  const complicationItems = model.conceptBlocks
-    .map((b) => b.trap)
-    .filter((v): v is string => typeof v === "string" && v.length > 10)
-    .slice(0, 3);
-  if (complicationItems.length) {
-    sections.push({ label: "Complication Risk", content: complicationItems.map((t) => `⚠ ${t}`).join("\n") });
-  }
-
-  // 8. Clinical Pearl
-  if (sn.clinicalPearl) {
-    sections.push({ label: "Clinical Pearl", content: sn.clinicalPearl });
-  }
-
-  // 9. Common Mistake
-  if (sn.commonMistake) {
-    sections.push({ label: "Common Mistake", content: sn.commonMistake });
-  }
-
-  // 10. Case-Style Recall Questions
-  const recallQs = (model.miniTest ?? [])
-    .filter((q): q is string => typeof q === "string" && q.length > 5)
-    .slice(0, 3);
-  if (recallQs.length) {
-    sections.push({ label: "Case-Style Recall Questions", content: recallQs.map((q, i) => `${i + 1}. ${q}`).join("\n") });
-  }
-
-  // 11. Connection Map
-  if (sn.connectionMap) {
-    sections.push({ label: "Connection Map", content: sn.connectionMap });
-  }
-
-  // 11b. Exam Strategy — kept as its own Level-2 section, not part of the core 11
-  if (sn.examStrategy) {
-    sections.push({ label: "Exam Strategy", content: sn.examStrategy });
-  }
-
-  // 12. Memory Hook — 1 mnemonic
-  const memHook = sn.quickMemory
-    ?? model.conceptBlocks.find((b) => b.rule && b.rule.length > 10)?.rule
-    ?? null;
-  if (memHook) {
-    sections.push({ label: "Memory Hook", content: memHook });
-  }
-
-  // 13. Summary — closing recap built from already-computed fields, no new AI call
-  const summaryParts = [effectiveThesis, sn.keyMechanism, sn.quickMemory]
-    .filter((v): v is string => typeof v === "string" && v.length > 10);
-  if (summaryParts.length) {
-    sections.push({ label: "Summary", content: summaryParts.join(" ") });
-  }
-
-  // 14. Source — book title, page, topic
+  // Source — book title, page, topic. Always present: this is provenance,
+  // never content forced to fit a slot the page doesn't call for.
   const sourceParts = [
     bookTitle ? `Book: ${bookTitle}` : null,
     `Page: ${pageNumber}`,
