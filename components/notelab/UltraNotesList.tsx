@@ -1011,24 +1011,19 @@ function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultr
   );
 }
 
-// Includes both the current surgeon-notes labels and the older pre-rename
-// labels, so notes already saved to localStorage under the old schema still
-// render via SectionsView instead of silently falling back to the legacy
-// coreIdea/concept-block layout.
-const NEW_SCHEMA_LABELS = new Set([
-  "Big Idea", "Core Concepts", "Definitions", "Equations and Variables",
-  "Worked Example", "Graph / Figure", "Biological / Real-World Application",
-  "Common Mistakes", "Memory Trick", "Exam Signal", "Source Evidence",
-  "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
-  "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
-  "Case-Style Recall Questions",
-  "Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook",
-  "Recall Questions", "Summary", "Source",
-]);
-
+// N1 (NoteLab adaptivity correction) — this used to gate on a fixed
+// allowlist of known section labels (NEW_SCHEMA_LABELS), so a note whose
+// sections came from buildNoteFromStudyModel's fixed 14-slot template (or
+// its since-removed "math-textbook" sibling) would render via SectionsView,
+// while a note whose sections were derived from model.noteCards' adaptive,
+// AI-chosen titles — anything from "Must Know" to a concept's own title —
+// often did NOT match the allowlist and silently fell through to the
+// legacy coreIdea/concept-block layout instead. Any note with sections has
+// them because buildNoteFromStudyModel actually built them (always at
+// least a "Source" entry) — there's no longer a separate "old schema" to
+// distinguish from a "new" one, so presence is the only signal needed.
 function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
-  if (!sections?.length) return false;
-  return sections.some((s) => NEW_SCHEMA_LABELS.has(s.label));
+  return !!sections?.length;
 }
 
 // ── ConceptMiniTable — condensed multi-concept overview (NoteLab v2) ──────
