@@ -62,9 +62,57 @@ describe("NotebookCanvas.tsx — persistent, student-editable, NOT Professor's e
     expect(src).toMatch(/licenseMissingInProduction/);
   });
 
-  it("calls composeScene from onMount, and re-derives the callback when the scene prop itself changes", () => {
-    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*composeScene\(editor, scene\);/);
-    expect(src).toMatch(/\}, \[scene\]\);/);
+  it("calls composeScene from onMount using the current scene, and stores the editor in a ref for later effects to reach", () => {
+    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*editorRef\.current = editor;\s*composeScene\(editor, sceneRef\.current\);/);
+  });
+});
+
+describe("NotebookCanvas.tsx — N4: recomposes on a later scene change (tldraw's onMount only fires once)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: a dedicated effect, not onMount alone, recomposes when `scene` changes after the initial mount", () => {
+    const idx = src.indexOf("// Recompose whenever `scene` itself changes");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/useEffect\(\(\) => \{\s*if \(editorRef\.current\) composeScene\(editorRef\.current, scene\);\s*\}, \[scene\]\);/);
+  });
+
+  it("REQUIRED: the store.listen selection subscription is torn down and re-subscribed idempotently (mirrors TldrawCanvas.tsx's own storeUnsubRef pattern), and torn down again on unmount", () => {
+    expect(src).toMatch(/storeUnsubRef\.current\?\.\(\);\s*storeUnsubRef\.current = editor\.store\.listen\(/);
+    expect(src).toMatch(/useEffect\(\(\) => \(\) => \{ storeUnsubRef\.current\?\.\(\); \}, \[\]\);/);
+  });
+});
+
+describe("NotebookCanvas.tsx — N4: provenance-driven selection action panel", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: resolves the selected shape back to its FinalizedNotebookBlock via meta.blockId, not a paraphrase or a guess", () => {
+    const fn = src.slice(src.indexOf("const handleMount = useCallback"), src.indexOf("// Recompose whenever"));
+    expect(fn).toMatch(/editor\.getSelectedShapes\(\)/);
+    expect(fn).toMatch(/selected\.length !== 1/); // never shows a panel for a multi-shape selection
+    expect(fn).toMatch(/selected\[0\]\.meta/);
+    expect(fn).toMatch(/sceneRef\.current\.blocks\.find\(\(b\) => b\.id === blockId\)/);
+  });
+
+  it("REQUIRED: View Source is only offered when the block actually resolved to a real source unit (canonicalUnitId), never guessed", () => {
+    const panelFn = src.slice(src.indexOf("function BlockActionPanel"), src.indexOf("export default function NotebookCanvas"));
+    expect(panelFn).toMatch(/const showViewSource = !!onViewSource && !!block\.canonicalUnitId;/);
+  });
+
+  it("REQUIRED: Jump to Reader is only offered when the block has a page at all", () => {
+    const panelFn = src.slice(src.indexOf("function BlockActionPanel"), src.indexOf("export default function NotebookCanvas"));
+    expect(panelFn).toMatch(/const showJumpToReader = !!onJumpToReader && block\.page != null;/);
+  });
+
+  it("REQUIRED: renders nothing when none of the four actions apply — never an empty floating panel", () => {
+    const panelFn = src.slice(src.indexOf("function BlockActionPanel"), src.indexOf("export default function NotebookCanvas"));
+    expect(panelFn).toMatch(/if \(!showViewSource && !showJumpToReader && !showAskProfessor && !showPracticeRecall\) return null;/);
+  });
+
+  it("REQUIRED: the panel only renders while a block is actually selected", () => {
+    expect(src).toMatch(/\{selectedBlock && \(\s*<BlockActionPanel/);
   });
 });
 
@@ -74,7 +122,7 @@ describe("UltraNotesList.tsx — Notebook tab wiring", () => {
 
   it("REQUIRED: imports and renders NotebookCanvas", () => {
     expect(src).toMatch(/import NotebookCanvas from "@\/components\/notelab\/NotebookCanvas";/);
-    expect(src).toMatch(/<NotebookCanvas scene=\{note\.notebookScene\}/);
+    expect(src).toMatch(/<NotebookCanvas\s*\n\s*scene=\{note\.notebookScene\}/);
   });
 
   it("REQUIRED: the Notebook tab only appears when note.notebookScene is present — a note without a composed scene shows exactly the same two tabs as before N3", () => {
@@ -87,5 +135,56 @@ describe("UltraNotesList.tsx — Notebook tab wiring", () => {
 
   it("REQUIRED: each note gets its own persistenceKey derived from its own id — one note's notebook edits never bleed into another's", () => {
     expect(src).toMatch(/storageKey=\{`notelab-notebook-\$\{note\.id\}`\}/);
+  });
+});
+
+describe("UltraNotesList.tsx — N4: provenance-driven block actions wired to NotebookCanvas", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(LIST_FILE, "utf8"); });
+
+  it("REQUIRED: all four action callbacks are passed to NotebookCanvas", () => {
+    const idx = src.indexOf("<NotebookCanvas");
+    const jsx = src.slice(idx, idx + 400);
+    expect(jsx).toMatch(/onViewSource=\{handleViewSourceBlock\}/);
+    expect(jsx).toMatch(/onJumpToReader=\{handleJumpToReaderBlock\}/);
+    expect(jsx).toMatch(/onAskProfessor=\{onAskProfessorAboutBlock \? \(block\) => onAskProfessorAboutBlock\(note, block\) : undefined\}/);
+    expect(jsx).toMatch(/onPracticeRecall=\{handlePracticeRecallBlock\}/);
+  });
+
+  it("REQUIRED: View Source focuses the exact source thought unit via useReadingFocusStore before navigating — the precise action, not just a page jump", () => {
+    const idx = src.indexOf("function handleViewSourceBlock");
+    const fn = src.slice(idx, idx + 300);
+    expect(fn).toMatch(/if \(block\.canonicalUnitId\) useReadingFocusStore\.getState\(\)\.setThoughtUnit\(block\.canonicalUnitId\);/);
+    expect(fn).toMatch(/onNavigate\?\.\(block\.page \?\? note\.pageNumber\)/);
+  });
+
+  it("REQUIRED: Practice in Recall builds and saves a recall set scoped to just the selected block, then reports it via onCardsGenerated — same pattern as the existing per-NoteCard recall action", () => {
+    const idx = src.indexOf("async function handlePracticeRecallBlock");
+    const fn = src.slice(idx, idx + 400);
+    expect(fn).toMatch(/buildRecallSetFromNotebookBlock\(note, block, \{ sourceLabel: "notelab" \}\)/);
+    expect(fn).toMatch(/await saveRecallSet\(set\);/);
+    expect(fn).toMatch(/onCardsGenerated\?\.\(set\.id\);/);
+  });
+
+  it("REQUIRED: the new onAskProfessorAboutBlock prop threads all the way from UltraNotesListProps down through NoteCard's own props", () => {
+    expect(src).toMatch(/onAskProfessorAboutBlock\?: \(note: UltraNote, block: FinalizedNotebookBlock\) => void;/);
+    const noteCardFn = src.slice(src.indexOf("function NoteCard({"), src.indexOf("function NoteCard({") + 1100);
+    expect(noteCardFn).toMatch(/onAskProfessorAboutBlock,/); // destructured from props
+    expect(noteCardFn).toMatch(/onAskProfessorAboutBlock\?: \(note: UltraNote, block: FinalizedNotebookBlock\) => void;/); // its own type
+  });
+});
+
+describe("pages/index.tsx — N4: Ask Professor wiring for the live NoteLab mount", () => {
+  const INDEX_FILE = path.resolve(__dirname, "../../pages/index.tsx");
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
+
+  it("REQUIRED: passes onAskProfessorAboutBlock at UltraNotesList's live mount, seeding Professor Whiteboard with the BLOCK's own content — not the whole note", () => {
+    const idx = src.indexOf("<UltraNotesList");
+    const jsx = src.slice(idx, src.indexOf("</div>", idx) + 6);
+    expect(jsx).toMatch(/onAskProfessorAboutBlock=\{\(note, block\) => \{/);
+    expect(jsx).toMatch(/setWbConcept\(truncate\(`\$\{note\.topic\} — \$\{block\.primitive\.replace\(\/_\/g, " "\)\}`, 600\)\);/);
+    expect(jsx).toMatch(/setWbContext\(truncate\(\[block\.content, block\.detail\]\.filter\(Boolean\)\.join\("\\n\\n"\), 1200\)\);/);
+    expect(jsx).toMatch(/setShowWhiteboardPanel\(true\);/);
   });
 });

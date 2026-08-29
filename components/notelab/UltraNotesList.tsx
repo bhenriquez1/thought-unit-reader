@@ -12,7 +12,9 @@ import {
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromNote, buildRecallSetFromNoteCard, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { buildRecallSetFromNote, buildRecallSetFromNoteCard, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
+import type { FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
+import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
 import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
 import type { NoteCard as NoteCardData } from "@/lib/insights/synthesizeTeachingOutput";
@@ -44,6 +46,10 @@ interface UltraNotesListProps {
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
   /** Adaptive Notebook card's "💬 Explain" action — seeds the Explain This Step panel */
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
+  /** N4 — a selected object on the persistent tldraw notebook canvas asked
+   *  "Ask Professor": seeds Professor Whiteboard with that block's own
+   *  content, not the whole note. */
+  onAskProfessorAboutBlock?: (note: UltraNote, block: FinalizedNotebookBlock) => void;
   /** Fires whenever a note expands/collapses — lets the NoteLab 3-column shell
    *  bind its left ThoughtUnitNavigator rail to whichever note is open. */
   onActiveNoteChange?: (note: UltraNote | null) => void;
@@ -90,7 +96,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onActiveNoteChange, focusedAnchorText, focusedKnowledgeNodeId }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onExplainCard, onAskProfessorAboutBlock, onActiveNoteChange, focusedAnchorText, focusedKnowledgeNodeId }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -427,6 +433,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onCardsGenerated={onCardsGenerated}
                               onOpenWhiteboard={onOpenWhiteboard}
                               onExplainCard={onExplainCard}
+                              onAskProfessorAboutBlock={onAskProfessorAboutBlock}
                               onToggleConceptStar={(ordinal) => handleToggleConceptStar(note, ordinal)}
                               onJumpToNote={handleJumpToNote}
                               onSaveStudySheet={(sheet) => handleSaveStudySheet(note, sheet)}
@@ -522,7 +529,7 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 // ── NoteCard ──────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
+  note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onExplainCard, onAskProfessorAboutBlock, onToggleConceptStar, onJumpToNote, onSaveStudySheet, focusedAnchorText,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -539,6 +546,7 @@ function NoteCard({
   onCardsGenerated?: (setId: string) => void;
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
   onExplainCard?: (note: UltraNote, card: NoteCardData) => void;
+  onAskProfessorAboutBlock?: (note: UltraNote, block: FinalizedNotebookBlock) => void;
   onToggleConceptStar: (ordinal: number) => void;
   onJumpToNote: (target: UltraNote) => void;
   onSaveStudySheet: (sheet: AdaptiveStudySheet) => void;
@@ -592,6 +600,30 @@ function NoteCard({
     } catch (e) {
       console.error("[NOTELAB_NOTECARD_CARDS_SAVE_FAILED]", String(e));
     }
+  }
+
+  // N4 — "Practice in Recall" on a selected notebook-canvas object.
+  async function handlePracticeRecallBlock(block: FinalizedNotebookBlock) {
+    try {
+      const set = buildRecallSetFromNotebookBlock(note, block, { sourceLabel: "notelab" });
+      await saveRecallSet(set);
+      onCardsGenerated?.(set.id);
+    } catch (e) {
+      console.error("[NOTELAB_NOTEBOOK_BLOCK_CARDS_SAVE_FAILED]", String(e));
+    }
+  }
+
+  // N4 — "View Source": navigate to the block's page AND focus the exact
+  // source thought unit, same setThoughtUnit call TldrawCanvas.tsx's own
+  // shape-selection handler already uses for Professor's canvas.
+  function handleViewSourceBlock(block: FinalizedNotebookBlock) {
+    if (block.canonicalUnitId) useReadingFocusStore.getState().setThoughtUnit(block.canonicalUnitId);
+    onNavigate?.(block.page ?? note.pageNumber);
+  }
+
+  // N4 — "Jump to Reader": a coarser page-level jump, no claimed in-page anchor.
+  function handleJumpToReaderBlock(block: FinalizedNotebookBlock) {
+    onNavigate?.(block.page ?? note.pageNumber);
   }
 
   return (
@@ -745,7 +777,14 @@ function NoteCard({
               canvas (N3). storageKey is per-note so each note's composed
               scene and any student edits to it persist independently. */}
           {noteView === "notebook" && note.notebookScene && (
-            <NotebookCanvas scene={note.notebookScene} storageKey={`notelab-notebook-${note.id}`} />
+            <NotebookCanvas
+              scene={note.notebookScene}
+              storageKey={`notelab-notebook-${note.id}`}
+              onViewSource={handleViewSourceBlock}
+              onJumpToReader={handleJumpToReaderBlock}
+              onAskProfessor={onAskProfessorAboutBlock ? (block) => onAskProfessorAboutBlock(note, block) : undefined}
+              onPracticeRecall={handlePracticeRecallBlock}
+            />
           )}
 
           {/* Notes tab */}
