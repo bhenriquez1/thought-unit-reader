@@ -28,6 +28,7 @@ import {
 } from "@/lib/notelab/professionModes";
 import AdaptiveStudySheetCard from "@/components/notelab/AdaptiveStudySheetCard";
 import DATStudySheetCard from "@/components/notelab/DATStudySheetCard";
+import NotebookCanvas from "@/components/notelab/NotebookCanvas";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import KnowledgeNodeBadge from "@/components/knowledge/KnowledgeNodeBadge";
@@ -546,7 +547,7 @@ function NoteCard({
   const setSelectedKgNodeId = useKnowledgeSelectionStore((s) => s.setSelectedNodeId);
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
-  const [noteView, setNoteView] = useState<"notes" | "studySheet">("notes");
+  const [noteView, setNoteView] = useState<"notes" | "studySheet" | "notebook">("notes");
   const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
   const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
@@ -689,9 +690,12 @@ function NoteCard({
             </div>
           </div>
 
-          {/* Tab bar */}
+          {/* Tab bar — "🖊️ Notebook" only appears once a NotebookPlanner scene has
+              been composed for this page (note.notebookScene); older notes and
+              pages the planner hasn't run for yet show exactly the same two
+              tabs as before, no visible change. */}
           <div style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
-            {(["notes", "studySheet"] as const).map((tab) => {
+            {(note.notebookScene ? (["notes", "studySheet", "notebook"] as const) : (["notes", "studySheet"] as const)).map((tab) => {
               const active = noteView === tab;
               return (
                 <button
@@ -710,7 +714,7 @@ function NoteCard({
                     transition: "all 0.15s",
                   }}
                 >
-                  {tab === "notes" ? "📋 Notes" : "📊 Study Sheet"}
+                  {tab === "notes" ? "📋 Notes" : tab === "studySheet" ? "📊 Study Sheet" : "🖊️ Notebook"}
                 </button>
               );
             })}
@@ -735,6 +739,13 @@ function NoteCard({
                   onNavigateToPage={onNavigate}
                 />
               )
+          )}
+
+          {/* Notebook tab — the real, persistent, student-editable tldraw
+              canvas (N3). storageKey is per-note so each note's composed
+              scene and any student edits to it persist independently. */}
+          {noteView === "notebook" && note.notebookScene && (
+            <NotebookCanvas scene={note.notebookScene} storageKey={`notelab-notebook-${note.id}`} />
           )}
 
           {/* Notes tab */}
