@@ -68,6 +68,10 @@ import type { SpeechState } from "@/lib/speech/speechState";
 import { tokenizeWords, estimateWordWeights, wordIndexForFraction, wordIndexForCharIndex } from "@/lib/speech/wordSync";
 import { colorForRelationship, colorForTeachingRole } from "@/lib/whiteboard/teachingVisualSemantics";
 import {
+  clampRevealDurationMs, revealFrameIntervalMs, revealFraction,
+  sliceTextForReveal, slicePointsForReveal, REVEAL_FRAME_COUNT,
+} from "@/lib/whiteboard/handwritingReveal";
+import {
   buildProfessorTldrawAgentRequest,
   requestProfessorTldrawAgent,
   verifyProfessorTldrawAgentResponse,
@@ -475,6 +479,11 @@ export default function TldrawCanvas({
   const createdShapeIdsRef  = useRef<Set<string>>(new Set());
   const targetIdToShapeIdRef = useRef<Map<string, string>>(new Map());
   const shapeIdToTargetIdRef = useRef<Map<string, string>>(new Map());
+  // M7 — in-flight "being handwritten" reveal timers, keyed by shapeId. Only
+  // ever populated for a freshly-created write/draw-freehand shape during
+  // genuine forward autoplay (applyStateAtStep's own `animate` flag) — see
+  // scheduleShapeReveal/cancelAllReveals below.
+  const revealTimersRef = useRef<Map<string, number[]>>(new Map());
   // Runtime visual-agent layer. The canonical plan remains immutable; these
   // verified actions overlay (and, for a successfully illustrated step,
   // replace) only that step's deterministic visual fallback. Keeping them in
@@ -523,13 +532,92 @@ export default function TldrawCanvas({
     return Boolean(v && targetId && v.nodes.some(n => n.sourceId === targetId && n.tier === "danger"));
   }, []);
 
+  // M7 — cancels every in-flight reveal timer. Called at the top of
+  // applyStateAtStep whenever this call is NOT a genuine forward-playback
+  // step (i.e. every jump/restart) so a stale reveal tick from a step the
+  // student has since left never fires — matching "manual controls always
+  // instant, exact-state jumps" for the shapes those jumps touch.
+  const cancelAllReveals = useCallback(() => {
+    for (const timers of revealTimersRef.current.values()) {
+      for (const t of timers) window.clearTimeout(t);
+    }
+    revealTimersRef.current.clear();
+  }, []);
+
+  // M7 — the actual "being handwritten" animation for one freshly-created
+  // write/draw-freehand shape: applyStateAtStep creates it as a near-empty
+  // stub (see below), then this grows it to its full content over
+  // REVEAL_FRAME_COUNT discrete ticks spanning the action's own (clamped)
+  // durationMs. Every tick re-does the same lift-readonly/apply/restore
+  // dance applyStateAtStep's own batch does (the comment there explains why:
+  // tldraw silently no-ops any store mutation while editor.getIsReadonly()
+  // is true, and that flag is back to its resting value by the time these
+  // later ticks fire). The shape itself starts unlocked (isLocked: false,
+  // set at creation) and is locked only on the FINAL tick — the same
+  // unlock-then-lock shape as every other shape here, just deferred to
+  // reveal-completion instead of firing once per no-op update.
+  const scheduleShapeReveal = useCallback((target: {
+    shapeId: string;
+    type: "text" | "draw";
+    fullText?: string;
+    fullPoints?: { x: number; y: number; z: number }[];
+    durationMs: number;
+  }) => {
+    const tldrawId = shapeIdOf(target.shapeId);
+    const intervalMs = revealFrameIntervalMs(target.durationMs);
+
+    const applyFrame = (frameIndex: number, isFinal: boolean) => {
+      const editorNow = editorRef.current;
+      // A jump/restart/unmount already cancelled (and cleared) this
+      // shape's entry — never resurrect a reveal the student has left.
+      if (!editorNow || !revealTimersRef.current.has(target.shapeId)) return;
+      let props: Record<string, unknown> | null = null;
+      if (target.type === "text" && target.fullText !== undefined) {
+        props = { richText: toRichText(sliceTextForReveal(target.fullText, revealFraction(frameIndex))) };
+      } else if (target.type === "draw" && target.fullPoints) {
+        const sliced = slicePointsForReveal(target.fullPoints, revealFraction(frameIndex));
+        props = { segments: [{ type: "free" as const, path: b64Vecs.encodePoints(sliced) }] };
+      }
+      if (!props) return;
+      // Whole sequence in one try/catch, not just the updateShapes calls —
+      // editorNow can be a disposed editor instance if the panel unmounted
+      // between this timer being scheduled and firing; any of these calls
+      // (including getIsReadonly itself) can throw in that case, and this
+      // reveal timer has no cleanup path of its own to prevent from firing.
+      try {
+        const wasReadonly = editorNow.getIsReadonly();
+        if (wasReadonly) editorNow.updateInstanceState({ isReadonly: false });
+        editorNow.updateShapes([{ id: tldrawId, type: target.type, props } as any]);
+        if (isFinal) editorNow.updateShapes([{ id: tldrawId, type: target.type, isLocked: true } as any]);
+        if (wasReadonly) editorNow.updateInstanceState({ isReadonly: true });
+      } catch { /* shape already gone, or editor disposed — a jump/restart/unmount beat this timer */ }
+      if (isFinal) revealTimersRef.current.delete(target.shapeId);
+    };
+
+    const timers: number[] = [];
+    for (let frame = 1; frame <= REVEAL_FRAME_COUNT; frame++) {
+      timers.push(window.setTimeout(() => applyFrame(frame, frame === REVEAL_FRAME_COUNT), Math.round(intervalMs * frame)));
+    }
+    revealTimersRef.current.set(target.shapeId, timers);
+  }, []);
+
   // ── The ONLY function that decides what the canvas should look like at a
   //    given action index — creates/updates/deletes shapes as a diff against
   //    the pure reconstructed state, exactly like the old applyVisualStates
   //    but creation-aware (lazy) instead of opacity-only. ──────────────────
-  const applyStateAtStep = useCallback((editor: Editor, index: number) => {
+  const applyStateAtStep = useCallback((editor: Editor, index: number, opts?: { animate?: boolean }) => {
     const plan = planRef.current;
     if (!plan) return;
+    // M7 — only genuine forward-playback (advanceForPlayback's own call)
+    // passes animate:true. Every jump/restart (Next/Previous/Restart/mount)
+    // stays the default instant, exact-state contract — and cancels any
+    // reveal a step the student has since left behind might still be
+    // mid-tick, so it can never resurface after the jump.
+    if (!opts?.animate) cancelAllReveals();
+    const revealAction = opts?.animate && index >= 0 && index < plan.actions.length ? plan.actions[index] : null;
+    const revealTargetShapeId = revealAction && (revealAction.type === "write" || revealAction.type === "draw-freehand")
+      ? revealAction.shapeId
+      : null;
     const state = computeCanvasStateAtStep(plan.actions, index);
     const semanticStepId = resolveStepIdAtStep(plan.actions, index);
 
@@ -602,6 +690,10 @@ export default function TldrawCanvas({
 
     const creates: any[] = [];
     const updates: any[] = [];
+    // M7 — shapes whose FIRST create this call is deferred to a near-empty
+    // stub above, to be grown to full content by scheduleShapeReveal once
+    // the stub has actually committed to the editor.
+    const pendingReveals: Array<{ shapeId: string; type: "text" | "draw"; fullText?: string; fullPoints?: { x: number; y: number; z: number }[]; durationMs: number }> = [];
 
     for (const s of state.values()) {
       const targetId = s.targetId ?? shapeIdToTargetIdRef.current.get(s.shapeId);
@@ -614,7 +706,21 @@ export default function TldrawCanvas({
       if (createdShapeIdsRef.current.has(s.shapeId)) {
         updates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: s.opacity ?? 1 });
       } else {
-        creates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: s.opacity ?? 1, isLocked: true });
+        const isRevealTarget = revealTargetShapeId === s.shapeId
+          && ((shapeSpec.type === "text" && shapeSpec.revealText) || (shapeSpec.type === "draw" && shapeSpec.revealPoints));
+        if (isRevealTarget) {
+          const stubProps = shapeSpec.type === "text"
+            ? { ...shapeSpec.props, richText: toRichText("") }
+            : { ...shapeSpec.props, segments: [{ type: "free" as const, path: b64Vecs.encodePoints(slicePointsForReveal(shapeSpec.revealPoints!, 0)) }] };
+          creates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: stubProps, opacity: s.opacity ?? 1, isLocked: false });
+          pendingReveals.push({
+            shapeId: s.shapeId, type: shapeSpec.type as "text" | "draw",
+            fullText: shapeSpec.revealText, fullPoints: shapeSpec.revealPoints,
+            durationMs: revealAction!.durationMs,
+          });
+        } else {
+          creates.push({ id: shapeIdOf(s.shapeId), type: shapeSpec.type, x: shapeSpec.x, y: shapeSpec.y, props: shapeSpec.props, opacity: s.opacity ?? 1, isLocked: true });
+        }
         createdShapeIdsRef.current.add(s.shapeId);
       }
 
@@ -643,6 +749,9 @@ export default function TldrawCanvas({
       editor.updateShapes(updates);
       editor.updateShapes(updates.map((u: any) => ({ id: u.id, type: u.type, isLocked: true })));
     }
+    // M7 — the stubs just created above now genuinely exist in the editor's
+    // store; grow each to its full content over its own action's duration.
+    for (const reveal of pendingReveals) scheduleShapeReveal(reveal);
 
     // Restore the editor-wide readonly flag to whatever it was before this
     // function's own mutations needed it lifted — see the comment above.
@@ -762,13 +871,13 @@ export default function TldrawCanvas({
     }
 
     setActiveSegmentId(resolveActiveSegmentIdAtStep(plan.actions, index));
-  }, [colorForTarget, isDangerTarget]);
+  }, [colorForTarget, isDangerTarget, cancelAllReveals, scheduleShapeReveal]);
 
-  const setStepIndex = useCallback((n: number) => {
+  const setStepIndex = useCallback((n: number, opts?: { animate?: boolean }) => {
     stepIndexRef.current = n;
     setStepIndexState(n);
     const editor = editorRef.current;
-    if (editor) applyStateAtStep(editor, n);
+    if (editor) applyStateAtStep(editor, n, opts);
   }, [applyStateAtStep]);
 
   const captureAgentContext = useCallback(async (editor: Editor): Promise<ProfessorAgentCanvasContext> => {
@@ -1541,7 +1650,12 @@ export default function TldrawCanvas({
     if (!plan) return;
     const next = stepIndexRef.current + 1;
     if (next >= plan.actions.length) { setIsPlaying(false); return; }
-    setStepIndex(next);
+    // M7 — this is the one genuine forward-playback advance (index grows by
+    // exactly 1, revealing exactly the next action): the only call site that
+    // asks for the "being handwritten" reveal instead of an instant, whole
+    // shape. Every other setStepIndex call (Next/Previous/Restart/mount) is
+    // a jump and stays instant.
+    setStepIndex(next, { animate: true });
     const action = plan.actions[next];
 
     // Phase B2 draw-while-teaching: the moment we enter a NEW step, try to
@@ -2009,7 +2123,13 @@ export default function TldrawCanvas({
 }
 
 // ── Pure state -> tldraw shape props ─────────────────────────────────────────
-function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | "arrow" | "text" | "line" | "draw"; x: number; y: number; props: Record<string, unknown> } | null {
+function toTldrawShapeSpec(s: ShapeVisualState, color: string): {
+  type: "geo" | "arrow" | "text" | "line" | "draw"; x: number; y: number; props: Record<string, unknown>;
+  // M7 — the raw content behind this shape's props, for TldrawCanvas's own
+  // progressive-reveal reconciliation loop. Only ever set for the two kinds
+  // that animate ("text"/"draw"); every other kind leaves both undefined.
+  revealText?: string; revealPoints?: { x: number; y: number; z: number }[];
+} | null {
   const visualColor = s.visualStyle?.color ?? color;
   const visualSize = s.visualStyle?.size ?? "m";
   const visualDash = s.visualStyle?.dash ?? "draw";
@@ -2031,6 +2151,7 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
         isComplete: true, isClosed: s.closed ?? false, isPen: s.isPen ?? true,
         scale: 1, scaleX: 1, scaleY: 1,
       },
+      revealPoints: points,
     };
   }
   if (s.kind === "arrow") {
@@ -2106,5 +2227,6 @@ function toTldrawShapeSpec(s: ShapeVisualState, color: string): { type: "geo" | 
   return {
     type: "text", x: s.x ?? 0, y: s.y ?? 0,
     props: { richText: toRichText(s.text ?? ""), font: "draw", size: visualSize, color: s.visualStyle?.color ?? "black", autoSize: true, w: 300 },
+    revealText: s.text ?? "",
   };
 }

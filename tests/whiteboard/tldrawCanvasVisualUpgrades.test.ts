@@ -118,7 +118,7 @@ describe("TldrawCanvas.tsx — Phase B2: draw-while-teaching — narration is ea
 
   it("REQUIRED: advanceForPlayback calls maybeEarlyStartStepNarration exactly when entering a NEW step (stepStartIndex(...) === next)", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 1700);
     expect(block).toMatch(/if \(stepStartIndex\(plan\.actions, action\.stepId\) === next\) \{/);
     expect(block).toMatch(/maybeEarlyStartStepNarration\(action\.stepId\);/);
   });
@@ -196,7 +196,7 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
 
   it("REQUIRED: onTeachingStepStarted fires exactly when a NEW step begins in advanceForPlayback, alongside the early-start check", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 1700);
     expect(block).toMatch(/onTeachingStepStartedRef\.current\?\.\(action\.stepId\);/);
     expect(block).toMatch(/focusDirectorEvidence\(action\.stepId\);/);
   });
@@ -211,7 +211,7 @@ describe("TldrawCanvas.tsx — Phase B2: Learning-State extension hooks (stable,
 
   it("REQUIRED: onTeachingStepCompleted fires for the PREVIOUS step when a new one begins, carrying a misconception label when the step's own crossOut emphasis flags one", () => {
     const idx = src.indexOf("const advanceForPlayback = useCallback");
-    const block = src.slice(idx, idx + 1200);
+    const block = src.slice(idx, idx + 1700);
     expect(block).toMatch(/const previousStepId = plan\.actions\[next - 1\]\.stepId;/);
     expect(block).toMatch(/onTeachingStepCompletedRef\.current\?\.\(previousStepId, misconceptionLabel \? \{ misconceptionLabel \} : undefined\);/);
   });
@@ -506,7 +506,7 @@ describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly l
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
 
   it("REQUIRED: captures wasReadonly and lifts it to false BEFORE the delete/create/update mutations run", () => {
-    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number, opts?: { animate?: boolean }) => {");
     expect(stepIdx).toBeGreaterThan(-1);
     const wasReadonlyIdx = src.indexOf("const wasReadonly = editor.getIsReadonly();", stepIdx);
     expect(wasReadonlyIdx).toBeGreaterThan(stepIdx);
@@ -520,7 +520,7 @@ describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly l
   });
 
   it("REQUIRED: restores isReadonly back to true AFTER the create/update mutations, before the step diagnostic log", () => {
-    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number, opts?: { animate?: boolean }) => {");
     const createIdx = src.indexOf("for (const c of creates) editor.createShape(c as any);", stepIdx);
     const restoreIdx = src.indexOf("if (wasReadonly) editor.updateInstanceState({ isReadonly: true });", createIdx);
     const diagnosticIdx = src.indexOf('console.log("[WHITEBOARD_STEP_DIAGNOSTIC]"', createIdx);
@@ -529,7 +529,7 @@ describe("TldrawCanvas.tsx — applyStateAtStep lifts the editor-wide readonly l
   });
 
   it("only touches isReadonly when it was actually true — never force-unlocks an editor that was already writable (e.g. editingEnabled)", () => {
-    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number) => {");
+    const stepIdx = src.indexOf("const applyStateAtStep = useCallback((editor: Editor, index: number, opts?: { animate?: boolean }) => {");
     const block = src.slice(stepIdx, stepIdx + 10000);
     const liftCount = (block.match(/if \(wasReadonly\) editor\.updateInstanceState\(\{ isReadonly: (?:false|true) \}\);/g) ?? []).length;
     expect(liftCount).toBe(2); // one lift, one restore — both gated on wasReadonly
