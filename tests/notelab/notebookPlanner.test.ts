@@ -140,6 +140,11 @@ describe("buildNotebookPlannerSystemPrompt — page-adaptive, never fixed-sectio
     expect(prompt).toMatch(/causes, leads-to, warns-about, supports, contrasts, part-of/);
   });
 
+  it("M2: explicitly states that multi-source context (Professor explanation/student notes/supplemental sources) is never a valid grounding source", () => {
+    expect(prompt).toMatch(/MULTI-SOURCE CONTEXT/);
+    expect(prompt).toMatch(/NEVER a valid source for a highlight\/underline\/source_anchor block/);
+  });
+
   it("includes subject-adaptive worked examples spanning multiple, genuinely different domains", () => {
     for (const domain of ["chemical compounds", "Atomic orbitals", "Gas laws", "Anatomy", "Pathology", "History", "Literature", "Mathematics", "Elena Mode"]) {
       expect(prompt).toContain(domain);
@@ -172,6 +177,59 @@ describe("buildNotebookPlannerUserPrompt", () => {
   it("degrades gracefully with zero units instead of producing a malformed prompt", () => {
     const prompt = buildNotebookPlannerUserPrompt([], { pageNumber: 1 });
     expect(prompt).toMatch(/no thought units extracted/i);
+  });
+
+  it("M2: with none of the multi-source fields, the prompt is byte-identical to before this phase", () => {
+    const units = [makeUnit({ text: "Some unit." })];
+    const withoutSources = buildNotebookPlannerUserPrompt(units, { bookTitle: "Gen Chem", pageNumber: 4 });
+    const withNullSources = buildNotebookPlannerUserPrompt(units, {
+      bookTitle: "Gen Chem", pageNumber: 4, professorExplanation: null, studentNotes: null, supplementalSources: null,
+    });
+    expect(withNullSources).toBe(withoutSources);
+    expect(withoutSources).not.toMatch(/PROFESSOR'S EXPLANATION|STUDENT'S OWN NOTES|SUPPLEMENTAL SOURCES/);
+  });
+
+  it("M2: includes the Professor's explanation as its own labeled, context-only section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], {
+      pageNumber: 1, professorExplanation: ["This is how buffers resist pH change.", "Notice the equilibrium shift."],
+    });
+    expect(prompt).toMatch(/PROFESSOR'S EXPLANATION/);
+    expect(prompt).toMatch(/never a grounding source/);
+    expect(prompt).toContain("This is how buffers resist pH change.");
+    expect(prompt).toContain("Notice the equilibrium shift.");
+  });
+
+  it("M2: includes the student's own notes as their own labeled, context-only section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, studentNotes: "  remember: buffers = weak acid + conjugate base  " });
+    expect(prompt).toMatch(/STUDENT'S OWN NOTES/);
+    expect(prompt).toContain("remember: buffers = weak acid + conjugate base");
+  });
+
+  it("M2: blank/whitespace-only studentNotes is treated as absent, not an empty section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, studentNotes: "   " });
+    expect(prompt).not.toMatch(/STUDENT'S OWN NOTES/);
+  });
+
+  it("M2: includes supplemental sources, each labeled, as their own context-only section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], {
+      pageNumber: 1,
+      supplementalSources: [{ label: "Lecture slides", content: "Slide 4: buffer capacity" }, { label: "Second textbook", content: "Ch. 9 discusses pKa" }],
+    });
+    expect(prompt).toMatch(/SUPPLEMENTAL SOURCES/);
+    expect(prompt).toContain("Lecture slides: Slide 4: buffer capacity");
+    expect(prompt).toContain("Second textbook: Ch. 9 discusses pKa");
+  });
+
+  it("M2: all three multi-source sections can appear together without corrupting the SOURCE THOUGHT UNITS list", () => {
+    const units = [makeUnit({ text: "Canonical unit text." })];
+    const prompt = buildNotebookPlannerUserPrompt(units, {
+      pageNumber: 1,
+      professorExplanation: ["explained aloud"],
+      studentNotes: "my own note",
+      supplementalSources: [{ label: "Slides", content: "slide content" }],
+    });
+    expect(prompt).toMatch(/0\.[\s\S]*Canonical unit text\./);
+    expect(prompt).toMatch(/PROFESSOR'S EXPLANATION[\s\S]*STUDENT'S OWN NOTES[\s\S]*SUPPLEMENTAL SOURCES/);
   });
 });
 

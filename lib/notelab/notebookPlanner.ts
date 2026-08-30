@@ -11,10 +11,23 @@
 // can't point back to — finalizeNotebookScene resolves all of that against
 // the real input array afterward.
 //
-// This file is types + prompt + a pure finalizer only — no renderer (N3) and
-// no live API route yet (that's whichever phase first needs to actually call
-// this end-to-end; wiring a route with nothing to render into it would be
-// premature).
+// M2 — this file now also carries the live client-side call
+// (requestNotebookPlan/generateNotebookScene), mirroring
+// synthesizeTeachingOutput.ts's own split: prompt builders + a fetch-based
+// client function in one file, called by both the API route (server) and
+// the UI (client) that eventually triggers it. That trigger — actually
+// wiring this into a save flow, and deciding how a freshly generated scene
+// merges with a NOTE'S EXISTING notebookScene rather than overwriting it —
+// is a later phase; generateNotebookScene here always builds a scene from
+// scratch from the units/sources it's given.
+//
+// Multi-source synthesis: buildNotebookPlannerUserPrompt now accepts
+// optional professorExplanation/studentNotes/supplementalSources —
+// additional context alongside the SOURCE THOUGHT UNITS list, not a
+// replacement for it. The grounding rule stays anchored to the numbered
+// unit list only: a highlight/underline/source_anchor block must still be
+// verbatim from a cited unit, never from these supplementary materials —
+// see the system prompt's own explicit statement of this below.
 
 import { z } from "zod";
 import type { CanonicalThoughtUnit } from "@/lib/canonical/types";
@@ -103,6 +116,8 @@ GROUNDING (non-negotiable): for highlight, underline, and source_anchor blocks, 
 
 For every other primitive, \`content\` (and \`detail\` where relevant) is your own composed explanation, grounded in meaning by sourceUnitIndex but not required to be a verbatim quote.
 
+MULTI-SOURCE CONTEXT: the user prompt may also include the student's own notes, a Professor's spoken explanation from a taught lesson, and supplemental sources the student attached. Use these to inform your composed (non-grounding-required) blocks — they can shape what you emphasize and how you explain it. They are NEVER a valid source for a highlight/underline/source_anchor block's verbatim content — that grounding rule applies ONLY to the numbered SOURCE THOUGHT UNITS list, never to these supplementary materials, however word-for-word they may read.
+
 ══ THE MATERIAL DECIDES THE PAGE — WORKED EXAMPLES ══
 - Naming chemical compounds → rules, worked examples, and annotations (text + example + callout for exceptions), not a diagram.
 - Atomic orbitals / molecular geometry → diagram + label blocks showing spatial structure, with a short text block for the governing rule.
@@ -128,9 +143,28 @@ function summarizeUnitForPrompt(unit: CanonicalThoughtUnit, index: number): stri
   return `${index}.${roleHint} ${unit.text}`;
 }
 
+// M2 — additional material a caller can hand the planner alongside the
+// page's own canonical thought units. Every field is optional and purely
+// additive: a caller passing none of these gets byte-identical prompt
+// output to before this phase (see notebookPlanner.test.ts). None of these
+// ever substitute for a real cited unit in a grounding-required block —
+// see the system prompt's own MULTI-SOURCE CONTEXT paragraph.
+export interface NoteSynthesisSources {
+  /** Narration/explanation lines from a completed Professor lesson on this
+   *  page, if one exists — the SPOKEN content, not N5's separate
+   *  deterministic shape-geometry recomposition. */
+  professorExplanation?: string[] | null;
+  /** The student's own freeform note text for this page — read-only
+   *  context for the planner, never rewritten by it. */
+  studentNotes?: string | null;
+  /** Supplemental sources the student attached (lecture slides, a second
+   *  textbook, ...) — short label + excerpt pairs. */
+  supplementalSources?: Array<{ label: string; content: string }> | null;
+}
+
 export function buildNotebookPlannerUserPrompt(
   units: CanonicalThoughtUnit[],
-  opts: { bookTitle?: string; pageNumber: number },
+  opts: { bookTitle?: string; pageNumber: number } & NoteSynthesisSources,
 ): string {
   const header = [
     opts.bookTitle ? `Book: ${opts.bookTitle}` : null,
@@ -139,10 +173,22 @@ export function buildNotebookPlannerUserPrompt(
 
   const unitList = units.map((u, i) => summarizeUnitForPrompt(u, i)).join("\n\n");
 
+  const extraSections: string[] = [];
+  if (opts.professorExplanation?.length) {
+    extraSections.push(`── PROFESSOR'S EXPLANATION (spoken during a taught lesson on this page — context only, never a grounding source) ──\n${opts.professorExplanation.join("\n")}`);
+  }
+  if (opts.studentNotes?.trim()) {
+    extraSections.push(`── STUDENT'S OWN NOTES (context only, never a grounding source) ──\n${opts.studentNotes.trim()}`);
+  }
+  if (opts.supplementalSources?.length) {
+    extraSections.push(`── SUPPLEMENTAL SOURCES (context only, never a grounding source) ──\n${opts.supplementalSources.map((s) => `${s.label}: ${s.content}`).join("\n\n")}`);
+  }
+  const extraBlock = extraSections.length ? `\n\n${extraSections.join("\n\n")}` : "";
+
   return `${header}
 
 ── SOURCE THOUGHT UNITS (cite by index via sourceUnitIndex) ──
-${unitList || "(no thought units extracted for this page yet)"}
+${unitList || "(no thought units extracted for this page yet)"}${extraBlock}
 
 Compose this page's VisualNotebookScene from the primitives that genuinely fit this material. Cite every block's real source unit index. If a block is truly page-level (not attributable to one unit), use sourceUnitIndex: -1 — but prefer citing a real unit whenever one applies.`;
 }
@@ -197,4 +243,53 @@ export function finalizeNotebookScene(
     blocks: finalizedBlocks,
     builtAt: Date.now(),
   });
+}
+
+// ── M2 — the live call ──────────────────────────────────────────────────────
+// Follows synthesizeTeachingOutput.ts's own client-function pattern exactly:
+// POST to a Next.js API route that runs the actual OpenAI call server-side
+// (never exposing OPENAI_API_KEY to the client), parse+validate the JSON
+// response against the same Zod schema the route itself validates against
+// before responding — never trust the network round-trip alone.
+
+export interface RequestNotebookPlanOpts extends NoteSynthesisSources {
+  bookTitle?: string;
+  pageNumber: number;
+  styleProfile?: NotebookStyleProfile | null;
+}
+
+export async function requestNotebookPlan(
+  units: CanonicalThoughtUnit[],
+  opts: RequestNotebookPlanOpts,
+  signal?: AbortSignal,
+): Promise<NotebookPlan> {
+  const response = await fetch("/api/notebook-plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ units, ...opts }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error ?? `notebook plan request failed: ${response.status}`);
+  }
+
+  const raw = await response.json();
+  return NotebookPlanSchema.parse(raw);
+}
+
+/** The one function a save flow actually calls: request the plan, then
+ *  deterministically finalize it into a real scene — units passed to both
+ *  calls must be the SAME array, since finalizeNotebookScene resolves the
+ *  plan's sourceUnitIndex citations against it. Always builds a scene from
+ *  scratch; merging with a note's EXISTING notebookScene (rather than
+ *  overwriting it) is the caller's job — see this file's header comment. */
+export async function generateNotebookScene(
+  units: CanonicalThoughtUnit[],
+  opts: RequestNotebookPlanOpts & { bookId: string },
+  signal?: AbortSignal,
+): Promise<VisualNotebookScene> {
+  const plan = await requestNotebookPlan(units, opts, signal);
+  return finalizeNotebookScene(plan, units, opts);
 }
