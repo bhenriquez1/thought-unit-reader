@@ -2,6 +2,12 @@
 // components/notelab/UltraNotesList.tsx
 // Top-student notes — IDB-primary reads, delete confirmation modal, collapsible concepts.
 
+// M6 — this is the default NoteLab view; its own diagnostic logs used to
+// fire unconditionally (every render, every delete click) even in
+// production, matching no other file's convention in this app. Gated the
+// same way WhiteboardPanel.tsx and every other DEV-gated file already does.
+const DEV = process.env.NODE_ENV === "development";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   getAllUltraNotesAsync,
@@ -138,7 +144,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
       const filtered = bookId ? all.filter((n) => n.bookId === bookId) : all;
       if (mountedRef.current) {
         setNotes(filtered);
-        console.log("[NOTELAB_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
+        DEV && console.log("[NOTELAB_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
       }
     } catch (e) {
       console.warn("[NOTELAB_RELOAD_FAIL]", String(e));
@@ -161,14 +167,14 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   // ── Delete flow ──────────────────────────────────────────────────────────
 
   function requestDelete(note: UltraNote) {
-    console.log("[NOTELAB_DELETE_CLICK]", { id: note.id, topic: note.topic, page: note.pageNumber, bookId: note.bookId });
+    DEV && console.log("[NOTELAB_DELETE_CLICK]", { id: note.id, topic: note.topic, page: note.pageNumber, bookId: note.bookId });
     setConfirmDelete(note);
   }
 
   async function executeDelete() {
     const note = confirmDelete;
     if (!note) return;
-    console.log("[NOTELAB_DELETE_CONFIRMED]", { id: note.id, topic: note.topic, page: note.pageNumber });
+    DEV && console.log("[NOTELAB_DELETE_CONFIRMED]", { id: note.id, topic: note.topic, page: note.pageNumber });
 
     // Optimistic UI — remove immediately
     setNotes((prev) => prev.filter((n) => n.id !== note.id));
@@ -177,7 +183,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
     try {
       await deleteUltraNote(note.id); // logs NOTELAB_IDB_DELETE + NOTELAB_LOCAL_DELETE internally
-      console.log("[NOTELAB_DELETE_SUCCESS]", { id: note.id, topic: note.topic, page: note.pageNumber });
+      DEV && console.log("[NOTELAB_DELETE_SUCCESS]", { id: note.id, topic: note.topic, page: note.pageNumber });
       // Reload from IDB to confirm deletion persisted
       await reload();
     } catch (e) {
