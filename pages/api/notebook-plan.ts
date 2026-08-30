@@ -6,8 +6,9 @@
 //
 // Receives a page's CanonicalThoughtUnit[] plus optional multi-source
 // synthesis material (professorExplanation/studentNotes/
-// supplementalSources — see notebookPlanner.ts's NoteSynthesisSources) and
-// an optional personalization styleProfile (N6), and returns a validated
+// supplementalSources/existingNotebookSummary/relatedConceptKnowledge —
+// see notebookPlanner.ts's NoteSynthesisSources) and an optional
+// personalization styleProfile (N6), and returns a validated
 // NotebookPlan — the AI-facing shape. finalizeNotebookScene (called
 // client-side via generateNotebookScene, since it needs the SAME units
 // array the caller already has) resolves that into a real
@@ -72,7 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as Partial<RequestBody>;
-  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, existingNotebookSummary, styleProfile } = body;
+  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, existingNotebookSummary, relatedConceptKnowledge, styleProfile } = body;
 
   if (!Array.isArray(units)) {
     return res.status(400).json({ error: "'units' must be an array." });
@@ -88,6 +89,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasStudentNotes: !!studentNotes,
     supplementalSourceCount: supplementalSources?.length ?? 0,
     hasExistingNotebookSummary: !!existingNotebookSummary,
+    hasRelatedConceptKnowledge: !!relatedConceptKnowledge,
     hasStyleProfile: !!styleProfile,
   });
 
@@ -109,6 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             studentNotes: studentNotes ?? null,
             supplementalSources: supplementalSources ?? null,
             existingNotebookSummary: existingNotebookSummary ?? null,
+            relatedConceptKnowledge: relatedConceptKnowledge ?? null,
           }),
         },
       ],

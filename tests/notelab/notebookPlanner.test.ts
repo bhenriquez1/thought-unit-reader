@@ -152,6 +152,12 @@ describe("buildNotebookPlannerSystemPrompt — page-adaptive, never fixed-sectio
     expect(prompt).toMatch(/never just restate the same explanation in different words/);
   });
 
+  it("M4: instructs the model to weave in related notes on the same concept from other sources, never silently contradicting them", () => {
+    expect(prompt).toMatch(/RELATED NOTES ON THIS SAME CONCEPT/);
+    expect(prompt).toMatch(/weave in what's consistent/);
+    expect(prompt).toMatch(/never contradict or silently ignore what's already established elsewhere without reason/);
+  });
+
   it("includes subject-adaptive worked examples spanning multiple, genuinely different domains", () => {
     for (const domain of ["chemical compounds", "Atomic orbitals", "Gas laws", "Anatomy", "Pathology", "History", "Literature", "Mathematics", "Elena Mode"]) {
       expect(prompt).toContain(domain);
@@ -249,6 +255,39 @@ describe("buildNotebookPlannerUserPrompt", () => {
   it("M3: blank/whitespace-only existingNotebookSummary is treated as absent", () => {
     const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, existingNotebookSummary: "   " });
     expect(prompt).not.toMatch(/THIS PAGE'S EXISTING NOTEBOOK/);
+  });
+
+  it("M4: includes related notes on the same concept from other pages/sources as their own labeled, context-only section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], {
+      pageNumber: 1,
+      relatedConceptKnowledge: "Textbook, p.161:\n[heading] Ionic Bonding\n[text] Electrons transfer between atoms.",
+    });
+    expect(prompt).toMatch(/RELATED NOTES ON THIS SAME CONCEPT/);
+    expect(prompt).toMatch(/context only, never a grounding source/);
+    expect(prompt).toContain("Textbook, p.161:");
+    expect(prompt).toContain("[heading] Ionic Bonding");
+  });
+
+  it("M4: blank/whitespace-only relatedConceptKnowledge is treated as absent, not an empty section", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, relatedConceptKnowledge: "   " });
+    expect(prompt).not.toMatch(/RELATED NOTES ON THIS SAME CONCEPT/);
+  });
+
+  it("M4: with relatedConceptKnowledge absent, the prompt is byte-identical to before this phase", () => {
+    const units = [makeUnit({ text: "Some unit." })];
+    const without = buildNotebookPlannerUserPrompt(units, { bookTitle: "Gen Chem", pageNumber: 4 });
+    const withNull = buildNotebookPlannerUserPrompt(units, { bookTitle: "Gen Chem", pageNumber: 4, relatedConceptKnowledge: null });
+    expect(withNull).toBe(without);
+  });
+
+  it("M4: combines with the existing-notebook-summary section without corrupting either", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit({ text: "Canonical unit text." })], {
+      pageNumber: 1,
+      existingNotebookSummary: "[heading] Ionic Bonding",
+      relatedConceptKnowledge: "Lecture slides, p.4:\n[text] NaCl forms via electron transfer.",
+    });
+    expect(prompt).toMatch(/THIS PAGE'S EXISTING NOTEBOOK[\s\S]*RELATED NOTES ON THIS SAME CONCEPT/);
+    expect(prompt).toContain("Lecture slides, p.4:");
   });
 });
 
