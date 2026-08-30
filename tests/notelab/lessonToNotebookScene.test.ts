@@ -15,7 +15,7 @@
 // generatedFrom: "derived" (never "ai", since nothing here is a fresh model
 // call).
 
-import { buildNotebookSceneFromLessonSnapshot } from "../../lib/notelab/lessonToNotebookScene";
+import { buildNotebookSceneFromLessonSnapshot, extractLessonNarration } from "../../lib/notelab/lessonToNotebookScene";
 import { layoutNotebookScene } from "../../lib/notelab/notebookLayout";
 import { GROUNDING_REQUIRED_PRIMITIVES } from "../../lib/notelab/notebookScene";
 import type { WhiteboardLessonSnapshot, TeachingStepSummary } from "../../lib/knowledge/whiteboardLessonSnapshotStore";
@@ -236,5 +236,44 @@ describe("buildNotebookSceneFromLessonSnapshot — grouping and provenance", () 
     const scene = buildNotebookSceneFromLessonSnapshot(makeSnapshot([makeStep({ stepId: 0, narration: "x" })]), OPTS);
     expect(scene.bookId).toBe("book-1");
     expect(scene.pageNumber).toBe(12);
+  });
+});
+
+describe("extractLessonNarration — M3: the durable-knowledge bridge into the real synthesis path", () => {
+  it("REQUIRED: pulls each step's narration, label-prefixed, in step order", () => {
+    const snapshot = makeSnapshot([
+      makeStep({ stepId: 0, label: "Trigger", narration: "This is how buffers resist pH change." }),
+      makeStep({ stepId: 1, label: "Mechanism", narration: "Notice the equilibrium shift." }),
+    ]);
+    expect(extractLessonNarration(snapshot)).toEqual([
+      "Trigger: This is how buffers resist pH change.",
+      "Mechanism: Notice the equilibrium shift.",
+    ]);
+  });
+
+  it("REQUIRED: a step with no narration contributes nothing — never a bare step label standing in for content that was never said", () => {
+    const snapshot = makeSnapshot([
+      makeStep({ stepId: 0, label: "Silent step", narration: "" }),
+      makeStep({ stepId: 1, label: "Spoken step", narration: "actual content" }),
+    ]);
+    expect(extractLessonNarration(snapshot)).toEqual(["Spoken step: actual content"]);
+  });
+
+  it("REQUIRED: never includes shape/label/arrow geometry — narration text only", () => {
+    const snapshot = makeSnapshot([
+      makeStep({
+        stepId: 0, narration: "spoken content",
+        shapes: [{ shapeId: "s1", kind: "box", bounds: { x: 0, y: 0, w: 10, h: 10 } }],
+        labels: [{ shapeId: "l1", text: "a diagram label", x: 0, y: 0 }],
+      }),
+    ]);
+    const narration = extractLessonNarration(snapshot);
+    expect(narration).toHaveLength(1);
+    expect(narration[0]).not.toMatch(/a diagram label/);
+  });
+
+  it("an all-silent lesson (no step narrated anything) returns an empty array, not a placeholder", () => {
+    const snapshot = makeSnapshot([makeStep({ stepId: 0, narration: "" }), makeStep({ stepId: 1, narration: "" })]);
+    expect(extractLessonNarration(snapshot)).toEqual([]);
   });
 });

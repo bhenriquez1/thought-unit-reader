@@ -72,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as Partial<RequestBody>;
-  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, styleProfile } = body;
+  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, existingNotebookSummary, styleProfile } = body;
 
   if (!Array.isArray(units)) {
     return res.status(400).json({ error: "'units' must be an array." });
@@ -87,6 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasProfessorExplanation: !!professorExplanation?.length,
     hasStudentNotes: !!studentNotes,
     supplementalSourceCount: supplementalSources?.length ?? 0,
+    hasExistingNotebookSummary: !!existingNotebookSummary,
     hasStyleProfile: !!styleProfile,
   });
 
@@ -107,6 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             professorExplanation: professorExplanation ?? null,
             studentNotes: studentNotes ?? null,
             supplementalSources: supplementalSources ?? null,
+            existingNotebookSummary: existingNotebookSummary ?? null,
           }),
         },
       ],
