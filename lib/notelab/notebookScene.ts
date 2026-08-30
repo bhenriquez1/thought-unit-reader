@@ -33,10 +33,10 @@
 // not gridded — never a literal x/y.
 
 import { z } from "zod";
-import { TeachingStructureSchema } from "@/lib/whiteboard/professorLessonPlan";
+import { TeachingStructureSchema, RelationshipKindSchema } from "@/lib/whiteboard/professorLessonPlan";
 
-export { TeachingStructureSchema };
-export type { TeachingStructure } from "@/lib/whiteboard/professorLessonPlan";
+export { TeachingStructureSchema, RelationshipKindSchema };
+export type { TeachingStructure, RelationshipKind } from "@/lib/whiteboard/professorLessonPlan";
 
 // ── NotebookPrimitive — the actual visual vocabulary ────────────────────────
 // Every value here is a real, distinct visual FORM a block can take — never
@@ -65,6 +65,9 @@ export const NotebookPrimitiveSchema = z.enum([
   "callout",        // a boxed aside — a warning, exception, or high-yield note
   "example",        // a worked or illustrative example
   "source_anchor",   // a verbatim quoted span, grounding the page back to its source
+  "concept_group",   // a container that visually gathers several related concepts as one hub
+  "bracket",         // a brace/bracket spanning several blocks to mark them as one set
+  "handwritten_text", // body prose rendered in the notebook's own handwriting style, not typed
 ]);
 export type NotebookPrimitive = z.infer<typeof NotebookPrimitiveSchema>;
 
@@ -102,6 +105,13 @@ export const NotebookBlockSchema = z.object({
    *  block is grounded in. -1 when a block is genuinely page-level and not
    *  attributable to one specific unit (e.g. a page-spanning heading). */
   sourceUnitIndex: z.number(),
+  /** Meaningful only for arrow/connector blocks — the semantic kind of link
+   *  between the two blocks it connects, reusing Professor Whiteboard's own
+   *  RelationshipKind rather than inventing a parallel taxonomy (see
+   *  professorLessonPlan.ts's own ProfessorRelationship). Null for every
+   *  other primitive, and null is equally valid for an arrow/connector that
+   *  genuinely has no stated relationship kind — never guessed. */
+  relationshipKind: RelationshipKindSchema.nullable(),
 });
 export type NotebookBlock = z.infer<typeof NotebookBlockSchema>;
 

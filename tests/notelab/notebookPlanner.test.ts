@@ -57,16 +57,18 @@ function planBlock(overrides: Partial<NotebookPlanBlock>): NotebookPlanBlock {
     groupId: null,
     order: 0,
     sourceUnitIndex: 0,
+    relationshipKind: null,
     ...overrides,
   };
 }
 
 describe("NotebookPrimitiveSchema — the real visual vocabulary, not a card taxonomy", () => {
-  it("REQUIRED: covers exactly the primitives the correction specified", () => {
+  it("REQUIRED: covers exactly the primitives the correction specified, plus M1's later additions (concept_group/bracket/handwritten_text)", () => {
     const expected = [
       "text", "heading", "freehand", "highlight", "underline", "arrow", "connector",
       "formula", "equation_work", "diagram", "label", "table", "timeline", "flow",
       "comparison", "concept_map", "image", "callout", "example", "source_anchor",
+      "concept_group", "bracket", "handwritten_text",
     ].sort();
     expect(NotebookPrimitiveSchema.options.slice().sort()).toEqual(expected);
   });
@@ -86,7 +88,7 @@ describe("NotebookPrimitiveSchema — the real visual vocabulary, not a card tax
 describe("Schema validation — real Zod parsing, not just TypeScript types", () => {
   it("NotebookBlockSchema accepts a minimal valid block", () => {
     expect(() => NotebookBlockSchema.parse({
-      id: "b1", primitive: "formula", content: "F = ma", detail: null, groupId: null, order: 0, sourceUnitIndex: 0,
+      id: "b1", primitive: "formula", content: "F = ma", detail: null, groupId: null, order: 0, sourceUnitIndex: 0, relationshipKind: null,
     })).not.toThrow();
   });
 
@@ -95,7 +97,7 @@ describe("Schema validation — real Zod parsing, not just TypeScript types", ()
       id: "b1", primitive: "text", content: "x", detail: null, groupId: null, order: 0, sourceUnitIndex: 0,
     })).toThrow();
     expect(() => FinalizedNotebookBlockSchema.parse({
-      id: "b1", primitive: "text", content: "x", detail: null, groupId: null, order: 0, sourceUnitIndex: 0,
+      id: "b1", primitive: "text", content: "x", detail: null, groupId: null, order: 0, sourceUnitIndex: 0, relationshipKind: null,
       canonicalUnitId: null, sourceId: null, page: null, confidence: 0.6, generatedFrom: "ai",
     })).not.toThrow();
   });
@@ -131,6 +133,11 @@ describe("buildNotebookPlannerSystemPrompt — page-adaptive, never fixed-sectio
   it("REQUIRED: states the grounding rule for highlight/underline/source_anchor", () => {
     expect(prompt).toMatch(/VERBATIM/);
     expect(prompt).toMatch(/discarded entirely/i);
+  });
+
+  it("M1: instructs the model on relationshipKind for arrow/connector blocks", () => {
+    expect(prompt).toMatch(/relationshipKind/);
+    expect(prompt).toMatch(/causes, leads-to, warns-about, supports, contrasts, part-of/);
   });
 
   it("includes subject-adaptive worked examples spanning multiple, genuinely different domains", () => {
@@ -237,6 +244,26 @@ describe("finalizeNotebookScene — deterministic provenance resolution", () => 
     expect(scene.blocks[0].detail).toBe("1. Start with Newton's second law\n2. Substitute known values");
     expect(scene.blocks[0].groupId).toBe("g1");
     expect(scene.blocks[0].order).toBe(3);
+  });
+
+  it("M1: passes relationshipKind through from the plan block to the finalized block unchanged", () => {
+    const unit = makeUnit();
+    const plan: NotebookPlan = {
+      teachingStructure: null,
+      blocks: [planBlock({ primitive: "arrow", content: "causes", order: 0, sourceUnitIndex: 0, relationshipKind: "causes" })],
+    };
+    const scene = finalizeNotebookScene(plan, [unit], { bookId: "book-1", pageNumber: 1 });
+    expect(scene.blocks[0].relationshipKind).toBe("causes");
+  });
+
+  it("M1: relationshipKind stays null when the plan didn't state one — never guessed", () => {
+    const unit = makeUnit();
+    const plan: NotebookPlan = {
+      teachingStructure: null,
+      blocks: [planBlock({ primitive: "text", order: 0, sourceUnitIndex: 0 })],
+    };
+    const scene = finalizeNotebookScene(plan, [unit], { bookId: "book-1", pageNumber: 1 });
+    expect(scene.blocks[0].relationshipKind).toBeNull();
   });
 
   it("REQUIRED: an empty-blocks plan produces a valid, empty-blocks scene — never padded to reach a minimum", () => {

@@ -41,10 +41,10 @@ export function buildNotebookShapeMeta(block: FinalizedNotebookBlock): Record<st
 }
 
 const TEXT_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set([
-  "heading", "label", "text", "example", "source_anchor", "formula", "freehand",
+  "heading", "label", "text", "example", "source_anchor", "formula", "freehand", "handwritten_text",
 ]);
 const BOXED_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set([
-  "callout", "diagram", "concept_map", "image", "table", "timeline", "flow", "comparison", "equation_work",
+  "callout", "diagram", "concept_map", "image", "table", "timeline", "flow", "comparison", "equation_work", "concept_group",
 ]);
 
 function fontSizeFor(primitive: NotebookPrimitive): "s" | "m" | "l" {
@@ -63,6 +63,18 @@ function straightDrawSegmentProps(w: number, color: string, size: "s" | "m", sol
   const points = [{ x: 0, y: 0, z: 0.5 }, { x: w, y: 0, z: 0.5 }];
   return {
     color, fill: "none", dash: solid ? "solid" : "draw", size,
+    segments: [{ type: "straight", path: b64Vecs.encodePoints(points) }],
+    isComplete: true, isClosed: false, isPen: false,
+    scale: 1, scaleX: 1, scaleY: 1,
+  };
+}
+
+/** Same reasoning as straightDrawSegmentProps, on the vertical axis — the
+ *  bracket primitive's own vertical bar, spanning the members it groups. */
+function verticalDrawSegmentProps(h: number, color: string, size: "s" | "m") {
+  const points = [{ x: 0, y: 0, z: 0.5 }, { x: 0, y: h, z: 0.5 }];
+  return {
+    color, fill: "none", dash: "solid", size,
     segments: [{ type: "straight", path: b64Vecs.encodePoints(points) }],
     isComplete: true, isClosed: false, isPen: false,
     scale: 1, scaleX: 1, scaleY: 1,
@@ -94,12 +106,29 @@ export function notebookBlockToShapeSpecs(block: PositionedNotebookBlock, color 
     return [text, bar];
   }
 
+  if (block.primitive === "bracket") {
+    // A brace beside the set it marks: a vertical bar plus vertically-
+    // centered label text, reading as "{ label" — not a curved brace glyph
+    // (no live browser here to verify a fancier custom shape's contract).
+    const bar: TldrawShapeSpec = {
+      id: createShapeId(`${idBase}-mark`), type: "draw", x: block.x, y: block.y,
+      props: verticalDrawSegmentProps(block.h, color, "m"),
+      meta,
+    };
+    const text: TldrawShapeSpec = {
+      id: createShapeId(idBase), type: "text", x: block.x + 14, y: block.y + block.h / 2 - 10,
+      props: { richText: toRichText(block.content), font: "sans", size: "s", color, autoSize: false, w: Math.max(block.w - 14, 80) },
+      meta,
+    };
+    return [bar, text];
+  }
+
   if (TEXT_PRIMITIVES.has(block.primitive)) {
     const specs: TldrawShapeSpec[] = [{
       id: createShapeId(idBase), type: "text", x: block.x, y: block.y,
       props: {
         richText: toRichText(block.primitive === "freehand" ? `✏️ ${block.content}` : block.content),
-        font: block.primitive === "heading" ? "draw" : "sans",
+        font: block.primitive === "heading" || block.primitive === "handwritten_text" ? "draw" : "sans",
         size: fontSizeFor(block.primitive), color, autoSize: false, w: block.w,
       },
       meta,
@@ -111,7 +140,7 @@ export function notebookBlockToShapeSpecs(block: PositionedNotebookBlock, color 
     const bodyText = block.primitive === "equation_work"
       ? [block.content, block.detail].filter(Boolean).join("\n\n")
       : block.detail ?? block.content;
-    const isFrame = block.primitive === "diagram" || block.primitive === "concept_map" || block.primitive === "image";
+    const isFrame = block.primitive === "diagram" || block.primitive === "concept_map" || block.primitive === "image" || block.primitive === "concept_group";
     return [{
       id: createShapeId(idBase), type: "geo", x: block.x, y: block.y,
       props: {
@@ -147,7 +176,7 @@ export function connectionToArrowSpec(
     id: createShapeId(`nb-conn-${connection.blockId}`), type: "arrow", x: from.x, y: from.y,
     props: {
       kind: "arc", start: { x: 0, y: 0 }, end: { x: to.x - from.x, y: to.y - from.y },
-      bend: 0, richText: toRichText(""), size: "s",
+      bend: 0, richText: toRichText(connection.relationshipKind ?? ""), size: "s",
       color: connection.primitive === "arrow" ? color : "grey",
       dash: connection.primitive === "arrow" ? "solid" : "dashed",
     },

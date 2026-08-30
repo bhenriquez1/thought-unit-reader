@@ -29,6 +29,7 @@ function makeBlock(primitive: NotebookPrimitive, overrides: Partial<FinalizedNot
     groupId: null,
     order: 0,
     sourceUnitIndex: -1,
+    relationshipKind: null,
     canonicalUnitId: null,
     sourceId: null,
     page: 1,

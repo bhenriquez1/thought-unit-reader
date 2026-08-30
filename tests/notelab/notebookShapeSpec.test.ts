@@ -27,6 +27,7 @@ function makePositioned(overrides: Partial<PositionedNotebookBlock> & { id: stri
     groupId: null,
     order: 0,
     sourceUnitIndex: 0,
+    relationshipKind: null,
     canonicalUnitId: "unit-1",
     sourceId: "doc-1",
     page: 3,
@@ -144,6 +145,42 @@ describe("notebookBlockToShapeSpecs — boxed primitives", () => {
   });
 });
 
+describe("notebookBlockToShapeSpecs — M1: concept_group/bracket/handwritten_text", () => {
+  it("concept_group renders as an unfilled dashed frame, same treatment as diagram/concept_map/image", () => {
+    const specs = notebookBlockToShapeSpecs(makePositioned({ id: "cg1", primitive: "concept_group", detail: "grouped body" }));
+    expect(specs).toHaveLength(1);
+    expect(specs[0].type).toBe("geo");
+    expect(specs[0].props.fill).toBe("none");
+    expect(specs[0].props.dash).toBe("dashed");
+  });
+
+  it("handwritten_text uses the draw font, like heading, distinguishing it from plain typed text", () => {
+    const handwritten = notebookBlockToShapeSpecs(makePositioned({ id: "ht1", primitive: "handwritten_text" }))[0];
+    const text = notebookBlockToShapeSpecs(makePositioned({ id: "t1", primitive: "text" }))[0];
+    expect(handwritten.type).toBe("text");
+    expect(handwritten.props.font).toBe("draw");
+    expect(text.props.font).toBe("sans");
+  });
+
+  it("bracket produces two shapes — a vertical bar plus label text — not a single boxed rectangle", () => {
+    const specs = notebookBlockToShapeSpecs(makePositioned({ id: "br1", primitive: "bracket", content: "grouped set", w: 200, h: 140 }));
+    expect(specs).toHaveLength(2);
+    expect(specs[0].type).toBe("draw");
+    expect(specs[1].type).toBe("text");
+  });
+
+  it("bracket's vertical bar spans the block's own height and both shapes share provenance meta", () => {
+    const [bar, text] = notebookBlockToShapeSpecs(makePositioned({ id: "br1", primitive: "bracket", x: 10, y: 20, w: 200, h: 140 }));
+    expect(bar.x).toBe(10);
+    expect(bar.y).toBe(20);
+    expect(bar.meta).toEqual(text.meta);
+    // Label text is offset right of the bar and vertically centered.
+    expect(text.x).toBeGreaterThan(bar.x);
+    expect(text.y).toBeGreaterThan(bar.y);
+    expect(text.y).toBeLessThan(bar.y + 140);
+  });
+});
+
 describe("notebookBlockToShapeSpecs — arrow/connector", () => {
   it("never produces a shape directly for arrow/connector blocks — those are resolved via connectionToArrowSpec instead", () => {
     expect(notebookBlockToShapeSpecs(makePositioned({ id: "a1", primitive: "arrow" }))).toEqual([]);
@@ -157,6 +194,7 @@ describe("notebookBlockToShapeSpecs — every NotebookPrimitive is explicitly ha
       "text", "heading", "freehand", "highlight", "underline", "formula", "equation_work",
       "diagram", "label", "table", "timeline", "flow", "comparison", "concept_map",
       "image", "callout", "example", "source_anchor",
+      "concept_group", "bracket", "handwritten_text",
     ];
     for (const primitive of ALL_NON_CONNECTOR) {
       const specs = notebookBlockToShapeSpecs(makePositioned({ id: `p-${primitive}`, primitive }));
@@ -170,7 +208,7 @@ describe("connectionToArrowSpec", () => {
   const toBlock = makePositioned({ id: "to", primitive: "text", x: 300, y: 200, w: 200, h: 50 });
 
   function makeConnection(overrides: Partial<NotebookConnection> = {}): NotebookConnection {
-    return { blockId: "conn1", primitive: "arrow", fromBlockId: "from", toBlockId: "to", ...overrides };
+    return { blockId: "conn1", primitive: "arrow", fromBlockId: "from", toBlockId: "to", relationshipKind: null, ...overrides };
   }
 
   it("starts at the bottom-center of the from-block and ends relative to it at the top-center of the to-block", () => {
@@ -194,6 +232,16 @@ describe("connectionToArrowSpec", () => {
   it("carries the connection's own ids in meta — not the same provenance contract as a content block", () => {
     const spec = connectionToArrowSpec(makeConnection(), fromBlock, toBlock);
     expect(spec.meta).toEqual({ connectionId: "conn1", fromBlockId: "from", toBlockId: "to" });
+  });
+
+  it("M1: labels the drawn arrow with its relationshipKind when the connection has one", () => {
+    const spec = connectionToArrowSpec(makeConnection({ relationshipKind: "causes" }), fromBlock, toBlock);
+    expect(JSON.stringify(spec.props.richText)).toMatch(/causes/);
+  });
+
+  it("M1: a connection with no relationshipKind renders an unlabeled arrow, same as before this field existed", () => {
+    const spec = connectionToArrowSpec(makeConnection({ relationshipKind: null }), fromBlock, toBlock);
+    expect(spec.props.richText).toEqual(connectionToArrowSpec(makeConnection(), fromBlock, toBlock).props.richText);
   });
 });
 

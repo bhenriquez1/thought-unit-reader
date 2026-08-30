@@ -34,6 +34,7 @@ function makeBlock(overrides: Partial<FinalizedNotebookBlock> & { primitive: Not
     groupId: null,
     order: 0,
     sourceUnitIndex: 0,
+    relationshipKind: null,
     canonicalUnitId: "unit-1",
     sourceId: "doc-1",
     page: 42,

@@ -23,6 +23,7 @@ function makeBlock(overrides: Partial<FinalizedNotebookBlock> & { id: string; pr
     detail: null,
     groupId: null,
     sourceUnitIndex: 0,
+    relationshipKind: null,
     canonicalUnitId: "unit-1",
     sourceId: "doc-1",
     page: 3,
@@ -89,6 +90,54 @@ describe("layoutNotebookScene — different primitive mixes produce genuinely di
     const chemistryDims = chemistryLayout.blocks.map((b) => `${b.w}x${b.h}`).sort();
     const historyDims = historyLayout.blocks.map((b) => `${b.w}x${b.h}`).sort();
     expect(chemistryDims).not.toEqual(historyDims);
+  });
+});
+
+describe("layoutNotebookScene — M1: concept_group/bracket/handwritten_text", () => {
+  it("concept_group is treated as an anchor primitive — its group's children flow beneath it, same as diagram/concept_map/image", () => {
+    const scene = makeScene([
+      makeBlock({ id: "cg", primitive: "concept_group", order: 0, groupId: "g1" }),
+      makeBlock({ id: "child", primitive: "label", order: 1, groupId: "g1" }),
+    ]);
+    const result = layoutNotebookScene(scene);
+    const anchor = result.blocks.find((b) => b.id === "cg")!;
+    const child = result.blocks.find((b) => b.id === "child")!;
+    expect(anchor.w).toBe(CANVAS_WIDTH);
+    expect(child.y).toBeGreaterThan(anchor.y + anchor.h - 1);
+  });
+
+  it("bracket gets a real, non-zero footprint distinct from a connector's zero-size one", () => {
+    const result = layoutNotebookScene(makeScene([makeBlock({ id: "br1", primitive: "bracket", order: 0 })]));
+    expect(result.blocks[0].w).toBeGreaterThan(0);
+    expect(result.blocks[0].h).toBeGreaterThan(0);
+  });
+
+  it("handwritten_text gets the same footprint family as plain text — a content primitive, not full-width", () => {
+    const result = layoutNotebookScene(makeScene([makeBlock({ id: "ht1", primitive: "handwritten_text", order: 0 })]));
+    expect(result.blocks[0].w).toBeLessThan(CANVAS_WIDTH);
+  });
+});
+
+describe("layoutNotebookScene — M1: relationshipKind threads through to the resolved connection", () => {
+  it("a resolved arrow/connector carries its source block's relationshipKind", () => {
+    const scene = makeScene([
+      makeBlock({ id: "from", primitive: "text", order: 0, groupId: "g1" }),
+      makeBlock({ id: "arrow1", primitive: "arrow", order: 1, groupId: "g1", relationshipKind: "causes" }),
+      makeBlock({ id: "to", primitive: "text", order: 2, groupId: "g1" }),
+    ]);
+    const result = layoutNotebookScene(scene);
+    expect(result.connections).toHaveLength(1);
+    expect(result.connections[0].relationshipKind).toBe("causes");
+  });
+
+  it("a connector with no stated relationshipKind resolves with a null one, never invented", () => {
+    const scene = makeScene([
+      makeBlock({ id: "from", primitive: "text", order: 0, groupId: "g1" }),
+      makeBlock({ id: "connector1", primitive: "connector", order: 1, groupId: "g1" }),
+      makeBlock({ id: "to", primitive: "text", order: 2, groupId: "g1" }),
+    ]);
+    const result = layoutNotebookScene(scene);
+    expect(result.connections[0].relationshipKind).toBeNull();
   });
 });
 
