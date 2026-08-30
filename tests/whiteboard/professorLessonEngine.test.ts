@@ -66,7 +66,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
     for (const handler of ["handleNext", "handlePrev", "handleRestart", "handleShowComplete", "advanceForPlayback"]) {
       const idx = src.indexOf(`const ${handler} = useCallback`);
       expect(idx).toBeGreaterThan(-1);
-      const body = src.slice(idx, idx + 500);
+      const body = src.slice(idx, idx + 700);
       expect(body).toMatch(/setStepIndex\(/);
     }
   });
@@ -79,7 +79,7 @@ describe("Playback controls funnel through ONE deterministic path", () => {
     expect(calls).toBeGreaterThanOrEqual(1);
     const idx = src.indexOf("const setStepIndex = useCallback");
     const body = src.slice(idx, idx + 300);
-    expect(body).toMatch(/applyStateAtStep\(editor, n\)/);
+    expect(body).toMatch(/applyStateAtStep\(editor, n, opts\)/);
   });
 
   it("manual Next/Previous/Restart stop any in-flight narration (with an explicit, traceable reason) — never leaves stale audio playing across a jump", () => {
