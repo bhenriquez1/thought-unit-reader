@@ -8,6 +8,13 @@
 //   4. LearningSourcesManager does NOT contain GuideView / GuideSection / GuideNote functions.
 //   5. The NoteLab sources sub-tab in index.tsx does NOT include StudyGuideLab above
 //      LearningSourcesManager (no duplicate study guide rendering).
+//
+// M5 — Evidence was its own NoteLab sub-tab ("🔬 Evidence" / notesSubTab
+// "sources"), a separate click away from the notes themselves. It's now
+// woven inline into each expanded note in UltraNotesList.tsx instead, scoped
+// to that note's own (documentId, pageNumber, pageTruthKey) rather than
+// whichever page the Reader happens to be showing. index.tsx no longer
+// mounts LearningSourcesManager directly.
 
 import fs from "fs";
 import path from "path";
@@ -128,32 +135,64 @@ describe("EvidenceWorkspace — InterpretationNote helper", () => {
   });
 });
 
-// ── pages/index.tsx — no duplicate StudyGuideLab in NoteLab sources sub-tab
+// ── pages/index.tsx — M5: Evidence is woven into NoteLab, not its own sub-tab
 
-describe("pages/index.tsx — NoteLab sources sub-tab", () => {
+describe("pages/index.tsx — M5: Evidence sub-tab collapsed into NoteLab", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(INDEX, "utf8"); });
 
-  it("LearningSourcesManager is still rendered in the notelab sources sub-tab", () => {
-    expect(src).toMatch(/notesSubTab.*sources|sources.*LearningSourcesManager/s);
+  it("REQUIRED: notesSubTab no longer offers a separate Evidence/sources click", () => {
+    expect(src).toMatch(/useState<"notes" \| "teaching">\("notes"\)/);
+    expect(src).not.toMatch(/"notes", "sources", "teaching"/);
+    expect(src).not.toMatch(/🔬 Evidence/);
   });
 
-  it("comment describes Concept Evidence Workspace (not Study Guide)", () => {
-    expect(src).toMatch(/Concept Evidence Workspace/);
+  it("REQUIRED: no longer mounts LearningSourcesManager directly — it moved inline into UltraNotesList", () => {
+    expect(src).not.toMatch(/<LearningSourcesManager/);
+    expect(src).not.toMatch(/const LearningSourcesManager = dynamic/);
   });
 
-  it("passes canonical document/page identity and Surgeon evidence", () => {
-    const block = src.slice(src.indexOf("<LearningSourcesManager"), src.indexOf("</ErrorBoundary>", src.indexOf("<LearningSourcesManager")));
-    expect(block).toMatch(/documentId=\{resolvedDocumentId\}/);
-    expect(block).toMatch(/currentPage=\{currentPage\}/);
-    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+  it("passes the live Reader-page context UltraNotesList needs for inline evidence", () => {
+    const block = src.slice(src.indexOf("<UltraNotesList"), src.indexOf("/>", src.indexOf("<UltraNotesList")));
     expect(block).toMatch(/surgeonPageTruthKey=\{surgeonAnnotations\.plan\?\.pageTruthKey/);
     expect(block).toMatch(/groundedAnnotations=\{surgeonAnnotations\.groundedAnnotations\}/);
+    expect(block).toMatch(/studyModel=\{currentPageStudyModel\}/);
   });
 
   it("opens to structured saved notes and renders UltraNotesList as the canonical workspace", () => {
-    expect(src).toMatch(/useState<"notes" \| "teaching" \| "sources">\("notes"\)/);
     expect(src).toMatch(/<UltraNotesList/);
     expect(src).not.toMatch(/<PersonalWorkspaceTab/);
+  });
+});
+
+// ── components/notelab/UltraNotesList.tsx — M5: Evidence woven inline ──────
+
+describe("components/notelab/UltraNotesList.tsx — M5: Evidence woven into each expanded note", () => {
+  const NOTES_LIST = path.resolve(__dirname, "../../components/notelab/UltraNotesList.tsx");
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(NOTES_LIST, "utf8"); });
+
+  it("REQUIRED: imports and renders LearningSourcesManager inline, not behind a separate tab", () => {
+    expect(src).toMatch(/import LearningSourcesManager from "@\/components\/notelab\/LearningSourcesManager";/);
+    expect(src).toMatch(/<LearningSourcesManager/);
+  });
+
+  it("REQUIRED: scopes evidence to THIS note's own identity, never the globally-open Reader page's", () => {
+    expect(src).toMatch(/const noteDocumentId = note\.documentId \?\? note\.bookId;/);
+    expect(src).toMatch(/documentId=\{noteDocumentId\}/);
+    expect(src).toMatch(/currentPage=\{note\.pageNumber\}/);
+    expect(src).toMatch(/pageTruthKey=\{notePageTruthKey\}/);
+  });
+
+  it("falls back to a freshly built pageTruthKey for notes saved before that field existed", () => {
+    expect(src).toMatch(/const notePageTruthKey = note\.pageTruthKey \?\? buildPageTruthKey\(noteDocumentId, note\.pageNumber\);/);
+  });
+
+  it("is visible for every note regardless of the notebook/study-page view toggle — not gated on noteView", () => {
+    const evidenceIdx = src.indexOf("🔬 EVIDENCE · PDF PAGE");
+    const noteViewPageEndIdx = src.indexOf('/* end noteView === "page" */');
+    expect(evidenceIdx).toBeGreaterThan(-1);
+    expect(noteViewPageEndIdx).toBeGreaterThan(-1);
+    expect(evidenceIdx).toBeGreaterThan(noteViewPageEndIdx);
   });
 });

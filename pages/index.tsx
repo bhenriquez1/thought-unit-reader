@@ -185,7 +185,6 @@ const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTr
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 const ChiefResidentPanel = dynamic(() => import("@/components/notelab/ChiefResidentPanel"), { ssr: false });
-const LearningSourcesManager = dynamic(() => import("@/components/notelab/LearningSourcesManager"), { ssr: false });
 const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
@@ -723,7 +722,11 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching" | "sources">("notes");
+  // M5 — Evidence used to be its own sub-tab ("sources") here; it's now
+  // woven inline into each expanded note in UltraNotesList instead, so
+  // there's no separate click to see it. See UltraNotesList.tsx's own M5
+  // comment.
+  const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
   const [coachQuestion, setCoachQuestion] = useState("");
@@ -5826,7 +5829,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">NoteLab</div>
             </div>
             <div className="flex gap-1 flex-wrap">
-              {(["notes", "sources", "teaching"] as const).map(v => (
+              {(["notes", "teaching"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setNotesSubTab(v)}
@@ -5836,28 +5839,10 @@ export default function ThoughtUnitReader() {
                       : "text-slate-400 hover:bg-white/10 hover:text-slate-200"
                   }`}
                 >
-                  {v === "notes" ? "📝 Notes" : v === "teaching" ? "🩺 Chief Resident" : "🔬 Evidence"}
+                  {v === "notes" ? "📝 Notes" : "🩺 Chief Resident"}
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Sources — Concept Evidence Workspace: active concept → source evidence
-               → Avrrio interpretation. The Study Guide has its own dedicated tab. */}
-          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "sources" ? "flex" : "none", flexDirection: "column" }}>
-            <ErrorBoundary onError={(error) => console.error('🔬 LearningSourcesManager Error:', error.message)}>
-              <LearningSourcesManager
-                bookId={bookId}
-                documentId={resolvedDocumentId}
-                currentPage={currentPage}
-                pageTruthKey={pageTruthKey}
-                surgeonPageTruthKey={surgeonAnnotations.plan?.pageTruthKey ?? null}
-                groundedAnnotations={surgeonAnnotations.groundedAnnotations}
-                studyModel={currentPageStudyModel}
-                onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
-                refreshKey={noteLabRefreshKey}
-              />
-            </ErrorBoundary>
           </div>
 
           {/* Chief Resident sub-tab — always mounted so session state persists across tab switches */}
@@ -5876,7 +5861,13 @@ export default function ThoughtUnitReader() {
 
           {/* Canonical saved-note workspace. This is the immediate destination
               for every Save to NoteLab action; the old generic Personal
-              Workspace no longer hides the structured study notes. */}
+              Workspace no longer hides the structured study notes. M5 —
+              Evidence (Concept Evidence Workspace: active concept → source
+              evidence → Avrrio interpretation) is woven inline into each
+              expanded note here rather than living behind its own sub-tab;
+              surgeonPageTruthKey/groundedAnnotations/studyModel are the live
+              Reader-page context UltraNotesList can't derive from a saved
+              note alone (see its own M5 comment). */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
             <UltraNotesList
               bookId={bookId}
@@ -5897,6 +5888,9 @@ export default function ThoughtUnitReader() {
               }}
               focusedAnchorText={notelabFocusedAnchorText}
               focusedKnowledgeNodeId={selectedKgNodeId}
+              surgeonPageTruthKey={surgeonAnnotations.plan?.pageTruthKey ?? null}
+              groundedAnnotations={surgeonAnnotations.groundedAnnotations}
+              studyModel={currentPageStudyModel}
             />
           </div>
         </div>
