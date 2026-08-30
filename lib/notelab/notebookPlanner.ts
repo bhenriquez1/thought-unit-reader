@@ -15,19 +15,31 @@
 // (requestNotebookPlan/generateNotebookScene), mirroring
 // synthesizeTeachingOutput.ts's own split: prompt builders + a fetch-based
 // client function in one file, called by both the API route (server) and
-// the UI (client) that eventually triggers it. That trigger — actually
-// wiring this into a save flow, and deciding how a freshly generated scene
-// merges with a NOTE'S EXISTING notebookScene rather than overwriting it —
-// is a later phase; generateNotebookScene here always builds a scene from
-// scratch from the units/sources it's given.
+// the UI (client) that eventually triggers it. generateNotebookScene
+// always builds a scene from scratch from the units/sources it's given —
+// it never reads or mutates a note's existing notebookScene itself.
 //
 // Multi-source synthesis: buildNotebookPlannerUserPrompt now accepts
-// optional professorExplanation/studentNotes/supplementalSources —
-// additional context alongside the SOURCE THOUGHT UNITS list, not a
-// replacement for it. The grounding rule stays anchored to the numbered
-// unit list only: a highlight/underline/source_anchor block must still be
-// verbatim from a cited unit, never from these supplementary materials —
-// see the system prompt's own explicit statement of this below.
+// optional professorExplanation/studentNotes/supplementalSources/
+// existingNotebookSummary — additional context alongside the SOURCE
+// THOUGHT UNITS list, not a replacement for it. The grounding rule stays
+// anchored to the numbered unit list only: a highlight/underline/
+// source_anchor block must still be verbatim from a cited unit, never from
+// these supplementary materials — see the system prompt's own explicit
+// statement of this below.
+//
+// M3 — WhiteboardPanel.tsx's handleSaveToNoteLab is the first real caller:
+// when a page's lesson was taught, it extracts the lesson's own narration
+// (lessonToNotebookScene.ts's extractLessonNarration — the DURABLE
+// KNOWLEDGE, not N5's raw shape geometry) as professorExplanation, reads
+// the page's existing notebookScene (if any) via summarizeExistingNotebookScene
+// as existingNotebookSummary, and calls generateNotebookScene with both —
+// so the AI reorganizes the student's cumulative page instead of either
+// duplicating the whiteboard canvas (N5's original behavior) or discarding
+// what was already composed. lessonToNotebookScene.ts's deterministic
+// buildNotebookSceneFromLessonSnapshot function still exists and is still
+// used — now as the fallback for when the live AI call fails, not the
+// primary path.
 
 import { z } from "zod";
 import type { CanonicalThoughtUnit } from "@/lib/canonical/types";
@@ -116,7 +128,7 @@ GROUNDING (non-negotiable): for highlight, underline, and source_anchor blocks, 
 
 For every other primitive, \`content\` (and \`detail\` where relevant) is your own composed explanation, grounded in meaning by sourceUnitIndex but not required to be a verbatim quote.
 
-MULTI-SOURCE CONTEXT: the user prompt may also include the student's own notes, a Professor's spoken explanation from a taught lesson, and supplemental sources the student attached. Use these to inform your composed (non-grounding-required) blocks — they can shape what you emphasize and how you explain it. They are NEVER a valid source for a highlight/underline/source_anchor block's verbatim content — that grounding rule applies ONLY to the numbered SOURCE THOUGHT UNITS list, never to these supplementary materials, however word-for-word they may read.
+MULTI-SOURCE CONTEXT: the user prompt may also include the student's own notes, a Professor's spoken explanation from a taught lesson, supplemental sources the student attached, and — when this page already has a composed notebook — a summary of what's already there. Use all of these to inform your composed (non-grounding-required) blocks — they can shape what you emphasize and how you explain it. They are NEVER a valid source for a highlight/underline/source_anchor block's verbatim content — that grounding rule applies ONLY to the numbered SOURCE THOUGHT UNITS list, never to these supplementary materials, however word-for-word they may read. When an EXISTING NOTEBOOK section is present, this is the SAME student's cumulative page, not a blank one: reorganize and extend what's already composed — fold in what the new material adds, drop nothing that's still true, never just restate the same explanation in different words.
 
 ══ THE MATERIAL DECIDES THE PAGE — WORKED EXAMPLES ══
 - Naming chemical compounds → rules, worked examples, and annotations (text + example + callout for exceptions), not a diagram.
@@ -160,6 +172,24 @@ export interface NoteSynthesisSources {
   /** Supplemental sources the student attached (lecture slides, a second
    *  textbook, ...) — short label + excerpt pairs. */
   supplementalSources?: Array<{ label: string; content: string }> | null;
+  /** M3 — a short summary of this page's EXISTING notebookScene, when one
+   *  already exists (see summarizeExistingNotebookScene below). Lets the
+   *  planner reorganize/extend a page's cumulative notebook rather than
+   *  generating a blind duplicate every time it's asked to compose the
+   *  same page again — the correction's own "combine with existing
+   *  notebook knowledge" step. */
+  existingNotebookSummary?: string | null;
+}
+
+/** Turns an already-composed VisualNotebookScene into the short text
+ *  summary buildNotebookPlannerUserPrompt's EXISTING NOTEBOOK CONTENT
+ *  section expects — one line per block, primitive-tagged so the model can
+ *  see what visual form each piece already took, not just its words. */
+export function summarizeExistingNotebookScene(scene: VisualNotebookScene): string {
+  return scene.blocks
+    .filter((b) => b.content.trim())
+    .map((b) => `[${b.primitive}] ${b.content}${b.detail ? ` — ${b.detail}` : ""}`)
+    .join("\n");
 }
 
 export function buildNotebookPlannerUserPrompt(
@@ -182,6 +212,9 @@ export function buildNotebookPlannerUserPrompt(
   }
   if (opts.supplementalSources?.length) {
     extraSections.push(`── SUPPLEMENTAL SOURCES (context only, never a grounding source) ──\n${opts.supplementalSources.map((s) => `${s.label}: ${s.content}`).join("\n\n")}`);
+  }
+  if (opts.existingNotebookSummary?.trim()) {
+    extraSections.push(`── THIS PAGE'S EXISTING NOTEBOOK (reorganize/extend intelligently — do not just repeat it) ──\n${opts.existingNotebookSummary.trim()}`);
   }
   const extraBlock = extraSections.length ? `\n\n${extraSections.join("\n\n")}` : "";
 

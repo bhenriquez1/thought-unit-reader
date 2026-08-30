@@ -21,10 +21,12 @@ import {
   buildNotebookPlannerSystemPrompt,
   buildNotebookPlannerUserPrompt,
   finalizeNotebookScene,
+  summarizeExistingNotebookScene,
   type NotebookPlan,
   type NotebookPlanBlock,
 } from "../../lib/notelab/notebookPlanner";
 import type { CanonicalThoughtUnit } from "../../lib/canonical/types";
+import type { VisualNotebookScene } from "../../lib/notelab/notebookScene";
 
 function makeUnit(overrides: Partial<CanonicalThoughtUnit> = {}): CanonicalThoughtUnit {
   return {
@@ -145,6 +147,11 @@ describe("buildNotebookPlannerSystemPrompt — page-adaptive, never fixed-sectio
     expect(prompt).toMatch(/NEVER a valid source for a highlight\/underline\/source_anchor block/);
   });
 
+  it("M3: instructs the model to reorganize/extend an existing notebook rather than restate it — the correction's own anti-duplication rule", () => {
+    expect(prompt).toMatch(/reorganize and extend what's already composed/);
+    expect(prompt).toMatch(/never just restate the same explanation in different words/);
+  });
+
   it("includes subject-adaptive worked examples spanning multiple, genuinely different domains", () => {
     for (const domain of ["chemical compounds", "Atomic orbitals", "Gas laws", "Anatomy", "Pathology", "History", "Literature", "Mathematics", "Elena Mode"]) {
       expect(prompt).toContain(domain);
@@ -230,6 +237,51 @@ describe("buildNotebookPlannerUserPrompt", () => {
     });
     expect(prompt).toMatch(/0\.[\s\S]*Canonical unit text\./);
     expect(prompt).toMatch(/PROFESSOR'S EXPLANATION[\s\S]*STUDENT'S OWN NOTES[\s\S]*SUPPLEMENTAL SOURCES/);
+  });
+
+  it("M3: includes a summary of the page's existing notebook, labeled as something to reorganize/extend, not just repeat", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, existingNotebookSummary: "[heading] Ionic Bonding\n[text] Electrons transfer between atoms." });
+    expect(prompt).toMatch(/THIS PAGE'S EXISTING NOTEBOOK/);
+    expect(prompt).toMatch(/reorganize\/extend intelligently/);
+    expect(prompt).toContain("[heading] Ionic Bonding");
+  });
+
+  it("M3: blank/whitespace-only existingNotebookSummary is treated as absent", () => {
+    const prompt = buildNotebookPlannerUserPrompt([makeUnit()], { pageNumber: 1, existingNotebookSummary: "   " });
+    expect(prompt).not.toMatch(/THIS PAGE'S EXISTING NOTEBOOK/);
+  });
+});
+
+describe("summarizeExistingNotebookScene — M3: the bridge from a saved scene back into prompt context", () => {
+  function makeScene(blocks: VisualNotebookScene["blocks"]): VisualNotebookScene {
+    return { id: "scene-1", bookId: "book-1", pageNumber: 1, teachingStructure: null, blocks, builtAt: Date.now() };
+  }
+  function block(overrides: Partial<VisualNotebookScene["blocks"][number]> = {}): VisualNotebookScene["blocks"][number] {
+    return {
+      id: "b1", primitive: "text", content: "content", detail: null, groupId: null, order: 0, sourceUnitIndex: 0,
+      relationshipKind: null, canonicalUnitId: null, sourceId: null, page: 1, confidence: 0.6, generatedFrom: "ai",
+      ...overrides,
+    };
+  }
+
+  it("REQUIRED: renders one primitive-tagged line per block", () => {
+    const scene = makeScene([block({ primitive: "heading", content: "Ionic Bonding" }), block({ primitive: "text", content: "Electrons transfer." })]);
+    const summary = summarizeExistingNotebookScene(scene);
+    expect(summary).toBe("[heading] Ionic Bonding\n[text] Electrons transfer.");
+  });
+
+  it("REQUIRED: includes a block's detail alongside its content when present", () => {
+    const scene = makeScene([block({ primitive: "equation_work", content: "PV = nRT", detail: "Step 1: isolate V" })]);
+    expect(summarizeExistingNotebookScene(scene)).toBe("[equation_work] PV = nRT — Step 1: isolate V");
+  });
+
+  it("skips a block with no real content — never a stray '[primitive] ' line", () => {
+    const scene = makeScene([block({ content: "   " }), block({ content: "real content" })]);
+    expect(summarizeExistingNotebookScene(scene)).toBe("[text] real content");
+  });
+
+  it("an empty-blocks scene summarizes to an empty string, not a placeholder", () => {
+    expect(summarizeExistingNotebookScene(makeScene([]))).toBe("");
   });
 });
 

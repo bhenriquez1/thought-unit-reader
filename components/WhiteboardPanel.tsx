@@ -3,7 +3,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { buildNoteFromStudyModel, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildNoteFromStudyModel, saveUltraNote, getNotesByBookAsync, type UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { saveStudyGuide } from "@/lib/studyguide/studyGuideStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
@@ -22,7 +22,10 @@ import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import {
   buildWhiteboardLessonSnapshot, saveWhiteboardLessonSnapshot, getWhiteboardLessonSnapshot,
 } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
-import { buildNotebookSceneFromLessonSnapshot } from "@/lib/notelab/lessonToNotebookScene";
+import { buildNotebookSceneFromLessonSnapshot, extractLessonNarration } from "@/lib/notelab/lessonToNotebookScene";
+import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
+import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
+import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 
 // SOLE Whiteboard rendering pipeline: Current Page -> Professor Lesson
 // Planner (TldrawCanvas + useProfessorLesson) -> tldraw Lesson -> Render.
@@ -327,31 +330,79 @@ export default function WhiteboardPanel({
         note.thoughtUnitIds = canonicalEntries.map((e) => e.id);
       }
 
-      // N5 — if this page's lesson was actually taught and completed, its
-      // real captured geometry (lib/knowledge/whiteboardLessonSnapshotStore.ts)
-      // recomposes into the note's persistent notebook canvas, instead of
-      // the note carrying only the flat-text sections above. Never fatal to
-      // the save itself: a note with no lesson snapshot (or a lookup
-      // failure) still saves exactly as it always has.
-      if (lessonId) {
-        try {
-          const snapshot = await getWhiteboardLessonSnapshot(lessonId, effectiveLearningDocumentId);
-          if (snapshot) {
-            note.notebookScene = buildNotebookSceneFromLessonSnapshot(snapshot, {
-              bookId: note.bookId,
-              pageNumber: note.pageNumber,
-            });
-          }
-        } catch (err) {
-          console.error("[WHITEBOARD_SAVE_NOTELAB_SCENE_ERROR]", err);
-        }
-      }
-
       await saveUltraNote(note);
       flashAction("✅ Saved to NoteLab");
+
+      // M3 — if this page's lesson was actually taught and completed,
+      // compose its DURABLE KNOWLEDGE into the note's persistent notebook
+      // via the real AI synthesis pipeline (notebookPlanner.ts's
+      // generateNotebookScene) — never a raw duplication of the whiteboard
+      // canvas (that was N5's original, now-retired primary behavior; see
+      // lessonToNotebookScene.ts's own file header). Runs in the
+      // background: the note above is already saved and its success
+      // already flashed, so a slow or failed AI call never blocks or
+      // breaks the primary save.
+      if (lessonId && resolvedDocumentId) {
+        void composeNotebookSceneInBackground(note, lessonId, resolvedDocumentId);
+      }
     } catch (err) {
       console.error("[WHITEBOARD_SAVE_NOTELAB_ERROR]", err);
       flashAction("⚠ Could not save to NoteLab");
+    }
+  };
+
+  /** M3 — the real synthesis path for "Save to NoteLab" after a taught
+   *  lesson. Extracts the lesson's spoken narration (never its shape
+   *  geometry) and this page's existing notebook content (when any),
+   *  hands both to generateNotebookScene alongside the page's real
+   *  canonical thought units, and re-saves the note with the result — the
+   *  correction's own "extract durable knowledge -> combine with existing
+   *  notebook knowledge -> reorganize intelligently -> update NoteLab
+   *  canvas" pipeline. Falls back to buildNotebookSceneFromLessonSnapshot's
+   *  deterministic recomposition (N5) when the live call fails, or when
+   *  there are no canonical units to ground a real synthesis in — a real,
+   *  if less intelligently organized, scene beats none. Re-reads the note
+   *  fresh right before writing: the student may have edited their own
+   *  notes, or re-saved this page, while synthesis was in flight. */
+  const composeNotebookSceneInBackground = async (savedNote: UltraNote, lessonIdForSnapshot: string, documentId: string) => {
+    try {
+      const [snapshot, units] = await Promise.all([
+        getWhiteboardLessonSnapshot(lessonIdForSnapshot, documentId),
+        getCanonicalUnitsByPage(documentId, savedNote.pageNumber - 1),
+      ]);
+      if (!snapshot) return; // no completed lesson to recompose — same gate N5 always used
+
+      const existingNotes = await getNotesByBookAsync(savedNote.bookId);
+      const existingNote = existingNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+
+      let scene: VisualNotebookScene;
+      if (units.length > 0) {
+        try {
+          scene = await generateNotebookScene(units, {
+            bookId: savedNote.bookId,
+            bookTitle: savedNote.bookTitle,
+            pageNumber: savedNote.pageNumber,
+            professorExplanation: extractLessonNarration(snapshot),
+            studentNotes: existingNote.studentNotes ?? null,
+            existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
+          });
+        } catch (synthesisErr) {
+          console.error("[WHITEBOARD_SAVE_NOTELAB_SYNTHESIS_ERROR]", synthesisErr);
+          scene = buildNotebookSceneFromLessonSnapshot(snapshot, { bookId: savedNote.bookId, pageNumber: savedNote.pageNumber });
+        }
+      } else {
+        // No canonical thought units to ground a real synthesis in — the
+        // deterministic recomposition needs no such grounding, so it's the
+        // more reliable choice here, not just a failure fallback.
+        scene = buildNotebookSceneFromLessonSnapshot(snapshot, { bookId: savedNote.bookId, pageNumber: savedNote.pageNumber });
+      }
+
+      const latestNotes = await getNotesByBookAsync(savedNote.bookId);
+      const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+      await saveUltraNote({ ...latest, notebookScene: scene });
+      flashAction("🖊️ Notebook composed");
+    } catch (err) {
+      console.error("[WHITEBOARD_SAVE_NOTELAB_BACKGROUND_ERROR]", err);
     }
   };
 
