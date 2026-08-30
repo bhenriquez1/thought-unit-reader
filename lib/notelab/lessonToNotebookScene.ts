@@ -1,13 +1,31 @@
 // lib/notelab/lessonToNotebookScene.ts
 // N5 — deterministically recomposes an already-taught, already-persisted
 // WhiteboardLessonSnapshot (lib/knowledge/whiteboardLessonSnapshotStore.ts)
-// into a VisualNotebookScene (N2), so "Save to NoteLab" preserves the
-// lesson's real captured geometry — which shapes/labels/arrows Professor
-// actually drew, per step — instead of discarding it for flat prose the way
-// buildNoteFromStudyModel's sections alone do.
+// into a VisualNotebookScene (N2), preserving the lesson's real captured
+// geometry — which shapes/labels/arrows Professor actually drew, per step.
 //
-// No AI call here: every primitive choice below is a deterministic mapping
-// from data Professor Whiteboard already captured (TeachingStepShape.kind,
+// M3 — this deterministic recomposition is no longer "Save to NoteLab"'s
+// primary path. The correction that started the M1-M8 phase explicitly
+// called this out: saving a lesson must NOT "simply duplicate the
+// Whiteboard canvas" — it must extract the lesson's DURABLE KNOWLEDGE and
+// let the real AI synthesis pipeline (notebookPlanner.ts's
+// generateNotebookScene) reorganize it alongside the page's canonical
+// thought units and whatever notebook content already existed there. That
+// live path now runs first (see WhiteboardPanel.tsx's handleSaveToNoteLab);
+// buildNotebookSceneFromLessonSnapshot below still exists, still works, and
+// is still exercised — as the deterministic FALLBACK when the live call
+// fails (network, rate limit, malformed output) or when there are no
+// canonical thought units to ground a real synthesis in. A real, if less
+// intelligently organized, scene beats none.
+//
+// extractLessonNarration is the bridge to the new primary path — it pulls
+// just the SPOKEN/WRITTEN content out of a snapshot (never the shape
+// geometry) as plain strings, the professorExplanation
+// notebookPlanner.ts's NoteSynthesisSources expects.
+//
+// No AI call in THIS file — every primitive choice in
+// buildNotebookSceneFromLessonSnapshot is a deterministic mapping from data
+// Professor Whiteboard already captured (TeachingStepShape.kind,
 // TeachingStepArrow.relationshipKind) — the same "AI proposes meaning,
 // deterministic code resolves geometry/provenance" split
 // notebookPlanner.ts's finalizeNotebookScene uses for its own (AI-driven)
@@ -204,4 +222,20 @@ export function buildNotebookSceneFromLessonSnapshot(
     blocks,
     builtAt: Date.now(),
   });
+}
+
+/**
+ * M3 — pulls a completed lesson's SPOKEN/WRITTEN content out of its
+ * snapshot as plain strings: notebookPlanner.ts's NoteSynthesisSources
+ * expects professorExplanation, the durable-knowledge bridge into the real
+ * AI synthesis path. Deliberately narration only — never shape geometry
+ * (that's buildNotebookSceneFromLessonSnapshot's own, separate job) — since
+ * geometry has no meaning as prompt text; the spoken explanation does. A
+ * step with no narration contributes nothing (never a bare step label
+ * standing in for content that was never actually said).
+ */
+export function extractLessonNarration(snapshot: WhiteboardLessonSnapshot): string[] {
+  return snapshot.teachingSteps
+    .filter((step) => step.narration.trim())
+    .map((step) => `${step.label}: ${step.narration.trim()}`);
 }
