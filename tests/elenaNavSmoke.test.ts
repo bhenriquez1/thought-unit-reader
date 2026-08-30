@@ -17,7 +17,10 @@ const PAGE_SRC = fs.readFileSync(
 describe("NoteLab canonical surface", () => {
   it('opens on Notes and keeps the notebook mounted while switching canonical tools', () => {
     const notelab = PAGE_SRC.indexOf('activeShellTab === "notelab"');
-    expect(PAGE_SRC).toContain('useState<"notes" | "teaching" | "sources">("notes")');
+    // M5 — "sources" was retired from notesSubTab: Evidence is now woven
+    // inline into each expanded note (components/notelab/UltraNotesList.tsx)
+    // instead of living behind its own sub-tab click.
+    expect(PAGE_SRC).toContain('useState<"notes" | "teaching">("notes")');
     expect(PAGE_SRC.indexOf('display: notesSubTab === "notes"', notelab)).toBeGreaterThan(-1);
     expect(PAGE_SRC.indexOf("<UltraNotesList", notelab)).toBeGreaterThan(-1);
   });

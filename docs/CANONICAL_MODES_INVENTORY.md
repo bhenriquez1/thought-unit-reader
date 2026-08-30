@@ -26,7 +26,7 @@ Audited through 2026-08-26 from current `main` plus this branch. `Production rea
 | `pages/api/elena-{buddy,vocab}.ts` | Elena | Grounded AI endpoints | Latest | Yes | canonical child page context | KEEP |
 | Adult Reader Elena shell action in `pages/index.tsx` | Elena | Navigates to canonical `/elena` | Latest navigation | Yes | Next router | KEEP |
 | `components/notelab/UltraNotesList.tsx` | NoteLab | Canonical saved-note workspace shown immediately after Save to NoteLab | Latest | Yes | UltraNote IndexedDB/local mirror | KEEP |
-| `components/notelab/LearningSourcesManager.tsx` | NoteLab | Secondary evidence/source manager for the active concept | Latest support surface | Yes, Evidence sub-tab | canonical page evidence | KEEP |
+| `components/notelab/LearningSourcesManager.tsx` | NoteLab | Evidence/source manager for the active concept | Latest support surface | M5: woven inline into each expanded note in `UltraNotesList.tsx`, not a separate sub-tab | canonical page evidence | KEEP |
 | `components/workspace/PersonalWorkspaceTab.tsx` | NoteLab | Generic personal-workspace UI that displaced structured saved notes | Superseded product surface | No canonical NoteLab render | workspace store retained | INVESTIGATE |
 | `components/recalllab/RecallLab.tsx` | Recall | Single public Recall surface and old-data import boundary | Latest | Yes | RecallSet store, Recall 2 | KEEP |
 | `components/recalllab/Recall2Lab.tsx` | Recall | Canonical retrieval-practice workspace | Latest | Yes | blueprint/SRS stores | KEEP |
@@ -41,7 +41,7 @@ Audited through 2026-08-26 from current `main` plus this branch. `Production rea
 - `/apex` is the only TestLab entry. It begins with exam purpose and an uploaded Reader source; the former Today/Learn/Practice/Full-Length dashboard and Training Arena are not rendered.
 - Practice and Simulation are distinct guided entries. A general uploaded source defaults to Custom Exam; DAT-specific sections appear only after the learner explicitly selects DAT.
 - `/elena` directly renders `ElenaChildWorkspace` and opens on the child Reader. Home/Today/Challenge are not primary navigation destinations; Books, Vocabulary, Practice, Progress, and Adventures support the reading workflow.
-- NoteLab opens on structured saved notes. Evidence and Chief Resident remain supporting tabs; the source graph no longer masquerades as the notebook home.
+- NoteLab opens on structured saved notes. Chief Resident remains a supporting tab; Evidence (M5) is no longer a tab at all — it's woven inline into each expanded note, scoped to that note's own page identity, so seeing it never requires a click away from the note. The source graph no longer masquerades as the notebook home.
 - The Reader imports only `components/recalllab/RecallLab.tsx`, which renders one `Recall2Lab` home and `Recall2Session`. Classic/stacked Recall dashboards are removed, while `RecallSet` persistence remains an automatic, document-scoped migration input so existing student cards are not discarded.
 - Reader panel ownership is explicit: Sticky Notes owns the permanent left rail, Thought Units live in the PDF-attached Page Guide drawer, and the right panel owns Speech/Whiteboard/Chief Resident.
 
