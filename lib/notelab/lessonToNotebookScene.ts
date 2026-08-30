@@ -87,7 +87,7 @@ interface BuildCtx {
   nextId: () => string;
 }
 
-function makeBlock(ctx: BuildCtx, fields: { primitive: NotebookPrimitive; content: string; groupId: string; order: number }): FinalizedNotebookBlock {
+function makeBlock(ctx: BuildCtx, fields: { primitive: NotebookPrimitive; content: string; groupId: string; order: number; relationshipKind?: RelationshipKind | null }): FinalizedNotebookBlock {
   return {
     id: ctx.nextId(),
     primitive: fields.primitive,
@@ -96,6 +96,7 @@ function makeBlock(ctx: BuildCtx, fields: { primitive: NotebookPrimitive; conten
     groupId: fields.groupId,
     order: fields.order,
     sourceUnitIndex: -1,
+    relationshipKind: fields.relationshipKind ?? null,
     // No reliable per-shape thought-unit resolution exists from the
     // snapshot alone (TeachingStepShape/Label/Arrow carry only shapeId/
     // targetId — a VSG node id, not a CanonicalThoughtUnit id) — never
@@ -166,7 +167,7 @@ function buildStepBlocks(ctx: BuildCtx, step: TeachingStepSummary): FinalizedNot
     // cross-step endpoint).
     const targetBlock = arrow.targetId ? shapeBlockByTargetId.get(arrow.targetId) : undefined;
     const order = targetBlock ? targetBlock.order - 0.5 : lastContentOrder + 0.5;
-    blocks.push(makeBlock(ctx, { primitive, content, groupId, order }));
+    blocks.push(makeBlock(ctx, { primitive, content, groupId, order, relationshipKind: arrow.relationshipKind ?? null }));
   }
 
   if (step.narration) blocks.push(makeBlock(ctx, { primitive: "text", content: step.narration, groupId, order: base + 900 }));

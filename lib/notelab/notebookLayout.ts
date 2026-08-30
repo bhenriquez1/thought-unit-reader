@@ -14,7 +14,7 @@
 // stack) determines its children's arrangement — never one uniform card
 // grid regardless of content.
 
-import type { NotebookPrimitive } from "./notebookScene";
+import type { NotebookPrimitive, RelationshipKind } from "./notebookScene";
 import type { FinalizedNotebookBlock, VisualNotebookScene } from "./notebookScene";
 
 export const CANVAS_WIDTH = 960;
@@ -46,6 +46,15 @@ const PRIMITIVE_DIMENSIONS: Record<NotebookPrimitive, { w: number; h: number }> 
   timeline:       { w: CANVAS_WIDTH, h: 160 },
   flow:           { w: CANVAS_WIDTH, h: 160 },
   comparison:     { w: CANVAS_WIDTH, h: 220 },
+  // A concept_group is a hub much like concept_map — its members flow
+  // beneath it via the same anchor composition (see ANCHOR_PRIMITIVES).
+  concept_group:  { w: CANVAS_WIDTH, h: 280 },
+  // A brace/bracket reads beside the set of blocks it marks — taller than
+  // wide so the vertical bar it renders as (notebookShapeSpec.ts) actually
+  // spans something, not the full-width anchor footprint a real content
+  // primitive gets.
+  bracket:        { w: 200, h: 140 },
+  handwritten_text: { w: 620, h: 96 },
   // Connectors have no box of their own — resolved into `connections`
   // below and given a nominal 0-size footprint here only so every
   // primitive has a table entry (never an implicit fallback).
@@ -54,7 +63,7 @@ const PRIMITIVE_DIMENSIONS: Record<NotebookPrimitive, { w: number; h: number }> 
 };
 
 const CONNECTOR_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set(["arrow", "connector"]);
-const ANCHOR_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set(["diagram", "concept_map", "image"]);
+const ANCHOR_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set(["diagram", "concept_map", "image", "concept_group"]);
 const CHAIN_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set(["timeline", "flow"]);
 
 export interface PositionedNotebookBlock extends FinalizedNotebookBlock {
@@ -73,6 +82,11 @@ export interface NotebookConnection {
   primitive: "arrow" | "connector";
   fromBlockId: string;
   toBlockId: string;
+  /** Carried straight through from the connector block's own field (see
+   *  notebookScene.ts) — null when the planner didn't state a specific
+   *  kind. Lets connectionToArrowSpec label the drawn arrow, e.g. "causes",
+   *  instead of every connection looking identical. */
+  relationshipKind: RelationshipKind | null;
 }
 
 export interface NotebookLayoutResult {
@@ -112,6 +126,7 @@ function resolveConnections(groupBlocks: FinalizedNotebookBlock[]): NotebookConn
         primitive: connector.primitive as "arrow" | "connector",
         fromBlockId: from.id,
         toBlockId: to.id,
+        relationshipKind: connector.relationshipKind,
       });
     }
   }

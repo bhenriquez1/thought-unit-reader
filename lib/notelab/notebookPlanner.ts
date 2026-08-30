@@ -23,6 +23,7 @@ import {
   NotebookPrimitiveSchema,
   GROUNDING_REQUIRED_PRIMITIVES,
   TeachingStructureSchema,
+  RelationshipKindSchema,
   VisualNotebookSceneSchema,
   type VisualNotebookScene,
   type FinalizedNotebookBlock,
@@ -47,6 +48,10 @@ export const NotebookPlanBlockSchema = z.object({
    *  page heading that doesn't belong to one specific unit) — never used to
    *  avoid picking a real source. */
   sourceUnitIndex: z.number(),
+  /** Meaningful only for arrow/connector blocks — see notebookScene.ts's own
+   *  field doc. Null for every other primitive, and null is a legitimate
+   *  answer for an arrow/connector too when no specific kind applies. */
+  relationshipKind: RelationshipKindSchema.nullable(),
 });
 export type NotebookPlanBlock = z.infer<typeof NotebookPlanBlockSchema>;
 
@@ -75,8 +80,8 @@ YOUR ONLY JOB: decide how THIS page's material should be visually represented, u
 - freehand — a hand-drawn sketch or annotation stroke
 - highlight — a highlighted span of VERBATIM source text
 - underline — an underlined span of VERBATIM source text
-- arrow — a directional connector between two blocks (use groupId to link them)
-- connector — a non-directional link/association line between two blocks
+- arrow — a directional connector between two blocks (use groupId to link them; set relationshipKind when the connection has a specific kind — causes, leads-to, warns-about, supports, contrasts, part-of)
+- connector — a non-directional link/association line between two blocks (same relationshipKind field as arrow)
 - formula — a mathematical/chemical equation or expression
 - equation_work — a worked derivation/transformation of a formula, step by step (use detail for the steps)
 - diagram — a labeled structural/spatial drawing (anatomy, apparatus, circuit, molecule, ...)
@@ -90,6 +95,9 @@ YOUR ONLY JOB: decide how THIS page's material should be visually represented, u
 - callout — a boxed aside: a warning, exception, or high-yield note
 - example — a worked or illustrative example
 - source_anchor — a verbatim quoted span that grounds the page back to its exact source wording
+- concept_group — a container that visually gathers several related blocks as one hub (use groupId to gather its members)
+- bracket — a brace spanning several blocks to mark them as one set (use groupId)
+- handwritten_text — body prose meant to read as the student's own handwriting rather than typed notes; use this instead of plain text when the page calls for a personal, penned-in-the-margin feel
 
 GROUNDING (non-negotiable): for highlight, underline, and source_anchor blocks, \`content\` MUST be copied VERBATIM, character-for-character, from the source thought unit you cite via sourceUnitIndex — never a paraphrase, never a summary, never a corrected/cleaned-up version. A block that fails this check is discarded entirely, so an ungrounded highlight/underline/source_anchor is worse than not including one.
 
@@ -172,6 +180,7 @@ export function finalizeNotebookScene(
       groupId: block.groupId,
       order: block.order,
       sourceUnitIndex: block.sourceUnitIndex,
+      relationshipKind: block.relationshipKind,
       canonicalUnitId: unit?.id ?? null,
       sourceId: unit?.documentId ?? null,
       page: unit?.pageIndex ?? opts.pageNumber,
