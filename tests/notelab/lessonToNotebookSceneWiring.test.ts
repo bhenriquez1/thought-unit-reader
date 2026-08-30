@@ -23,6 +23,19 @@ describe("components/WhiteboardPanel.tsx — handleSaveToNoteLab saves fast, the
     expect(SRC).toMatch(/import \{ generateNotebookScene, summarizeExistingNotebookScene \} from "@\/lib\/notelab\/notebookPlanner";/);
   });
 
+  it("M4: imports gatherConceptNotebookContent from the new concept-accumulation module", () => {
+    expect(SRC).toMatch(/import \{ gatherConceptNotebookContent \} from "@\/lib\/notelab\/conceptAccumulation";/);
+  });
+
+  it("M4: back-fills note.knowledgeNodeId onto the saved UltraNote before saving — without this, concept accumulation never activates for lesson-saves", () => {
+    const idx = SRC.indexOf("const handleSaveToNoteLab = async () => {");
+    const block = SRC.slice(idx, idx + 2861);
+    const backfillIdx = block.indexOf("note.knowledgeNodeId = knowledgeNodeId;");
+    const saveIdx = block.indexOf("await saveUltraNote(note);");
+    expect(backfillIdx).toBeGreaterThan(-1);
+    expect(saveIdx).toBeGreaterThan(backfillIdx);
+  });
+
   it("REQUIRED: saves the note and flashes success BEFORE ever touching the lesson snapshot — the primary save never waits on AI synthesis", () => {
     const idx = SRC.indexOf("const handleSaveToNoteLab = async () => {");
     expect(idx).toBeGreaterThan(-1);
@@ -66,6 +79,14 @@ describe("components/WhiteboardPanel.tsx — composeNotebookSceneInBackground: r
   it("REQUIRED: reads the EXISTING note's own studentNotes/notebookScene as additional synthesis context — never a blind overwrite of what the student already has", () => {
     expect(fn).toMatch(/studentNotes: existingNote\.studentNotes \?\? null/);
     expect(fn).toMatch(/existingNotebookSummary: existingNote\.notebookScene \? summarizeExistingNotebookScene\(existingNote\.notebookScene\) : null/);
+  });
+
+  it("M4: gathers what OTHER notes on the same concept already know, gated on savedNote.knowledgeNodeId — never guessed when the note has no resolved concept", () => {
+    expect(fn).toMatch(/const relatedConceptKnowledge = savedNote\.knowledgeNodeId\s*\n\s*\? await gatherConceptNotebookContent\(savedNote\.knowledgeNodeId, savedNote\.id\)\s*\n\s*: null;/);
+  });
+
+  it("M4: passes relatedConceptKnowledge into the real synthesis call", () => {
+    expect(fn).toMatch(/relatedConceptKnowledge,\s*\n\s*\}\);/);
   });
 
   it("REQUIRED: only attempts the live AI synthesis when there are real canonical units to ground it in — otherwise goes straight to the deterministic fallback", () => {
