@@ -24,6 +24,7 @@ import {
 } from "@/lib/knowledge/whiteboardLessonSnapshotStore";
 import { buildNotebookSceneFromLessonSnapshot, extractLessonNarration } from "@/lib/notelab/lessonToNotebookScene";
 import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
+import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
 import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 
@@ -329,6 +330,15 @@ export default function WhiteboardPanel({
       if (canonicalEntries?.length) {
         note.thoughtUnitIds = canonicalEntries.map((e) => e.id);
       }
+      // M4 — back-fills the same way every other note-save call site in
+      // pages/index.tsx already does (see UltraNote.knowledgeNodeId's own
+      // field comment): never inferred, always the resolved Knowledge
+      // Graph node id this panel was already given. This is the identity
+      // composeNotebookSceneInBackground uses below to find what OTHER
+      // notes already know about the SAME concept.
+      if (knowledgeNodeId) {
+        note.knowledgeNodeId = knowledgeNodeId;
+      }
 
       await saveUltraNote(note);
       flashAction("✅ Saved to NoteLab");
@@ -374,6 +384,11 @@ export default function WhiteboardPanel({
 
       const existingNotes = await getNotesByBookAsync(savedNote.bookId);
       const existingNote = existingNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+      // M4 — what OTHER notes sharing this SAME concept already know,
+      // across pages/sources, not just this one page's own prior content.
+      const relatedConceptKnowledge = savedNote.knowledgeNodeId
+        ? await gatherConceptNotebookContent(savedNote.knowledgeNodeId, savedNote.id)
+        : null;
 
       let scene: VisualNotebookScene;
       if (units.length > 0) {
@@ -385,6 +400,7 @@ export default function WhiteboardPanel({
             professorExplanation: extractLessonNarration(snapshot),
             studentNotes: existingNote.studentNotes ?? null,
             existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
+            relatedConceptKnowledge,
           });
         } catch (synthesisErr) {
           console.error("[WHITEBOARD_SAVE_NOTELAB_SYNTHESIS_ERROR]", synthesisErr);

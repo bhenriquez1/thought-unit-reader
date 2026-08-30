@@ -21,12 +21,12 @@
 //
 // Multi-source synthesis: buildNotebookPlannerUserPrompt now accepts
 // optional professorExplanation/studentNotes/supplementalSources/
-// existingNotebookSummary — additional context alongside the SOURCE
-// THOUGHT UNITS list, not a replacement for it. The grounding rule stays
-// anchored to the numbered unit list only: a highlight/underline/
-// source_anchor block must still be verbatim from a cited unit, never from
-// these supplementary materials — see the system prompt's own explicit
-// statement of this below.
+// existingNotebookSummary/relatedConceptKnowledge — additional context
+// alongside the SOURCE THOUGHT UNITS list, not a replacement for it. The
+// grounding rule stays anchored to the numbered unit list only: a
+// highlight/underline/source_anchor block must still be verbatim from a
+// cited unit, never from these supplementary materials — see the system
+// prompt's own explicit statement of this below.
 //
 // M3 — WhiteboardPanel.tsx's handleSaveToNoteLab is the first real caller:
 // when a page's lesson was taught, it extracts the lesson's own narration
@@ -40,6 +40,17 @@
 // buildNotebookSceneFromLessonSnapshot function still exists and is still
 // used — now as the fallback for when the live AI call fails, not the
 // primary path.
+//
+// M4 — relatedConceptKnowledge extends "combine with existing notebook
+// knowledge" past a single page: lib/notelab/conceptAccumulation.ts's
+// gatherConceptNotebookContent finds every OTHER note sharing this page's
+// UltraNote.knowledgeNodeId (the ALREADY-WIRED Knowledge Graph concept
+// identity — resolveOrCreateNode, not invented here) and summarizes what
+// each already contains. Note identity itself is untouched: still one
+// UltraNote per (bookId, pageNumber); this is purely additional prompt
+// context so a textbook page, a lecture slide, and a Professor explanation
+// on the SAME concept can genuinely inform each other's synthesis, the
+// correction's own worked example.
 
 import { z } from "zod";
 import type { CanonicalThoughtUnit } from "@/lib/canonical/types";
@@ -128,7 +139,7 @@ GROUNDING (non-negotiable): for highlight, underline, and source_anchor blocks, 
 
 For every other primitive, \`content\` (and \`detail\` where relevant) is your own composed explanation, grounded in meaning by sourceUnitIndex but not required to be a verbatim quote.
 
-MULTI-SOURCE CONTEXT: the user prompt may also include the student's own notes, a Professor's spoken explanation from a taught lesson, supplemental sources the student attached, and — when this page already has a composed notebook — a summary of what's already there. Use all of these to inform your composed (non-grounding-required) blocks — they can shape what you emphasize and how you explain it. They are NEVER a valid source for a highlight/underline/source_anchor block's verbatim content — that grounding rule applies ONLY to the numbered SOURCE THOUGHT UNITS list, never to these supplementary materials, however word-for-word they may read. When an EXISTING NOTEBOOK section is present, this is the SAME student's cumulative page, not a blank one: reorganize and extend what's already composed — fold in what the new material adds, drop nothing that's still true, never just restate the same explanation in different words.
+MULTI-SOURCE CONTEXT: the user prompt may also include the student's own notes, a Professor's spoken explanation from a taught lesson, supplemental sources the student attached, a summary of this page's own existing notebook, and related notes on this SAME CONCEPT from other pages/sources entirely. Use all of these to inform your composed (non-grounding-required) blocks — they can shape what you emphasize and how you explain it. They are NEVER a valid source for a highlight/underline/source_anchor block's verbatim content — that grounding rule applies ONLY to the numbered SOURCE THOUGHT UNITS list, never to these supplementary materials, however word-for-word they may read. When an EXISTING NOTEBOOK section is present, this is the SAME student's cumulative page, not a blank one: reorganize and extend what's already composed — fold in what the new material adds, drop nothing that's still true, never just restate the same explanation in different words. When RELATED NOTES ON THIS SAME CONCEPT are present, the student has already studied this exact concept from other sources — weave in what's consistent, note what THIS page genuinely adds that those didn't, and never contradict or silently ignore what's already established elsewhere without reason.
 
 ══ THE MATERIAL DECIDES THE PAGE — WORKED EXAMPLES ══
 - Naming chemical compounds → rules, worked examples, and annotations (text + example + callout for exceptions), not a diagram.
@@ -179,6 +190,15 @@ export interface NoteSynthesisSources {
    *  same page again — the correction's own "combine with existing
    *  notebook knowledge" step. */
   existingNotebookSummary?: string | null;
+  /** M4 — what OTHER notes sharing this page's SAME CONCEPT (see
+   *  UltraNote.knowledgeNodeId and lib/notelab/conceptAccumulation.ts's
+   *  gatherConceptNotebookContent) already contain, source-labeled by
+   *  book/page. The correction's own worked example: a textbook page, a
+   *  lecture slide, a Professor explanation, and a student's handwritten
+   *  note can all strengthen the SAME "Ionic Bonding" concept — this is
+   *  that accumulation surfacing as prompt context, not a note-identity
+   *  change (UltraNote's own storage key stays bookId+pageNumber). */
+  relatedConceptKnowledge?: string | null;
 }
 
 /** Turns an already-composed VisualNotebookScene into the short text
@@ -215,6 +235,9 @@ export function buildNotebookPlannerUserPrompt(
   }
   if (opts.existingNotebookSummary?.trim()) {
     extraSections.push(`── THIS PAGE'S EXISTING NOTEBOOK (reorganize/extend intelligently — do not just repeat it) ──\n${opts.existingNotebookSummary.trim()}`);
+  }
+  if (opts.relatedConceptKnowledge?.trim()) {
+    extraSections.push(`── RELATED NOTES ON THIS SAME CONCEPT, FROM OTHER PAGES/SOURCES (context only, never a grounding source) ──\n${opts.relatedConceptKnowledge.trim()}`);
   }
   const extraBlock = extraSections.length ? `\n\n${extraSections.join("\n\n")}` : "";
 
