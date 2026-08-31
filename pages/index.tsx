@@ -4121,9 +4121,7 @@ export default function ThoughtUnitReader() {
       let url: string;
       let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string };
 
-      // Check if we're using the bypass (mock user) or real Firebase
-      const isUsingBypass = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-      const canUseFirebase = firebaseConnected && user && !isUsingBypass;
+      const canUseFirebase = firebaseConnected && !!user;
 
       setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
 
