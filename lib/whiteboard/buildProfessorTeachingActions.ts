@@ -578,8 +578,16 @@ export function buildProfessorTeachingActions(
         visualNeeded,
         visualIntent: entry.visualIntent ?? entry.drawingIntent,
         narration: entry.narration,
+        // P6 (Whiteboard visual language correction, follow-up) — "draw-freehand"
+        // was missing here, so once P5 started drawing ordinary/hub nodes as
+        // organic hand-drawn outlines (draw-freehand, not draw-shape), THIS
+        // step's own outline action silently vanished from its own
+        // drawInstructions — the runtime tldraw agent's request-builder
+        // (buildProfessorTldrawAgentRequest in professorTldrawAgent.ts) reads
+        // stepActions here to derive labels/sourceTargets, so a freehand-drawn
+        // node's targetId could go missing from that request.
         drawInstructions: stepActions.filter(action =>
-          action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize" || action.type === "erase",
+          action.type === "draw-shape" || action.type === "draw-freehand" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize" || action.type === "erase",
         ),
         relationships: entry.relationships,
         emphasis: entry.emphasize && entry.emphasisTreatment !== "none"
