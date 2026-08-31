@@ -25,6 +25,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, getNotesByBookAsync, isUltraNotePersisted, inferSubject, type UltraNote } from "@/lib/notelab/ultraNoteStore";
 import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
 import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
+import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
@@ -4410,10 +4411,21 @@ function GenerateNoteButton({
   async function composeNoteNotebookSceneInBackground(savedNote: UltraNote, documentId: string) {
     try {
       const units = await getCanonicalUnitsByPage(documentId, savedNote.pageNumber - 1);
-      if (units.length === 0) return;
 
       const existingNotes = await getNotesByBookAsync(savedNote.bookId);
       const existingNote = existingNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+
+      if (units.length === 0) {
+        // Correction (Study Page migration) — zero canonical units means no
+        // AI synthesis can run (nothing to ground it in), but the student's
+        // own notes and the deterministic Study Page sections (Big Idea/Key
+        // Facts/etc. — the same reorganization getCanonicalNotebookSections
+        // already performs) are real content that must still render as a
+        // notebook, never vanish silently for lack of an AI call.
+        await saveDeterministicNotebookScene(existingNote, savedNote.bookId, savedNote.pageNumber);
+        return;
+      }
+
       const relatedConceptKnowledge = savedNote.knowledgeNodeId
         ? await gatherConceptNotebookContent(savedNote.knowledgeNodeId, savedNote.id)
         : null;
@@ -4435,9 +4447,19 @@ function GenerateNoteButton({
         noteId: savedNote.id, visualPlanGenerated: true, visualPrimitiveCount: scene.blocks.length,
       });
 
+      // Correction (Study Page migration) — the AI scene never sees the
+      // student's own notes or the note's legacy Study Page fields as
+      // renderable primitives, only as prompt context (see
+      // buildNotebookPlannerUserPrompt's MULTI-SOURCE CONTEXT section); fold
+      // both in as real blocks so the Visual Notebook is the complete "one
+      // note," not just its AI-composed portion.
+      const mergedScene = mergeDeterministicContentIntoScene(scene, existingNote, {
+        bookId: savedNote.bookId, pageNumber: savedNote.pageNumber,
+      });
+
       const latestNotes = await getNotesByBookAsync(savedNote.bookId);
       const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-      await saveUltraNote({ ...latest, notebookScene: scene, notebookSceneError: undefined });
+      await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });
 
       const persisted = await isUltraNotePersisted(savedNote.id);
       console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", { noteId: savedNote.id, persistenceSaveSuccess: persisted });
@@ -4449,14 +4471,35 @@ function GenerateNoteButton({
       // logged) since this background task has no live UI to report to —
       // the next time UltraNotesList reloads this note, it can show the
       // student something went wrong instead of an unexplained blank tab.
+      // Even on an AI failure, still fall back to whatever deterministic
+      // (student/derived) content the note itself has — "never silently
+      // lost" covers a failed synthesis, not only a missing one.
       try {
         const latestNotes = await getNotesByBookAsync(savedNote.bookId);
         const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-        await saveUltraNote({ ...latest, notebookSceneError: message.slice(0, 200) });
+        await saveDeterministicNotebookScene(latest, savedNote.bookId, savedNote.pageNumber, { notebookSceneError: message.slice(0, 200) });
       } catch (persistErr) {
         console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", { persistenceSaveSuccess: false, persistErr });
       }
     }
+  }
+
+  /** Shared by both the "no canonical units" branch and the AI-failure
+   *  fallback above: recompute the note's deterministic (student/derived)
+   *  blocks and persist them as its notebookScene — but only when there's
+   *  actually something to show. A note with no studentNotes and no
+   *  resolvable Study Page sections stays without a notebookScene rather
+   *  than getting an empty one that would render a blank Visual Notebook
+   *  tab for nothing (see UltraNotesList.tsx's `note.notebookScene &&` gate). */
+  async function saveDeterministicNotebookScene(
+    note: UltraNote, bookId: string, pageNumber: number, extra: Partial<UltraNote> = {},
+  ) {
+    const scene = mergeDeterministicContentIntoScene(note.notebookScene ?? null, note, { bookId, pageNumber });
+    if (scene.blocks.length === 0) {
+      if (Object.keys(extra).length) await saveUltraNote({ ...note, ...extra });
+      return;
+    }
+    await saveUltraNote({ ...note, ...extra, notebookScene: scene });
   }
 
   return (
