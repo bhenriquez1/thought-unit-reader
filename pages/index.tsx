@@ -5878,7 +5878,15 @@ export default function ThoughtUnitReader() {
               surfaces only via per-object actions (View Source/Jump to
               Reader/Ask Professor), never a separate visible Evidence
               workspace competing with the notebook. */}
-          <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
+          {/* Correction (NoteLab scroll/height bug) — UltraNotesList returns a
+              bare fragment with no scroll region of its own (unlike
+              ChiefResidentPanel, which owns its own overflow-y-auto), so the
+              sibling wrapper above stayed overflow-hidden by design while
+              THIS one must actually scroll — otherwise notes/expanded
+              notebooks beyond the viewport are unreachable and every
+              scrollIntoView call in UltraNotesList (jump-to-related-note,
+              KG-node focus) has no scrollable ancestor to act on. */}
+          <div className="flex-1 overflow-y-auto" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
             <UltraNotesList
               bookId={bookId}
               onNavigateToPage={(page) => { syncToPage(page); trySwitchShellTab("reader", "reader"); }}
