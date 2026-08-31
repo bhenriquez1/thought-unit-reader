@@ -1032,4 +1032,22 @@ describe("buildProfessorTeachingActions — Whiteboard visual language: box/circ
     expect(n1Draw.type).toBe("draw-shape");
     expect(n1Draw.shape).toBe("hexagon");
   });
+
+  // P6 (follow-up fix surfaced by P5) — directorSteps[i].drawInstructions
+  // feeds buildProfessorTldrawAgentRequest (professorTldrawAgent.ts), which
+  // derives its request's groundedConceptIds/labels/fallbackVisuals from
+  // this exact list. Before this fix, the filter that builds
+  // drawInstructions never included "draw-freehand" — harmless while only
+  // the runtime agent ever produced that action type, but once P5 made
+  // ordinary/hub nodes draw as an organic draw-freehand outline, that
+  // node's own outline action (and its targetId) silently vanished from
+  // its own teaching step's drawInstructions.
+  it("REQUIRED: a freehand-drawn node's outline action is included in its own directorStep's drawInstructions — P5's organic outlines must not vanish from the step's own draw record", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const n1Step = plan.directorSteps!.find(step => step.targetId === "n1")!;
+    expect(n1Step).toBeDefined();
+    const outlineInStep = n1Step.drawInstructions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(outlineInStep).toBeDefined();
+    expect(outlineInStep.type).toBe("draw-freehand");
+  });
 });
