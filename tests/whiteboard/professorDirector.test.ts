@@ -78,7 +78,7 @@ describe("Professor Director orchestration", () => {
     const actions = plan.actions.filter(action => action.stepId === visualStep.stepId);
     const sourceSpeakIndex = actions.findIndex(action => action.type === "speak" && plan.segments.find(segment => segment.id === action.segmentId)?.contentRole === "SOURCE_VERBATIM");
     const openBoardIndex = actions.findIndex(action => action.type === "set-surface" && action.surface === "whiteboard");
-    const drawIndex = actions.findIndex(action => action.type === "draw-shape");
+    const drawIndex = actions.findIndex(action => action.type === "draw-shape" || action.type === "draw-freehand");
     expect(sourceSpeakIndex).toBeGreaterThanOrEqual(0);
     expect(openBoardIndex).toBeGreaterThan(sourceSpeakIndex);
     expect(drawIndex).toBeGreaterThan(openBoardIndex);

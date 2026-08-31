@@ -62,7 +62,7 @@ describe("buildProfessorTeachingActions — visuals synchronized with narration"
 
   it("a node's speak action's linkedActionIds reference that same node's draw/write actions", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
-    const drawAction = plan.actions.find(a => a.type === "draw-shape" && a.targetId === "src-n1");
+    const drawAction = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && a.targetId === "src-n1");
     const writeAction = plan.actions.find(a => a.type === "write" && a.targetId === "src-n1");
     const segment = plan.segments.find(s => s.text === "Start with the central problem.");
     expect(segment).toBeDefined();
@@ -90,7 +90,7 @@ describe("buildProfessorTeachingActions — visuals synchronized with narration"
   it("writes the motivating central question before drawing the first concept", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     const questionIndex = plan.actions.findIndex(a => a.type === "write" && a.text === "Why must stabilization come first?");
-    const firstNodeIndex = plan.actions.findIndex(a => a.type === "draw-shape" && a.targetId === "src-n1");
+    const firstNodeIndex = plan.actions.findIndex(a => (a.type === "draw-shape" || a.type === "draw-freehand") && a.targetId === "src-n1");
     expect(questionIndex).toBeGreaterThanOrEqual(0);
     expect(questionIndex).toBeLessThan(firstNodeIndex);
     expect(plan.centralQuestion).toBe("Why must stabilization come first?");
@@ -103,8 +103,8 @@ describe("buildProfessorTeachingActions — geometry is deterministic, never AI-
     const longGrounded  = makeGrounded({ nodeScripts: [{ targetId: "n1", shortLabel: "A somewhat longer phrase here", narration: "n", tone: "explain", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] }] });
     const shortPlan = buildProfessorTeachingActions(makeVsg(), shortGrounded, SNAPSHOT);
     const longPlan  = buildProfessorTeachingActions(makeVsg(), longGrounded, SNAPSHOT);
-    const shortBounds = (shortPlan.actions.find(a => a.type === "draw-shape") as any).bounds;
-    const longBounds  = (longPlan.actions.find(a => a.type === "draw-shape") as any).bounds;
+    const shortBounds = (shortPlan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand")) as any).bounds;
+    const longBounds  = (longPlan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand")) as any).bounds;
     expect(longBounds.w).toBeGreaterThan(shortBounds.w);
   });
 
@@ -146,7 +146,7 @@ describe("buildProfessorTeachingActions — geometry is deterministic, never AI-
 describe("buildProfessorTeachingActions — a move-camera action precedes each node/edge group", () => {
   it("inserts a move-camera action before the first node's draw-shape", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
-    const drawIdx = plan.actions.findIndex(a => a.type === "draw-shape");
+    const drawIdx = plan.actions.findIndex(a => (a.type === "draw-shape" || a.type === "draw-freehand"));
     expect(plan.actions[drawIdx - 1].type).toBe("move-camera");
   });
 });
@@ -173,8 +173,8 @@ describe("buildProfessorTeachingActions — Director camera follows each active 
     const grounded = makeGrounded({ groups: [{ id: "g1", type: "core", order: 1, nodeIds: ["n1", "n2"] }] });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     const cameraAction = plan.actions.find(a => a.type === "move-camera") as any;
-    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
-    const n2Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).shapeId;
+    const n1Shape = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any).shapeId;
+    const n2Shape = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n2") as any).shapeId;
     expect(cameraAction.targetIds).toContain(n1Shape);
     expect(cameraAction.targetIds).not.toContain(n2Shape);
     expect(cameraAction.focusBounds).toBeDefined();
@@ -210,7 +210,7 @@ describe("buildProfessorTeachingActions — item 4B: edge focusBounds fallback w
     expect(edgeStep).toBeDefined();
     expect(edgeStep!.focusBounds).not.toBeNull();
 
-    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
+    const n1Shape = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any).shapeId;
     const fallbackCamera = plan.actions.find(a => a.type === "move-camera" && (a as any).stepId === edgeStep!.stepId) as any;
     expect(fallbackCamera).toBeDefined();
     expect(fallbackCamera.targetIds).toEqual([n1Shape]);
@@ -250,8 +250,8 @@ describe("buildProfessorTeachingActions — item 4B: edge focusBounds fallback w
     expect(edgeStep!.focusBounds).not.toBeNull();
     expect(plan.actions.some(a => a.type === "draw-arrow" && (a as any).targetId === "e1")).toBe(true);
     const cameraAction = plan.actions.find(a => a.type === "move-camera" && (a as any).stepId === edgeStep!.stepId) as any;
-    const n1Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId;
-    const n2Shape = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any).shapeId;
+    const n1Shape = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any).shapeId;
+    const n2Shape = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n2") as any).shapeId;
     expect(cameraAction.targetIds).toEqual([n1Shape, n2Shape]);
   });
 });
@@ -285,7 +285,7 @@ describe("buildProfessorTeachingActions — group-aware geometry: no overlap, re
 
   it("no two drawn shapes' bounds overlap — the direct fix for 'shapes overlap, labels cross'", () => {
     const plan = buildProfessorTeachingActions(makeFiveNodeVsg(), groupedGrounded(), SNAPSHOT);
-    const boxes = plan.actions.filter(a => a.type === "draw-shape").map(a => (a as any).bounds);
+    const boxes = plan.actions.filter(a => (a.type === "draw-shape" || a.type === "draw-freehand")).map(a => (a as any).bounds);
     for (let i = 0; i < boxes.length; i++) {
       for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
@@ -297,7 +297,7 @@ describe("buildProfessorTeachingActions — group-aware geometry: no overlap, re
 
   it("regions are placed in group.order sequence — group 1's nodes are above group 3's nodes", () => {
     const plan = buildProfessorTeachingActions(makeFiveNodeVsg(), groupedGrounded(), SNAPSHOT);
-    const boundsFor = (id: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === `src-${id}`) as any).bounds;
+    const boundsFor = (id: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === `src-${id}`) as any).bounds;
     expect(boundsFor("n0").y).toBeLessThan(boundsFor("n3").y);
   });
 });
@@ -339,7 +339,7 @@ describe("buildProfessorTeachingActions — deterministic, non-AI treatments fro
     const plan = buildProfessorTeachingActions(makeSequentialVsg(), seqGrounded(), SNAPSHOT);
     const highlightActions = plan.actions.filter(a => a.type === "emphasize" && a.treatment === "highlight");
     expect(highlightActions).toHaveLength(1);
-    expect((highlightActions[0] as any).targetId).toBe(String((plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n3") as any).shapeId));
+    expect((highlightActions[0] as any).targetId).toBe(String((plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n3") as any).shapeId));
   });
 
   it("these deterministic treatments are NOT driven by the AI script — absent from ProfessorNodeScript, derived purely from node.role/node.tier", () => {
@@ -400,9 +400,17 @@ describe("buildProfessorTeachingActions — shape vocabulary: a decision/danger/
     };
   }
 
+  // Correction (Whiteboard visual language) — "box"/"circle" are now drawn
+  // as a hand-drawn draw-freehand outline (see organicOutline.ts), which has
+  // no `.shape` field the way a draw-shape action does; pushOutlineShape()
+  // tags which kind it stands in for via visualRole ("outline:box" /
+  // "outline:circle") instead. "diamond"/"hexagon"/"cloud"/"brace" are
+  // unaffected — still real draw-shape actions with a real `.shape` field.
   function shapeFor(sourceId: string, plan = buildProfessorTeachingActions(makeVariedVsg(), variedGrounded(), SNAPSHOT)) {
-    const action = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === sourceId);
-    return (action as any)?.shape;
+    const action = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === sourceId) as any;
+    if (!action) return undefined;
+    if (action.type === "draw-freehand") return action.visualRole?.replace(/^outline:/, "");
+    return action.shape;
   }
 
   it("REQUIRED: a hub-role node draws as a circle", () => {
@@ -519,15 +527,15 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     const explainWrite = plan.actions.find(a => a.type === "write" && (a as any).text === "less metabolism");
     expect(explainWrite).toBeDefined();
-    const explainDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shapeId === (explainWrite as any).shapeId);
+    const explainDraw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).shapeId === (explainWrite as any).shapeId);
     expect(explainDraw).toBeDefined();
-    expect((explainDraw as any).shapeId).not.toBe((plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).shapeId);
+    expect((explainDraw as any).shapeId).not.toBe((plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any).shapeId);
   });
 
   it("an icon action renders as a circle carrying the mapped glyph as its write text", () => {
     const grounded = groundedWithExplain([explainAction({ type: "icon", id: "temp", icon: "thermometer" })]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const iconDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "circle" && (a as any).targetId === undefined);
+    const iconDraw = plan.actions.find(a => a.type === "draw-freehand" && (a as any).visualRole === "outline:circle" && (a as any).targetId === undefined);
     expect(iconDraw).toBeDefined();
     const iconWrite = plan.actions.find(a => a.type === "write" && (a as any).shapeId === (iconDraw as any).shapeId);
     expect((iconWrite as any).text).toContain("🌡️");
@@ -539,8 +547,8 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
       explainAction({ type: "arrow", from: "self", to: "metabolism" }),
     ]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
-    const subDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "box" && (a as any).targetId === undefined) as any;
+    const primaryDraw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    const subDraw = plan.actions.find(a => a.type === "draw-freehand" && (a as any).visualRole === "outline:box" && (a as any).targetId === undefined) as any;
     const arrows = plan.actions.filter(a => a.type === "draw-arrow") as any[];
     // One arrow anchored near the primary box, one anchored near the sub-box.
     const explainArrow = arrows.find(a => a.targetId === undefined);
@@ -557,8 +565,8 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
       explainAction({ type: "emphasize", target: "metabolism", style: "circle" }),
     ]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const subDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).shape === "box" && (a as any).targetId === undefined) as any;
-    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const subDraw = plan.actions.find(a => a.type === "draw-freehand" && (a as any).visualRole === "outline:box" && (a as any).targetId === undefined) as any;
+    const primaryDraw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     const emphasizeActions = plan.actions.filter(a => a.type === "emphasize") as any[];
     expect(emphasizeActions.some(e => e.targetId === subDraw.shapeId && e.treatment === "circle")).toBe(true);
     // n1 is role:"step", so it DOES get its own deterministic "number"
@@ -570,7 +578,7 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   it("an emphasize action targeting 'self' emphasizes the primary node's own shape", () => {
     const grounded = groundedWithExplain([explainAction({ type: "emphasize", target: "self", style: "highlight" })]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const primaryDraw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const primaryDraw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     const emphasizeActions = plan.actions.filter(a => a.type === "emphasize") as any[];
     expect(emphasizeActions.some(e => e.targetId === primaryDraw.shapeId && e.treatment === "highlight")).toBe(true);
   });
@@ -582,10 +590,10 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
     ]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
     const primaryBoxes = plan.actions
-      .filter(a => a.type === "draw-shape" && (a as any).targetId !== undefined)
+      .filter(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId !== undefined)
       .map(a => (a as any).bounds);
     const subBoxes = plan.actions
-      .filter(a => a.type === "draw-shape" && (a as any).targetId === undefined)
+      .filter(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === undefined)
       .map(a => (a as any).bounds);
     for (const sub of subBoxes) {
       for (const primary of primaryBoxes) {
@@ -614,7 +622,7 @@ describe("buildProfessorTeachingActions — explain[]: the professor's-aside min
   it("a node with an empty explain[] produces no extra draw-shape/write actions beyond its own", () => {
     const grounded = groundedWithExplain([]);
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const drawShapes = plan.actions.filter(a => a.type === "draw-shape");
+    const drawShapes = plan.actions.filter(a => (a.type === "draw-shape" || a.type === "draw-freehand"));
     // Exactly one draw-shape per primary node (n1, n2) — no explain extras.
     expect(drawShapes).toHaveLength(2);
   });
@@ -645,9 +653,9 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
     const titleWrite = plan.actions.find(a => a.type === "write" && (a as any).text === "Test Lesson") as any;
     expect(titleWrite.stepId).toBe(0);
 
-    const n1Draw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     const e1Arrow = plan.actions.find(a => a.type === "draw-arrow" && (a as any).targetId === "e1") as any;
-    const n2Draw = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n2") as any;
+    const n2Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n2") as any;
     expect(n1Draw.stepId).toBe(1);
     // The Director holds an edge until both endpoint concepts exist, so no
     // connector reveals a future step early.
@@ -657,9 +665,9 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
 
   it("every action belonging to ONE nodeScript entry (draw + write + emphasize + its speak/pause) shares the same stepId", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
-    const n1StepId = (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any).stepId;
+    const n1StepId = (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any).stepId;
     const n1Write = plan.actions.find(a => a.type === "write" && (a as any).targetId === "src-n1") as any;
-    const n1Emphasize = plan.actions.find(a => a.type === "emphasize" && (a as any).targetId === (plan.actions.find(x => x.type === "draw-shape" && (x as any).targetId === "src-n1") as any).shapeId) as any;
+    const n1Emphasize = plan.actions.find(a => a.type === "emphasize" && (a as any).targetId === (plan.actions.find(x => (x.type === "draw-shape" || x.type === "draw-freehand") && (x as any).targetId === "src-n1") as any).shapeId) as any;
     expect(n1Write.stepId).toBe(n1StepId);
     expect(n1Emphasize.stepId).toBe(n1StepId);
   });
@@ -676,7 +684,7 @@ describe("buildProfessorTeachingActions — Phase B2: every action carries a tea
     const synthesisSpeak = plan.actions.find(a => a.type === "speak" && a.text === "How would you explain this back?")!;
     const overview = plan.actions.find(a => a.type === "move-camera" && a.stepId === synthesisSpeak.stepId) as any;
     const primaryShapeIds = plan.actions
-      .filter(a => a.type === "draw-shape" && a.targetId?.startsWith("src-"))
+      .filter(a => (a.type === "draw-shape" || a.type === "draw-freehand") && a.targetId?.startsWith("src-"))
       .map(a => (a as any).shapeId);
     expect(overview.targetIds).toEqual(expect.arrayContaining(primaryShapeIds));
     expect(synthesisSpeak.actionId).not.toBe(overview.actionId);
@@ -692,7 +700,7 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const drawAction = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     expect(drawAction.teachingRole).toBe("mechanism");
     expect(drawAction.spatialIntent).toBe("warning-aside");
   });
@@ -732,7 +740,7 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
-    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const drawAction = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     expect(drawAction.shape).toBe("diamond");
   });
 
@@ -744,8 +752,9 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const chainPlan = buildProfessorTeachingActions(makeVsg(), chainGrounded, SNAPSHOT);
-    const chainDraw = chainPlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
-    expect(chainDraw.shape).toBe("circle");
+    const chainDraw = chainPlan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(chainDraw.type).toBe("draw-freehand");
+    expect(chainDraw.visualRole).toBe("outline:circle");
 
     const sequenceGrounded = makeGrounded({
       nodeScripts: [{
@@ -754,8 +763,9 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const sequencePlan = buildProfessorTeachingActions(makeVsg(), sequenceGrounded, SNAPSHOT);
-    const sequenceDraw = sequencePlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
-    expect(sequenceDraw.shape).toBe("circle");
+    const sequenceDraw = sequencePlan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(sequenceDraw.type).toBe("draw-freehand");
+    expect(sequenceDraw.visualRole).toBe("outline:circle");
   });
 
   it("drawingIntent 'definition' and 'plain' still draw a box — a stated definition genuinely reads best as a box, and 'plain' is the true no-opinion case", () => {
@@ -766,8 +776,9 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const definitionPlan = buildProfessorTeachingActions(makeVsg(), definitionGrounded, SNAPSHOT);
-    const definitionDraw = definitionPlan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
-    expect(definitionDraw.shape).toBe("box");
+    const definitionDraw = definitionPlan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(definitionDraw.type).toBe("draw-freehand");
+    expect(definitionDraw.visualRole).toBe("outline:box");
   });
 
   it("tier/role-derived shape rules still win over drawingIntent 'chain' — a danger-tier node stays a hexagon even mid-mechanism", () => {
@@ -780,7 +791,7 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const drawAction = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     expect(drawAction.shape).toBe("hexagon");
   });
 
@@ -794,7 +805,7 @@ describe("buildProfessorTeachingActions — Phase B1: AI-authored fields survive
       }],
     });
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const drawAction = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n1") as any;
+    const drawAction = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
     expect(drawAction.shape).toBe("hexagon");
   });
 
@@ -948,5 +959,77 @@ describe("buildProfessorTeachingActions — Phase B1: comparison-group divider b
   it("a non-comparison group never gets a divider", () => {
     const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
     expect(plan.actions.some(a => a.type === "draw-shape" && (a as any).shape === "brace")).toBe(false);
+  });
+});
+
+// Correction (Whiteboard visual language) — "the most common shape kinds
+// (box/circle) are now genuine hand-drawn organic outlines (see
+// organicOutline.ts), not a pristine tldraw geo rectangle/ellipse — the
+// direct fix for the correction's own complaint: not primarily
+// rectangle+label+circle. This also means every ordinary/hub node's
+// outline is now a draw-freehand action, which gets M7's progressive
+// stroke-by-stroke reveal automatically, with no changes needed to the
+// reveal engine itself (see TldrawCanvas.tsx's existing "write"/
+// "draw-freehand" reveal gate).
+describe("buildProfessorTeachingActions — Whiteboard visual language: box/circle nodes are genuine hand-drawn outlines", () => {
+  it("REQUIRED: an ordinary (plain drawingIntent) node's outline is a draw-freehand action with real multi-point stroke data, not a draw-shape geo rectangle", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(n1Draw.type).toBe("draw-freehand");
+    expect(n1Draw.points.length).toBeGreaterThan(4);
+    // Every returned action still gets M7's progressive reveal — draw-freehand
+    // is already one of the two action types TldrawCanvas.tsx's reveal gate
+    // covers, so this needed no changes to the reveal engine itself.
+  });
+
+  it("REQUIRED: the organic outline is grounded in the SAME node bounds the write label uses — the label stays correctly positioned even though the outline is no longer a tldraw geo shape", () => {
+    const plan = buildProfessorTeachingActions(makeVsg(), makeGrounded(), SNAPSHOT);
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    const n1Write = plan.actions.find(a => a.type === "write" && (a as any).targetId === "src-n1") as any;
+    expect(n1Draw.bounds).toBeDefined();
+    expect(n1Write.x).toBeGreaterThanOrEqual(n1Draw.bounds.x);
+    expect(n1Write.x).toBeLessThan(n1Draw.bounds.x + n1Draw.bounds.w);
+    expect(n1Write.y).toBeGreaterThanOrEqual(n1Draw.bounds.y);
+    expect(n1Write.y).toBeLessThan(n1Draw.bounds.y + n1Draw.bounds.h);
+  });
+
+  it("REQUIRED: emphasis overlays (danger-tier highlight, step numbering, AI-chosen treatment) still anchor correctly on a freehand-drawn node — bounds threading through draw-freehand must not silently break the existing emphasis pipeline", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Rapid assessment", narration: "n", tone: "introduce", pace: "normal", emphasize: true, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "highlight", relationships: [], explain: [] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(n1Draw.type).toBe("draw-freehand");
+    const emphasize = plan.actions.find(a => a.type === "emphasize" && (a as any).targetId === n1Draw.shapeId) as any;
+    expect(emphasize).toBeDefined();
+    expect(emphasize.treatment).toBe("highlight");
+  });
+
+  it("REQUIRED: semantic teachingRole coloring survives onto a freehand-drawn node — without threading teachingRole through, the renderer would silently fall back to generic source-based coloring", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Rapid assessment", narration: "n", tone: "introduce", pace: "normal", emphasize: false, teachingRole: "mechanism", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    });
+    const plan = buildProfessorTeachingActions(makeVsg(), grounded, SNAPSHOT);
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(n1Draw.type).toBe("draw-freehand");
+    expect(n1Draw.teachingRole).toBe("mechanism");
+  });
+
+  it("diamond/hexagon/cloud tier-driven shapes are UNCHANGED — still real, distinct tldraw geo shapes, not organic outlines. These are the deliberate exceptions where the SHAPE ITSELF (not just an outline) is the semantic signal", () => {
+    const grounded = makeGrounded({
+      nodeScripts: [
+        { targetId: "n1", shortLabel: "Danger", narration: "n", tone: "warn", pace: "normal", emphasize: false, teachingRole: "context", spatialIntent: "central-mechanism", drawingIntent: "plain", emphasisTreatment: "none", relationships: [], explain: [] },
+      ],
+    });
+    const vsg = makeVsg();
+    vsg.nodes[0].tier = "danger";
+    const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
+    const n1Draw = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n1") as any;
+    expect(n1Draw.type).toBe("draw-shape");
+    expect(n1Draw.shape).toBe("hexagon");
   });
 });

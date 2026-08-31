@@ -117,6 +117,16 @@ export function computeCanvasStateAtStep(
         shapeId: action.shapeId,
         kind: "freehand",
         points: action.points,
+        // Correction (Whiteboard visual language) — bounds/teachingRole are
+        // only ever set when this freehand action stands in for what used
+        // to be a draw-shape box/circle (see organicOutline.ts); copying
+        // them through keeps emphasis-overlay anchoring (reads s.bounds)
+        // and semantic coloring (reads s.teachingRole) working exactly as
+        // they did before that node's outline became a hand-drawn stroke.
+        // Rendering itself (toTldrawShapeSpec) still always draws from
+        // points, never from bounds.
+        bounds: action.bounds,
+        teachingRole: action.teachingRole,
         targetId: action.targetId,
         visualStyle: action.visualStyle,
         visualRole: action.visualRole,
