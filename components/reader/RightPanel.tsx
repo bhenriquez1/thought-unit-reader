@@ -35,6 +35,7 @@ import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
 import type { CanonicalType } from "@/lib/insights/pageAnnotationPlan";
 import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
+import { useAuthUser } from "@/lib/auth/useAuthUser";
 
 // Same visual language as PdfEvidenceOverlay's treatments — gold=definition,
 // green=mechanism/procedure, blue=decision, purple=comparison, red=trap,
@@ -4346,14 +4347,16 @@ function GenerateNoteButton({
   /** Links the saved note into its concept's cross-note accumulation — see gatherConceptNotebookContent. */
   knowledgeNodeId?: string | null;
 }) {
+  const { user: firebaseUser, loading: authLoading } = useAuthUser();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const synthReady = !!studyModel;
+  const authenticated = !authLoading && !!firebaseUser;
 
   async function handleGenerate() {
     console.log("[NOTE_SAVE_KEY]", { storageKey: "ultraNotes_v1", page: pageNumber, bookId, hasStudyModel: !!studyModel });
-    if (!studyModel || saving) return;
+    if (!studyModel || saving || !authenticated) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -4505,8 +4508,8 @@ function GenerateNoteButton({
   return (
     <button
       type="button"
-      onClick={synthReady && !saving ? handleGenerate : undefined}
-      disabled={!synthReady || saving}
+      onClick={synthReady && authenticated && !saving ? handleGenerate : undefined}
+      disabled={!synthReady || !authenticated || saving}
       style={{
         width: "100%",
         padding: "10px 0",
@@ -4535,12 +4538,16 @@ function GenerateNoteButton({
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.06em",
-        cursor: synthReady && !saving ? "pointer" : "not-allowed",
+        cursor: synthReady && authenticated && !saving ? "pointer" : "not-allowed",
         transition: "all 0.18s",
       }}
     >
       {saving
         ? "Saving…"
+        : authLoading
+        ? "Restoring sign-in…"
+        : !firebaseUser
+        ? "Sign in to save to NoteLab"
         : saved
         ? "✓ Note saved to NoteLab"
         : saveError

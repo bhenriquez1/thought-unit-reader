@@ -23,6 +23,28 @@ export class FirebaseVersionConflictError extends Error {
   }
 }
 
+function firebaseErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : "unknown";
+}
+
+function safeNotebookPath(notebookId: string, pageId?: string): string {
+  return pageId
+    ? `users/[current-user]/notebooks/${notebookId}/pages/${pageId}`
+    : `users/[current-user]/notebooks/${notebookId}`;
+}
+
+function logPersistenceFailure(operation: string, path: string, error: unknown) {
+  // Deliberately excludes note text, semantic objects, tokens, config, email,
+  // and the raw UID. This remains useful in production browser diagnostics.
+  console.error("[FIREBASE_PERSISTENCE_ERROR]", {
+    operation,
+    path,
+    code: firebaseErrorCode(error),
+    authenticated: currentFirebaseUid() !== null,
+  });
+}
+
 export function currentFirebaseUid(): string | null {
   if (typeof getAuthInstance !== "function") return null;
   return getAuthInstance()?.currentUser?.uid ?? null;
@@ -67,8 +89,14 @@ export interface NotebookPageCloudRecord {
 
 export async function loadNotebookPage(notebookId: string, pageId: string): Promise<NotebookPageCloudRecord | null> {
   const { uid, db } = requireServices();
-  const snap = await getDoc(doc(db, "users", uid, "notebooks", notebookId, "pages", pageId));
-  return snap.exists() ? snap.data() as NotebookPageCloudRecord : null;
+  const path = safeNotebookPath(notebookId, pageId);
+  try {
+    const snap = await getDoc(doc(db, "users", uid, "notebooks", notebookId, "pages", pageId));
+    return snap.exists() ? snap.data() as NotebookPageCloudRecord : null;
+  } catch (error) {
+    logPersistenceFailure("get", path, error);
+    throw error;
+  }
 }
 
 export async function saveNotebookPage(
@@ -78,6 +106,18 @@ export async function saveNotebookPage(
   const { uid, db } = requireServices();
   const notebookRef = doc(db, "users", uid, "notebooks", value.notebookId);
   const pageRef = doc(notebookRef, "pages", value.pageId);
+  const parentPath = safeNotebookPath(value.notebookId);
+  const pagePath = safeNotebookPath(value.notebookId, value.pageId);
+  if (process.env.NODE_ENV === "development") {
+    console.info("[FIREBASE_PERSISTENCE_WRITE]", {
+      operation: "transaction-set",
+      paths: [parentPath, pagePath],
+      authenticated: true,
+      uidMatchesPath: true,
+      hasDocumentId: Boolean(value.documentId),
+      hasPageTruthKey: Boolean(value.pageTruthKey),
+    });
+  }
   dispatchCloudSaveStatus("saving", `notebook:${value.notebookId}:${value.pageId}`);
   try {
     const nextVersion = await runTransaction(db, async (tx) => {
@@ -109,6 +149,7 @@ export async function saveNotebookPage(
     dispatchCloudSaveStatus("saved", `notebook:${value.notebookId}:${value.pageId}`);
     return nextVersion;
   } catch (error) {
+    logPersistenceFailure("transaction-set", `${parentPath} + ${pagePath}`, error);
     dispatchCloudSaveStatus(error instanceof FirebaseVersionConflictError ? "conflict" : "failed", `notebook:${value.notebookId}:${value.pageId}`, String(error));
     throw error;
   }

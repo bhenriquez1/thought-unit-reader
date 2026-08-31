@@ -22,6 +22,34 @@ describe("Avrrio durable Firebase persistence contract", () => {
     expect(source).toContain("FirebaseVersionConflictError");
   });
 
+  it("logs permission diagnostics without content, credentials, email, or raw UID", () => {
+    const source = read("lib/firebase/durableState.ts");
+    expect(source).toContain("[FIREBASE_PERSISTENCE_ERROR]");
+    expect(source).toContain("users/[current-user]/notebooks/");
+    expect(source).toContain("code: firebaseErrorCode(error)");
+    const diagnosticCall = source.slice(source.indexOf('console.error("[FIREBASE_PERSISTENCE_ERROR]"'), source.indexOf("export function currentFirebaseUid"));
+    expect(diagnosticCall).not.toMatch(/\b(value|payload|content|firebaseConfig|email|token|uid:)\b/);
+  });
+
+  it("gates Save to NoteLab until Firebase auth restoration resolves", () => {
+    const source = read("components/reader/RightPanel.tsx");
+    expect(source).toContain("const { user: firebaseUser, loading: authLoading } = useAuthUser();");
+    expect(source).toContain("const authenticated = !authLoading && !!firebaseUser;");
+    expect(source).toContain("disabled={!synthReady || !authenticated || saving}");
+    expect(source).toContain("Restoring sign-in…");
+    expect(source).toContain("Sign in to save to NoteLab");
+  });
+
+  it("keeps every durable feature on the single users/{uid} contract", () => {
+    const durable = read("lib/firebase/durableState.ts");
+    const rules = read("firestore.rules");
+    for (const area of ["library", "notebooks", "stickyNotes", "learningState", "recall", "tests"]) {
+      expect(rules).toContain(`/users/{uid}/${area}`);
+    }
+    expect(durable).toContain('doc(db, "users", uid, area, id)');
+    expect(rules).not.toMatch(/allow\s+(?:read|write|read,\s*write)\s*:\s*if\s+true/);
+  });
+
   it("dual-writes canonical feature stores without creating a second cloud schema", () => {
     const cases = [
       ["lib/notelab/ultraNoteStore.ts", "saveNotebookSemanticState"],
