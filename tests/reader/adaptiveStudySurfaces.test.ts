@@ -34,7 +34,12 @@ describe("canonical adaptive study surfaces", () => {
   it("keeps provenance out of the primary notebook section grid", () => {
     const source = read("components/notelab/UltraNotesList.tsx");
     expect(source).toContain('section.label !== "Source Evidence"');
-    expect(source).toContain("SOURCE EVIDENCE · PDF PAGE");
+    // P4 (Evidence-as-provenance correction) renamed this from "SOURCE
+    // EVIDENCE" to "SOURCE REFERENCES" — the standing Evidence panel was
+    // removed entirely; this collapsed per-note list is the only survivor,
+    // and it's no longer branded "Evidence" to avoid reading as a second,
+    // competing surface. See tests/notelab/evidenceAsProvenance.test.ts.
+    expect(source).toContain("SOURCE REFERENCES · PDF PAGE");
   });
 
   it("preserves the student-authored layer when AI regenerates a stable page note", () => {
