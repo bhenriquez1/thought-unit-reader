@@ -2608,6 +2608,12 @@ export default function ThoughtUnitReader() {
       sourceLabel: "right-panel",
       studyModel: sm,
       documentId: resolvedDocumentId,
+      // L5 (Recall consolidation) — documentId/knowledgeNodeId were already
+      // threaded but pageTruthKey wasn't, so recall-graded events for cards
+      // saved this way could never pass recordRecallBlueprintRating's
+      // identity gate. Same buildPageTruthKey(resolvedDocumentId, page)
+      // convention already used at this file's other note-save call sites.
+      pageTruthKey: resolvedDocumentId ? buildPageTruthKey(resolvedDocumentId, currentPage) : undefined,
       knowledgeNodeId: pageKgNodeIdRef.current,
     });
     try {

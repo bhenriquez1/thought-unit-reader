@@ -1695,6 +1695,9 @@ export function RightPanel({
         recall={shadowRecall}
         bookId={ctx?.documentId}
         pageNumber={ctx?.pageNumber}
+        documentId={resolvedDocumentId}
+        pageTruthKey={pageTruthKey}
+        knowledgeNodeId={knowledgeNodeId}
         preReadRecallItems={studyModel?.preReadRecallItems}
         synthForDerive={teachingSynthesis ? {
           coreIdea:       teachingSynthesis.coreIdea,
@@ -3427,6 +3430,9 @@ function MiniTestPanel({
   title = "Page Checkpoint",
   recallSetIdPrefix = "missed",
   topicLabel = "Mini Test Missed",
+  documentId,
+  pageTruthKey,
+  knowledgeNodeId,
 }: {
   items: MiniTestItemData[];
   bookId: string;
@@ -3437,6 +3443,10 @@ function MiniTestPanel({
    *  so their saves don't collide on the same stable RecallSet id. */
   recallSetIdPrefix?: string;
   topicLabel?: string;
+  /** L5 (Recall consolidation) — see PreReadRecallDrawer's identical props. */
+  documentId?: string;
+  pageTruthKey?: string;
+  knowledgeNodeId?: string | null;
 }) {
   const [answers, setAnswers] = useState<string[]>(() => Array(items.length).fill(""));
   const [submitted, setSubmitted] = useState(false);
@@ -3491,6 +3501,13 @@ function MiniTestPanel({
       topic: `${topicLabel} — Page ${pageNumber}`,
       cards: missedCards,
       createdAt: Date.now(),
+      // L5 (Recall consolidation) — without these, RecallLab.tsx's
+      // forDocument() filter (scoped by documentId) never surfaces this set
+      // for migration into Recall 2.0 at all, so it would silently be
+      // unreachable from the live Recall UI, not just ungraded.
+      documentId,
+      pageTruthKey,
+      knowledgeNodeId: knowledgeNodeId ?? undefined,
     }).catch((e) => console.error("[RECALL_MISSED_SAVE_FAIL]", String(e)));
     setSavedMissed(true);
     setTimeout(() => setSavedMissed(false), 2500);
@@ -4164,6 +4181,9 @@ function PreReadRecallDrawer({
   pageNumber,
   preReadRecallItems,
   synthForDerive,
+  documentId,
+  pageTruthKey,
+  knowledgeNodeId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -4172,6 +4192,14 @@ function PreReadRecallDrawer({
   pageNumber?: number;
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
   synthForDerive?: SynthesisForRecall | null;
+  /** L5 (Recall consolidation) — the real resolved document identity, so
+   *  "Save Missed to Recall Lab" produces a set that's actually visible to
+   *  Recall 2.0 (RecallLab.tsx's forDocument() filters legacy sets by
+   *  documentId — a set without one is orphaned, never migrated) and can
+   *  grade into KnowledgeNodeProgress. */
+  documentId?: string;
+  pageTruthKey?: string;
+  knowledgeNodeId?: string | null;
 }) {
   if (!open) return null;
 
@@ -4205,6 +4233,9 @@ function PreReadRecallDrawer({
               title="Pre-Read Recall"
               recallSetIdPrefix="shadow-missed"
               topicLabel="Shadow Recall Missed"
+              documentId={documentId}
+              pageTruthKey={pageTruthKey}
+              knowledgeNodeId={knowledgeNodeId}
             />
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
