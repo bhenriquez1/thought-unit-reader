@@ -77,19 +77,26 @@ describe("GenerateNoteButton — knowledgeNodeId back-fill (same gap M4 fixed in
 
 describe("GenerateNoteButton — composeNoteNotebookSceneInBackground", () => {
   const idx = SRC.indexOf("async function composeNoteNotebookSceneInBackground(");
-  const fn = SRC.slice(idx, idx + 3000);
+  const helperIdx = SRC.indexOf("async function saveDeterministicNotebookScene(");
+  const fn = SRC.slice(idx, helperIdx + 1200); // covers both the composer and its saveDeterministicNotebookScene helper
 
   it("REQUIRED: the function actually exists", () => {
     expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("REQUIRED: imports mergeDeterministicContentIntoScene (NU3 — Study Page migration)", () => {
+    expect(SRC).toMatch(/import \{ mergeDeterministicContentIntoScene \} from "@\/lib\/notelab\/deterministicNotebookBlocks";/);
   });
 
   it("REQUIRED: reads this page's real canonical thought units via the same note.pageNumber - 1 convention as WhiteboardPanel.tsx", () => {
     expect(fn).toMatch(/getCanonicalUnitsByPage\(documentId, savedNote\.pageNumber - 1\)/);
   });
 
-  it("REQUIRED: with zero canonical units, returns without synthesis — no deterministic fallback invented for a case with no lesson to recompose from", () => {
-    const unitsIdx = fn.indexOf("if (units.length === 0) return;");
-    expect(unitsIdx).toBeGreaterThan(-1);
+  it("REQUIRED: with zero canonical units, falls back to a deterministic-only scene (NU3) instead of leaving the note without a notebookScene at all", () => {
+    const branchIdx = fn.indexOf("if (units.length === 0) {");
+    expect(branchIdx).toBeGreaterThan(-1);
+    const branch = fn.slice(branchIdx, fn.indexOf("return;", branchIdx));
+    expect(branch).toMatch(/await saveDeterministicNotebookScene\(existingNote, savedNote\.bookId, savedNote\.pageNumber\);/);
   });
 
   it("REQUIRED: reads the EXISTING note's own studentNotes/notebookScene as additional synthesis context — never a blind overwrite of what the student already has", () => {
@@ -105,15 +112,20 @@ describe("GenerateNoteButton — composeNoteNotebookSceneInBackground", () => {
     expect(fn).toMatch(/relatedConceptKnowledge,\s*\n\s*\}\);/);
   });
 
-  it("REQUIRED: re-reads the note fresh immediately before the final write — never overwrites edits made while synthesis was in flight", () => {
-    const finalReadIdx = fn.indexOf("getNotesByBookAsync(savedNote.bookId)", fn.indexOf("const scene = await generateNotebookScene"));
-    const saveIdx = fn.indexOf("await saveUltraNote({ ...latest, notebookScene: scene, notebookSceneError: undefined });");
-    expect(finalReadIdx).toBeGreaterThan(-1);
-    expect(saveIdx).toBeGreaterThan(finalReadIdx);
+  it("REQUIRED: folds the note's deterministic (student/derived) content into the AI scene before saving (NU3 — Study Page migration)", () => {
+    const generateIdx = fn.indexOf("const scene = await generateNotebookScene");
+    const mergeIdx = fn.indexOf("mergeDeterministicContentIntoScene(scene, existingNote,", generateIdx);
+    const saveIdx = fn.indexOf("await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });");
+    expect(generateIdx).toBeGreaterThan(-1);
+    expect(mergeIdx).toBeGreaterThan(generateIdx);
+    expect(saveIdx).toBeGreaterThan(mergeIdx);
   });
 
-  it("REQUIRED: clears any prior notebookSceneError on a successful synthesis, so a stale error doesn't linger after a later success", () => {
-    expect(fn).toMatch(/await saveUltraNote\(\{ \.\.\.latest, notebookScene: scene, notebookSceneError: undefined \}\);/);
+  it("REQUIRED: re-reads the note fresh immediately before the final write — never overwrites edits made while synthesis was in flight", () => {
+    const finalReadIdx = fn.indexOf("getNotesByBookAsync(savedNote.bookId)", fn.indexOf("const scene = await generateNotebookScene"));
+    const saveIdx = fn.indexOf("await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });");
+    expect(finalReadIdx).toBeGreaterThan(-1);
+    expect(saveIdx).toBeGreaterThan(finalReadIdx);
   });
 
   it("REQUIRED: never throws out of the background task — a failure anywhere is caught, not surfaced as an unhandled rejection", () => {
@@ -122,15 +134,40 @@ describe("GenerateNoteButton — composeNoteNotebookSceneInBackground", () => {
     expect(fn).toMatch(/console\.error\("\[NOTELAB_GENERATE_BACKGROUND_ERROR\]", err\);/);
   });
 
-  it("REQUIRED: on failure, persists notebookSceneError onto the note itself — 'show an explicit recoverable error... rather than reverting to the old card view [silently]', and the background task has no live UI to report to directly", () => {
+  it("REQUIRED: on failure, falls back to a deterministic-only scene AND persists notebookSceneError onto the note itself — 'show an explicit recoverable error... rather than reverting to the old card view [silently]', and the background task has no live UI to report to directly", () => {
     const catchIdx = fn.indexOf("} catch (err) {");
     const catchBlock = fn.slice(catchIdx);
-    expect(catchBlock).toMatch(/await saveUltraNote\(\{ \.\.\.latest, notebookSceneError: message\.slice\(0, 200\) \}\);/);
+    expect(catchBlock).toMatch(/await saveDeterministicNotebookScene\(latest, savedNote\.bookId, savedNote\.pageNumber, \{ notebookSceneError: message\.slice\(0, 200\) \}\);/);
   });
 
   it("logs generation diagnostics — visualPlanGenerated, visualPrimitiveCount, persistenceSaveSuccess", () => {
     expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{\s*\n\s*noteId: savedNote\.id, visualPlanGenerated: true, visualPrimitiveCount: scene\.blocks\.length,\s*\n\s*\}\);/);
     expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{ noteId: savedNote\.id, persistenceSaveSuccess: persisted \}\);/);
+  });
+});
+
+describe("GenerateNoteButton — saveDeterministicNotebookScene helper (NU3)", () => {
+  const idx = SRC.indexOf("async function saveDeterministicNotebookScene(");
+  const fn = SRC.slice(idx, idx + 900);
+
+  it("REQUIRED: the helper actually exists", () => {
+    expect(idx).toBeGreaterThan(-1);
+  });
+
+  it("REQUIRED: merges the note's current deterministic content via mergeDeterministicContentIntoScene", () => {
+    expect(fn).toMatch(/const scene = mergeDeterministicContentIntoScene\(note\.notebookScene \?\? null, note, \{ bookId, pageNumber \}\);/);
+  });
+
+  it("REQUIRED: with nothing to show (empty blocks), never writes an empty notebookScene — only persists `extra` (e.g. notebookSceneError) if any was given", () => {
+    const guardIdx = fn.indexOf("if (scene.blocks.length === 0) {");
+    expect(guardIdx).toBeGreaterThan(-1);
+    const guardBlock = fn.slice(guardIdx, fn.indexOf("}", fn.indexOf("}", guardIdx) + 1));
+    expect(guardBlock).toMatch(/await saveUltraNote\(\{ \.\.\.note, \.\.\.extra \}\);/);
+    expect(guardBlock).not.toMatch(/notebookScene/);
+  });
+
+  it("REQUIRED: with real content, saves the note with the merged notebookScene plus any extra fields", () => {
+    expect(fn).toMatch(/await saveUltraNote\(\{ \.\.\.note, \.\.\.extra, notebookScene: scene \}\);/);
   });
 });
 

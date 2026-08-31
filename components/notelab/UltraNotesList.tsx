@@ -21,6 +21,7 @@ import {
 } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromNote, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
 import type { FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
+import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
 import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
@@ -535,7 +536,18 @@ function NoteCard({
     if (studentSaveState === "saving") return;
     setStudentSaveState("saving");
     try {
-      await saveUltraNote({ ...note, studentNotes: studentDraft.trim() || undefined });
+      const updated: UltraNote = { ...note, studentNotes: studentDraft.trim() || undefined };
+      // Correction (Study Page migration) — composeNoteNotebookSceneInBackground
+      // (RightPanel.tsx) is the only other writer of notebookScene, and it only
+      // runs right after a "Generate Ultra Note" save. Writing notes directly
+      // from the notebook itself (this button) never went through that path,
+      // so without this the notebook's own handwritten_text block would go
+      // stale the moment a student edited their notes here. No AI call needed —
+      // this is the same deterministic merge, purely local.
+      const scene = mergeDeterministicContentIntoScene(updated.notebookScene ?? null, updated, {
+        bookId: updated.bookId, pageNumber: updated.pageNumber,
+      });
+      await saveUltraNote(scene.blocks.length > 0 ? { ...updated, notebookScene: scene } : updated);
       setStudentSaveState("saved");
       setTimeout(() => setStudentSaveState("idle"), 1800);
     } catch (error) {
