@@ -1,26 +1,12 @@
-# Render Deployment Guide - Google Sign-In
+# Render deployment: Firebase and Google Sign-In
 
-## Configure Firebase authentication
+Avrrio Reader uses real Firebase Authentication in every deployed environment. There is no development-user or authentication-bypass mode.
 
-### Step 1: Access Render Dashboard
-1. Go to [Render Dashboard](https://dashboard.render.com/)
-2. Find your `thought-unit-reader` service
-3. Click on your service name
+## Required Render environment variables
 
-### Step 2: Add Firebase environment variables
-Add every Firebase variable listed below. Avrrio Reader no longer supports a
-development-user or production auth bypass.
+Set these in the Render service's **Environment** page. Never commit their values to the repository.
 
-### Step 3: Redeploy
-1. Go to the **Deployments** tab
-2. Click **Deploy Latest Commit** or wait for auto-deploy
-3. Wait for deployment to complete
-
-## Required Environment Variables
-
-Set all of these in the Render Dashboard **Environment** tab — never commit their values to the repository:
-
-| Variable | Where to find the value |
+| Variable | Source |
 |---|---|
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase Console → Project Settings → Your apps |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Console → Project Settings → Your apps |
@@ -30,20 +16,19 @@ Set all of these in the Render Dashboard **Environment** tab — never commit th
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Console → Project Settings → Your apps |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Firebase Console → Project Settings → Your apps |
 | `OPENAI_API_KEY` | OpenAI Dashboard → API keys |
-| `PREVIEW_LOCK_ENABLED` | Set to `1` to enable the password gate |
-| `APP_PREVIEW_PASSWORD` | Choose a strong password; store only in Render |
-| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | tldraw dashboard → Licenses. **Required** — without it, production shows "Whiteboard configuration is unavailable." instead of the Whiteboard canvas. |
+| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | tldraw dashboard → Licenses |
+| `PREVIEW_LOCK_ENABLED` | `1` only when the preview password gate is required |
+| `APP_PREVIEW_PASSWORD` | A strong password stored only in Render |
 
-### `NEXT_PUBLIC_*` variables require a full rebuild, not a restart
+All `NEXT_PUBLIC_*` values are embedded during the Next.js build. After changing one, use **Clear build cache & deploy** rather than restarting the service.
 
-Every variable prefixed `NEXT_PUBLIC_` in the table above is inlined into the client JavaScript bundle **at build time** by Next.js — it is not read from the environment at request time. If you add or change one of these on an existing Render service, clicking **Manual Deploy → Restart Service** is not enough; the old build still has the old (or missing) value baked in. You must trigger an actual rebuild: **Manual Deploy → "Clear build cache & deploy"** (or push a new commit). Non-`NEXT_PUBLIC_` variables (e.g. `OPENAI_API_KEY`) are read server-side at runtime and don't have this restriction.
+## Google Sign-In setup
 
-## After Deployment
-1. Visit `https://thought-unit-reader.onrender.com`
-2. Select **Sign in with Google**.
-3. Complete the Google account flow and confirm the session survives reload.
+1. Enable Google in Firebase Console → Authentication → Sign-in method.
+2. Add `thought-unit-reader.onrender.com` and every production custom domain to Firebase Authentication's authorized domains.
+3. Confirm the Firebase Web app configuration belongs to the same Firebase project as Firestore and Storage.
+4. Deploy the Firestore rules, Storage rules, and indexes tracked by `firebase.json` before testing persistence.
 
-## Troubleshooting
-- If you still get errors, check the browser console for more details
-- Ensure all environment variables are set correctly
-- Try a hard refresh (Ctrl+F5) after deployment
+## Verification
+
+Sign in with Google, upload a PDF, refresh, sign out and back in, and confirm the same Library item returns. If sign-in fails, inspect the Firebase Authentication error code and verify the authorized domain and build-time configuration; do not add a mock user or weaken Firebase rules.

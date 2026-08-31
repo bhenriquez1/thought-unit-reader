@@ -90,7 +90,6 @@ export interface GroupLayoutResult {
 const CANVAS_MARGIN = 40;
 const NODE_GAP_Y = 24;
 const NODE_GAP_X = 28;
-const GROUP_GAP_Y = 56;
 // Phase B2 — gap between REGIONS (rows in the composed board), deliberately
 // larger than GROUP_GAP_Y so a region reads as a distinct section, not just
 // the next paragraph in the same flow.
@@ -164,6 +163,35 @@ function layoutPairedColumns(
     boxA: { x: xA, y: top, w: Math.max(widthA, tailA.w), h: heightA },
     boxB: { x: xB, y: top, w: Math.max(widthB, tailB.w), h: heightB },
   };
+}
+
+/**
+ * Correction (Whiteboard density) — comparison/warning/summary rows always
+ * started at x=CANVAS_MARGIN (the left edge), regardless of how wide Row 1
+ * (left/center/right) made the board. A narrower later row (a single
+ * warning node under a wide 3-column Row 1, say) left real blank canvas to
+ * its right, INSIDE the same camera-framed bounding box Row 1 already
+ * established — not reserved ahead of time, but a byproduct of every row
+ * anchoring left instead of relating to the board's own established width.
+ * Centers `nodeIds` within [leftEdge, rightEdge] when the row is narrower
+ * than that span; a row that already fills or exceeds it is left alone.
+ */
+function centerRowWithin(
+  nodeIds: string[],
+  rowBox: LayoutBox,
+  leftEdge: number,
+  rightEdge: number,
+  nodeBounds: Map<string, LayoutBox>,
+): LayoutBox {
+  const availableWidth = rightEdge - leftEdge;
+  if (rowBox.w >= availableWidth) return rowBox;
+  const offsetX = leftEdge + (availableWidth - rowBox.w) / 2 - rowBox.x;
+  if (offsetX === 0) return rowBox;
+  for (const id of nodeIds) {
+    const box = nodeBounds.get(id);
+    if (box) nodeBounds.set(id, { ...box, x: box.x + offsetX });
+  }
+  return { ...rowBox, x: rowBox.x + offsetX };
 }
 
 function boxUnion(boxes: LayoutBox[]): LayoutBox {
@@ -295,6 +323,9 @@ export function computeGroupLayout(
   const flankBoxes = [leftBox, centerBox, rightBox].filter((b): b is LayoutBox => Boolean(b));
   let cursorY = flankBoxes.length > 0 ? Math.max(...flankBoxes.map(b => b.y + b.h)) + REGION_ROW_GAP : topY;
   let maxX = Math.max(CANVAS_MARGIN, ...flankBoxes.map(b => b.x + b.w));
+  // Row 1's own width is the board's natural horizontal anchor — see
+  // centerRowWithin's own comment for why later rows relate to it.
+  const row1MaxX = maxX;
 
   // ── Row 2: comparison-column region, split into two side-by-side columns
   //     — buildProfessorTeachingActions.ts draws a real bracket divider
@@ -319,6 +350,7 @@ export function computeGroupLayout(
     comparisonBox = layoutColumn(regions.comparison, CANVAS_MARGIN, cursorY, nodeBounds);
   }
   if (comparisonBox) {
+    comparisonBox = centerRowWithin(regions.comparison.map(n => n.id), comparisonBox, CANVAS_MARGIN, row1MaxX, nodeBounds);
     cursorY = comparisonBox.y + comparisonBox.h + REGION_ROW_GAP;
     maxX = Math.max(maxX, comparisonBox.x + comparisonBox.w);
   }
@@ -330,6 +362,7 @@ export function computeGroupLayout(
   if (regions.warning.length > 0) {
     const warningY = cursorY + (cursorY > topY ? WARNING_EXTRA_GAP : 0);
     warningBox = layoutColumn(regions.warning, CANVAS_MARGIN, warningY, nodeBounds);
+    warningBox = centerRowWithin(regions.warning.map(n => n.id), warningBox, CANVAS_MARGIN, row1MaxX, nodeBounds);
     cursorY = warningBox.y + warningBox.h + REGION_ROW_GAP;
     maxX = Math.max(maxX, warningBox.x + warningBox.w);
   }
@@ -339,6 +372,7 @@ export function computeGroupLayout(
   let summaryBox: LayoutBox | null = null;
   if (regions.summary.length > 0) {
     summaryBox = layoutColumn(regions.summary, CANVAS_MARGIN, cursorY, nodeBounds);
+    summaryBox = centerRowWithin(regions.summary.map(n => n.id), summaryBox, CANVAS_MARGIN, row1MaxX, nodeBounds);
     maxX = Math.max(maxX, summaryBox.x + summaryBox.w);
   }
 
