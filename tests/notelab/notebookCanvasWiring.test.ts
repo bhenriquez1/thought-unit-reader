@@ -63,7 +63,14 @@ describe("NotebookCanvas.tsx — persistent, student-editable, NOT Professor's e
   });
 
   it("calls composeScene from onMount using the current scene, and stores the editor in a ref for later effects to reach", () => {
-    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*editorRef\.current = editor;\s*const result = composeScene\(editor, sceneRef\.current\);/);
+    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*editorRef\.current = editor;/);
+    // The cloud snapshot restore (Firebase durable-persistence PR) runs
+    // first when notebookId/documentId/pageTruthKey are available; composeScene
+    // still always runs afterward (idempotent — see its own getShape checks),
+    // so a restored snapshot and a freshly-composed scene never duplicate shapes.
+    expect(src).toMatch(/loadNotebookPage\(notebookId, pageTruthKey\)/);
+    expect(src).toMatch(/loadSnapshot\(editor\.store, saved\.tldrawSnapshot/);
+    expect(src).toMatch(/const result = composeScene\(editor, sceneRef\.current\);/);
   });
 });
 
@@ -80,7 +87,66 @@ describe("NotebookCanvas.tsx — N4: recomposes on a later scene change (tldraw'
 
   it("REQUIRED: the store.listen selection subscription is torn down and re-subscribed idempotently (mirrors TldrawCanvas.tsx's own storeUnsubRef pattern), and torn down again on unmount", () => {
     expect(src).toMatch(/storeUnsubRef\.current\?\.\(\);\s*storeUnsubRef\.current = editor\.store\.listen\(/);
-    expect(src).toMatch(/useEffect\(\(\) => \(\) => \{ storeUnsubRef\.current\?\.\(\); \}, \[\]\);/);
+    expect(src).toMatch(/window\.removeEventListener\("pagehide", flush\);[\s\S]*storeUnsubRef\.current\?\.\(\);/);
+  });
+});
+
+// Correction (NoteLab blank-canvas fix) — components/notelab/NotebookCanvas.tsx
+// never called editor.zoomToFit()/zoomToBounds() after composeScene created
+// shapes, unlike components/whiteboard/TldrawCanvas.tsx which does — since
+// notebookLayout.ts always lays content out growing from the origin,
+// tldraw's default camera showed mostly empty space around real content.
+// This is the confirmed root cause of "the Visual Notebook area is mostly
+// blank."
+describe("NotebookCanvas.tsx — camera fits real content on mount and first-populate (blank-canvas fix)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: composeScene now returns real diagnostics instead of void, so callers can react to what actually got composed", () => {
+    const fnIdx = src.indexOf("function composeScene(");
+    const fn = src.slice(fnIdx, src.indexOf("export const ACTION_BTN") > -1 ? src.indexOf("export const ACTION_BTN") : fnIdx + 1600);
+    expect(fn).toMatch(/function composeScene\(editor: Editor, scene: VisualNotebookScene\): ComposeSceneResult/);
+    expect(fn).toMatch(/tldrawShapeCountBefore: editor\.getCurrentPageShapeIds\(\)\.size,?|const tldrawShapeCountBefore = editor\.getCurrentPageShapeIds\(\)\.size;/);
+    expect(fn).toMatch(/tldrawShapeCountAfter: editor\.getCurrentPageShapeIds\(\)\.size,/);
+  });
+
+  it("REQUIRED: handleMount fits the camera to whatever composed on the note's first paint this session", () => {
+    const idx = src.indexOf("const handleMount = useCallback");
+    const fn = src.slice(idx, src.indexOf("storeUnsubRef.current?.();", idx));
+    expect(fn).toMatch(/if \(result\.tldrawShapeCountAfter > 0\) \{\s*editor\.zoomToFit\(\);\s*\}/);
+  });
+
+  it("REQUIRED: the recompose effect only fits the camera when content went from NONE to SOME — never yanks the camera away from a student actively looking at/editing existing content on a later scene update", () => {
+    const idx = src.indexOf("// Recompose whenever `scene` itself changes");
+    const fn = src.slice(idx, idx + 1000);
+    expect(fn).toMatch(/if \(result\.tldrawShapeCountBefore === 0 && result\.tldrawShapeCountAfter > 0\) \{\s*editor\.zoomToFit\(\);\s*\}/);
+  });
+
+  it("REQUIRED: diagnostics are logged with the correction's own named fields — visualPrimitiveCount, tldrawShapeCountBefore, tldrawShapeCountAfter, renderedNotebookBounds", () => {
+    const idx = src.indexOf("interface ComposeSceneResult {");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/visualPrimitiveCount: number;/);
+    expect(block).toMatch(/tldrawShapeCountBefore: number;/);
+    expect(block).toMatch(/tldrawShapeCountAfter: number;/);
+    expect(block).toMatch(/renderedNotebookBounds: \{ x: number; y: number; w: number; h: number \};/);
+    expect(src).toMatch(/console\.log\(`\[NOTELAB_CANVAS_\$\{phase\.toUpperCase\(\)\}_DIAGNOSTIC\]`, result\);/);
+  });
+
+  it("REQUIRED: a note with real semantic content (visualPrimitiveCount > 0) that composes to zero tldraw shapes is a HARD FAILURE, logged and surfaced — never a silently blank canvas", () => {
+    const idx = src.indexOf("const logComposeResult = useCallback");
+    const fn = src.slice(idx, idx + 700);
+    expect(fn).toMatch(/const hasSemanticContent = result\.visualPrimitiveCount > 0;/);
+    expect(fn).toMatch(/const hardFailure = hasSemanticContent && result\.tldrawShapeCountAfter === 0;/);
+    expect(fn).toMatch(/console\.error\("\[NOTELAB_CANVAS_RENDER_HARD_FAILURE\]"/);
+    expect(fn).toMatch(/setRenderFailure\(hardFailure\);/);
+  });
+
+  it("REQUIRED: the hard-failure state renders an explicit, recoverable error UI — not the bare Tldraw canvas, and not a silent blank", () => {
+    const idx = src.indexOf("if (renderFailure) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/data-testid="notebook-render-failure"/);
+    expect(block).toMatch(/onClick=\{\(\) => setRenderFailure\(false\)\}/); // a real retry affordance, not a dead end
   });
 });
 
@@ -207,7 +273,7 @@ describe("UltraNotesList.tsx — N4: provenance-driven block actions wired to No
 
   it("REQUIRED: all four action callbacks are passed to NotebookCanvas", () => {
     const idx = src.indexOf("<NotebookCanvas");
-    const jsx = src.slice(idx, idx + 400);
+    const jsx = src.slice(idx, idx + 650);
     expect(jsx).toMatch(/onViewSource=\{handleViewSourceBlock\}/);
     expect(jsx).toMatch(/onJumpToReader=\{handleJumpToReaderBlock\}/);
     expect(jsx).toMatch(/onAskProfessor=\{onAskProfessorAboutBlock \? \(block\) => onAskProfessorAboutBlock\(note, block\) : undefined\}/);

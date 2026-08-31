@@ -293,15 +293,27 @@ describe("TldrawCanvas.tsx — per-step camera padding scales with content, floo
   });
 
   it("REQUIRED: padX/padY floors are well above the old 40px — the concrete fix for 'the camera zooms in too tight (209%) on a single small box'", () => {
-    const idx = src.indexOf("const padX = Math.max(");
+    const idx = src.indexOf("const padX = Math.min(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 200);
-    expect(block).toMatch(/const padX = Math\.max\(100, merged\.w \* 0\.3\);/);
-    expect(block).toMatch(/const padY = Math\.max\(140, merged\.h \* 1\.2\);/);
+    expect(block).toMatch(/const padX = Math\.min\(220, Math\.max\(100, merged\.w \* 0\.3\)\);/);
+    expect(block).toMatch(/const padY = Math\.min\(260, Math\.max\(140, merged\.h \* 0\.4\)\);/);
+  });
+
+  // Correction (Whiteboard density) — padding used to have NO ceiling
+  // (padY = merged.h * 1.2, unbounded), so the richer/taller a lesson's
+  // content got, the MORE wasted margin the camera injected around it. Both
+  // axes are now capped so large content is never buried in disproportionate
+  // empty space, while the small-single-node floor (100/140) is unchanged.
+  it("REQUIRED: padding is capped — a large/whole-board bounding box no longer gets proportionally more empty margin the bigger it is", () => {
+    const idx = src.indexOf("const padX = Math.min(");
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/Math\.min\(220,/);
+    expect(block).toMatch(/Math\.min\(260,/);
   });
 
   it("padding is still applied via the same zoomToBounds API already used elsewhere in this file (no new/unproven tldraw API surface)", () => {
-    const idx = src.indexOf("const padX = Math.max(");
+    const idx = src.indexOf("const padX = Math.min(");
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/editor\.zoomToBounds\(/);
   });

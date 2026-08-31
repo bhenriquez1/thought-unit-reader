@@ -740,6 +740,9 @@ function NoteCard({
             <NotebookCanvas
               scene={note.notebookScene}
               storageKey={`notelab-notebook-${note.id}`}
+              notebookId={note.id}
+              documentId={note.documentId}
+              pageTruthKey={note.pageTruthKey}
               onViewSource={handleViewSourceBlock}
               onJumpToReader={handleJumpToReaderBlock}
               onAskProfessor={onAskProfessorAboutBlock ? (block) => onAskProfessorAboutBlock(note, block) : undefined}

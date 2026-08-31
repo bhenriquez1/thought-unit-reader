@@ -5,6 +5,7 @@ import {
   resolveProfessorAgentFailure,
   ProfessorTldrawAgentRequestSchema,
   verifyProfessorTldrawAgentResponse,
+  computeVisualDensityDiagnostic,
 } from "../../lib/whiteboard/professorTldrawAgent";
 import type { ProfessorLessonPlan, ProfessorTeachingAction } from "../../lib/whiteboard/professorLessonPlan";
 
@@ -289,5 +290,190 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
       ...buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!,
       canvas: { ...CANVAS, screenshotBase64: "x".repeat(900_001) },
     })).toThrow();
+  });
+});
+
+// Correction (Whiteboard density) — attachToLocalId was parsed (LabelToolSchema)
+// but never actually used: every "writeLabel ... attachToLocalId: X" call
+// still produced its OWN independent shapeId, so the label always rendered
+// as a floating text shape next to a permanently empty symbol (X's own
+// draw-shape action never gets a `text` field from anywhere else). This is
+// the direct, deterministic cause of "empty oval / empty rounded rectangle"
+// — not a probabilistic model-quality issue.
+describe("Professor tldraw Agent — attachToLocalId merges a label onto its target symbol's own shapeId", () => {
+  it("REQUIRED: a writeLabel with attachToLocalId pointing at a symbol drawn earlier in the SAME response shares that symbol's shapeId — the concrete fix for empty ovals/rectangles", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawSymbol", localId: "matter-oval", sourceTargetId: "source-one", symbol: "ellipse", bounds: { x: 20, y: 20, w: 80, h: 40 }, color: "blue", size: "m", dash: "draw", fill: "none" },
+        { tool: "writeLabel", localId: "matter-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "matter-oval" },
+      ],
+    });
+    const symbol = verified.actions.find(a => a.type === "draw-shape" && a.visualRole === "drawSymbol") as any;
+    const label = verified.actions.find(a => a.type === "write" && a.text === "Bilateral finger rests") as any;
+    expect(symbol).toBeDefined();
+    expect(label).toBeDefined();
+    expect(label.shapeId).toBe(symbol.shapeId);
+  });
+
+  it("REQUIRED: attaching onto a symbol from a PRIOR pass (via priorAgentLocalIds) also merges correctly", () => {
+    const request = buildProfessorTldrawAgentRequest({
+      plan: PLAN, stepId: 1, pass: "inspect", canvas: CANVAS, priorAgentLocalIds: ["earlier-oval"],
+    })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "inspect", complete: true,
+      assessment: { needsCorrection: true, issues: ["missing label"] },
+      actions: [
+        { tool: "writeLabel", localId: "late-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "earlier-oval" },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-earlier-oval");
+  });
+
+  it("an attachToLocalId that names an unresolvable/hallucinated id falls back to an independent label — never trusts an unverified target", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "orphan-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "never-drawn" },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-orphan-label");
+    expect(label.shapeId).not.toBe("shape:prof-agent-1-never-drawn");
+  });
+
+  it("attachToLocalId: null (the common case) is unchanged — an independent label with its own pushClearOf-positioned shapeId", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "standalone-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-standalone-label");
+  });
+
+  it("REQUIRED end-to-end: once merged, the shape's replayed canvas state actually carries BOTH the symbol's own kind and the label's text — not two separate shapes", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawSymbol", localId: "atom-circle", sourceTargetId: "source-one", symbol: "ellipse", bounds: { x: 20, y: 20, w: 80, h: 40 }, color: "blue", size: "m", dash: "draw", fill: "none" },
+        { tool: "writeLabel", localId: "atom-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "atom-circle" },
+      ],
+    });
+    const { computeCanvasStateAtStep } = require("../../lib/whiteboard/professorTimelineEngine");
+    const allActions = [...PLAN.actions, ...verified.actions.map(a => ({ ...a, stepId: 999 }))];
+    const state = computeCanvasStateAtStep(allActions, allActions.length - 1);
+    const symbolAction = verified.actions.find(a => a.type === "draw-shape") as any;
+    const merged = state.get(symbolAction.shapeId);
+    expect(merged).toBeDefined();
+    expect(merged.kind).toBe("circle"); // "ellipse" symbol -> "circle" ShapeVisualKind
+    expect(merged.text).toBe("Bilateral finger rests");
+  });
+});
+
+// Correction (Whiteboard density) — "Add validation such as:
+// meaningfulPrimitiveCount / emptyContainerCount / usedCanvasBounds /
+// activeTeachingBounds / canvasUtilizationRatio," and "if it creates five
+// shapes and three of them are empty containers, the step should be
+// rejected and replanned."
+describe("computeVisualDensityDiagnostic", () => {
+  const TEACHING_BOUNDS = { x: 0, y: 0, w: 200, h: 100 };
+
+  it("an empty action list reports all zeros, not a crash", () => {
+    expect(computeVisualDensityDiagnostic([], null)).toEqual({
+      meaningfulPrimitiveCount: 0, emptyContainerCount: 0, totalShapeCount: 0,
+      usedCanvasBounds: null, activeTeachingBounds: null, canvasUtilizationRatio: 0,
+    });
+  });
+
+  it("REQUIRED: a drawSymbol shape with a merged label (matching shapeId) counts as meaningful, not empty", () => {
+    const symbol: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:sym", targetId: "s", shape: "circle", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const label: ProfessorTeachingAction = { type: "write", actionId: "a2", shapeId: "shape:sym", targetId: "s", text: "matter", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([symbol, label], TEACHING_BOUNDS);
+    expect(diagnostic.emptyContainerCount).toBe(0);
+    expect(diagnostic.totalShapeCount).toBe(1);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(1); // the shape, not double-counted with its own label
+  });
+
+  it("REQUIRED: a drawSymbol shape with NO merged label is an empty container — the direct measure of 'empty oval/rectangle'", () => {
+    const symbol: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:sym", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([symbol], TEACHING_BOUNDS);
+    expect(diagnostic.emptyContainerCount).toBe(1);
+    expect(diagnostic.totalShapeCount).toBe(1);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(0);
+  });
+
+  it("a drawPressureZone/highlightRegion shape with no label is NOT an empty container — deliberately unlabeled fills, not a bare outline", () => {
+    const zone: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:zone", targetId: "s", shape: "circle", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawPressureZone", opacity: 0.2, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([zone], TEACHING_BOUNDS);
+    expect(diagnostic.emptyContainerCount).toBe(0);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(1);
+  });
+
+  it("a drawCallout/drawNumberBadge shape is never empty — always self-labeled via the same shapeId reused for its own write action", () => {
+    const callout: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:callout", targetId: "s", shape: "cloud", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawCallout", durationMs: 1, stepId: 1 };
+    const calloutLabel: ProfessorTeachingAction = { type: "write", actionId: "a2", shapeId: "shape:callout", targetId: "s", text: "Note", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([callout, calloutLabel], TEACHING_BOUNDS);
+    expect(diagnostic.emptyContainerCount).toBe(0);
+  });
+
+  it("a standalone write action (no matching draw-shape in the list) counts as a meaningful primitive on its own", () => {
+    const label: ProfessorTeachingAction = { type: "write", actionId: "a1", shapeId: "shape:standalone", targetId: "s", text: "Title", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([label], TEACHING_BOUNDS);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(1);
+    expect(diagnostic.totalShapeCount).toBe(0);
+  });
+
+  it("freehand strokes and arrows always count as meaningful primitives", () => {
+    const stroke: ProfessorTeachingAction = { type: "draw-freehand", actionId: "a1", shapeId: "shape:s", targetId: "s", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], durationMs: 1, stepId: 1 };
+    const arrow: ProfessorTeachingAction = { type: "draw-arrow", actionId: "a2", shapeId: "shape:a", targetId: "s", from: { x: 0, y: 0 }, to: { x: 20, y: 20 }, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([stroke, arrow], TEACHING_BOUNDS);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(2);
+    expect(diagnostic.emptyContainerCount).toBe(0);
+  });
+
+  it("REQUIRED: the exact scenario named in the correction — 5 shapes, 3 of them empty containers", () => {
+    const shapes: ProfessorTeachingAction[] = [
+      { type: "draw-shape", actionId: "a1", shapeId: "shape:1", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 },
+      { type: "draw-shape", actionId: "a2", shapeId: "shape:2", targetId: "s", shape: "circle", bounds: { x: 50, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 },
+      { type: "draw-shape", actionId: "a3", shapeId: "shape:3", targetId: "s", shape: "box", bounds: { x: 100, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 },
+      { type: "draw-shape", actionId: "a4", shapeId: "shape:4", targetId: "s", shape: "box", bounds: { x: 0, y: 30, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 },
+      { type: "write", actionId: "a5", shapeId: "shape:4", targetId: "s", text: "labeled", x: 0, y: 30, durationMs: 1, stepId: 1 },
+      { type: "draw-shape", actionId: "a6", shapeId: "shape:5", targetId: "s", shape: "circle", bounds: { x: 50, y: 30, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 },
+      { type: "write", actionId: "a7", shapeId: "shape:5", targetId: "s", text: "also labeled", x: 50, y: 30, durationMs: 1, stepId: 1 },
+    ];
+    const diagnostic = computeVisualDensityDiagnostic(shapes, TEACHING_BOUNDS);
+    expect(diagnostic.totalShapeCount).toBe(5);
+    expect(diagnostic.emptyContainerCount).toBe(3);
+    expect(diagnostic.emptyContainerCount / diagnostic.totalShapeCount).toBe(0.6);
+  });
+
+  it("usedCanvasBounds is the union of every real visual primitive's own bounds, and canvasUtilizationRatio compares its area against activeTeachingBounds", () => {
+    const shapeA: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:a", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const labelA: ProfessorTeachingAction = { type: "write", actionId: "a2", shapeId: "shape:a", targetId: "s", text: "x", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const shapeB: ProfessorTeachingAction = { type: "draw-shape", actionId: "a3", shapeId: "shape:b", targetId: "s", shape: "box", bounds: { x: 60, y: 40, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const labelB: ProfessorTeachingAction = { type: "write", actionId: "a4", shapeId: "shape:b", targetId: "s", text: "y", x: 60, y: 40, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([shapeA, labelA, shapeB, labelB], TEACHING_BOUNDS);
+    // Union of (0,0,40,20) and (60,40,40,20) -> x:[0,100], y:[0,60] -> 100x60
+    expect(diagnostic.usedCanvasBounds).toEqual({ x: 0, y: 0, w: 100, h: 60 });
+    expect(diagnostic.activeTeachingBounds).toEqual(TEACHING_BOUNDS);
+    // usedArea 6000 / teachingArea (200*100=20000) = 0.3
+    expect(diagnostic.canvasUtilizationRatio).toBeCloseTo(0.3, 5);
+  });
+
+  it("canvasUtilizationRatio is 0 (never NaN/Infinity) when activeTeachingBounds is null or has zero area", () => {
+    const shape: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:a", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    expect(computeVisualDensityDiagnostic([shape], null).canvasUtilizationRatio).toBe(0);
+    expect(computeVisualDensityDiagnostic([shape], { x: 0, y: 0, w: 0, h: 0 }).canvasUtilizationRatio).toBe(0);
   });
 });
