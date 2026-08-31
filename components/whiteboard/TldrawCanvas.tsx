@@ -76,10 +76,12 @@ import {
   requestProfessorTldrawAgent,
   verifyProfessorTldrawAgentResponse,
   isNontrivialProfessorAgentAction,
+  computeVisualDensityDiagnostic,
   ProfessorAgentRequestError,
   resolveProfessorAgentFailure,
   type ProfessorAgentCanvasContext,
   type ProfessorAgentFailureReason,
+  type VisualDensityDiagnostic,
 } from "@/lib/whiteboard/professorTldrawAgent";
 
 const SPEECH_OWNER = "whiteboard" as const;
@@ -100,6 +102,20 @@ const PROFESSOR_AGENT_STRICT = process.env.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT ==
 // behavior is completely unchanged.
 const VISUAL_RICHNESS_RATIO_FLOOR = 0.3;
 const VISUAL_RICHNESS_COUNT_FLOOR = 3;
+// Correction (Whiteboard density) — "if it creates five shapes and three of
+// them are empty containers, the step should be rejected and replanned."
+// Both conditions must hold: an absolute floor (a single stray empty shape
+// among many real ones isn't a systemic problem) AND a ratio ceiling (empty
+// containers must be at least HALF of what got drawn, not just present).
+// Same PROFESSOR_AGENT_STRICT-only gating as VISUAL_RICHNESS_*, per the
+// explicit decision to validate this before it affects every lesson.
+const EMPTY_CONTAINER_COUNT_FLOOR = 3;
+const EMPTY_CONTAINER_RATIO_CEILING = 0.5;
+
+const EMPTY_DENSITY_DIAGNOSTIC: VisualDensityDiagnostic = {
+  meaningfulPrimitiveCount: 0, emptyContainerCount: 0, totalShapeCount: 0,
+  usedCanvasBounds: null, activeTeachingBounds: null, canvasUtilizationRatio: 0,
+};
 
 interface ProfessorAgentDiagnostic {
   eligible: boolean; agentTriggered: boolean; currentPass: number;
@@ -123,6 +139,10 @@ interface ProfessorAgentDiagnostic {
    *  currently passes — exactly the gap stabilization item 6 asks to
    *  surface before anyone decides whether to gate on it. */
   visualRichnessRatio: number;
+  /** Correction (Whiteboard density) — the LAST pass-0 response's own
+   *  density diagnostic (see computeVisualDensityDiagnostic). Reflects
+   *  whichever pass most recently ran, success or fallback. */
+  density: VisualDensityDiagnostic;
 }
 const EMPTY_AGENT_DIAGNOSTIC: ProfessorAgentDiagnostic = {
   eligible: false, agentTriggered: false, currentPass: 0, executeActions: 0,
@@ -130,6 +150,7 @@ const EMPTY_AGENT_DIAGNOSTIC: ProfessorAgentDiagnostic = {
   fallbackUsed: false, fallbackReason: null, agentDurationMs: 0,
   actualTldrawShapeDelta: 0,
   totalActions: 0, trivialActions: 0, freehandCount: 0, visualRichnessRatio: 0,
+  density: EMPTY_DENSITY_DIAGNOSTIC,
 };
 
 // ── Tier colors (unchanged semantics: red=danger/trap, gold=master, …) ─────
@@ -994,6 +1015,10 @@ export default function TldrawCanvas({
     let trivialActions = 0;
     let freehandCount = 0;
     let currentPass = 0;
+    // Correction (Whiteboard density) — the last pass-0 response's own
+    // density diagnostic, held outside the loop so it's still available in
+    // the catch block's fallback diagnostic snapshot below.
+    let density: VisualDensityDiagnostic = EMPTY_DENSITY_DIAGNOSTIC;
     setAgentDiagnostic({ ...EMPTY_AGENT_DIAGNOSTIC, eligible: true, agentTriggered: true });
 
     try {
@@ -1021,6 +1046,7 @@ export default function TldrawCanvas({
         totalActions += verified.actions.length;
         trivialActions += verified.actions.filter(action => !isNontrivialProfessorAgentAction(action)).length;
         freehandCount += verified.actions.filter(action => action.type === "draw-freehand").length;
+        density = computeVisualDensityDiagnostic(verified.actions, request.step.focusBounds);
         agentLocalIdsByStepRef.current.set(stepId, [
           ...(agentLocalIdsByStepRef.current.get(stepId) ?? []), ...verified.localIds,
         ]);
@@ -1044,6 +1070,7 @@ export default function TldrawCanvas({
           actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
           totalActions, trivialActions, freehandCount,
           visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
+          density,
         });
         if (passIndex === 0 && nontrivialVisualCount === 0) {
           throw new ProfessorAgentRequestError("no_visual_actions");
@@ -1058,6 +1085,20 @@ export default function TldrawCanvas({
             richnessRatio >= VISUAL_RICHNESS_RATIO_FLOOR || nontrivialVisualCount >= VISUAL_RICHNESS_COUNT_FLOOR;
           if (!passesRichnessFloor) {
             throw new ProfessorAgentRequestError("low_visual_richness");
+          }
+          // Correction (Whiteboard density) — "if it creates five shapes and
+          // three of them are empty containers, the step should be rejected
+          // and replanned." A richness-floor pass (above) can still hide
+          // this: an ellipse/diamond/hexagon/cloud counts as "nontrivial" by
+          // isNontrivialProfessorAgentAction's own (looser, single-action)
+          // definition even with no label ever attached to it — see WD2's
+          // attachToLocalId fix and this diagnostic's own doc comment.
+          const tooManyEmptyContainers =
+            density.emptyContainerCount >= EMPTY_CONTAINER_COUNT_FLOOR
+            && density.totalShapeCount > 0
+            && density.emptyContainerCount / density.totalShapeCount >= EMPTY_CONTAINER_RATIO_CEILING;
+          if (tooManyEmptyContainers) {
+            throw new ProfessorAgentRequestError("empty_containers");
           }
         }
         if (verified.complete && !verified.needsCorrection) break;
@@ -1078,6 +1119,7 @@ export default function TldrawCanvas({
           actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
           totalActions, trivialActions, freehandCount,
           visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
+          density,
         });
         console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
           lessonId: planIdentity, stepId, reason: fallbackReason,
