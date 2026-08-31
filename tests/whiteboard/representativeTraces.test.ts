@@ -99,7 +99,7 @@ describe("Representative trace 1 — mechanism/causal page (aspirin toxicity)", 
 
   it("produces a plan with distinct left/right branch x-positions flanking the central node", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boundsFor = (src: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === src) as any).bounds;
+    const boundsFor = (src: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === src) as any).bounds;
     const center = boundsFor("src-n1");
     const left = boundsFor("src-n2");
     const right = boundsFor("src-n4");
@@ -109,7 +109,7 @@ describe("Representative trace 1 — mechanism/causal page (aspirin toxicity)", 
 
   it("has zero overlapping shapes", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boxes = plan.actions.filter(a => a.type === "draw-shape").map(a => (a as any).bounds);
+    const boxes = plan.actions.filter(a => (a.type === "draw-shape" || a.type === "draw-freehand")).map(a => (a as any).bounds);
     expect(noOverlaps(boxes)).toBe(true);
   });
 
@@ -166,7 +166,7 @@ describe("Representative trace 2 — comparison page (Type 1 vs Type 2 diabetes)
 
   it("splits the 4 comparison nodes into exactly 2 distinct x-columns", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boundsFor = (src: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === src) as any).bounds;
+    const boundsFor = (src: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === src) as any).bounds;
     const xs = new Set([boundsFor("src-n2").x, boundsFor("src-n3").x, boundsFor("src-n4").x, boundsFor("src-n5").x]);
     expect(xs.size).toBe(2);
   });
@@ -178,13 +178,13 @@ describe("Representative trace 2 — comparison page (Type 1 vs Type 2 diabetes)
 
   it("has zero overlapping shapes, including the divider", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boxes = plan.actions.filter(a => a.type === "draw-shape").map(a => (a as any).bounds);
+    const boxes = plan.actions.filter(a => (a.type === "draw-shape" || a.type === "draw-freehand")).map(a => (a as any).bounds);
     expect(noOverlaps(boxes)).toBe(true);
   });
 
   it("the final-summary node sits below the comparison row", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boundsFor = (src: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === src) as any).bounds;
+    const boundsFor = (src: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === src) as any).bounds;
     const comparisonBottom = Math.max(boundsFor("src-n2").y + boundsFor("src-n2").h, boundsFor("src-n4").y + boundsFor("src-n4").h);
     expect(boundsFor("src-n6").y).toBeGreaterThanOrEqual(comparisonBottom);
   });
@@ -232,7 +232,7 @@ describe("Representative trace 3 — clinical/procedure page with a warning (sus
 
   it("REQUIRED: the warning node draws as a hexagon (danger tier), not a plain box", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const warn = plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === "src-n5") as any;
+    const warn = plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === "src-n5") as any;
     expect(warn.shape).toBe("hexagon");
   });
 
@@ -244,7 +244,7 @@ describe("Representative trace 3 — clinical/procedure page with a warning (sus
 
   it("REQUIRED: the warning node sits well below the procedure steps, with extra separation", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boundsFor = (src: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === src) as any).bounds;
+    const boundsFor = (src: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === src) as any).bounds;
     const lastStepBottom = boundsFor("src-n4").y + boundsFor("src-n4").h;
     expect(boundsFor("src-n5").y).toBeGreaterThan(lastStepBottom);
   });
@@ -259,13 +259,13 @@ describe("Representative trace 3 — clinical/procedure page with a warning (sus
 
   it("the final-summary node sits below the warning", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boundsFor = (src: string) => (plan.actions.find(a => a.type === "draw-shape" && (a as any).targetId === src) as any).bounds;
+    const boundsFor = (src: string) => (plan.actions.find(a => (a.type === "draw-shape" || a.type === "draw-freehand") && (a as any).targetId === src) as any).bounds;
     expect(boundsFor("src-n6").y).toBeGreaterThanOrEqual(boundsFor("src-n5").y);
   });
 
   it("has zero overlapping shapes", () => {
     const plan = buildProfessorTeachingActions(vsg, grounded, SNAPSHOT);
-    const boxes = plan.actions.filter(a => a.type === "draw-shape").map(a => (a as any).bounds);
+    const boxes = plan.actions.filter(a => (a.type === "draw-shape" || a.type === "draw-freehand")).map(a => (a as any).bounds);
     expect(noOverlaps(boxes)).toBe(true);
   });
 });

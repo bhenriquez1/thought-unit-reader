@@ -75,6 +75,16 @@ describe("ProfessorNodeScriptSchema", () => {
     expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), emphasisTreatment: "bogus" })).toThrow();
   });
 
+  // Correction (Whiteboard visual language) — "underline" was already a
+  // real, distinctly-rendered emphasize.treatment (emphasisOverlaySpec in
+  // TldrawCanvas.tsx) and already choosable inside an explain[] mini-diagram
+  // (ExplainEmphasisStyleSchema), but was never reachable at the top level
+  // for the ONE emphasized point of a lesson — dead vocabulary the model
+  // had no way to select. See EmphasisTreatmentChoiceSchema's own comment.
+  it("REQUIRED: accepts 'underline' as a top-level emphasisTreatment — previously unreachable dead vocabulary", () => {
+    expect(() => ProfessorNodeScriptSchema.parse({ ...validNodeScript(), emphasize: true, emphasisTreatment: "underline" })).not.toThrow();
+  });
+
   it("accepts all documented spatialIntent values, including the exact composition vocabulary from the brief", () => {
     const values = ["left-branch", "right-branch", "central-mechanism", "warning-aside", "comparison-column", "final-summary"];
     for (const v of values) {
