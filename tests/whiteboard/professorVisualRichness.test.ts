@@ -58,8 +58,11 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
   // threshold into the production fallback path without live telemetry —
   // production/non-strict behavior is unchanged from before R2.
   it("REQUIRED (R2): a new low_visual_richness rejection site exists, gated behind PROFESSOR_AGENT_STRICT, applied only after the zero-nontrivial case is already ruled out", () => {
+    // Correction (Whiteboard density) added a 6th site: empty_containers,
+    // same PROFESSOR_AGENT_STRICT-only gating, right alongside this one —
+    // see the dedicated describe block below.
     const rejectionSites = (src.match(/throw new ProfessorAgentRequestError\(/g) ?? []).length;
-    expect(rejectionSites).toBe(5); // the pre-existing 4 plus this one
+    expect(rejectionSites).toBe(6); // the pre-existing 4, this one, and empty_containers
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("low_visual_richness"\);/);
     const idx = src.indexOf('throw new ProfessorAgentRequestError("no_visual_actions");');
     const block = src.slice(idx, idx + 600);
@@ -205,5 +208,57 @@ describe("Visual richness — the R2 strict-mode gate correctly rejects what the
     const actions = Array.from({ length: 12 }, (_, i) => box(String(i)));
     expect(richness(actions).passesCurrentGate).toBe(false);
     expect(richnessStrict(actions)).toBe(false);
+  });
+});
+
+// ── Correction (Whiteboard density): "if it creates five shapes and three
+//    of them are empty containers, the step should be rejected and
+//    replanned" — a NEW, separate gate from the richness ratio above. The
+//    richness gate can still pass a response full of unlabeled
+//    ellipses/diamonds/hexagons/clouds, since isNontrivialProfessorAgentAction
+//    treats any non-"box" shape as automatically nontrivial (see
+//    professorTldrawAgent.test.ts's computeVisualDensityDiagnostic suite for
+//    behavioral coverage of the density math itself — this is wiring-only,
+//    same source-inspection convention as Part 1 above).
+describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density correction)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: computeVisualDensityDiagnostic is imported and computed once per pass", () => {
+    expect(src).toMatch(/computeVisualDensityDiagnostic,/);
+    expect(src).toMatch(/density = computeVisualDensityDiagnostic\(verified\.actions, request\.step\.focusBounds\);/);
+  });
+
+  it("REQUIRED: ProfessorAgentDiagnostic carries the density diagnostic, populated in both the success and fallback updates", () => {
+    const idx = src.indexOf("interface ProfessorAgentDiagnostic {");
+    const block = src.slice(idx, src.indexOf("}", idx + 200));
+    expect(block).toMatch(/density: VisualDensityDiagnostic;/);
+    const occurrences = (src.match(/\n\s*density,\n/g) ?? []).length;
+    expect(occurrences).toBe(2);
+  });
+
+  it("REQUIRED: the rejection floor matches the correction's own named example — count >= 3 AND ratio >= 0.5 (5 shapes, 3 empty = 60%)", () => {
+    expect(src).toMatch(/const EMPTY_CONTAINER_COUNT_FLOOR = 3;/);
+    expect(src).toMatch(/const EMPTY_CONTAINER_RATIO_CEILING = 0\.5;/);
+    expect(src).toMatch(
+      /density\.emptyContainerCount >= EMPTY_CONTAINER_COUNT_FLOOR\s*\n\s*&& density\.totalShapeCount > 0\s*\n\s*&& density\.emptyContainerCount \/ density\.totalShapeCount >= EMPTY_CONTAINER_RATIO_CEILING/,
+    );
+    expect(src).toMatch(/throw new ProfessorAgentRequestError\("empty_containers"\);/);
+  });
+
+  it("REQUIRED: gated behind PROFESSOR_AGENT_STRICT, alongside (not instead of) the richness-floor check — production/non-strict behavior unchanged", () => {
+    const idx = src.indexOf('throw new ProfessorAgentRequestError("low_visual_richness");');
+    const block = src.slice(idx, idx + 1300);
+    expect(block).toMatch(/tooManyEmptyContainers/);
+    expect(block).toMatch(/throw new ProfessorAgentRequestError\("empty_containers"\);/);
+    // Both checks live inside the SAME `if (PROFESSOR_AGENT_STRICT && passIndex === 0)` block opened above them.
+    const strictIdx = src.indexOf("if (PROFESSOR_AGENT_STRICT && passIndex === 0) {");
+    expect(strictIdx).toBeGreaterThan(-1);
+    expect(strictIdx).toBeLessThan(idx);
+  });
+
+  it("REQUIRED: empty_containers is a real ProfessorAgentFailureReason value", () => {
+    const libSrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
+    expect(libSrc).toMatch(/\| "empty_containers";/);
   });
 });

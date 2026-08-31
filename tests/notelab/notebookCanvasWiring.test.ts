@@ -63,7 +63,14 @@ describe("NotebookCanvas.tsx — persistent, student-editable, NOT Professor's e
   });
 
   it("calls composeScene from onMount using the current scene, and stores the editor in a ref for later effects to reach", () => {
-    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*editorRef\.current = editor;\s*const result = composeScene\(editor, sceneRef\.current\);/);
+    expect(src).toMatch(/const handleMount = useCallback\(\(editor: Editor\) => \{\s*editorRef\.current = editor;/);
+    // The cloud snapshot restore (Firebase durable-persistence PR) runs
+    // first when notebookId/documentId/pageTruthKey are available; composeScene
+    // still always runs afterward (idempotent — see its own getShape checks),
+    // so a restored snapshot and a freshly-composed scene never duplicate shapes.
+    expect(src).toMatch(/loadNotebookPage\(notebookId, pageTruthKey\)/);
+    expect(src).toMatch(/loadSnapshot\(editor\.store, saved\.tldrawSnapshot/);
+    expect(src).toMatch(/const result = composeScene\(editor, sceneRef\.current\);/);
   });
 });
 
@@ -80,7 +87,7 @@ describe("NotebookCanvas.tsx — N4: recomposes on a later scene change (tldraw'
 
   it("REQUIRED: the store.listen selection subscription is torn down and re-subscribed idempotently (mirrors TldrawCanvas.tsx's own storeUnsubRef pattern), and torn down again on unmount", () => {
     expect(src).toMatch(/storeUnsubRef\.current\?\.\(\);\s*storeUnsubRef\.current = editor\.store\.listen\(/);
-    expect(src).toMatch(/useEffect\(\(\) => \(\) => \{ storeUnsubRef\.current\?\.\(\); \}, \[\]\);/);
+    expect(src).toMatch(/window\.removeEventListener\("pagehide", flush\);[\s\S]*storeUnsubRef\.current\?\.\(\);/);
   });
 });
 
@@ -207,7 +214,7 @@ describe("UltraNotesList.tsx — N4: provenance-driven block actions wired to No
 
   it("REQUIRED: all four action callbacks are passed to NotebookCanvas", () => {
     const idx = src.indexOf("<NotebookCanvas");
-    const jsx = src.slice(idx, idx + 400);
+    const jsx = src.slice(idx, idx + 650);
     expect(jsx).toMatch(/onViewSource=\{handleViewSourceBlock\}/);
     expect(jsx).toMatch(/onJumpToReader=\{handleJumpToReaderBlock\}/);
     expect(jsx).toMatch(/onAskProfessor=\{onAskProfessorAboutBlock \? \(block\) => onAskProfessorAboutBlock\(note, block\) : undefined\}/);

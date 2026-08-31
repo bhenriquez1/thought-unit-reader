@@ -230,7 +230,8 @@ export interface VerifiedProfessorAgentPass {
 export type ProfessorAgentFailureReason =
   | "missing_key" | "not_triggered" | "visual_needed_false" | "timeout"
   | "network_error" | "schema_reject" | "no_visual_actions"
-  | "verification_reject" | "aborted" | "low_visual_richness";
+  | "verification_reject" | "aborted" | "low_visual_richness"
+  | "empty_containers";
 
 export class ProfessorAgentRequestError extends Error {
   constructor(public readonly reason: ProfessorAgentFailureReason, message = reason) {
@@ -252,6 +253,113 @@ export function isNontrivialProfessorAgentAction(action: ProfessorTeachingAction
       || action.visualRole === "drawCallout";
   }
   return false;
+}
+
+function mergeAgentBoundsList(list: Bounds[]): Bounds | null {
+  if (list.length === 0) return null;
+  const x0 = Math.min(...list.map(b => b.x));
+  const y0 = Math.min(...list.map(b => b.y));
+  const x1 = Math.max(...list.map(b => b.x + b.w));
+  const y1 = Math.max(...list.map(b => b.y + b.h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+export interface VisualDensityDiagnostic {
+  /** Real teaching marks — freehand strokes, arrows, a genuinely self-
+   *  labeled or deliberately-unlabeled-by-design shape (drawPressureZone/
+   *  highlightRegion fills, drawCallout/drawNumberBadge — both always
+   *  self-label via the same shapeId reused for their own write action),
+   *  and any standalone label not merged onto a shape in this same list. */
+  meaningfulPrimitiveCount: number;
+  /** A drawSymbol-originated shape (rectangle/ellipse/diamond/hexagon/
+   *  cloud/line) with no matching write action ever merged onto its own
+   *  shapeId — "empty oval / empty rounded rectangle / empty container,"
+   *  the correction's own named failure mode. */
+  emptyContainerCount: number;
+  /** Every draw-shape action in this list, empty or not — the denominator
+   *  for judging whether empty containers are a MINORITY or the bulk of
+   *  what got drawn. */
+  totalShapeCount: number;
+  /** The union bounding box of every real visual primitive actually drawn
+   *  (freehand points, arrow endpoints, shape bounds) — "how much of the
+   *  canvas is genuinely occupied," not the region the step was ALLOWED to
+   *  draw in. */
+  usedCanvasBounds: Bounds | null;
+  /** This step's own focusBounds — the teaching region the camera frames,
+   *  i.e. what "the viewport" means for this step. */
+  activeTeachingBounds: Bounds | null;
+  /** area(usedCanvasBounds) / area(activeTeachingBounds), 0 when either is
+   *  null or degenerate. A low ratio is the direct, measurable version of
+   *  "too much empty canvas remains." */
+  canvasUtilizationRatio: number;
+}
+
+/**
+ * Correction (Whiteboard density) — "Add validation such as:
+ * meaningfulPrimitiveCount / emptyContainerCount / usedCanvasBounds /
+ * activeTeachingBounds / canvasUtilizationRatio." Operates on a whole
+ * verified action list (one pass's worth), not a single action, because
+ * "is this drawSymbol shape empty" depends on whether some OTHER action in
+ * the same list (a writeLabel with attachToLocalId) ever merged text onto
+ * it — see the attachToLocalId fix this same phase also shipped.
+ */
+export function computeVisualDensityDiagnostic(
+  actions: ProfessorTeachingAction[],
+  activeTeachingBounds: Bounds | null,
+): VisualDensityDiagnostic {
+  const DELIBERATELY_UNLABELED_ROLES = new Set(["drawPressureZone", "highlightRegion"]);
+  const drawShapeIds = new Set(
+    actions.filter((a): a is Extract<ProfessorTeachingAction, { type: "draw-shape" }> => a.type === "draw-shape").map(a => a.shapeId),
+  );
+  const shapeIdsWithText = new Set(
+    actions.filter((a): a is Extract<ProfessorTeachingAction, { type: "write" }> => a.type === "write" && a.text.trim().length > 0)
+      .map(a => a.shapeId),
+  );
+
+  let meaningfulPrimitiveCount = 0;
+  let emptyContainerCount = 0;
+  let totalShapeCount = 0;
+  const boundsList: Bounds[] = [];
+
+  for (const action of actions) {
+    if (action.type === "draw-freehand") {
+      meaningfulPrimitiveCount++;
+      if (action.points.length > 0) {
+        const xs = action.points.map(p => p.x);
+        const ys = action.points.map(p => p.y);
+        boundsList.push({
+          x: Math.min(...xs), y: Math.min(...ys),
+          w: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+          h: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+        });
+      }
+    } else if (action.type === "draw-arrow") {
+      meaningfulPrimitiveCount++;
+      boundsList.push({
+        x: Math.min(action.from.x, action.to.x), y: Math.min(action.from.y, action.to.y),
+        w: Math.max(1, Math.abs(action.to.x - action.from.x)), h: Math.max(1, Math.abs(action.to.y - action.from.y)),
+      });
+    } else if (action.type === "write") {
+      // A write action whose shapeId matches a draw-shape action in this
+      // SAME list is a merged/attached label — already reflected via that
+      // shape's own self-labeled check below, not counted twice.
+      if (!drawShapeIds.has(action.shapeId) && action.text.trim().length > 0) meaningfulPrimitiveCount++;
+    } else if (action.type === "draw-shape") {
+      totalShapeCount++;
+      boundsList.push(action.bounds);
+      const isDeliberatelyUnlabeled = action.visualRole ? DELIBERATELY_UNLABELED_ROLES.has(action.visualRole) : false;
+      const isSelfLabeled = shapeIdsWithText.has(action.shapeId);
+      if (isDeliberatelyUnlabeled || isSelfLabeled) meaningfulPrimitiveCount++;
+      else emptyContainerCount++;
+    }
+  }
+
+  const usedCanvasBounds = mergeAgentBoundsList(boundsList);
+  const usedArea = usedCanvasBounds ? usedCanvasBounds.w * usedCanvasBounds.h : 0;
+  const teachingArea = activeTeachingBounds ? activeTeachingBounds.w * activeTeachingBounds.h : 0;
+  const canvasUtilizationRatio = teachingArea > 0 ? usedArea / teachingArea : 0;
+
+  return { meaningfulPrimitiveCount, emptyContainerCount, totalShapeCount, usedCanvasBounds, activeTeachingBounds, canvasUtilizationRatio };
 }
 
 function visualBounds(action: ProfessorTeachingAction): Bounds | null {
@@ -536,7 +644,26 @@ export function verifyProfessorTldrawAgentResponse(
     if (call.tool === "writeLabel") {
       let x = clamp(call.x, region.x, region.x + region.w);
       let y = clamp(call.y, region.y, region.y + region.h);
-      if (!call.attachToLocalId) {
+      // Correction (Whiteboard density) — attachToLocalId used to be parsed
+      // but never actually used: this write action always got its OWN
+      // shapeId (derived from call.localId, the label's own local id), so
+      // every "writeLabel ... attachToLocalId: X" call still produced an
+      // independent floating text shape next to a permanently empty symbol
+      // — X's own draw-shape action never gets a `text` field from
+      // anywhere else. computeCanvasStateAtStep only merges a write
+      // action's text onto a shape when their shapeIds MATCH, the same
+      // convention the deterministic pipeline already relies on
+      // (buildProfessorTeachingActions.ts reuses one shapeId for both a
+      // node's outline and its label). When attachToLocalId names a real,
+      // already-accepted local id (drawn earlier this pass or a prior
+      // one), redirect this write action's shapeId to match it instead —
+      // an unresolvable/hallucinated attachToLocalId falls back to the
+      // original independent-label behavior rather than trusting an
+      // unverified target.
+      const attachedShapeId = call.attachToLocalId && reservedLocalIds.has(call.attachToLocalId)
+        ? stableShapeId(stepId, call.attachToLocalId)
+        : null;
+      if (!attachedShapeId) {
         const labelBox = pushClearOf({ x, y, w: estimateLabelWidth(call.text), h: estimateLabelHeight(call.text) }, obstacles);
         const clamped = clampBounds(labelBox, region);
         x = clamped.x;
@@ -546,7 +673,7 @@ export function verifyProfessorTldrawAgentResponse(
       push({
         type: "write",
         actionId: actionId(call.localId, "label"),
-        shapeId,
+        shapeId: attachedShapeId ?? shapeId,
         targetId: sourceTarget(call, allowedSources),
         text: call.text,
         x,

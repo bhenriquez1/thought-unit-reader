@@ -20,6 +20,35 @@ service cloud.firestore {
       allow read, write: if isSelf(uid);
     }
 
+    /* Canonical durable Avrrio state. Every path is UID-isolated. */
+    match /users/{uid}/library/{documentId} {
+      allow read, write: if isSelf(uid);
+    }
+    match /users/{uid}/notebooks/{notebookId} {
+      allow read, write: if isSelf(uid);
+      match /pages/{pageId} {
+        allow read, write: if isSelf(uid);
+      }
+    }
+    match /users/{uid}/stickyNotes/{noteId} {
+      allow read, write: if isSelf(uid);
+    }
+    match /users/{uid}/learningState/{conceptId} {
+      allow read, write: if isSelf(uid);
+    }
+    match /users/{uid}/recall/{recordId} {
+      allow read, write: if isSelf(uid);
+    }
+    match /users/{uid}/tests/{attemptId} {
+      allow read, write: if isSelf(uid);
+    }
+    match /users/{uid}/children/{childId} {
+      allow read, write: if isSelf(uid);
+      match /{childDocument=**} {
+        allow read, write: if isSelf(uid);
+      }
+    }
+
     /* --- PDF library (upload list) ---
        Path: /users/{uid}/pdfLibrary/{docId}
     */
