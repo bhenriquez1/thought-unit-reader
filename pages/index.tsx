@@ -1899,7 +1899,12 @@ export default function ThoughtUnitReader() {
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
   const [professorAutoStart, setProfessorAutoStart] = useState(false);
-  const [professorSurface, setProfessorSurface] = useState<"pdf" | "whiteboard">("whiteboard");
+  // Correction — Professor Mode's default surface is the PDF, never an
+  // opaque Whiteboard modal. "whiteboard" is now something TldrawCanvas
+  // itself asks for (a real visualNeeded step, or a genuine loading/error/
+  // config diagnostic via reason:"diagnostic" — see its own comment), never
+  // something the shell assumes before a lesson plan says otherwise.
+  const [professorSurface, setProfessorSurface] = useState<"pdf" | "whiteboard">("pdf");
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
@@ -5138,17 +5143,23 @@ export default function ThoughtUnitReader() {
     setWbConcept("");
     setWbContext("");
     setProfessorAutoStart(true);
-    // Do NOT optimistically set "pdf" here. The modal below goes opacity:0
-    // whenever professorAutoStart && professorSurface === "pdf" — that's
-    // meant to hide the modal only once Professor is GENUINELY narrating
-    // over the PDF (TldrawCanvas's onProfessorSurfaceChange, fired from a
-    // real, loaded lesson plan's resolved step). Setting it here eagerly,
-    // before any lesson plan exists, hid TldrawCanvas's own loading/error/
-    // retry UI behind opacity:0 for the entire planning window — any
-    // failure or slowness in /api/professor-lesson-plan reproduced exactly
-    // as "Professor appears to start, nothing visible or audible happens."
-    // Leaving this at its default ("whiteboard") keeps the modal visible
-    // and opaque until a real surface change arrives.
+    // Correction — Professor's primary surface is the PDF. Every session
+    // now starts transparent/pass-through (professorSurface's own default
+    // is "pdf"; this explicit reset is for the case where a PREVIOUS
+    // session left it on "whiteboard" and this button is pressed again
+    // without an intervening close). The modal goes opacity:0 + pointer-
+    // events:none whenever professorAutoStart && professorSurface==="pdf",
+    // which now covers the entire planning window too, not just genuine
+    // verbal-only steps — that used to be a problem (it hid TldrawCanvas's
+    // own loading/error/retry UI behind opacity:0 for the whole planning
+    // window, so a failure or slowness in /api/professor-lesson-plan
+    // reproduced as "Professor appears to start, nothing visible or
+    // audible happens"). It's no longer a problem: TldrawCanvas's own new
+    // diagnostic-escalation effect explicitly calls onProfessorSurfaceChange
+    // ("whiteboard", { reason: "diagnostic" }) the moment a license/init/
+    // lesson-plan failure is real, so the retry UI still becomes visible —
+    // just only when there's actually something to show, never by default.
+    setProfessorSurface("pdf");
     setShowWhiteboardPanel(true);
   }, []);
 

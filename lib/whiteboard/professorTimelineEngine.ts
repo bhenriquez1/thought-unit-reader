@@ -204,8 +204,17 @@ export function resolveCameraActionAtStep(
  *  which buildProfessorTeachingActions.ts already assigns per action but
  *  which no runtime consumer read before stabilization item 2: a real,
  *  more granular phase signal than the bare pdf/whiteboard surface value,
- *  without inventing a new state machine or changing how the plan is built. */
-export type ProfessorSurfaceReason = "source-passage" | "visual-lesson" | "return-to-source" | "summary";
+ *  without inventing a new state machine or changing how the plan is built.
+ *
+ *  "diagnostic" is a fifth value TldrawCanvas.tsx uses OUTSIDE this
+ *  resolver — never produced by resolveProfessorSurfaceAtStep itself, only
+ *  by TldrawCanvas explicitly forcing the surface to "whiteboard" so a
+ *  genuine loading/error/config state stays visible instead of hiding
+ *  behind the PDF-first default (see the correction: Professor Mode must
+ *  default to the PDF, not to an opaque Whiteboard modal, but a real
+ *  failure the student needs to see or retry must never be silently
+ *  suppressed by that same default). */
+export type ProfessorSurfaceReason = "source-passage" | "visual-lesson" | "return-to-source" | "summary" | "diagnostic";
 
 export function resolveProfessorSurfaceAtStep(
   actions: ProfessorTeachingAction[],

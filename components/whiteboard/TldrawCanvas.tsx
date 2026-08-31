@@ -502,6 +502,24 @@ export default function TldrawCanvas({
   useEffect(() => { onProfessorSurfaceChangeRef.current = onProfessorSurfaceChange; }, [onProfessorSurfaceChange]);
   const storeUnsubRef = useRef<(() => void) | null>(null);
 
+  // Correction — Professor Mode must default to the PDF, never to an opaque
+  // Whiteboard modal (pages/index.tsx now starts every session on surface
+  // "pdf" instead of "whiteboard"). That default is correct for the common
+  // case — no lesson plan yet, or a genuinely verbal-only page — but a real
+  // license/init/lesson-plan failure still needs to be SEEN, not silently
+  // hidden behind the transparent "Professor is following the PDF" pill.
+  // This is the one place that overrides the default: whenever one of these
+  // three states is true, force the surface visible with reason
+  // "diagnostic" (never produced by resolveProfessorSurfaceAtStep itself —
+  // this is the only caller of that reason value). stepId: -1 matches this
+  // codebase's existing convention for "not a real teaching step" (compare
+  // computeCanvasStateAtStep's stepIndex === -1 meaning "before any step").
+  useEffect(() => {
+    if (licenseMissingInProduction || canvasInitFailure || lessonStatus === "error") {
+      onProfessorSurfaceChangeRef.current?.("whiteboard", { stepId: -1, visualNeeded: false, reason: "diagnostic" });
+    }
+  }, [licenseMissingInProduction, canvasInitFailure, lessonStatus]);
+
   const focusDirectorEvidence = useCallback((stepId: number) => {
     const step = planRef.current?.directorSteps?.find(candidate => candidate.stepId === stepId);
     const sourceId = step?.sourceEvidence[0]?.sourceId;
