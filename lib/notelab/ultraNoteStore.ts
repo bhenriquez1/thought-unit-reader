@@ -8,6 +8,7 @@ import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
 import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
+import { currentFirebaseUid, listNotebookSemanticStates, saveNotebookSemanticState } from "@/lib/firebase/durableState";
 
 // Re-export NoteSubject so callers that import it from here don't need to change.
 export type { NoteSubject };
@@ -392,16 +393,24 @@ function lsRemove(id: string): void {
 
 /** Async read from IDB (authoritative). Falls back to LS mirror on IDB error. */
 export async function getAllUltraNotesAsync(): Promise<UltraNote[]> {
+  let localNotes: UltraNote[];
   try {
-    const notes = await idbGetAllNotes();
-    // Sort newest first
-    notes.sort((a, b) => b.createdAt - a.createdAt);
-    console.log("[NOTELAB_RENDER_COUNT]", { total: notes.length, driver: "indexeddb" });
-    return notes;
+    localNotes = await idbGetAllNotes();
   } catch (e) {
     console.warn("[NOTELAB_IDB_READ_FAIL]", String(e), "— falling back to LS mirror");
-    return lsRead();
+    localNotes = lsRead();
   }
+  if (currentFirebaseUid()) {
+    const cloudNotes = await listNotebookSemanticStates<UltraNote>();
+    const merged = new Map(localNotes.map((note) => [note.id, note]));
+    for (const note of cloudNotes) merged.set(note.id, note);
+    localNotes = [...merged.values()];
+    for (const note of cloudNotes) await idbPutNote(note).catch(() => {});
+    for (const note of cloudNotes) lsUpsert(compact(note));
+  }
+  localNotes.sort((a, b) => b.createdAt - a.createdAt);
+  console.log("[NOTELAB_RENDER_COUNT]", { total: localNotes.length, driver: currentFirebaseUid() ? "firebase+indexeddb" : "indexeddb" });
+  return localNotes;
 }
 
 /** Sync read from LS mirror — for legacy callers only. */
@@ -507,6 +516,20 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
   // Mirror: LS — always written so reads via getAllUltraNotes() stay consistent
   // even when IDB failed.
   lsUpsert(c);
+
+  // IDB is the offline/runtime cache. For a signed-in user, the same
+  // canonical note and provenance are durably stored under their UID.
+  if (currentFirebaseUid() && noteToSave.documentId && noteToSave.pageTruthKey) {
+    await saveNotebookSemanticState({
+      notebookId: noteToSave.id,
+      documentId: noteToSave.documentId,
+      pageId: noteToSave.pageTruthKey,
+      pageTruthKey: noteToSave.pageTruthKey,
+      semanticObjects: noteToSave,
+      sourceAnchors: noteToSave.visualAnchors ?? noteToSave.highlightAnchors ?? [],
+      canonicalUnitIds: noteToSave.thoughtUnitIds ?? [],
+    });
+  }
 
   if (typeof window !== "undefined") window.dispatchEvent(new Event("note-lab-updated"));
 }

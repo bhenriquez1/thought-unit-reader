@@ -14,6 +14,7 @@ import type { KnowledgeNode, KnowledgeNodeProgress, SourceCitation } from "./kno
 import type { VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import { buildNewNode, tokenOverlap } from "./buildKnowledgeNode";
 import { linkRelatedNodes } from "./inferNodeRelationships";
+import { currentFirebaseUid, saveOwnedRecord } from "@/lib/firebase/durableState";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -133,12 +134,15 @@ export async function getNodeProgress(nodeId: string): Promise<KnowledgeNodeProg
 
 export async function saveNodeProgress(progress: KnowledgeNodeProgress): Promise<void> {
   const db = await openKnowledgeGraphIDB();
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(PROGRESS_STORE, "readwrite");
     tx.objectStore(PROGRESS_STORE).put(progress);
     tx.oncomplete = () => resolve();
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) {
+    await saveOwnedRecord("learningState", progress.nodeId, progress as unknown as Record<string, unknown>);
+  }
 }
 
 // ── Citation back-fill ────────────────────────────────────────────────────────

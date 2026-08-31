@@ -15,6 +15,7 @@
 
 import type { ChildProfile, ChildProgress, ChildRewardState, ChildLibraryEntry, ParentGateRecord, ParentControlSettings } from "./types";
 import type { VocabWord } from "./vocabulary";
+import { currentFirebaseUid, listChildProfilesCloud, saveChildState } from "@/lib/firebase/durableState";
 
 const DB_NAME        = "avrrio-elena";
 const DB_VERSION     = 5;
@@ -78,11 +79,12 @@ export async function saveChildProfile(profile: ChildProfile): Promise<void> {
   const db  = await openDb();
   const tx  = db.transaction(STORE_PROFILES, "readwrite");
   const req = tx.objectStore(STORE_PROFILES).put(profile);
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) await saveChildState(profile.id, "profile", profile.id, profile as unknown as Record<string, unknown>);
 }
 
 export async function loadChildProfile(id: string): Promise<ChildProfile | null> {
@@ -99,13 +101,18 @@ export async function listChildProfiles(parentAccountId: string): Promise<ChildP
   const db  = await openDb();
   const tx  = db.transaction(STORE_PROFILES, "readonly");
   const req = tx.objectStore(STORE_PROFILES).getAll();
-  return new Promise((resolve, reject) => {
+  const local = await new Promise<ChildProfile[]>((resolve, reject) => {
     req.onsuccess = () => {
       const all = req.result as ChildProfile[];
       resolve(all.filter(p => p.parentAccountId === parentAccountId));
     };
     req.onerror = () => reject(req.error);
   });
+  if (!currentFirebaseUid()) return local;
+  const cloud = await listChildProfilesCloud<ChildProfile>();
+  const merged = new Map(local.map((profile) => [profile.id, profile]));
+  for (const profile of cloud) merged.set(profile.id, profile);
+  return [...merged.values()].filter((profile) => profile.parentAccountId === parentAccountId);
 }
 
 export async function deleteChildProfile(id: string): Promise<void> {
@@ -125,11 +132,12 @@ export async function saveChildProgress(progress: ChildProgress): Promise<void> 
   const db  = await openDb();
   const tx  = db.transaction(STORE_PROGRESS, "readwrite");
   const req = tx.objectStore(STORE_PROGRESS).put(progress);
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) await saveChildState(progress.childProfileId, "progress", "current", progress as unknown as Record<string, unknown>);
 }
 
 export async function loadChildProgress(childProfileId: string): Promise<ChildProgress | null> {
@@ -148,11 +156,12 @@ export async function saveRewardState(state: ChildRewardState): Promise<void> {
   const db  = await openDb();
   const tx  = db.transaction(STORE_REWARDS, "readwrite");
   const req = tx.objectStore(STORE_REWARDS).put(state);
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) await saveChildState(state.childProfileId, "rewards", "current", state as unknown as Record<string, unknown>);
 }
 
 export async function loadRewardState(childProfileId: string): Promise<ChildRewardState | null> {
@@ -206,11 +215,12 @@ export async function saveChildLibraryEntry(entry: ChildLibraryEntry): Promise<v
   const db  = await openDb();
   const tx  = db.transaction(STORE_LIBRARY, "readwrite");
   const req = tx.objectStore(STORE_LIBRARY).put(entry);
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) await saveChildState(entry.childProfileId, "library", entry.id, entry as unknown as Record<string, unknown>);
 }
 
 export async function listChildLibraryEntries(childProfileId: string): Promise<ChildLibraryEntry[]> {

@@ -59,6 +59,8 @@ const validateFirebaseConfig = () => {
   // Validate API key format (should start with AIza and be 39-40 characters)
   if (!firebaseConfig.apiKey.startsWith('AIza') || firebaseConfig.apiKey.length < 39 || firebaseConfig.apiKey.length > 40) {
     console.error('❌ Invalid Firebase API key format. Expected format: AIza... (39-40 characters)');
+    // Never print configuration values. Even Firebase Web configuration must
+    // not become a habitually logged credential-shaped value.
     return false;
   }
   
@@ -355,21 +357,52 @@ export async function signOutUser(): Promise<void> {
 /* =========================================================================
    🔹 PDF Library Functions
    ========================================================================= */
+export async function hashPDFDocumentId(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function uploadPDF(file: File, userId: string): Promise<string> {
   const storageInstance = getStorageInstance();
   const dbInstance = getDbInstance();
   if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
   
-  const fileRef = ref(storageInstance, `pdfs/${userId}/${file.name}`);
-  await uploadBytes(fileRef, file);
-  const downloadURL = await getDownloadURL(fileRef);
+  if (!file || file.type !== "application/pdf") throw new Error("Only PDF uploads are supported.");
+  if (file.size <= 0 || file.size > 250 * 1024 * 1024) throw new Error("PDF must be between 1 byte and 250 MB.");
+  if (getAuthInstance()?.currentUser?.uid !== userId) throw new Error("The signed-in user does not own this upload.");
 
-  const libraryRef = doc(collection(dbInstance, "users", userId, "pdfLibrary"));
+  const documentId = await hashPDFDocumentId(file);
+  const storagePath = `users/${userId}/library/${documentId}/source.pdf`;
+  const libraryRef = doc(dbInstance, "users", userId, "library", documentId);
+  const existing = await getDoc(libraryRef);
+  if (existing.exists() && typeof existing.data().url === "string") return existing.data().url;
+
   await setDoc(libraryRef, {
+    documentId,
+    title: file.name.replace(/\.pdf$/i, ""),
+    originalFilename: file.name,
+    storagePath,
+    mimeType: file.type,
+    fileSize: file.size,
+    processingStatus: "uploading",
+    uploadedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    readingProgress: 0,
+    lastOpenedPage: 1,
+    canonicalProcessingVersion: 1,
+    schemaVersion: 1,
+  }, { merge: true });
+
+  const fileRef = ref(storageInstance, storagePath);
+  await uploadBytes(fileRef, file, { contentType: "application/pdf", customMetadata: { documentId, ownerUid: userId } });
+  const downloadURL = await getDownloadURL(fileRef);
+  await setDoc(libraryRef, {
+    documentId,
     name: file.name,
     url: downloadURL,
-    uploadedAt: new Date().toISOString(),
-  });
+    processingStatus: "processing",
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
 
   return downloadURL;
 }
@@ -380,14 +413,14 @@ export async function getPDFLibrary(
   const dbInstance = getDbInstance();
   if (!dbInstance) return [];
   
-  const querySnapshot = await getDocs(collection(dbInstance, "users", userId, "pdfLibrary"));
+  const querySnapshot = await getDocs(collection(dbInstance, "users", userId, "library"));
   const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
     const data = docSnap.data() as any;
     library.push({
       id: docSnap.id,
-      name: data.name,
+      name: data.originalFilename || data.name || data.title,
       url: data.url,
       uploadedAt: data.uploadedAt || "",
     });
@@ -403,8 +436,16 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   const dbInstance = getDbInstance();
   if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
   
-  await deleteDoc(doc(dbInstance, "users", userId, "pdfLibrary", pdfId));
-  const fileRef = ref(storageInstance, `pdfs/${userId}/${pdfName}`);
+  if (getAuthInstance()?.currentUser?.uid !== userId) throw new Error("The signed-in user does not own this document.");
+  const recordRef = doc(dbInstance, "users", userId, "library", pdfId);
+  const record = await getDoc(recordRef);
+  if (!record.exists()) throw new Error("Library document not found.");
+  const storagePath = record.data().storagePath;
+  if (typeof storagePath !== "string" || !storagePath.startsWith(`users/${userId}/library/${pdfId}/`)) {
+    throw new Error("Refusing to delete an unverified Storage path.");
+  }
+  await deleteDoc(recordRef);
+  const fileRef = ref(storageInstance, storagePath);
   await deleteObject(fileRef);
 }
 
