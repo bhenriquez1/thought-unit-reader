@@ -839,16 +839,29 @@ export default function TldrawCanvas({
         // A single node's bounds are ~290x56 — a flat 40px pad on that made
         // the per-step camera crop tight enough to read as "punched in on a
         // random screenshot" rather than a professor stepping back a little
-        // between points. Padding now scales with content size, with a
-        // floor big enough to keep a single small node from filling the
-        // whole frame, and is deliberately taller than it is wide (nodes are
-        // wide/short, so the pad needs the most room on the axis the
-        // content itself doesn't already fill) — the goal is "still visibly
-        // zoomed to the active point" while showing meaningfully more of
-        // its surrounding context than before, per rule "fit the complete
-        // active teaching region, zoom only to emphasize a detail."
-        const padX = Math.max(100, merged.w * 0.3);
-        const padY = Math.max(140, merged.h * 1.2);
+        // between points. Padding scales with content size, with a floor big
+        // enough to keep a single small node from filling the whole frame,
+        // and is deliberately taller than it is wide (nodes are wide/short,
+        // so the pad needs the most room on the axis the content itself
+        // doesn't already fill) — the goal is "still visibly zoomed to the
+        // active point" while showing meaningfully more of its surrounding
+        // context than before, per rule "fit the complete active teaching
+        // region, zoom only to emphasize a detail."
+        //
+        // Correction (Whiteboard density) — this used to have NO ceiling:
+        // padY = merged.h * 1.2 grew without bound, so the richer a lesson
+        // got, the MORE wasted margin the camera injected around it (a
+        // ~2000px-tall full-board summary overview got ~2400px of padding —
+        // over twice the content's own height in empty canvas on top and
+        // bottom alone). A large/whole-board framing (move-camera actions
+        // with cameraIntent "summary-overview"/"comparison", or any step
+        // whose focusBounds spans multiple rows) needs only enough margin
+        // that shapes aren't cut off at the frame edge, not the same
+        // generous single-node "step back a little" treatment. Capping both
+        // axes keeps the small-node case identical while preventing large
+        // content from being buried in disproportionate empty space.
+        const padX = Math.min(220, Math.max(100, merged.w * 0.3));
+        const padY = Math.min(260, Math.max(140, merged.h * 0.4));
         const requestedBounds = { x: merged.x - padX, y: merged.y - padY, w: merged.w + padX * 2, h: merged.h + padY * 2 };
         const before = editor.getViewportPageBounds();
         editor.zoomToBounds(requestedBounds as any, { animation: { duration: cameraAction.durationMs } } as any);
