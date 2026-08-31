@@ -40,12 +40,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, type Editor } from "@tldraw/tldraw";
+import { Tldraw, getSnapshot, loadSnapshot, type Editor } from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import { getAssetUrls } from "@tldraw/assets/selfHosted.js";
 import type { VisualNotebookScene, FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
 import { layoutNotebookScene } from "@/lib/notelab/notebookLayout";
 import { notebookBlockToShapeSpecs, connectionToArrowSpec } from "@/lib/notelab/notebookShapeSpec";
+import { FirebaseVersionConflictError, loadNotebookPage, saveNotebookPage, type CloudSaveStatus } from "@/lib/firebase/durableState";
 
 const TLDRAW_ASSET_URLS = getAssetUrls({ baseUrl: "/tldraw-assets" });
 
@@ -55,6 +56,9 @@ export interface NotebookCanvasProps {
    *  persistence, distinct from Professor Whiteboard's storageKey which is
    *  never trusted as ground truth on mount (see clearTeachingLayer). */
   storageKey: string;
+  notebookId?: string;
+  documentId?: string;
+  pageTruthKey?: string;
   /** Precise: navigate AND focus the exact source thought unit. Only shown
    *  when the selected block actually resolved to a real source unit
    *  (block.canonicalUnitId is set) — never guessed for a page-level or
@@ -162,33 +166,79 @@ function BlockActionPanel({
   );
 }
 
-export default function NotebookCanvas({ scene, storageKey, onViewSource, onJumpToReader, onAskProfessor, onPracticeRecall }: NotebookCanvasProps) {
+export default function NotebookCanvas({ scene, storageKey, notebookId, documentId, pageTruthKey, onViewSource, onJumpToReader, onAskProfessor, onPracticeRecall }: NotebookCanvasProps) {
   const licenseKey = process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY;
   const licenseMissingInProduction = process.env.NODE_ENV === "production" && !licenseKey;
 
   const editorRef = useRef<Editor | null>(null);
   const storeUnsubRef = useRef<(() => void) | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const versionRef = useRef<number | null>(null);
+  const dirtyRef = useRef(false);
   const sceneRef = useRef(scene);
   useEffect(() => { sceneRef.current = scene; }, [scene]);
 
   const [selectedBlock, setSelectedBlock] = useState<FinalizedNotebookBlock | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<CloudSaveStatus>("idle");
+
+  const persistCanvas = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor || !notebookId || !documentId || !pageTruthKey || !dirtyRef.current) return;
+    dirtyRef.current = false;
+    setCloudStatus("saving");
+    try {
+      const pageId = pageTruthKey;
+      const version = await saveNotebookPage({
+        notebookId,
+        pageId,
+        documentId,
+        pageTruthKey,
+        canonicalUnitIds: sceneRef.current.blocks.flatMap((block) => block.canonicalUnitId ? [block.canonicalUnitId] : []),
+        tldrawSnapshot: getSnapshot(editor.store),
+        semanticObjects: sceneRef.current,
+        sourceAnchors: sceneRef.current.blocks.map((block) => ({
+          blockId: block.id, canonicalUnitId: block.canonicalUnitId ?? null, page: block.page ?? null,
+        })),
+      }, versionRef.current);
+      versionRef.current = version;
+      setCloudStatus("saved");
+    } catch (error) {
+      dirtyRef.current = true;
+      setCloudStatus(error instanceof FirebaseVersionConflictError ? "conflict" : "failed");
+    }
+  }, [notebookId, documentId, pageTruthKey]);
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
-    composeScene(editor, sceneRef.current);
+    const restore = async () => {
+      if (notebookId && documentId && pageTruthKey) {
+        try {
+          const saved = await loadNotebookPage(notebookId, pageTruthKey);
+          if (saved?.tldrawSnapshot) loadSnapshot(editor.store, saved.tldrawSnapshot as any);
+          versionRef.current = saved?.version ?? 0;
+        } catch {
+          setCloudStatus("failed");
+        }
+      }
+      composeScene(editor, sceneRef.current);
+    };
+    void restore();
 
     storeUnsubRef.current?.();
     storeUnsubRef.current = editor.store.listen(
       () => {
+        dirtyRef.current = true;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => void persistCanvas(), 900);
         const selected = editor.getSelectedShapes();
         if (selected.length !== 1) { setSelectedBlock(null); return; }
         const blockId = (selected[0].meta as Record<string, unknown> | undefined)?.blockId;
         const block = typeof blockId === "string" ? sceneRef.current.blocks.find((b) => b.id === blockId) ?? null : null;
         setSelectedBlock(block);
       },
-      { scope: "session", source: "user" },
+      { scope: "document", source: "user" },
     );
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [documentId, notebookId, pageTruthKey, persistCanvas]);
 
   // Recompose whenever `scene` itself changes AFTER the initial mount —
   // onMount alone can't do this (see file header): it's a one-time hook.
@@ -196,7 +246,16 @@ export default function NotebookCanvas({ scene, storageKey, onViewSource, onJump
     if (editorRef.current) composeScene(editorRef.current, scene);
   }, [scene]);
 
-  useEffect(() => () => { storeUnsubRef.current?.(); }, []);
+  useEffect(() => {
+    const flush = () => { if (dirtyRef.current) void persistCanvas(); };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      flush();
+      storeUnsubRef.current?.();
+    };
+  }, [persistCanvas]);
 
   if (licenseMissingInProduction) {
     return (
@@ -210,6 +269,11 @@ export default function NotebookCanvas({ scene, storageKey, onViewSource, onJump
   return (
     <div style={{ position: "relative", minHeight: 480, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
       <Tldraw licenseKey={licenseKey} persistenceKey={storageKey} onMount={handleMount} assetUrls={TLDRAW_ASSET_URLS} />
+      {documentId && (
+        <div role="status" aria-live="polite" data-testid="notebook-cloud-save-status" style={{ position: "absolute", right: 10, top: 10, zIndex: 450, padding: "4px 8px", borderRadius: 6, background: "rgba(10,18,38,.86)", color: cloudStatus === "failed" || cloudStatus === "conflict" ? "#fca5a5" : "#cbd5e1", fontSize: 11 }}>
+          {cloudStatus === "saving" ? "Saving…" : cloudStatus === "saved" ? "Saved" : cloudStatus === "conflict" ? "Newer version found — reload" : cloudStatus === "failed" ? "Save failed — edits kept locally" : "Cloud ready"}
+        </div>
+      )}
       {selectedBlock && (
         <BlockActionPanel
           block={selectedBlock}
