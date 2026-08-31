@@ -18,6 +18,7 @@ import type {
   LearningEvidenceRef,
   LearningEvidenceSourceType,
 } from "./knowledgeGraphSchema";
+import { computeMastery } from "./computeMastery";
 
 export type LearningStateEvent =
   // A concept was encountered without a graded outcome — a page was read,
@@ -126,8 +127,25 @@ function pushEvidence(
 
 /** The one function that mutates a KnowledgeNodeProgress. Pure: returns a
  *  new object, never mutates `progress` in place, and produces the exact
- *  same output for the exact same (progress, event) input every time. */
+ *  same output for the exact same (progress, event) input every time.
+ *  masteryScore is always recomputed from the result via computeMastery()
+ *  before returning — "composite — see computeMastery()" was already the
+ *  field's own documented contract, but no write path actually did this
+ *  until now, so masteryScore silently stayed 0 forever regardless of real
+ *  recall/understanding/memory/confidence signal (confirmed: neither this
+ *  reducer nor recordLearningEvent.ts ever set it). That's a real bug for
+ *  any reader of the stored field — including the already-shipped
+ *  KnowledgeStatePanel's selectRecentlyMastered, which has always compared
+ *  against a value that could never rise above 0. */
 export function applyLearningEvent(
+  progress: KnowledgeNodeProgress,
+  event: LearningStateEvent,
+): KnowledgeNodeProgress {
+  const next = reduceEvent(progress, event);
+  return { ...next, masteryScore: computeMastery(next) };
+}
+
+function reduceEvent(
   progress: KnowledgeNodeProgress,
   event: LearningStateEvent,
 ): KnowledgeNodeProgress {
