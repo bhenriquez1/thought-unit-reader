@@ -13,8 +13,11 @@ describe("Firebase security configuration contract", () => {
     expect(rules).not.toMatch(/allow\s+(?:read|write|read,\s*write)\s*:\s*if\s+true/);
   });
 
-  it("allows PDF Storage access only beneath the signed-in user's UID", () => {
+  it("allows canonical Library Storage access only beneath the signed-in user's UID", () => {
     const rules = read("storage.rules");
+    expect(rules).toMatch(/match \/users\/\{uid\}\/library\/\{documentId\}\/\{objectName\}/);
+    expect(rules).toMatch(/request\.resource\.contentType == "application\/pdf"/);
+    expect(rules).toMatch(/request\.resource\.size <= 250 \* 1024 \* 1024/);
     expect(rules).toMatch(/match \/pdfs\/\{uid\}\/\{objectPath=\*\*\}/);
     expect(rules).toMatch(/request\.auth != null && request\.auth\.uid == uid/);
     expect(rules).not.toMatch(/allow\s+(?:read|write|read,\s*write)\s*:\s*if\s+true/);
@@ -31,8 +34,17 @@ describe("Firebase security configuration contract", () => {
     }
   });
 
-  it("starts with a valid empty Firestore indexes manifest", () => {
+  it("ships the composite indexes required by durable learning queries", () => {
     const indexes = JSON.parse(read("firestore.indexes.json"));
-    expect(indexes).toEqual({ indexes: [], fieldOverrides: [] });
+    expect(indexes.fieldOverrides).toEqual([]);
+    expect(indexes.indexes.map((index: { collectionGroup: string }) => index.collectionGroup))
+      .toEqual(expect.arrayContaining(["library", "stickyNotes", "recall", "learningState"]));
+  });
+
+  it("names every canonical durable user-owned path explicitly", () => {
+    const rules = read("firestore.rules");
+    for (const area of ["library", "notebooks", "stickyNotes", "learningState", "recall", "tests", "children"]) {
+      expect(rules).toContain(`/users/{uid}/${area}`);
+    }
   });
 });

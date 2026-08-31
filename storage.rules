@@ -5,8 +5,20 @@ service firebase.storage {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Existing application path. A signed-in user may access only objects
-    // stored beneath their own UID. All unmatched paths remain denied.
+    // Canonical Avrrio Library path. Files are immutable by convention once
+    // uploaded; replacement/deletion is always an explicit user action.
+    match /users/{uid}/library/{documentId}/{objectName} {
+      allow read: if isSelf(uid);
+      allow create, update: if isSelf(uid)
+        && objectName == "source.pdf"
+        && request.resource.size > 0
+        && request.resource.size <= 250 * 1024 * 1024
+        && request.resource.contentType == "application/pdf";
+      allow delete: if isSelf(uid);
+    }
+
+    // Legacy path remains owner-readable/writable during the additive
+    // migration. It must not be used for new uploads.
     match /pdfs/{uid}/{objectPath=**} {
       allow read, write: if isSelf(uid);
     }

@@ -59,8 +59,8 @@ const validateFirebaseConfig = () => {
   // Validate API key format (should start with AIza and be 39-40 characters)
   if (!firebaseConfig.apiKey.startsWith('AIza') || firebaseConfig.apiKey.length < 39 || firebaseConfig.apiKey.length > 40) {
     console.error('❌ Invalid Firebase API key format. Expected format: AIza... (39-40 characters)');
-    console.error('❌ Current API key:', firebaseConfig.apiKey);
-    console.error('❌ Current length:', firebaseConfig.apiKey.length);
+    // Never print configuration values. Even Firebase Web configuration must
+    // not become a habitually logged credential-shaped value.
     return false;
   }
   
@@ -193,126 +193,6 @@ if (useEmulators && typeof window !== "undefined" && !window.__FIREBASE_EMU_CONN
    🔹 Auth Helpers
    ========================================================================= */
 export function listenForAuthChanges(callback: (user: User | null) => void) {
-  // Check if Google Sign-In is disabled and we should use mock user
-  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-  
-  if (isDisabled && typeof window !== "undefined") {
-    // Create a persistent mock user
-    const createMockUser = (): User => ({
-      uid: "mock-user-dev",
-      email: "dev@thought-unit-reader.com", 
-      displayName: "Development User",
-      photoURL: null,
-      emailVerified: true,
-      isAnonymous: false,
-      providerData: [],
-      refreshToken: "mock-refresh-token",
-      tenantId: null,
-      metadata: {
-        creationTime: new Date().toISOString(),
-        lastSignInTime: new Date().toISOString()
-      },
-      phoneNumber: null,
-      providerId: "mock",
-      delete: async () => {},
-      getIdToken: async () => "mock-id-token",
-      getIdTokenResult: async () => ({} as any),
-      reload: async () => {},
-      toJSON: () => ({})
-    } as User);
-    
-    // Check current auth state
-    const checkCurrentAuthState = () => {
-      const storedUser = localStorage.getItem("mock-auth-user");
-      if (storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          return {
-            ...createMockUser(),
-            uid: userData.uid,
-            email: userData.email,
-            displayName: userData.displayName
-          };
-        } catch {
-          return null;
-        }
-      }
-      return null;
-    };
-    
-    // Initially call with current state — auto-create and persist a mock user
-    // when bypass mode is on and nothing was ever explicitly signed in/out
-    // yet. DISABLE_GOOGLE_SIGNIN's whole point is a zero-click local/dev
-    // bypass; requiring a manual "Sign in" click here would only be true to
-    // signInWithGoogle()'s own mock branch, not to what a bypassed app
-    // should look like on first load. Persisted (not just passed to this
-    // callback) so every other listenForAuthChanges call in the same
-    // session — and a page reload — see the same mock user rather than each
-    // minting its own transient one.
-    let currentUser = checkCurrentAuthState();
-    if (!currentUser) {
-      const autoUser = createMockUser();
-      localStorage.setItem("mock-auth-user", JSON.stringify({
-        uid: autoUser.uid,
-        email: autoUser.email,
-        displayName: autoUser.displayName,
-      }));
-      currentUser = autoUser;
-    }
-    setTimeout(() => callback(currentUser), 0);
-    
-    // Listen for storage events to detect mock auth state changes
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'mock-auth-user') {
-        if (e.newValue) {
-          // User signed in
-          try {
-            const userData = JSON.parse(e.newValue);
-            const mockUser = {
-              ...createMockUser(),
-              uid: userData.uid,
-              email: userData.email,
-              displayName: userData.displayName
-            };
-            callback(mockUser);
-          } catch {
-            callback(null);
-          }
-        } else {
-          // User signed out
-          callback(null);
-        }
-      }
-    };
-    
-    // Also listen for custom events for same-tab changes
-    const handleCustomAuthEvent = (e: CustomEvent) => {
-      if (e.detail.type === 'mock-signin') {
-        const mockUser = {
-          ...createMockUser(),
-          uid: e.detail.userData.uid,
-          email: e.detail.userData.email,
-          displayName: e.detail.userData.displayName
-        };
-        callback(mockUser);
-      } else if (e.detail.type === 'mock-signout') {
-        callback(null);
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('mock-auth-change', handleCustomAuthEvent as any);
-    
-    // Return cleanup function
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('mock-auth-change', handleCustomAuthEvent as any);
-      // Clear mock user on cleanup
-      localStorage.removeItem("mock-auth-user");
-      callback(null);
-    };
-  }
-  
   const authInstance = getAuthInstance();
   if (!authInstance) {
     // Firebase not configured - return a no-op cleanup function
@@ -388,57 +268,6 @@ async function ensureUserProfile(u: User) {
 
 /** Call on button click. Uses popup when possible; falls back to redirect automatically. */
 export async function signInWithGoogle(): Promise<User | null> {
-  // Check if Google Sign-In is temporarily disabled
-  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-  if (isDisabled) {
-    console.log("ℹ️ Google Sign-In disabled, using mock authenticated user");
-    // Create and store mock user
-    const mockUserData = {
-      uid: "mock-user-dev",
-      email: "dev@thought-unit-reader.com",
-      displayName: "Development User"
-    };
-    
-    // Store mock user info in localStorage for persistence
-    if (typeof window !== "undefined") {
-      localStorage.setItem("mock-auth-user", JSON.stringify(mockUserData));
-      
-      // Dispatch custom event for same-tab auth changes
-      window.dispatchEvent(new CustomEvent('mock-auth-change', {
-        detail: {
-          type: 'mock-signin',
-          userData: mockUserData
-        }
-      }));
-    }
-    
-    console.log("✅ Signed in:", mockUserData.displayName);
-    
-    // Return mock user object
-    return {
-      uid: mockUserData.uid,
-      email: mockUserData.email,
-      displayName: mockUserData.displayName,
-      photoURL: null,
-      emailVerified: true,
-      isAnonymous: false,
-      providerData: [],
-      refreshToken: "mock-refresh-token",
-      tenantId: null,
-      metadata: {
-        creationTime: new Date().toISOString(),
-        lastSignInTime: new Date().toISOString()
-      },
-      phoneNumber: null,
-      providerId: "mock",
-      delete: async () => {},
-      getIdToken: async () => "mock-id-token",
-      getIdTokenResult: async () => ({} as any),
-      reload: async () => {},
-      toJSON: () => ({})
-    } as User;
-  }
-
   // Check if Firebase is properly configured before attempting sign-in
   if (!isValidConfig) {
     const errorMsg = "Firebase configuration is invalid. Please check your environment variables.";
@@ -517,24 +346,6 @@ export async function handleRedirectResult(): Promise<User | null> {
 }
 
 export async function signOutUser(): Promise<void> {
-  // Check if Google Sign-In is disabled and we're using mock user
-  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-  
-  if (isDisabled && typeof window !== "undefined") {
-    // Clear mock user from localStorage
-    localStorage.removeItem("mock-auth-user");
-    
-    // Dispatch custom event for same-tab auth changes
-    window.dispatchEvent(new CustomEvent('mock-auth-change', {
-      detail: {
-        type: 'mock-signout'
-      }
-    }));
-    
-    console.log("ℹ️ Mock user signed out");
-    return;
-  }
-  
   try {
     const authInstance = getAuthInstance();
     if (authInstance) await signOut(authInstance);
@@ -546,21 +357,52 @@ export async function signOutUser(): Promise<void> {
 /* =========================================================================
    🔹 PDF Library Functions
    ========================================================================= */
+export async function hashPDFDocumentId(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function uploadPDF(file: File, userId: string): Promise<string> {
   const storageInstance = getStorageInstance();
   const dbInstance = getDbInstance();
   if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
   
-  const fileRef = ref(storageInstance, `pdfs/${userId}/${file.name}`);
-  await uploadBytes(fileRef, file);
-  const downloadURL = await getDownloadURL(fileRef);
+  if (!file || file.type !== "application/pdf") throw new Error("Only PDF uploads are supported.");
+  if (file.size <= 0 || file.size > 250 * 1024 * 1024) throw new Error("PDF must be between 1 byte and 250 MB.");
+  if (getAuthInstance()?.currentUser?.uid !== userId) throw new Error("The signed-in user does not own this upload.");
 
-  const libraryRef = doc(collection(dbInstance, "users", userId, "pdfLibrary"));
+  const documentId = await hashPDFDocumentId(file);
+  const storagePath = `users/${userId}/library/${documentId}/source.pdf`;
+  const libraryRef = doc(dbInstance, "users", userId, "library", documentId);
+  const existing = await getDoc(libraryRef);
+  if (existing.exists() && typeof existing.data().url === "string") return existing.data().url;
+
   await setDoc(libraryRef, {
+    documentId,
+    title: file.name.replace(/\.pdf$/i, ""),
+    originalFilename: file.name,
+    storagePath,
+    mimeType: file.type,
+    fileSize: file.size,
+    processingStatus: "uploading",
+    uploadedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    readingProgress: 0,
+    lastOpenedPage: 1,
+    canonicalProcessingVersion: 1,
+    schemaVersion: 1,
+  }, { merge: true });
+
+  const fileRef = ref(storageInstance, storagePath);
+  await uploadBytes(fileRef, file, { contentType: "application/pdf", customMetadata: { documentId, ownerUid: userId } });
+  const downloadURL = await getDownloadURL(fileRef);
+  await setDoc(libraryRef, {
+    documentId,
     name: file.name,
     url: downloadURL,
-    uploadedAt: new Date().toISOString(),
-  });
+    processingStatus: "processing",
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
 
   return downloadURL;
 }
@@ -571,14 +413,14 @@ export async function getPDFLibrary(
   const dbInstance = getDbInstance();
   if (!dbInstance) return [];
   
-  const querySnapshot = await getDocs(collection(dbInstance, "users", userId, "pdfLibrary"));
+  const querySnapshot = await getDocs(collection(dbInstance, "users", userId, "library"));
   const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
     const data = docSnap.data() as any;
     library.push({
       id: docSnap.id,
-      name: data.name,
+      name: data.originalFilename || data.name || data.title,
       url: data.url,
       uploadedAt: data.uploadedAt || "",
     });
@@ -594,8 +436,16 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   const dbInstance = getDbInstance();
   if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
   
-  await deleteDoc(doc(dbInstance, "users", userId, "pdfLibrary", pdfId));
-  const fileRef = ref(storageInstance, `pdfs/${userId}/${pdfName}`);
+  if (getAuthInstance()?.currentUser?.uid !== userId) throw new Error("The signed-in user does not own this document.");
+  const recordRef = doc(dbInstance, "users", userId, "library", pdfId);
+  const record = await getDoc(recordRef);
+  if (!record.exists()) throw new Error("Library document not found.");
+  const storagePath = record.data().storagePath;
+  if (typeof storagePath !== "string" || !storagePath.startsWith(`users/${userId}/library/${pdfId}/`)) {
+    throw new Error("Refusing to delete an unverified Storage path.");
+  }
+  await deleteDoc(recordRef);
+  const fileRef = ref(storageInstance, storagePath);
   await deleteObject(fileRef);
 }
 

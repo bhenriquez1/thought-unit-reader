@@ -11,6 +11,8 @@
 // grouping key, is what keeps a note's provenance links valid even when a
 // book re-upload resolves to a different document sharing the same bookId.
 
+import { currentFirebaseUid, deleteOwnedRecord, listOwnedRecords, saveOwnedRecord } from "@/lib/firebase/durableState";
+
 const DB_NAME = "avrrio_sticky_notes_v1";
 const STORE = "stickyNotes";
 const LS_KEY = "stickyNotes_v1";
@@ -148,6 +150,7 @@ export async function createStickyNote(input: CreateStickyNoteInput): Promise<St
   };
   const existing = await loadAll();
   await saveAll([note, ...existing]);
+  if (currentFirebaseUid()) await saveOwnedRecord("stickyNotes", note.id, note as unknown as Record<string, unknown>);
   return note;
 }
 
@@ -155,15 +158,25 @@ export async function updateStickyNoteText(id: string, text: string): Promise<vo
   const existing = await loadAll();
   const next = existing.map((n) => (n.id === id ? { ...n, text, updatedAt: Date.now() } : n));
   await saveAll(next);
+  const updated = next.find((note) => note.id === id);
+  if (currentFirebaseUid() && updated) await saveOwnedRecord("stickyNotes", id, updated as unknown as Record<string, unknown>);
 }
 
 export async function deleteStickyNote(id: string): Promise<void> {
   const existing = await loadAll();
   await saveAll(existing.filter((n) => n.id !== id));
+  if (currentFirebaseUid()) await deleteOwnedRecord("stickyNotes", id);
 }
 
 export async function getStickyNotesForDocument(documentId: string): Promise<StickyNote[]> {
-  const all = await loadAll();
+  let all = await loadAll();
+  if (currentFirebaseUid()) {
+    const cloud = await listOwnedRecords<StickyNote>("stickyNotes");
+    const merged = new Map(all.map((note) => [note.id, note]));
+    for (const note of cloud) merged.set(note.id, note);
+    all = [...merged.values()];
+    await saveAll(all);
+  }
   return all.filter((n) => n.documentId === documentId);
 }
 

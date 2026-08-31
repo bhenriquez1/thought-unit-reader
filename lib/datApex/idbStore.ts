@@ -7,6 +7,7 @@
 //   readiness  — DatReadinessState keyed by userId (one record per user)
 
 import type { DatAttempt, DatReadinessState, DatErrorClassification } from "./types";
+import { currentFirebaseUid, saveOwnedRecord } from "@/lib/firebase/durableState";
 
 const DB_NAME      = "avrrio-dat-apex";
 const DB_VERSION   = 2;
@@ -42,11 +43,14 @@ export async function saveAttempt(attempt: DatAttempt): Promise<void> {
   const db  = await openDb();
   const tx  = db.transaction(STORE_ATTEMPTS, "readwrite");
   const req = tx.objectStore(STORE_ATTEMPTS).put(attempt);
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
     tx.onerror    = () => reject(tx.error);
   });
+  if (currentFirebaseUid()) {
+    await saveOwnedRecord("tests", attempt.id, attempt as unknown as Record<string, unknown>);
+  }
 }
 
 export async function loadAttempt(id: string): Promise<DatAttempt | null> {

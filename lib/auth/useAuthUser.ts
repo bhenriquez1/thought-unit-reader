@@ -1,19 +1,11 @@
 // lib/auth/useAuthUser.ts
 // Product-split Phase 2 — the one real shared-infrastructure gap the
 // migration plan found: no shared, React-reactive auth layer existed
-// outside pages/_app.tsx and pages/index.tsx, and those two had already
-// drifted into two SEPARATE listenForAuthChanges subscriptions with two
-// DIFFERENT dev-bypass mock users (pages/index.tsx's own inline bypass
-// branch built a "guest-user-<timestamp>" mock, while
-// lib/firebase.ts's listenForAuthChanges already handles the exact same
-// NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN flag internally with its own,
-// different "mock-user-dev" — pages/index.tsx's branch just meant that
-// internal handling was silently unreachable there).
+// outside pages/_app.tsx and pages/index.tsx.
 //
 // This hook is the one place any component — Pages Router or App Router —
-// asks "who's signed in." It does not reimplement bypass-mode handling;
-// listenForAuthChanges already owns that, so calling it directly here is
-// what actually fixes the drift, not just moves it.
+// asks "who's signed in." Firebase Authentication is the only identity
+// source; development/mock users are intentionally unsupported.
 //
 // Deliberately NOT wrapped in a Context Provider: each existing call site
 // (pages/_app.tsx, pages/index.tsx) already ran its own independent
@@ -38,7 +30,7 @@ import { listenForAuthChanges, handleRedirectResult, type User } from "@/lib/fir
 export interface AuthUserState {
   user: User | null;
   /** True until the first onAuthStateChanged callback actually fires (or
-   *  the dev-bypass mock user resolves) — lets a caller distinguish "we
+   *  Firebase resolves) — lets a caller distinguish "we
    *  don't know yet" from "we checked, and nobody's signed in." Consumers
    *  that sync external state off `user` (e.g. a cookie mirror) should
    *  wait for loading to become false before acting, so they never act on
