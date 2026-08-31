@@ -77,7 +77,7 @@ describe("GenerateNoteButton — knowledgeNodeId back-fill (same gap M4 fixed in
 
 describe("GenerateNoteButton — composeNoteNotebookSceneInBackground", () => {
   const idx = SRC.indexOf("async function composeNoteNotebookSceneInBackground(");
-  const fn = SRC.slice(idx, idx + 2000);
+  const fn = SRC.slice(idx, idx + 3000);
 
   it("REQUIRED: the function actually exists", () => {
     expect(idx).toBeGreaterThan(-1);
@@ -106,14 +106,42 @@ describe("GenerateNoteButton — composeNoteNotebookSceneInBackground", () => {
   });
 
   it("REQUIRED: re-reads the note fresh immediately before the final write — never overwrites edits made while synthesis was in flight", () => {
-    const finalReadIdx = fn.lastIndexOf("getNotesByBookAsync(savedNote.bookId)");
-    const saveIdx = fn.indexOf("await saveUltraNote({ ...latest, notebookScene: scene });");
+    const finalReadIdx = fn.indexOf("getNotesByBookAsync(savedNote.bookId)", fn.indexOf("const scene = await generateNotebookScene"));
+    const saveIdx = fn.indexOf("await saveUltraNote({ ...latest, notebookScene: scene, notebookSceneError: undefined });");
     expect(finalReadIdx).toBeGreaterThan(-1);
     expect(saveIdx).toBeGreaterThan(finalReadIdx);
   });
 
-  it("REQUIRED: never throws out of the background task — a failure anywhere is caught and logged, not surfaced as an unhandled rejection", () => {
-    expect(fn).toMatch(/\} catch \(err\) \{\s*console\.error\("\[NOTELAB_GENERATE_BACKGROUND_ERROR\]", err\);\s*\}/);
+  it("REQUIRED: clears any prior notebookSceneError on a successful synthesis, so a stale error doesn't linger after a later success", () => {
+    expect(fn).toMatch(/await saveUltraNote\(\{ \.\.\.latest, notebookScene: scene, notebookSceneError: undefined \}\);/);
+  });
+
+  it("REQUIRED: never throws out of the background task — a failure anywhere is caught, not surfaced as an unhandled rejection", () => {
+    const catchIdx = fn.indexOf("} catch (err) {");
+    expect(catchIdx).toBeGreaterThan(-1);
+    expect(fn).toMatch(/console\.error\("\[NOTELAB_GENERATE_BACKGROUND_ERROR\]", err\);/);
+  });
+
+  it("REQUIRED: on failure, persists notebookSceneError onto the note itself — 'show an explicit recoverable error... rather than reverting to the old card view [silently]', and the background task has no live UI to report to directly", () => {
+    const catchIdx = fn.indexOf("} catch (err) {");
+    const catchBlock = fn.slice(catchIdx);
+    expect(catchBlock).toMatch(/await saveUltraNote\(\{ \.\.\.latest, notebookSceneError: message\.slice\(0, 200\) \}\);/);
+  });
+
+  it("logs generation diagnostics — visualPlanGenerated, visualPrimitiveCount, persistenceSaveSuccess", () => {
+    expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{\s*\n\s*noteId: savedNote\.id, visualPlanGenerated: true, visualPrimitiveCount: scene\.blocks\.length,\s*\n\s*\}\);/);
+    expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{ noteId: savedNote\.id, persistenceSaveSuccess: persisted \}\);/);
+  });
+});
+
+describe("lib/notelab/ultraNoteStore.ts — UltraNote carries a recoverable notebookSceneError field (NU1)", () => {
+  const src = fs.readFileSync(path.resolve(__dirname, "../../lib/notelab/ultraNoteStore.ts"), "utf8");
+
+  it("REQUIRED: notebookSceneError is a real optional field on UltraNote", () => {
+    const idx = src.indexOf("export interface UltraNote {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf("\n}", idx));
+    expect(block).toMatch(/notebookSceneError\?:\s*string;/);
   });
 });
 
