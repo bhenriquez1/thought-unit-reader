@@ -19,27 +19,27 @@ describe("canonical adaptive study surfaces", () => {
     expect(source).not.toContain("Grounded on This Page");
   });
 
-  it("makes the structured notebook and student-authored layer canonical in NoteLab", () => {
+  it("makes the visual notebook and student-authored layer canonical in NoteLab", () => {
     const source = read("components/notelab/UltraNotesList.tsx");
     expect(source).toContain('label="MY NOTES"');
     expect(source).toContain('data-testid="visual-notebook-page"');
-    expect(source).toContain('data-testid="adaptive-notebook-sections"');
-    expect(source).toContain("SectionsView");
-    expect(source).toContain("Source Evidence");
-    expect(source).toContain("getCanonicalNotebookSections(note)");
     expect(source).not.toContain("<NoteCardGrid");
     expect(source).not.toContain("ADAPTIVE STUDY CARDS");
   });
 
-  it("keeps provenance out of the primary notebook section grid", () => {
+  // NU4 (NoteLab Unification correction) retired the old card-based
+  // SectionsView/section-grid renderer entirely — its content (Big Idea/Key
+  // Facts/etc.) is migrated into the notebookScene itself as real primitives
+  // (see lib/notelab/deterministicNotebookBlocks.ts and
+  // tests/notelab/deterministicNotebookBlocks.test.ts), so there is no
+  // longer a separate section grid for provenance to stay out of, and no
+  // standing SOURCE REFERENCES list either — see
+  // tests/notelab/evidenceAsProvenance.test.ts and
+  // tests/notelab/notebookCanvasWiring.test.ts for the current contract.
+  it("keeps provenance out of the notebook — no standalone section grid or source-reference list remain to leak it", () => {
     const source = read("components/notelab/UltraNotesList.tsx");
-    expect(source).toContain('section.label !== "Source Evidence"');
-    // P4 (Evidence-as-provenance correction) renamed this from "SOURCE
-    // EVIDENCE" to "SOURCE REFERENCES" — the standing Evidence panel was
-    // removed entirely; this collapsed per-note list is the only survivor,
-    // and it's no longer branded "Evidence" to avoid reading as a second,
-    // competing surface. See tests/notelab/evidenceAsProvenance.test.ts.
-    expect(source).toContain("SOURCE REFERENCES · PDF PAGE");
+    expect(source).not.toContain("SectionsView");
+    expect(source).not.toContain("SOURCE REFERENCES");
   });
 
   it("preserves the student-authored layer when AI regenerates a stable page note", () => {

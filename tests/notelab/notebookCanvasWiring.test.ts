@@ -175,7 +175,7 @@ describe("NotebookCanvas.tsx — N4: provenance-driven selection action panel", 
   });
 });
 
-describe("UltraNotesList.tsx — Notebook tab wiring", () => {
+describe("UltraNotesList.tsx — Notebook wiring (NU4 — Study Page tab split retired)", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(LIST_FILE, "utf8"); });
 
@@ -184,16 +184,42 @@ describe("UltraNotesList.tsx — Notebook tab wiring", () => {
     expect(src).toMatch(/<NotebookCanvas\s*\n\s*scene=\{note\.notebookScene\}/);
   });
 
-  it("REQUIRED: a composed visual notebook opens first and the retired Study Sheet tab is absent", () => {
-    expect(src).toContain('note.notebookScene ? "notebook" : "page"');
-    expect(src).toContain('(["notebook", "page"] as const)');
-    expect(src).not.toContain('"studySheet"');
-    expect(src).not.toContain("<AdaptiveStudySheetCard");
-    expect(src).not.toContain("<DATStudySheetCard");
+  it("REQUIRED: the Visual notebook/Study page tab split no longer exists — there is one notebook, not two views to choose between", () => {
+    expect(src).not.toMatch(/noteView/);
+    expect(src).not.toContain('data-testid="notebook-view-switcher"');
+    expect(src).not.toContain("🖊️ Visual notebook");
+    expect(src).not.toContain("📄 Study page");
+    expect(src).not.toContain('(["notebook", "page"] as const)');
   });
 
-  it("REQUIRED: the notebook tab body is gated on both the active tab AND the scene actually being present, so it can never render with an undefined scene", () => {
-    expect(src).toMatch(/\{noteView === "notebook" && note\.notebookScene && \(/);
+  it("REQUIRED: the old card-based SectionsView (and its now-dead siblings ConceptMiniTable/ConceptBlock/ProfessorSection) are gone — content was migrated to real notebook primitives in NU3, not kept as a fallback renderer", () => {
+    expect(src).not.toMatch(/function SectionsView/);
+    expect(src).not.toMatch(/function ConceptMiniTable/);
+    expect(src).not.toMatch(/function ConceptBlock/);
+    expect(src).not.toMatch(/function ProfessorSection/);
+    expect(src).not.toContain('data-testid="adaptive-notebook-sections"');
+  });
+
+  it("REQUIRED: also removed the standalone SOURCE REFERENCES accordion — per-object provenance (View Source/Jump to Reader) on the notebook canvas is now the only path, per the correction's evidence-as-metadata rule", () => {
+    expect(src).not.toContain("SOURCE REFERENCES");
+  });
+
+  it("REQUIRED: the notebook renders whenever a scene exists — no tab state gating it, so it can never render with an undefined scene", () => {
+    expect(src).toMatch(/\{note\.notebookScene \? \(\s*<NotebookCanvas/);
+  });
+
+  it("REQUIRED: a note with no notebookScene at all shows an explicit empty-state prompt, never the retired card dashboard as a fallback", () => {
+    const idx = src.indexOf("{note.notebookScene ? (");
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(/Nothing composed here yet\. Write your own notes below/);
+  });
+
+  it("REQUIRED: a persisted notebookSceneError (NU1/NU3's fallback path) is surfaced as a passive, non-blocking notice — never a second competing dashboard, no retry action here (NotebookCanvas's own hard-failure state already owns retry)", () => {
+    const idx = src.indexOf("{note.notebookSceneError && (");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(/AI enhancement of this notebook didn't finish/);
+    expect(block).not.toMatch(/onClick/);
   });
 
   it("REQUIRED: each note gets its own persistenceKey derived from its own id — one note's notebook edits never bleed into another's", () => {
