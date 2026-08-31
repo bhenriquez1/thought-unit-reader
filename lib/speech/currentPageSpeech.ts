@@ -7,6 +7,7 @@
 // equations, figure/table captions) just because it's adjacent to furniture.
 
 import { cleanActivePageText, classifyLineRole, type RegionRole } from "@/lib/insights/cleanActivePageText";
+import { buildSourceWordDiagnostic, type SourceWordDiagnostic } from "@/lib/speech/sourceWordDiagnostic";
 
 const ABBREVIATION_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
 
@@ -86,12 +87,19 @@ function splitOversizedSegment(segment: string, maxChars: number): string[] {
  * for anchor grounding and synthesis input; this reuses it rather than
  * building a second matcher.
  */
-export function buildCurrentPageSpeechSegments(
+// The instructional reading sequence AND the queued sentence segments,
+// computed once so buildCurrentPageSpeechSegments (unchanged public
+// behavior — still just string[], every existing caller untouched) and
+// buildCurrentPageSpeechDiagnostic (the correction's own
+// sourceWordsExpected/Queued/Skipped assertion) share one source of truth
+// instead of the diagnostic re-deriving the filtering logic and risking
+// drift from what actually got queued.
+function buildCurrentPageSpeechResult(
   activePageText: string,
-  maxChars = 3500,
-): string[] {
+  maxChars: number,
+): { source: string; sentences: string[] } {
   const cleaned = cleanActivePageText(activePageText, "current-page-speech", { stripFigureCaptions: false });
-  if (!cleaned) return [];
+  if (!cleaned) return { source: "", sentences: [] };
 
   const lines = cleaned.split(/\n+/).map(normalizeSourceWhitespace).filter(Boolean);
   const spokenLines = lines.filter((line) => {
@@ -101,7 +109,7 @@ export function buildCurrentPageSpeechSegments(
     return true;
   });
   const source = normalizeSourceWhitespace(spokenLines.join(" "));
-  if (!source) return [];
+  if (!source) return { source: "", sentences: [] };
 
   const chunks = source.split(/(?<=[.!?…])\s+/);
   const sentences: string[] = [];
@@ -117,5 +125,33 @@ export function buildCurrentPageSpeechSegments(
     }
   }
 
-  return sentences.flatMap((sentence) => splitOversizedSegment(sentence, maxChars));
+  return { source, sentences: sentences.flatMap((sentence) => splitOversizedSegment(sentence, maxChars)) };
+}
+
+export function buildCurrentPageSpeechSegments(
+  activePageText: string,
+  maxChars = 3500,
+): string[] {
+  return buildCurrentPageSpeechResult(activePageText, maxChars).sentences;
+}
+
+/**
+ * Correction (Current Mode losslessness) — the diagnostic assertion
+ * requested alongside buildCurrentPageSpeechSegments: sourceWordsExpected
+ * (words in the selected instructional reading sequence, after legitimate
+ * furniture-only stripping), sourceWordsQueued (words actually present
+ * across the sentence segments queued for TTS), and sourceWordsSkipped
+ * (their difference — must be 0 for a correctly-functioning segmenter; a
+ * positive value means real content was lost during segmentation, not
+ * during the earlier, deliberate furniture-stripping stage). Reuses
+ * buildCurrentPageSpeechResult's own computation rather than re-deriving
+ * the filtering logic — the two numbers can never drift apart from what
+ * buildCurrentPageSpeechSegments itself actually returns.
+ */
+export function buildCurrentPageSpeechDiagnostic(
+  activePageText: string,
+  maxChars = 3500,
+): SourceWordDiagnostic {
+  const { source, sentences } = buildCurrentPageSpeechResult(activePageText, maxChars);
+  return buildSourceWordDiagnostic(source, sentences);
 }

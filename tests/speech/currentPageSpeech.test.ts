@@ -1,5 +1,6 @@
 import {
   buildCurrentPageSpeechSegments,
+  buildCurrentPageSpeechDiagnostic,
   normalizeSourceWhitespace,
 } from "../../lib/speech/currentPageSpeech";
 import { cleanActivePageText } from "../../lib/insights/cleanActivePageText";
@@ -123,3 +124,50 @@ describe("Current Page speech — heading/page-furniture suppression (Tier 3)", 
     expect(spoken).toBe("Mitochondria produce ATP through oxidative phosphorylation.");
   });
 });
+
+// Correction (Current Mode losslessness) — buildCurrentPageSpeechDiagnostic
+// shares buildCurrentPageSpeechSegments' own internal computation (see
+// currentPageSpeech.ts's buildCurrentPageSpeechResult), so these assert
+// against the REAL function actually used for playback, not a
+// reimplementation that could drift from it.
+describe("buildCurrentPageSpeechDiagnostic — sourceWordsExpected/Queued/Skipped", () => {
+  it("REQUIRED: sourceWordsSkipped is 0 for an ordinary page — segmenting never loses a word from the selected reading sequence", () => {
+    const source = "The cell membrane regulates transport. Substrates bind at the active site.";
+    const diagnostic = buildCurrentPageSpeechDiagnostic(source);
+    expect(diagnostic.sourceWordsSkipped).toBe(0);
+    expect(diagnostic.sourceWordsExpected).toBe(diagnostic.sourceWordsQueued);
+    expect(diagnostic.sourceWordsExpected).toBeGreaterThan(0);
+  });
+
+  it("REQUIRED: legitimate furniture stripping (a running header) is excluded from BOTH expected and queued equally — sourceWordsSkipped still 0, since exclusion happened before 'expected' was even measured", () => {
+    const source = "30 UNIT ONE The Chemistry of Life Cells are the basic unit of all living things.";
+    const diagnostic = buildCurrentPageSpeechDiagnostic(source);
+    expect(diagnostic.sourceWordsSkipped).toBe(0);
+    // The leading "30 UNIT ONE " keyword-header prefix never enters the
+    // count at all — expected is scoped to the SELECTED reading sequence
+    // (everything from "The Chemistry of Life" onward, per
+    // LEADING_RUNNING_HEADER_RE's own lazy match), not the raw page text.
+    expect(diagnostic.sourceWordsExpected).toBe(countWordsHelper("The Chemistry of Life Cells are the basic unit of all living things."));
+  });
+
+  it("matches an oversized page that gets split across multiple TTS-sized segments — splitting never changes the word count", () => {
+    const source = Array.from({ length: 200 }, (_, i) => `word${i}`).join(" ");
+    const diagnostic = buildCurrentPageSpeechDiagnostic(source, 80);
+    expect(diagnostic.sourceWordsExpected).toBe(200);
+    expect(diagnostic.sourceWordsQueued).toBe(200);
+    expect(diagnostic.sourceWordsSkipped).toBe(0);
+  });
+
+  it("an empty page reports all zeros, not a crash", () => {
+    expect(buildCurrentPageSpeechDiagnostic("")).toEqual({
+      sourceWordsExpected: 0,
+      sourceWordsQueued: 0,
+      sourceWordsSkipped: 0,
+    });
+  });
+});
+
+function countWordsHelper(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
