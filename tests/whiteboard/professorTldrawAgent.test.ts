@@ -291,3 +291,91 @@ describe("Professor tldraw Agent — deterministic hands gate", () => {
     })).toThrow();
   });
 });
+
+// Correction (Whiteboard density) — attachToLocalId was parsed (LabelToolSchema)
+// but never actually used: every "writeLabel ... attachToLocalId: X" call
+// still produced its OWN independent shapeId, so the label always rendered
+// as a floating text shape next to a permanently empty symbol (X's own
+// draw-shape action never gets a `text` field from anywhere else). This is
+// the direct, deterministic cause of "empty oval / empty rounded rectangle"
+// — not a probabilistic model-quality issue.
+describe("Professor tldraw Agent — attachToLocalId merges a label onto its target symbol's own shapeId", () => {
+  it("REQUIRED: a writeLabel with attachToLocalId pointing at a symbol drawn earlier in the SAME response shares that symbol's shapeId — the concrete fix for empty ovals/rectangles", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawSymbol", localId: "matter-oval", sourceTargetId: "source-one", symbol: "ellipse", bounds: { x: 20, y: 20, w: 80, h: 40 }, color: "blue", size: "m", dash: "draw", fill: "none" },
+        { tool: "writeLabel", localId: "matter-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "matter-oval" },
+      ],
+    });
+    const symbol = verified.actions.find(a => a.type === "draw-shape" && a.visualRole === "drawSymbol") as any;
+    const label = verified.actions.find(a => a.type === "write" && a.text === "Bilateral finger rests") as any;
+    expect(symbol).toBeDefined();
+    expect(label).toBeDefined();
+    expect(label.shapeId).toBe(symbol.shapeId);
+  });
+
+  it("REQUIRED: attaching onto a symbol from a PRIOR pass (via priorAgentLocalIds) also merges correctly", () => {
+    const request = buildProfessorTldrawAgentRequest({
+      plan: PLAN, stepId: 1, pass: "inspect", canvas: CANVAS, priorAgentLocalIds: ["earlier-oval"],
+    })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "inspect", complete: true,
+      assessment: { needsCorrection: true, issues: ["missing label"] },
+      actions: [
+        { tool: "writeLabel", localId: "late-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "earlier-oval" },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-earlier-oval");
+  });
+
+  it("an attachToLocalId that names an unresolvable/hallucinated id falls back to an independent label — never trusts an unverified target", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "orphan-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "never-drawn" },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-orphan-label");
+    expect(label.shapeId).not.toBe("shape:prof-agent-1-never-drawn");
+  });
+
+  it("attachToLocalId: null (the common case) is unchanged — an independent label with its own pushClearOf-positioned shapeId", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "writeLabel", localId: "standalone-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: null },
+      ],
+    });
+    const label = verified.actions.find(a => a.type === "write") as any;
+    expect(label.shapeId).toBe("shape:prof-agent-1-standalone-label");
+  });
+
+  it("REQUIRED end-to-end: once merged, the shape's replayed canvas state actually carries BOTH the symbol's own kind and the label's text — not two separate shapes", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawSymbol", localId: "atom-circle", sourceTargetId: "source-one", symbol: "ellipse", bounds: { x: 20, y: 20, w: 80, h: 40 }, color: "blue", size: "m", dash: "draw", fill: "none" },
+        { tool: "writeLabel", localId: "atom-label", sourceTargetId: "source-one", text: "Bilateral finger rests", x: 20, y: 30, color: "black", size: "m", attachToLocalId: "atom-circle" },
+      ],
+    });
+    const { computeCanvasStateAtStep } = require("../../lib/whiteboard/professorTimelineEngine");
+    const allActions = [...PLAN.actions, ...verified.actions.map(a => ({ ...a, stepId: 999 }))];
+    const state = computeCanvasStateAtStep(allActions, allActions.length - 1);
+    const symbolAction = verified.actions.find(a => a.type === "draw-shape") as any;
+    const merged = state.get(symbolAction.shapeId);
+    expect(merged).toBeDefined();
+    expect(merged.kind).toBe("circle"); // "ellipse" symbol -> "circle" ShapeVisualKind
+    expect(merged.text).toBe("Bilateral finger rests");
+  });
+});

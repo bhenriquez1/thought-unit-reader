@@ -536,7 +536,26 @@ export function verifyProfessorTldrawAgentResponse(
     if (call.tool === "writeLabel") {
       let x = clamp(call.x, region.x, region.x + region.w);
       let y = clamp(call.y, region.y, region.y + region.h);
-      if (!call.attachToLocalId) {
+      // Correction (Whiteboard density) — attachToLocalId used to be parsed
+      // but never actually used: this write action always got its OWN
+      // shapeId (derived from call.localId, the label's own local id), so
+      // every "writeLabel ... attachToLocalId: X" call still produced an
+      // independent floating text shape next to a permanently empty symbol
+      // — X's own draw-shape action never gets a `text` field from
+      // anywhere else. computeCanvasStateAtStep only merges a write
+      // action's text onto a shape when their shapeIds MATCH, the same
+      // convention the deterministic pipeline already relies on
+      // (buildProfessorTeachingActions.ts reuses one shapeId for both a
+      // node's outline and its label). When attachToLocalId names a real,
+      // already-accepted local id (drawn earlier this pass or a prior
+      // one), redirect this write action's shapeId to match it instead —
+      // an unresolvable/hallucinated attachToLocalId falls back to the
+      // original independent-label behavior rather than trusting an
+      // unverified target.
+      const attachedShapeId = call.attachToLocalId && reservedLocalIds.has(call.attachToLocalId)
+        ? stableShapeId(stepId, call.attachToLocalId)
+        : null;
+      if (!attachedShapeId) {
         const labelBox = pushClearOf({ x, y, w: estimateLabelWidth(call.text), h: estimateLabelHeight(call.text) }, obstacles);
         const clamped = clampBounds(labelBox, region);
         x = clamped.x;
@@ -546,7 +565,7 @@ export function verifyProfessorTldrawAgentResponse(
       push({
         type: "write",
         actionId: actionId(call.localId, "label"),
-        shapeId,
+        shapeId: attachedShapeId ?? shapeId,
         targetId: sourceTarget(call, allowedSources),
         text: call.text,
         x,
