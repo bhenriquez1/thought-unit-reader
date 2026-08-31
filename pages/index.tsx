@@ -722,10 +722,9 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   // Sub-tab selections within consolidated panels
-  // M5 — Evidence used to be its own sub-tab ("sources") here; it's now
-  // woven inline into each expanded note in UltraNotesList instead, so
-  // there's no separate click to see it. See UltraNotesList.tsx's own M5
-  // comment.
+  // M5 collapsed Evidence's own sub-tab ("sources") into an inline panel;
+  // P4 (Evidence-as-provenance correction) removed that panel entirely —
+  // provenance now surfaces only via per-object actions, never a click here.
   const [notesSubTab, setNotesSubTab] = useState<"notes" | "teaching">("notes");
   const [activeNote, setActiveNote] = useState<import("@/lib/notelab/ultraNoteStore").UltraNote | null>(null);
   const [hubSubTab, setHubSubTab] = useState<"overview" | "today" | "roadmap" | "studyplan" | "mastery" | "weak" | "exam" | "graph" | "coach" | "sources">("overview");
@@ -5872,13 +5871,13 @@ export default function ThoughtUnitReader() {
 
           {/* Canonical saved-note workspace. This is the immediate destination
               for every Save to NoteLab action; the old generic Personal
-              Workspace no longer hides the structured study notes. M5 —
-              Evidence (Concept Evidence Workspace: active concept → source
-              evidence → Avrrio interpretation) is woven inline into each
-              expanded note here rather than living behind its own sub-tab;
-              surgeonPageTruthKey/groundedAnnotations/studyModel are the live
-              Reader-page context UltraNotesList can't derive from a saved
-              note alone (see its own M5 comment). */}
+              Workspace no longer hides the structured study notes.
+              Correction (Evidence-as-provenance) — P4 removed the M5
+              standing Evidence panel (LearningSourcesManager/EvidenceWorkspace)
+              entirely; provenance now lives behind each note/block and
+              surfaces only via per-object actions (View Source/Jump to
+              Reader/Ask Professor), never a separate visible Evidence
+              workspace competing with the notebook. */}
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "notes" ? "flex" : "none", flexDirection: "column" }}>
             <UltraNotesList
               bookId={bookId}
@@ -5899,9 +5898,6 @@ export default function ThoughtUnitReader() {
               }}
               focusedAnchorText={notelabFocusedAnchorText}
               focusedKnowledgeNodeId={selectedKgNodeId}
-              surgeonPageTruthKey={surgeonAnnotations.plan?.pageTruthKey ?? null}
-              groundedAnnotations={surgeonAnnotations.groundedAnnotations}
-              studyModel={currentPageStudyModel}
             />
           </div>
         </div>
