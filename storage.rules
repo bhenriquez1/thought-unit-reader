@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Existing application path. A signed-in user may access only objects
+    // stored beneath their own UID. All unmatched paths remain denied.
+    match /pdfs/{uid}/{objectPath=**} {
+      allow read, write: if isSelf(uid);
+    }
+  }
+}
