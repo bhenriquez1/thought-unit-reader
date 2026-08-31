@@ -28,10 +28,11 @@
 //       THIS subject's own real title text/stroke content.
 //
 // Deliberately NOT covered here: M3 (lesson-save synthesizes, not
-// duplicates), M5 (Evidence woven inline), M6 (dead-code removal). All
-// three are structural/wiring guarantees already covered by their own
-// dedicated regression suites (tests/notelab/lessonToNotebookSceneWiring.test.ts,
-// tests/notelab/conceptEvidenceWorkspace.test.ts) and don't vary by subject
+// duplicates), M6 (dead-code removal), P4 (Evidence-as-provenance — no
+// standing Evidence panel). All are structural/wiring guarantees already
+// covered by their own dedicated regression suites
+// (tests/notelab/lessonToNotebookSceneWiring.test.ts,
+// tests/notelab/evidenceAsProvenance.test.ts) and don't vary by subject
 // matter — re-asserting them per-subject here would just be restating the
 // same wiring check five times, not proving anything new.
 

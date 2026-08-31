@@ -358,7 +358,10 @@ describe("No fallback — a Professor Lesson Planner failure shows a distinct re
   });
 
   it('shows a distinct role="alert" retry state when status is "error", separate from the loading skeleton', () => {
-    const idx = src.indexOf('lessonStatus === "error"');
+    // lessonStatus === "error" also appears in the diagnostic-escalation
+    // effect (Professor-defaults-to-PDF correction); anchor on the JSX
+    // conditional specifically, which is the one that renders the retry UI.
+    const idx = src.indexOf('!lessonPlan && lessonStatus === "error" && (');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 1500);
     expect(block).toMatch(/role="alert"/);

@@ -37,10 +37,6 @@ import {
 import NotebookCanvas from "@/components/notelab/NotebookCanvas";
 import KnowledgeNodeBadge from "@/components/knowledge/KnowledgeNodeBadge";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
-import LearningSourcesManager from "@/components/notelab/LearningSourcesManager";
-import { buildPageTruthKey } from "@/lib/useActivePageIntelligence";
-import type { GroundedSurgeonAnnotation } from "@/lib/highlights/groundSurgeonQuotes";
-import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 interface UltraNotesListProps {
   bookId?: string;
@@ -63,18 +59,6 @@ interface UltraNotesListProps {
   focusedAnchorText?: string | null;
   /** When set, auto-expands and scrolls to the note with this knowledgeNodeId. */
   focusedKnowledgeNodeId?: string | null;
-  // M5 — Evidence used to be its own NoteLab sub-tab (a separate click away
-  // from the notes themselves). It's now woven inline into each expanded
-  // note instead, scoped to THAT note's own (documentId, pageNumber,
-  // pageTruthKey) — see NoteCard below. These four are the live Reader-page
-  // context LearningSourcesManager can't derive from a saved note alone;
-  // conceptEvidenceWorkspace.ts's own identity gating (surgeonPageTruthKey
-  // vs. the note's pageTruthKey) already no-ops them to empty when the
-  // expanded note isn't the page currently open in Reader, so it's always
-  // safe to pass the live values through unconditionally.
-  surgeonPageTruthKey?: string | null;
-  groundedAnnotations?: GroundedSurgeonAnnotation[];
-  studyModel?: CurrentPageStudyModel | null;
 }
 
 const TOOL_BTN: React.CSSProperties = {
@@ -113,7 +97,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes":         "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onAskProfessorAboutBlock, onActiveNoteChange, focusedKnowledgeNodeId, surgeonPageTruthKey, groundedAnnotations, studyModel }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated, onOpenWhiteboard, onAskProfessorAboutBlock, onActiveNoteChange, focusedKnowledgeNodeId }: UltraNotesListProps) {
   // Start from LS mirror for instant render; IDB async fills in on mount
   const [notes, setNotes] = useState<UltraNote[]>(() => {
     const all = getAllUltraNotes();
@@ -425,9 +409,6 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                               onOpenWhiteboard={onOpenWhiteboard}
                               onAskProfessorAboutBlock={onAskProfessorAboutBlock}
                               onJumpToNote={handleJumpToNote}
-                              surgeonPageTruthKey={surgeonPageTruthKey}
-                              groundedAnnotations={groundedAnnotations}
-                              studyModel={studyModel}
                             />
                           );
                         })}
@@ -520,7 +501,6 @@ function ModeSelector({ mode, onChange }: { mode: ProfessionMode; onChange: (m: 
 
 function NoteCard({
   note, allNotes, mode, isExpanded, copiedId, highlighted, cardRef, onToggle, onCopy, onDelete, onDuplicate, onNavigate, onCardsGenerated, onOpenWhiteboard, onAskProfessorAboutBlock, onJumpToNote,
-  surgeonPageTruthKey, groundedAnnotations, studyModel,
 }: {
   note: UltraNote;
   allNotes: UltraNote[];
@@ -538,9 +518,6 @@ function NoteCard({
   onOpenWhiteboard?: (note: UltraNote, card?: NoteCardData) => void;
   onAskProfessorAboutBlock?: (note: UltraNote, block: FinalizedNotebookBlock) => void;
   onJumpToNote: (target: UltraNote) => void;
-  surgeonPageTruthKey?: string | null;
-  groundedAnnotations?: GroundedSurgeonAnnotation[];
-  studyModel?: CurrentPageStudyModel | null;
 }) {
   const setSelectedKgNodeId = useKnowledgeSelectionStore((s) => s.setSelectedNodeId);
   const [cardsSaved, setCardsSaved] = useState(false);
@@ -548,10 +525,6 @@ function NoteCard({
   const [noteView, setNoteView] = useState<"page" | "notebook">(() => note.notebookScene ? "notebook" : "page");
   const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
   const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  // M5 — Evidence is now inline, not a tab you have to click to; default
-  // open so it's genuinely visible without an extra step, collapsible only
-  // as a length convenience once the student has already seen it.
-  const [showEvidence, setShowEvidence] = useState(true);
 
   useEffect(() => {
     setStudentDraft(note.studentNotes ?? "");
@@ -620,12 +593,6 @@ function NoteCard({
     ...(note.highlightAnchors?.map((anchor, index) => ({ id: `highlight-${index}`, text: anchor.text, kind: anchor.anchorType })) ?? []),
     ...sectionEvidence,
   ].filter((entry, index, entries) => entry.text.trim() && entries.findIndex((candidate) => candidate.text === entry.text) === index);
-
-  // M5 — every note-save call site already back-fills documentId/pageTruthKey
-  // (see UltraNote's own field comments); this falls back to bookId/a freshly
-  // built key only for notes saved before those fields existed.
-  const noteDocumentId = note.documentId ?? note.bookId;
-  const notePageTruthKey = note.pageTruthKey ?? buildPageTruthKey(noteDocumentId, note.pageNumber);
 
   return (
     <div
@@ -806,10 +773,15 @@ function NoteCard({
             </div>
           </NoteBlock>
 
+          {/* Correction (Evidence-as-provenance) — a per-item "View Source"
+              action, not a standing Evidence workspace: collapsed by
+              default, scoped to this note's own page, and each item jumps
+              straight back to its own source passage rather than opening a
+              second surface competing with the note itself. */}
           {sourceEvidence.length ? (
             <details style={{ borderRadius: 10, border: "1px solid rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.4)", padding: "10px 12px" }}>
               <summary style={{ cursor: "pointer", color: "rgba(203,213,225,0.72)", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
-                SOURCE EVIDENCE · PDF PAGE {note.pageNumber}
+                SOURCE REFERENCES · PDF PAGE {note.pageNumber}
               </summary>
               <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
                 {sourceEvidence.slice(0, 8).map((anchor) => (
@@ -817,6 +789,7 @@ function NoteCard({
                       type="button"
                       key={anchor.id}
                       onClick={() => onNavigate?.(note.pageNumber)}
+                      title="View source"
                       style={{ textAlign: "left", borderRadius: 8, border: "1px solid rgba(148,163,184,0.12)", background: "rgba(255,255,255,0.025)", color: "rgba(226,232,240,0.78)", padding: "8px 10px", fontSize: 12, lineHeight: 1.5, cursor: "pointer" }}
                     >
                       <span style={{ color: "#67e8f9", fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{anchor.kind}</span>
@@ -875,35 +848,6 @@ function NoteCard({
           })()}
 
           </> /* end noteView === "page" */}
-
-          {/* M5 — Evidence, woven inline instead of behind its own NoteLab
-              sub-tab click. Visible for every note regardless of notebook/
-              study-page view, scoped to THIS note's own page identity so it
-              never shows another page's sources. */}
-          <div style={{ borderRadius: 10, border: "1px solid rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.4)", overflow: "hidden" }}>
-            <button
-              type="button"
-              onClick={() => setShowEvidence((v) => !v)}
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: "transparent", border: "none", cursor: "pointer", color: "rgba(203,213,225,0.72)", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}
-            >
-              <span>🔬 EVIDENCE · PDF PAGE {note.pageNumber}</span>
-              <span style={{ fontSize: 11, color: "rgba(148,163,184,0.4)" }}>{showEvidence ? "▲" : "▼"}</span>
-            </button>
-            {showEvidence && (
-              <div style={{ height: 480, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-                <LearningSourcesManager
-                  bookId={note.bookId}
-                  documentId={noteDocumentId}
-                  currentPage={note.pageNumber}
-                  pageTruthKey={notePageTruthKey}
-                  surgeonPageTruthKey={surgeonPageTruthKey ?? null}
-                  groundedAnnotations={groundedAnnotations ?? []}
-                  studyModel={studyModel ?? null}
-                  onNavigateToPage={onNavigate}
-                />
-              </div>
-            )}
-          </div>
 
           {/* Export options */}
           <div style={{ display: "flex", gap: 6, marginTop: 2 }}>

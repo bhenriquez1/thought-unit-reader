@@ -121,8 +121,20 @@ export type ProfessorTeachingAction = (
   // neither field ever contains coordinates or renderer-specific values.
   | { type: "draw-shape"; actionId: string; shapeId: string; targetId?: string; shape: "circle" | "box" | "brace" | "line" | "diamond" | "hexagon" | "cloud"; bounds: Bounds; durationMs: number; spatialIntent?: SpatialIntent; teachingRole?: TeachingRole; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string; opacity?: number }
   /** Native tldraw pressure-sensitive draw shape. Runtime Claude tool calls
-   * are verified and clamped before they can become this action. */
-  | { type: "draw-freehand"; actionId: string; shapeId: string; targetId?: string; points: ProfessorFreehandPoint[]; durationMs: number; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string; isPen?: boolean; closed?: boolean; opacity?: number }
+   * are verified and clamped before they can become this action. Also used
+   * (correction: Whiteboard visual language) by the deterministic converter
+   * itself for ordinary concept-node outlines — see buildOrganicRectanglePoints/
+   * buildOrganicEllipsePoints in organicOutline.ts and shapeKindForNode() in
+   * buildProfessorTeachingActions.ts — so an organic box/circle outline gets
+   * genuine pencil character AND the same M7 progressive stroke-by-stroke
+   * reveal every other freehand mark already has, for free. `bounds`/
+   * `teachingRole` are optional pass-through metadata for that case only —
+   * computeCanvasStateAtStep copies them into ShapeVisualState purely so
+   * emphasis-overlay anchoring (which reads shape.bounds) and semantic
+   * coloring (which reads shape.teachingRole) keep working exactly as they
+   * did when this same node was a draw-shape action; rendering itself still
+   * always draws from `points`, never from `bounds`. */
+  | { type: "draw-freehand"; actionId: string; shapeId: string; targetId?: string; points: ProfessorFreehandPoint[]; durationMs: number; stepId: number; visualStyle?: ProfessorVisualStyle; visualRole?: string; isPen?: boolean; closed?: boolean; opacity?: number; bounds?: Bounds; teachingRole?: TeachingRole; spatialIntent?: SpatialIntent }
   | { type: "emphasize"; actionId: string; targetId: string; treatment: "circle" | "underline" | "pulse" | "highlight" | "number" | "crossOut"; sequenceNumber?: number; durationMs: number; stepId: number }
   | { type: "speak"; actionId: string; segmentId: string; text: string; durationMs: number; stepId: number }
   | { type: "pause"; actionId: string; durationMs: number; stepId: number }
@@ -270,9 +282,16 @@ export type DrawingIntent = z.infer<typeof DrawingIntentSchema>;
 // ── Emphasis treatment — what the ONE emphasized point (see `emphasize`
 // below) should actually look like. Previously hardcoded to always "circle"
 // regardless of context; a misconception being debunked reads better as
-// crossOut, a danger as highlight. Only meaningful when emphasize is true —
+// crossOut, a danger as highlight, a formula or exact phrase worth quoting
+// verbatim as underline. Only meaningful when emphasize is true —
 // groundProfessorLesson.ts forces "none" on every non-winning entry.
-export const EmphasisTreatmentChoiceSchema = z.enum(["circle", "crossOut", "highlight", "none"]);
+// Correction (Whiteboard visual language) — "underline" was already a real,
+// distinctly-rendered emphasize.treatment (see emphasisOverlaySpec in
+// TldrawCanvas.tsx) and already choosable inside an explain[] mini-diagram
+// (ExplainEmphasisStyleSchema above), but was never reachable here at the
+// top level — the model had no way to request it for the ONE emphasized
+// point of a lesson, so it silently never got used.
+export const EmphasisTreatmentChoiceSchema = z.enum(["circle", "crossOut", "highlight", "underline", "none"]);
 export type EmphasisTreatmentChoice = z.infer<typeof EmphasisTreatmentChoiceSchema>;
 
 // ── RelationshipKind — an AI-authored semantic link to ANOTHER node in this

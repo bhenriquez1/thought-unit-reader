@@ -104,6 +104,47 @@ describe("cleanActivePageText — stripFigureCaptions option", () => {
   });
 });
 
+describe("cleanActivePageText — CHECKPOINT_MARKER_RE/CALLOUT_LABEL_RE only strip a genuine standalone marker, never a phrase embedded mid-sentence (Current Mode losslessness correction)", () => {
+  it("REQUIRED: still strips a checkpoint marker glued via space right after the PRECEDING sentence's own period — the common real case, unchanged", () => {
+    const raw = "The Krebs cycle produces NADH. Check Your Understanding. Explain how NADH is used.";
+    const cleaned = cleanActivePageText(raw);
+    expect(cleaned).not.toMatch(/Check Your Understanding/);
+    expect(cleaned).toContain("The Krebs cycle produces NADH.");
+    expect(cleaned).toContain("Explain how NADH is used.");
+  });
+
+  it("REQUIRED: still strips a checkpoint marker that opens its own paragraph after a newline", () => {
+    const raw = "Osmosis moves water across membranes.\nDid You Know? This principle also explains IV fluid therapy.\nClinicians rely on it daily.";
+    const cleaned = cleanActivePageText(raw);
+    expect(cleaned).not.toMatch(/Did You Know/);
+    expect(cleaned).toContain("Osmosis moves water across membranes.");
+    expect(cleaned).toContain("Clinicians rely on it daily.");
+  });
+
+  it("REQUIRED: does NOT strip a sentence where the phrase is embedded mid-sentence, not starting a new one — the actual bug this fixes", () => {
+    // "and did you know" continues the SAME sentence (preceded by "and", a
+    // lowercase word, never a sentence boundary) — this is ordinary body
+    // prose using the phrase conversationally, not a standalone callout box.
+    const raw = "This raises an important question, and did you know that ionic bonds form through electron transfer, which connects to our earlier discussion.";
+    const cleaned = cleanActivePageText(raw);
+    expect(cleaned).toBe(raw);
+  });
+
+  it("REQUIRED: does NOT strip a callout label embedded mid-sentence", () => {
+    const raw = "The chapter's key concepts build on prior material introduced earlier in the unit.";
+    const cleaned = cleanActivePageText(raw);
+    expect(cleaned).toBe(raw);
+  });
+
+  it("still strips an ALL-CAPS callout label that genuinely opens its own line", () => {
+    const raw = "Chemical bonds store energy.\nKEY CONCEPTS\nIonic and covalent bonds differ in electron sharing.";
+    const cleaned = cleanActivePageText(raw);
+    expect(cleaned).not.toMatch(/KEY CONCEPTS/);
+    expect(cleaned).toContain("Chemical bonds store energy.");
+    expect(cleaned).toContain("Ionic and covalent bonds differ in electron sharing.");
+  });
+});
+
 describe("classifyLineRole — stabilization item 4C-1: region-role tagging", () => {
   it("classifies ordinary body prose as 'body'", () => {
     expect(classifyLineRole("The mitochondria produce ATP through cellular respiration.")).toBe("body");

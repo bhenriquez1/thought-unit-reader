@@ -1,11 +1,6 @@
 // lib/auth/useAuthUser.ts
-// Product-split Phase 2 — the one real shared-infrastructure gap the
-// migration plan found: no shared, React-reactive auth layer existed
-// outside pages/_app.tsx and pages/index.tsx.
-//
-// This hook is the one place any component — Pages Router or App Router —
-// asks "who's signed in." Firebase Authentication is the only identity
-// source; development/mock users are intentionally unsupported.
+// Shared React-reactive Firebase authentication state. This hook is the one
+// place any component — Pages Router or App Router — asks who is signed in.
 //
 // Deliberately NOT wrapped in a Context Provider: each existing call site
 // (pages/_app.tsx, pages/index.tsx) already ran its own independent
@@ -29,8 +24,8 @@ import { listenForAuthChanges, handleRedirectResult, type User } from "@/lib/fir
 
 export interface AuthUserState {
   user: User | null;
-  /** True until the first onAuthStateChanged callback actually fires (or
-   *  Firebase resolves) — lets a caller distinguish "we
+  /** True until the first onAuthStateChanged callback actually fires — lets
+   *  a caller distinguish "we
    *  don't know yet" from "we checked, and nobody's signed in." Consumers
    *  that sync external state off `user` (e.g. a cookie mirror) should
    *  wait for loading to become false before acting, so they never act on

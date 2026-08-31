@@ -54,13 +54,36 @@ const FOOTER_DEBRIS_RE =
 const FIGURE_CAPTION_RE =
   /\b(?:Figure|FIGURE|Fig\.|Table|TABLE|Photo|PHOTO|Illustration|ILLUSTRATION)\s+\d+[\.\-]?\d*(?:\s+[A-Z▲►][^.?!\n]{0,140})?[.]/g;
 
-// Checkpoint / review section markers — these are section headings, NOT body prose.
+// Checkpoint / review section markers — these are section headings, NOT body
+// prose. Correction (Current Mode losslessness): these used to match the
+// keyword phrase ANYWHERE in the text and eat everything up to the next
+// period — so a genuine body sentence that happened to mention "critical
+// thinking" or "did you know" as ordinary prose MID-sentence (not a
+// standalone callout box) had that whole clause silently deleted, exactly
+// the "summarization disguised as filtering" failure mode the correction
+// warns against. The (?<=^|\n|[.!?…]\s) lookbehind now requires the phrase
+// to START a genuine sentence — start of string, a paragraph-break newline,
+// or right after a PRIOR sentence's own terminal punctuation — the real
+// structural signal for "this is its own standalone marker," not just
+// "these words appear somewhere in this text." This still strips a
+// checkpoint marker glued via space after the preceding sentence's period
+// (PDF text is extracted as a single space-joined string per page, so a
+// real newline is not guaranteed between them — see this file's own header
+// comment), which is the common real case; what it no longer does is eat a
+// clause where the phrase is embedded WITHIN a single continuing sentence
+// (preceded by a comma, "and", or a lowercase word — never a sentence
+// boundary). [.!?…] matches lib/speech/currentPageSpeech.ts's own
+// sentence-terminal set exactly, so both files agree on what a sentence
+// boundary is.
 const CHECKPOINT_MARKER_RE =
-  /\b(?:Check(?:\s+Your)?\s+Understanding|Concept\s+Check|Review\s+Questions?|Chapter\s+(?:Summary|Review)|Self[\s-]?Test|Quick\s+Check|Think\s+About\s+It|Critical\s+Thinking|Did\s+You\s+Know\??)\b[^.\n]*\./gi;
+  /(?<=^|\n|[.!?…]\s)[ \t]*(?:Check(?:\s+Your)?\s+Understanding|Concept\s+Check|Review\s+Questions?|Chapter\s+(?:Summary|Review)|Self[\s-]?Test|Quick\s+Check|Think\s+About\s+It|Critical\s+Thinking|Did\s+You\s+Know\??)\b[^.\n]*\./gi;
 
 // All-caps callout/sidebar labels that prefix a box element, not body prose.
+// Same sentence-boundary correction as CHECKPOINT_MARKER_RE above, same
+// rationale — an ALL-CAPS label embedded mid-sentence (rare, but possible in
+// a poorly-OCR'd source) no longer gets treated as a standalone box label.
 const CALLOUT_LABEL_RE =
-  /\b(?:KEY\s+CONCEPTS?|LEARNING\s+OBJECTIVES?|DID\s+YOU\s+KNOW|QUICK\s+CHECK|KEY\s+TERMS?|IMPORTANT\s+TERMS?)\b\s*/g;
+  /(?<=^|\n|[.!?…]\s)[ \t]*(?:KEY\s+CONCEPTS?|LEARNING\s+OBJECTIVES?|DID\s+YOU\s+KNOW|QUICK\s+CHECK|KEY\s+TERMS?|IMPORTANT\s+TERMS?)\b\s*/g;
 
 /**
  * Merge PDF drop-cap OCR artifacts where a lone capital letter appears as its own

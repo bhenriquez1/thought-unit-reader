@@ -22,7 +22,10 @@ import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, isUltraNotePersisted, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, getNotesByBookAsync, isUltraNotePersisted, inferSubject, type UltraNote } from "@/lib/notelab/ultraNoteStore";
+import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
+import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
+import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
@@ -1961,6 +1964,7 @@ export function RightPanel({
                 studyModel={studyModel}
                 resolvedDocumentId={resolvedDocumentId}
                 canonicalLeftPanelUnits={canonicalLeftPanelUnits}
+                knowledgeNodeId={knowledgeNodeId}
               />
               <GenerateStudySetButton
                 view={displayView!}
@@ -4326,6 +4330,7 @@ function GenerateNoteButton({
   studyModel,
   resolvedDocumentId,
   canonicalLeftPanelUnits,
+  knowledgeNodeId,
 }: {
   view: UltraPageView;
   bookId: string;
@@ -4337,6 +4342,8 @@ function GenerateNoteButton({
   resolvedDocumentId?: string;
   /** Grounds the saved note's thoughtUnitIds in what's actually on this page. */
   canonicalLeftPanelUnits?: ExpertAnchor[];
+  /** Links the saved note into its concept's cross-note accumulation — see gatherConceptNotebookContent. */
+  knowledgeNodeId?: string | null;
 }) {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -4359,6 +4366,9 @@ function GenerateNoteButton({
       if (canonicalLeftPanelUnits?.length) {
         note.thoughtUnitIds = canonicalLeftPanelUnits.map((u) => u.id);
       }
+      if (knowledgeNodeId) {
+        note.knowledgeNodeId = knowledgeNodeId;
+      }
 
       await saveUltraNote(note);
 
@@ -4375,6 +4385,12 @@ function GenerateNoteButton({
       setSaveError(null);
       onNoteSaved?.();
       setTimeout(() => setSaved(false), 2200);
+
+      // Save fast, flash success immediately (above); notebookScene synthesis
+      // runs afterward and is never awaited by the primary save handler —
+      // same "save fast, then compose in background" pattern as
+      // WhiteboardPanel.tsx's composeNotebookSceneInBackground.
+      void composeNoteNotebookSceneInBackground(note, resolvedDocumentId ?? bookId);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       console.error("[NOTE_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
@@ -4382,6 +4398,40 @@ function GenerateNoteButton({
       setTimeout(() => setSaveError(null), 4000);
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** P3 — the general "Generate Ultra Note" save path's own notebookScene
+   *  synthesis, modeled on WhiteboardPanel.tsx's composeNotebookSceneInBackground.
+   *  Simpler than that one: there's no taught lesson here to extract narration
+   *  from or fall back to recomposing, so with zero canonical units to ground
+   *  a synthesis in, the note just keeps no notebookScene (card view) rather
+   *  than inventing a fallback scene-builder for a case that never applies. */
+  async function composeNoteNotebookSceneInBackground(savedNote: UltraNote, documentId: string) {
+    try {
+      const units = await getCanonicalUnitsByPage(documentId, savedNote.pageNumber - 1);
+      if (units.length === 0) return;
+
+      const existingNotes = await getNotesByBookAsync(savedNote.bookId);
+      const existingNote = existingNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+      const relatedConceptKnowledge = savedNote.knowledgeNodeId
+        ? await gatherConceptNotebookContent(savedNote.knowledgeNodeId, savedNote.id)
+        : null;
+
+      const scene = await generateNotebookScene(units, {
+        bookId: savedNote.bookId,
+        bookTitle: savedNote.bookTitle,
+        pageNumber: savedNote.pageNumber,
+        studentNotes: existingNote.studentNotes ?? null,
+        existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
+        relatedConceptKnowledge,
+      });
+
+      const latestNotes = await getNotesByBookAsync(savedNote.bookId);
+      const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+      await saveUltraNote({ ...latest, notebookScene: scene });
+    } catch (err) {
+      console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", err);
     }
   }
 

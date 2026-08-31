@@ -23,11 +23,12 @@ import type { GroundedProfessorLessonScript } from "./groundProfessorLesson";
 import type {
   ProfessorLessonPlan, ProfessorTeachingAction, NarrationSegment,
   ProfessorLessonSourceSnapshot, ExplainIcon, DrawingIntent,
-  ProfessorDirectorStep, CameraIntent, Bounds,
+  ProfessorDirectorStep, CameraIntent, Bounds, TeachingRole, SpatialIntent,
 } from "./professorLessonPlan";
 import { estimateLabelWidth, estimateLabelHeight, wordCount } from "./textMetrics";
 import { computeGroupLayout, anchorPoint, pushClearOf, computeAvoidanceBend } from "./groupLayout";
 import type { LayoutBox } from "./groupLayout";
+import { buildOrganicRectanglePoints, buildOrganicEllipsePoints } from "./organicOutline";
 
 // ── Pacing ────────────────────────────────────────────────────────────────
 const STROKE_DURATION_MS = 550;   // drawing a box/circle outline
@@ -220,6 +221,51 @@ export function buildProfessorTeachingActions(
     : never;
   function push(action: ActionWithoutStepId): void {
     actions.push({ ...action, stepId: currentStepId } as ProfessorTeachingAction);
+  }
+
+  // Correction (Whiteboard visual language) — "box" and "circle" (the two
+  // shapeKindForNode() results that cover every ordinary/hub node — see the
+  // comment above that function) are the exact case the correction calls
+  // "rectangle+label+circle... not primarily." Emitting these as a genuine
+  // hand-drawn organic outline (a draw-freehand action, same as any other
+  // pencil stroke) instead of a pristine tldraw geo shape does two things at
+  // once: real pencil character per the mandate, AND the SAME M7
+  // progressive stroke-by-stroke reveal every other freehand mark already
+  // gets — for free, with no changes to the reveal engine itself.
+  // "diamond"/"hexagon"/"cloud" stay real tldraw geo shapes: they're the
+  // deliberate, tier-driven exceptions (decision/danger/pearl) where a
+  // distinct, instantly-recognizable SHAPE (not just an outline) is itself
+  // the semantic signal, not the thing this phase is correcting.
+  function pushOutlineShape(
+    shapeId: string,
+    kind: "circle" | "box" | "diamond" | "hexagon" | "cloud",
+    bounds: Bounds,
+    opts: { targetId?: string; teachingRole?: TeachingRole; spatialIntent?: SpatialIntent } = {},
+  ): string {
+    const actionId = nextActionId();
+    if (kind === "box" || kind === "circle") {
+      const points = kind === "box"
+        ? buildOrganicRectanglePoints(bounds, shapeId)
+        : buildOrganicEllipsePoints(bounds, shapeId);
+      push({
+        type: "draw-freehand", actionId, shapeId, targetId: opts.targetId,
+        points, bounds, closed: false, durationMs: STROKE_DURATION_MS,
+        teachingRole: opts.teachingRole, spatialIntent: opts.spatialIntent,
+        // Tags WHICH outline kind this hand-drawn stroke stands in for —
+        // freehand points alone don't self-describe their intended kind the
+        // way a draw-shape action's own `shape` field does. Namespaced so it
+        // can never collide with the runtime agent's own visualRole values
+        // (e.g. "drawPressureZone") — see isNontrivialProfessorAgentAction.
+        visualRole: `outline:${kind}`,
+      });
+    } else {
+      push({
+        type: "draw-shape", actionId, shapeId, targetId: opts.targetId,
+        shape: kind, bounds, durationMs: STROKE_DURATION_MS,
+        spatialIntent: opts.spatialIntent, teachingRole: opts.teachingRole,
+      });
+    }
+    return actionId;
   }
 
   // Pushes a narration segment's speak+pause actions IMMEDIATELY (not
@@ -532,8 +578,16 @@ export function buildProfessorTeachingActions(
         visualNeeded,
         visualIntent: entry.visualIntent ?? entry.drawingIntent,
         narration: entry.narration,
+        // P6 (Whiteboard visual language correction, follow-up) — "draw-freehand"
+        // was missing here, so once P5 started drawing ordinary/hub nodes as
+        // organic hand-drawn outlines (draw-freehand, not draw-shape), THIS
+        // step's own outline action silently vanished from its own
+        // drawInstructions — the runtime tldraw agent's request-builder
+        // (buildProfessorTldrawAgentRequest in professorTldrawAgent.ts) reads
+        // stepActions here to derive labels/sourceTargets, so a freehand-drawn
+        // node's targetId could go missing from that request.
         drawInstructions: stepActions.filter(action =>
-          action.type === "draw-shape" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize" || action.type === "erase",
+          action.type === "draw-shape" || action.type === "draw-freehand" || action.type === "draw-arrow" || action.type === "write" || action.type === "emphasize" || action.type === "erase",
         ),
         relationships: entry.relationships,
         emphasis: entry.emphasize && entry.emphasisTreatment !== "none"
@@ -573,14 +627,8 @@ export function buildProfessorTeachingActions(
         durationMs: CAMERA_DURATION_MS,
       });
 
-      const drawActionId = nextActionId();
-      push({
-        type: "draw-shape", actionId: drawActionId, shapeId, targetId: node.sourceId,
-        shape: shapeKindForNode(node, entry.drawingIntent), bounds, durationMs: STROKE_DURATION_MS,
-        // Pass-through metadata only (see the ProfessorTeachingAction comment
-        // in professorLessonPlan.ts) — proves these AI-authored fields
-        // survive to the final timeline instead of being silently dropped.
-        spatialIntent: entry.spatialIntent, teachingRole: entry.teachingRole,
+      const drawActionId = pushOutlineShape(shapeId, shapeKindForNode(node, entry.drawingIntent), bounds, {
+        targetId: node.sourceId, teachingRole: entry.teachingRole, spatialIntent: entry.spatialIntent,
       });
 
       const writeActionId = nextActionId();
@@ -658,11 +706,7 @@ export function buildProfessorTeachingActions(
             localBoxById.set(action.id!, placed);
             localShapeIdById.set(action.id!, subShapeId);
 
-            const subDrawId = nextActionId();
-            push({
-              type: "draw-shape", actionId: subDrawId, shapeId: subShapeId,
-              shape: action.type === "icon" ? "circle" : "box", bounds: placed, durationMs: STROKE_DURATION_MS,
-            });
+            const subDrawId = pushOutlineShape(subShapeId, action.type === "icon" ? "circle" : "box", placed);
             linked.push(subDrawId);
 
             const subWriteId = nextActionId();
