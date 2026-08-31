@@ -17,13 +17,10 @@ describe("lib/auth/useAuthUser.ts", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(HOOK_FILE, "utf8"); });
 
-  it("REQUIRED: calls the real listenForAuthChanges/handleRedirectResult — never reimplements dev-bypass mock-user handling itself", () => {
+  it("REQUIRED: calls the real listenForAuthChanges/handleRedirectResult", () => {
     expect(src).toMatch(/import \{ listenForAuthChanges, handleRedirectResult, type User \} from "@\/lib\/firebase";/);
     expect(src).toMatch(/handleRedirectResult\(\)\.catch/);
     expect(src).toMatch(/listenForAuthChanges\(\(u\) => \{/);
-    // The function body itself (not this file's explanatory header comment,
-    // which names the old behavior it replaces) never branches on the
-    // bypass flag or builds its own mock user object.
     const bodyIdx = src.indexOf("export function useAuthUser(): AuthUserState {");
     const body = src.slice(bodyIdx);
     expect(body).not.toMatch(/DISABLE_GOOGLE_SIGNIN/);
@@ -78,16 +75,9 @@ describe("pages/index.tsx — uses the shared hook instead of its own drifted by
     expect(importBlock).not.toMatch(/handleRedirectResult/);
   });
 
-  it("REQUIRED: its own separate dev-bypass mock user ('guest-user-<timestamp>', drifted from lib/firebase.ts's own 'mock-user-dev') is gone", () => {
+  it("REQUIRED: has no development-user auth bypass", () => {
     expect(src).not.toMatch(/guest-user-/);
-    // The one other, unrelated NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN check
-    // elsewhere in this file (line ~3925, guest upload/storage behavior) is
-    // untouched by this change — only the auth-listener effect's own copy
-    // of this flag (and its mock user) is what's required gone here.
-    const authSectionIdx = src.indexOf("const { user } = useAuthUser();");
-    expect(authSectionIdx).toBeGreaterThan(-1);
-    const nearbyBlock = src.slice(authSectionIdx, authSectionIdx + 200);
-    expect(nearbyBlock).not.toMatch(/DISABLE_GOOGLE_SIGNIN/);
+    expect(src).not.toMatch(/NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN/);
   });
 
   it("still imports signInWithGoogle/signOutUser from lib/firebase directly — only the reactive subscription moved, not the sign-in/out actions", () => {
@@ -98,37 +88,25 @@ describe("pages/index.tsx — uses the shared hook instead of its own drifted by
   });
 });
 
-describe("lib/firebase.ts — listenForAuthChanges auto-logs in during bypass mode (product-split Phase 2 regression fix)", () => {
+describe("lib/firebase.ts — production Firebase authentication", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(FIREBASE_FILE, "utf8"); });
 
-  it("REQUIRED: when bypass mode is on and no mock user is stored yet, it creates AND persists one instead of resolving null — restores the original pre-Phase-2 Reader behavior (zero-click auto-login) for every caller of the shared listener, not just the Reader", () => {
-    const fnIdx = src.indexOf("export function listenForAuthChanges(");
-    expect(fnIdx).toBeGreaterThan(-1);
-    const checkIdx = src.indexOf("const checkCurrentAuthState = ()", fnIdx);
-    const initIdx = src.indexOf("setTimeout(() => callback(currentUser), 0);", checkIdx);
-    expect(checkIdx).toBeGreaterThan(-1);
-    expect(initIdx).toBeGreaterThan(checkIdx);
-    const block = src.slice(checkIdx, initIdx + 60);
-    expect(block).toMatch(/let currentUser = checkCurrentAuthState\(\);/);
-    expect(block).toMatch(/if \(!currentUser\) \{/);
-    expect(block).toMatch(/localStorage\.setItem\("mock-auth-user", JSON\.stringify\(\{/);
-    expect(block).toMatch(/currentUser = autoUser;/);
+  it("uses Firebase onAuthStateChanged and contains no development-user fallback", () => {
+    expect(src).toMatch(/return onAuthStateChanged\(authInstance, callback\);/);
+    expect(src).not.toMatch(/mock-user-dev/);
+    expect(src).not.toMatch(/mock-auth-user/);
+    expect(src).not.toMatch(/NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN/);
   });
 
-  it("persists the same shape signInWithGoogle's own bypass branch stores (uid/email/displayName), so an explicit sign-in afterward is a no-op, not a conflicting second mock identity", () => {
-    const fnIdx = src.indexOf("export function listenForAuthChanges(");
-    const block = src.slice(fnIdx, fnIdx + 3200);
-    expect(block).toMatch(/uid: autoUser\.uid,/);
-    expect(block).toMatch(/email: autoUser\.email,/);
-    expect(block).toMatch(/displayName: autoUser\.displayName,/);
+  it("signs in with the Google provider and persists a user profile", () => {
+    expect(src).toMatch(/const provider = new GoogleAuthProvider\(\);/);
+    expect(src).toMatch(/signInWithPopup\(authInstance, provider\)/);
+    expect(src).toMatch(/signInWithRedirect\(authInstance, provider\)/);
+    expect(src).toMatch(/await ensureUserProfile\(result\.user\);/);
   });
 
-  it("an explicit signOutUser() in bypass mode still works — it removes mock-auth-user and dispatches mock-auth-change, which the already-mounted listener's event handler (not checkCurrentAuthState) picks up live", () => {
-    const idx = src.indexOf("export async function signOutUser(): Promise<void> {");
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
-    expect(block).toMatch(/localStorage\.removeItem\("mock-auth-user"\);/);
-    expect(block).toMatch(/type: 'mock-signout'/);
+  it("signs out through Firebase Auth", () => {
+    expect(src).toMatch(/await signOut\(authInstance\);/);
   });
 });
