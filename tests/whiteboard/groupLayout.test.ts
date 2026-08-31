@@ -297,3 +297,88 @@ describe("anchorPoint — routes from whichever edge actually faces the other sh
     expect(onVerticalEdge || onHorizontalEdge).toBe(true);
   });
 });
+
+// Correction (Whiteboard density) — a row below Row 1 (comparison/warning/
+// summary) used to always start at x=CANVAS_MARGIN regardless of how wide
+// Row 1 made the board, leaving real blank canvas to its right whenever a
+// later row was narrower — real wasted space INSIDE the camera-framed
+// bounding box Row 1 already established, not reserved ahead of time.
+describe("computeGroupLayout — Phase B2/density fix: narrower later rows are centered within Row 1's own width, not left-anchored", () => {
+  it("REQUIRED: a single warning-aside node under a wide 3-column Row 1 is horizontally centered under it, not stuck at the left margin", () => {
+    const nodes = [
+      node("left1", "Left branch", "left-branch"),
+      node("center1", "Central idea", "central-mechanism"),
+      node("right1", "Right branch", "right-branch"),
+      node("warn1", "A brief warning", "warning-aside"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [
+      { id: "g1", type: "core", order: 1, nodeIds: ["left1", "center1", "right1"] },
+      { id: "g2", type: "warning", order: 2, nodeIds: ["warn1"] },
+    ];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const row1Right = Math.max(
+      nodeBounds.get("left1")!.x + nodeBounds.get("left1")!.w,
+      nodeBounds.get("center1")!.x + nodeBounds.get("center1")!.w,
+      nodeBounds.get("right1")!.x + nodeBounds.get("right1")!.w,
+    );
+    const warn = nodeBounds.get("warn1")!;
+    // Centered means real space on BOTH sides — not flush against the left
+    // margin (the old bug) and not flush against Row 1's own right edge.
+    expect(warn.x).toBeGreaterThan(40); // > CANVAS_MARGIN
+    expect(warn.x + warn.w).toBeLessThan(row1Right);
+  });
+
+  it("REQUIRED: a single final-summary node under a wide Row 1 is likewise centered, not left-anchored", () => {
+    const nodes = [
+      node("left1", "Left branch", "left-branch"),
+      node("center1", "Central idea", "central-mechanism"),
+      node("right1", "Right branch", "right-branch"),
+      node("sum1", "In summary", "final-summary"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [
+      { id: "g1", type: "core", order: 1, nodeIds: ["left1", "center1", "right1"] },
+      { id: "g2", type: "summary", order: 2, nodeIds: ["sum1"] },
+    ];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const sum = nodeBounds.get("sum1")!;
+    expect(sum.x).toBeGreaterThan(40);
+  });
+
+  it("a later row WIDER than Row 1 is left alone — centering never shrinks or clips a row, only repositions a genuinely narrower one", () => {
+    const nodes = [
+      node("center1", "X", "central-mechanism"),
+      node("cmpA", "A considerably longer descriptive phrase than the tiny center node above", "comparison-column"),
+      node("cmpB", "Another fairly long descriptive phrase for the second column", "comparison-column"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [
+      { id: "g1", type: "core", order: 1, nodeIds: ["center1"] },
+      { id: "g2", type: "comparison", order: 2, nodeIds: ["cmpA", "cmpB"] },
+    ];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const cmpA = nodeBounds.get("cmpA")!;
+    // Still left-anchored at CANVAS_MARGIN since this row is the widest thing on the board.
+    expect(cmpA.x).toBe(40);
+  });
+
+  it("no two nodes overlap once later rows are recentered — the collision backstop still holds", () => {
+    const nodes = [
+      node("left1", "Left branch", "left-branch"),
+      node("center1", "Central idea", "central-mechanism"),
+      node("right1", "Right branch", "right-branch"),
+      node("warn1", "A brief warning", "warning-aside"),
+      node("sum1", "In summary", "final-summary"),
+    ];
+    const groups: GroupLayoutGroupInput[] = [
+      { id: "g1", type: "core", order: 1, nodeIds: ["left1", "center1", "right1"] },
+      { id: "g2", type: "warning", order: 2, nodeIds: ["warn1"] },
+      { id: "g3", type: "summary", order: 3, nodeIds: ["sum1"] },
+    ];
+    const { nodeBounds } = computeGroupLayout(nodes, groups);
+    const boxes = Array.from(nodeBounds.values());
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        expect(overlaps(boxes[i], boxes[j])).toBe(false);
+      }
+    }
+  });
+});
