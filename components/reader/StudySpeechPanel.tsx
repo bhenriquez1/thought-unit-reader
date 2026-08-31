@@ -18,7 +18,8 @@ import {
 import type { ExpertAnchor } from "@/lib/insights/canonicalLeftPanel";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { renderStars } from "@/lib/insights/importanceTiers";
-import { buildCurrentPageSpeechSegments } from "@/lib/speech/currentPageSpeech";
+import { buildCurrentPageSpeechSegments, buildCurrentPageSpeechDiagnostic } from "@/lib/speech/currentPageSpeech";
+import { countSourceWords } from "@/lib/speech/sourceWordDiagnostic";
 import type { SpeechContentRole } from "@/lib/speech/speechContentRole";
 import {
   tokenizeWords,
@@ -683,6 +684,15 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
       sourceChars: activePageText.length,
       segmentCount: sourceSegments.length,
       firstSegment: sourceSegments[0]?.slice(0, 80) ?? null,
+      // Correction (Current Mode losslessness) — sourceWordsExpected is the
+      // word count of the SELECTED instructional reading sequence (after
+      // legitimate furniture-only stripping, before sentence segmentation);
+      // sourceWordsQueued is the word count actually present across the
+      // segmented sentence array above. sourceWordsSkipped should always be
+      // 0 here — a positive value means segmentation itself lost real
+      // content, distinct from (and downstream of) the deliberate
+      // furniture-stripping decision already made by cleanActivePageText.
+      ...buildCurrentPageSpeechDiagnostic(activePageText),
     });
 
     // Auto-resume if Play was pressed before this page's text was extracted.
@@ -1184,6 +1194,20 @@ const StudySpeechPanel = forwardRef<StudySpeechPanelHandle, Props>(function Stud
     }
 
     if (!isStale(session)) {
+      // Correction (Current Mode losslessness) — reaching here means the
+      // for loop above completed every sentence without an isStale break,
+      // so sourceWordsCompleted is every word across the exact `sentences`
+      // array this playback run was actually given (not re-derived from
+      // activePageText, which could theoretically have changed mid-session
+      // — this is what THIS run genuinely spoke). Recomputing the
+      // expected/queued pair fresh from activePageText is safe and cheap
+      // (pure string processing, no network) and confirms the two numbers
+      // this playback was built from still agree with what was queued.
+      if (DEV) console.log("[CURRENT_PAGE_READING_COMPLETE]", {
+        page: pageNumber,
+        ...buildCurrentPageSpeechDiagnostic(activePageText),
+        sourceWordsCompleted: sentences.reduce((sum, s) => sum + countSourceWords(s), 0),
+      });
       notifySpeechEnd(globalTokenRef.current, SPEECH_OWNER);
       updatePlayState("idle");
       onSnippetFocus?.(null);
