@@ -4426,12 +4426,36 @@ function GenerateNoteButton({
         existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
         relatedConceptKnowledge,
       });
+      // Correction (NoteLab pipeline diagnostics) — "Add diagnostics:
+      // visualPlanGenerated / visualPrimitiveCount / ... /
+      // persistenceSaveSuccess / persistenceLoadSuccess." generateNotebookScene
+      // throwing lands in the catch below, never silently returning
+      // undefined, so reaching this line already proves visualPlanGenerated.
+      console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", {
+        noteId: savedNote.id, visualPlanGenerated: true, visualPrimitiveCount: scene.blocks.length,
+      });
 
       const latestNotes = await getNotesByBookAsync(savedNote.bookId);
       const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-      await saveUltraNote({ ...latest, notebookScene: scene });
+      await saveUltraNote({ ...latest, notebookScene: scene, notebookSceneError: undefined });
+
+      const persisted = await isUltraNotePersisted(savedNote.id);
+      console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", { noteId: savedNote.id, persistenceSaveSuccess: persisted });
     } catch (err) {
+      const message = (err as any)?.message ?? String(err);
       console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", err);
+      // "Show an explicit recoverable error... rather than reverting to the
+      // old card view [silently]." Persisted onto the note itself (not just
+      // logged) since this background task has no live UI to report to —
+      // the next time UltraNotesList reloads this note, it can show the
+      // student something went wrong instead of an unexplained blank tab.
+      try {
+        const latestNotes = await getNotesByBookAsync(savedNote.bookId);
+        const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
+        await saveUltraNote({ ...latest, notebookSceneError: message.slice(0, 200) });
+      } catch (persistErr) {
+        console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", { persistenceSaveSuccess: false, persistErr });
+      }
     }
   }
 

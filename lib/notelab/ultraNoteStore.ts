@@ -123,6 +123,16 @@ export interface UltraNote {
    *  notebook-view toggle when this is present. Never generated in this
    *  phase — that's a later increment; N3 is the renderer. */
   notebookScene?: VisualNotebookScene;
+  /** Correction (NoteLab pipeline diagnostics) — "show an explicit
+   *  recoverable error and diagnostics rather than reverting to the old
+   *  card view." Set by composeNoteNotebookSceneInBackground's own catch
+   *  block (RightPanel.tsx) when live notebookScene synthesis throws;
+   *  cleared (undefined) the next time synthesis succeeds. A page with
+   *  zero canonical units to ground a synthesis in is NOT an error (no
+   *  deterministic fallback is invented for that case, per the
+   *  correction's own instruction) — only a genuine thrown failure sets
+   *  this. */
+  notebookSceneError?: string;
 }
 
 // ── Legacy note migration ─────────────────────────────────────────────────

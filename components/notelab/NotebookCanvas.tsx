@@ -67,19 +67,38 @@ export interface NotebookCanvasProps {
   onPracticeRecall?: (block: FinalizedNotebookBlock) => void;
 }
 
+/** Correction (NoteLab pipeline diagnostics) — "Add diagnostics:
+ *  visualPlanGenerated / visualPrimitiveCount / tldrawShapeCountBefore /
+ *  tldrawShapeCountAfter / renderedNotebookBounds / persistenceSaveSuccess /
+ *  persistenceLoadSuccess. If the note has semantic content but
+ *  tldrawShapeCountAfter === 0, this is a hard failure." The generation/
+ *  persistence half of this (visualPlanGenerated, persistenceSaveSuccess)
+ *  is logged where those actually happen — components/reader/RightPanel.tsx's
+ *  composeNoteNotebookSceneInBackground; this is the render half. */
+interface ComposeSceneResult {
+  visualPrimitiveCount: number;
+  tldrawShapeCountBefore: number;
+  tldrawShapeCountAfter: number;
+  createdShapeCount: number;
+  renderedNotebookBounds: { x: number; y: number; w: number; h: number };
+}
+
 /** Composes any block of `scene` not already present in the editor's store
  *  into real, unlocked, student-editable shapes — idempotent by design (see
  *  file header). Never called on a timer/interval; only on mount and when
  *  the caller's `scene` prop itself changes (a new AI plan was saved). */
-function composeScene(editor: Editor, scene: VisualNotebookScene) {
-  const { blocks, connections } = layoutNotebookScene(scene);
+function composeScene(editor: Editor, scene: VisualNotebookScene): ComposeSceneResult {
+  const tldrawShapeCountBefore = editor.getCurrentPageShapeIds().size;
+  const { blocks, connections, canvasWidth, canvasHeight } = layoutNotebookScene(scene);
   const positionedById = new Map(blocks.map((b) => [b.id, b]));
+  let createdShapeCount = 0;
 
   for (const block of blocks) {
     const specs = notebookBlockToShapeSpecs(block);
     for (const spec of specs) {
       if (editor.getShape(spec.id as any)) continue; // already composed — a student may have moved/edited it
       editor.createShape({ id: spec.id as any, type: spec.type, x: spec.x, y: spec.y, props: spec.props, meta: spec.meta } as any);
+      createdShapeCount++;
     }
   }
 
@@ -90,7 +109,16 @@ function composeScene(editor: Editor, scene: VisualNotebookScene) {
     const spec = connectionToArrowSpec(connection, from, to);
     if (editor.getShape(spec.id as any)) continue;
     editor.createShape({ id: spec.id as any, type: spec.type, x: spec.x, y: spec.y, props: spec.props, meta: spec.meta } as any);
+    createdShapeCount++;
   }
+
+  return {
+    visualPrimitiveCount: scene.blocks.length,
+    tldrawShapeCountBefore,
+    tldrawShapeCountAfter: editor.getCurrentPageShapeIds().size,
+    createdShapeCount,
+    renderedNotebookBounds: { x: 0, y: 0, w: canvasWidth, h: canvasHeight },
+  };
 }
 
 const ACTION_BTN: React.CSSProperties = {
@@ -172,10 +200,42 @@ export default function NotebookCanvas({ scene, storageKey, onViewSource, onJump
   useEffect(() => { sceneRef.current = scene; }, [scene]);
 
   const [selectedBlock, setSelectedBlock] = useState<FinalizedNotebookBlock | null>(null);
+  // Correction (NoteLab pipeline diagnostics) — "If the note has semantic
+  // content but tldrawShapeCountAfter === 0, this is a hard failure. Do not
+  // silently show an empty canvas." A note with real blocks that somehow
+  // composed to zero real shapes (an unmapped primitive, a layout bug) gets
+  // an explicit, recoverable error state instead of a canvas that just
+  // looks broken with no explanation.
+  const [renderFailure, setRenderFailure] = useState(false);
+
+  const logComposeResult = useCallback((phase: "mount" | "recompose", result: ComposeSceneResult) => {
+    console.log(`[NOTELAB_CANVAS_${phase.toUpperCase()}_DIAGNOSTIC]`, result);
+    const hasSemanticContent = result.visualPrimitiveCount > 0;
+    const hardFailure = hasSemanticContent && result.tldrawShapeCountAfter === 0;
+    if (hardFailure) {
+      console.error("[NOTELAB_CANVAS_RENDER_HARD_FAILURE]", {
+        phase, visualPrimitiveCount: result.visualPrimitiveCount, tldrawShapeCountAfter: result.tldrawShapeCountAfter,
+      });
+    }
+    setRenderFailure(hardFailure);
+  }, []);
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
-    composeScene(editor, sceneRef.current);
+    const result = composeScene(editor, sceneRef.current);
+    logComposeResult("mount", result);
+    // Correction (NoteLab blank-canvas fix) — tldraw's default camera is
+    // origin-anchored; notebookLayout.ts always lays content out starting
+    // at (0,0) and growing in +x/+y, so without an explicit fit call most
+    // of the actual content sits outside the default viewport — the
+    // confirmed root cause of "the Visual Notebook area is mostly blank."
+    // Fits on every mount (the note's first paint this session) — matches
+    // components/whiteboard/TldrawCanvas.tsx's own established
+    // editor.zoomToFit() precedent for its own initial "nothing drawn yet"
+    // view (see that file's handleMount-adjacent camera effect).
+    if (result.tldrawShapeCountAfter > 0) {
+      editor.zoomToFit();
+    }
 
     storeUnsubRef.current?.();
     storeUnsubRef.current = editor.store.listen(
@@ -188,13 +248,24 @@ export default function NotebookCanvas({ scene, storageKey, onViewSource, onJump
       },
       { scope: "session", source: "user" },
     );
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [logComposeResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Recompose whenever `scene` itself changes AFTER the initial mount —
   // onMount alone can't do this (see file header): it's a one-time hook.
   useEffect(() => {
-    if (editorRef.current) composeScene(editorRef.current, scene);
-  }, [scene]);
+    const editor = editorRef.current;
+    if (!editor) return;
+    const result = composeScene(editor, scene);
+    logComposeResult("recompose", result);
+    // Only fit the camera when this recompose is what FIRST put real
+    // content on an empty canvas (e.g. background AI synthesis just
+    // completed while the student had the empty note open) — never yanks
+    // the camera away from a student actively looking at/editing existing
+    // content just because a later scene update added more.
+    if (result.tldrawShapeCountBefore === 0 && result.tldrawShapeCountAfter > 0) {
+      editor.zoomToFit();
+    }
+  }, [scene, logComposeResult]);
 
   useEffect(() => () => { storeUnsubRef.current?.(); }, []);
 
@@ -203,6 +274,22 @@ export default function NotebookCanvas({ scene, storageKey, onViewSource, onJump
       <div role="alert" style={{ position: "relative", minHeight: 320, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#0f172a", color: "#94a3b8", fontFamily: "ui-monospace, monospace", fontSize: 13, textAlign: "center", padding: 24 }}>
         <span style={{ fontSize: 20 }}>⚠</span>
         <span>Notebook configuration is unavailable. Missing: tldraw license key.</span>
+      </div>
+    );
+  }
+
+  if (renderFailure) {
+    return (
+      <div role="alert" data-testid="notebook-render-failure" style={{ position: "relative", minHeight: 320, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, background: "#0f172a", color: "#fca5a5", fontFamily: "ui-monospace, monospace", fontSize: 13, textAlign: "center", padding: 24 }}>
+        <span style={{ fontSize: 20 }}>⚠</span>
+        <span>This note's visual content didn't render. The note itself is safe — try reopening it.</span>
+        <button
+          type="button"
+          onClick={() => setRenderFailure(false)}
+          style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(252,165,165,0.4)", background: "rgba(252,165,165,0.1)", color: "#fca5a5", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
