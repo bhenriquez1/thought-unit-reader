@@ -209,6 +209,65 @@ describe("NotebookCanvas.tsx — camera fits real content on mount and first-pop
   });
 });
 
+// Correction (NoteLab blank-canvas fix) — components/notelab/NotebookCanvas.tsx
+// never called editor.zoomToFit()/zoomToBounds() after composeScene created
+// shapes, unlike components/whiteboard/TldrawCanvas.tsx which does — since
+// notebookLayout.ts always lays content out growing from the origin,
+// tldraw's default camera showed mostly empty space around real content.
+// This is the confirmed root cause of "the Visual Notebook area is mostly
+// blank."
+describe("NotebookCanvas.tsx — camera fits real content on mount and first-populate (blank-canvas fix)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: composeScene now returns real diagnostics instead of void, so callers can react to what actually got composed", () => {
+    const fnIdx = src.indexOf("function composeScene(");
+    const fn = src.slice(fnIdx, src.indexOf("export const ACTION_BTN") > -1 ? src.indexOf("export const ACTION_BTN") : fnIdx + 1600);
+    expect(fn).toMatch(/function composeScene\(editor: Editor, scene: VisualNotebookScene\): ComposeSceneResult/);
+    expect(fn).toMatch(/tldrawShapeCountBefore: editor\.getCurrentPageShapeIds\(\)\.size,?|const tldrawShapeCountBefore = editor\.getCurrentPageShapeIds\(\)\.size;/);
+    expect(fn).toMatch(/tldrawShapeCountAfter: editor\.getCurrentPageShapeIds\(\)\.size,/);
+  });
+
+  it("REQUIRED: handleMount fits the camera to whatever composed on the note's first paint this session", () => {
+    const idx = src.indexOf("const handleMount = useCallback");
+    const fn = src.slice(idx, src.indexOf("storeUnsubRef.current?.();", idx));
+    expect(fn).toMatch(/if \(result\.tldrawShapeCountAfter > 0\) \{\s*editor\.zoomToFit\(\);\s*\}/);
+  });
+
+  it("REQUIRED: the recompose effect only fits the camera when content went from NONE to SOME — never yanks the camera away from a student actively looking at/editing existing content on a later scene update", () => {
+    const idx = src.indexOf("// Recompose whenever `scene` itself changes");
+    const fn = src.slice(idx, idx + 1000);
+    expect(fn).toMatch(/if \(result\.tldrawShapeCountBefore === 0 && result\.tldrawShapeCountAfter > 0\) \{\s*editor\.zoomToFit\(\);\s*\}/);
+  });
+
+  it("REQUIRED: diagnostics are logged with the correction's own named fields — visualPrimitiveCount, tldrawShapeCountBefore, tldrawShapeCountAfter, renderedNotebookBounds", () => {
+    const idx = src.indexOf("interface ComposeSceneResult {");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/visualPrimitiveCount: number;/);
+    expect(block).toMatch(/tldrawShapeCountBefore: number;/);
+    expect(block).toMatch(/tldrawShapeCountAfter: number;/);
+    expect(block).toMatch(/renderedNotebookBounds: \{ x: number; y: number; w: number; h: number \};/);
+    expect(src).toMatch(/console\.log\(`\[NOTELAB_CANVAS_\$\{phase\.toUpperCase\(\)\}_DIAGNOSTIC\]`, result\);/);
+  });
+
+  it("REQUIRED: a note with real semantic content (visualPrimitiveCount > 0) that composes to zero tldraw shapes is a HARD FAILURE, logged and surfaced — never a silently blank canvas", () => {
+    const idx = src.indexOf("const logComposeResult = useCallback");
+    const fn = src.slice(idx, idx + 700);
+    expect(fn).toMatch(/const hasSemanticContent = result\.visualPrimitiveCount > 0;/);
+    expect(fn).toMatch(/const hardFailure = hasSemanticContent && result\.tldrawShapeCountAfter === 0;/);
+    expect(fn).toMatch(/console\.error\("\[NOTELAB_CANVAS_RENDER_HARD_FAILURE\]"/);
+    expect(fn).toMatch(/setRenderFailure\(hardFailure\);/);
+  });
+
+  it("REQUIRED: the hard-failure state renders an explicit, recoverable error UI — not the bare Tldraw canvas, and not a silent blank", () => {
+    const idx = src.indexOf("if (renderFailure) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 700);
+    expect(block).toMatch(/data-testid="notebook-render-failure"/);
+    expect(block).toMatch(/onClick=\{\(\) => setRenderFailure\(false\)\}/); // a real retry affordance, not a dead end
+  });
+});
+
 describe("NotebookCanvas.tsx — N4: provenance-driven selection action panel", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
@@ -241,7 +300,7 @@ describe("NotebookCanvas.tsx — N4: provenance-driven selection action panel", 
   });
 });
 
-describe("UltraNotesList.tsx — Notebook tab wiring", () => {
+describe("UltraNotesList.tsx — Notebook wiring (NU4 — Study Page tab split retired)", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(LIST_FILE, "utf8"); });
 
@@ -250,16 +309,42 @@ describe("UltraNotesList.tsx — Notebook tab wiring", () => {
     expect(src).toMatch(/<NotebookCanvas\s*\n\s*scene=\{note\.notebookScene\}/);
   });
 
-  it("REQUIRED: a composed visual notebook opens first and the retired Study Sheet tab is absent", () => {
-    expect(src).toContain('note.notebookScene ? "notebook" : "page"');
-    expect(src).toContain('(["notebook", "page"] as const)');
-    expect(src).not.toContain('"studySheet"');
-    expect(src).not.toContain("<AdaptiveStudySheetCard");
-    expect(src).not.toContain("<DATStudySheetCard");
+  it("REQUIRED: the Visual notebook/Study page tab split no longer exists — there is one notebook, not two views to choose between", () => {
+    expect(src).not.toMatch(/noteView/);
+    expect(src).not.toContain('data-testid="notebook-view-switcher"');
+    expect(src).not.toContain("🖊️ Visual notebook");
+    expect(src).not.toContain("📄 Study page");
+    expect(src).not.toContain('(["notebook", "page"] as const)');
   });
 
-  it("REQUIRED: the notebook tab body is gated on both the active tab AND the scene actually being present, so it can never render with an undefined scene", () => {
-    expect(src).toMatch(/\{noteView === "notebook" && note\.notebookScene && \(/);
+  it("REQUIRED: the old card-based SectionsView (and its now-dead siblings ConceptMiniTable/ConceptBlock/ProfessorSection) are gone — content was migrated to real notebook primitives in NU3, not kept as a fallback renderer", () => {
+    expect(src).not.toMatch(/function SectionsView/);
+    expect(src).not.toMatch(/function ConceptMiniTable/);
+    expect(src).not.toMatch(/function ConceptBlock/);
+    expect(src).not.toMatch(/function ProfessorSection/);
+    expect(src).not.toContain('data-testid="adaptive-notebook-sections"');
+  });
+
+  it("REQUIRED: also removed the standalone SOURCE REFERENCES accordion — per-object provenance (View Source/Jump to Reader) on the notebook canvas is now the only path, per the correction's evidence-as-metadata rule", () => {
+    expect(src).not.toContain("SOURCE REFERENCES");
+  });
+
+  it("REQUIRED: the notebook renders whenever a scene exists — no tab state gating it, so it can never render with an undefined scene", () => {
+    expect(src).toMatch(/\{note\.notebookScene \? \(\s*<NotebookCanvas/);
+  });
+
+  it("REQUIRED: a note with no notebookScene at all shows an explicit empty-state prompt, never the retired card dashboard as a fallback", () => {
+    const idx = src.indexOf("{note.notebookScene ? (");
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(/Nothing composed here yet\. Write your own notes below/);
+  });
+
+  it("REQUIRED: a persisted notebookSceneError (NU1/NU3's fallback path) is surfaced as a passive, non-blocking notice — never a second competing dashboard, no retry action here (NotebookCanvas's own hard-failure state already owns retry)", () => {
+    const idx = src.indexOf("{note.notebookSceneError && (");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(/AI enhancement of this notebook didn't finish/);
+    expect(block).not.toMatch(/onClick/);
   });
 
   it("REQUIRED: each note gets its own persistenceKey derived from its own id — one note's notebook edits never bleed into another's", () => {

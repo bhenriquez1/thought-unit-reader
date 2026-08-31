@@ -44,9 +44,12 @@ describe("components/notelab/UltraNotesList.tsx — no standing Evidence panel",
     expect(src).not.toMatch(/GroundedSurgeonAnnotation/);
   });
 
-  it("still renders a collapsed-by-default, note-scoped source-reference list in page view — removing the standing panel must not leave page-view notes with zero provenance access", () => {
-    expect(src).toMatch(/SOURCE REFERENCES · PDF PAGE/);
-    expect(src).toMatch(/<details/);
+  it("NU4 — the collapsed per-note SOURCE REFERENCES accordion this phase originally added is itself now removed; provenance access must not have gone to zero as a result", () => {
+    expect(src).not.toMatch(/SOURCE REFERENCES/);
+    // N4's per-object BlockActionPanel (View Source, gated on a real
+    // canonicalUnitId) on the notebook canvas is what replaced it — see the
+    // describe block below, which re-affirms that path is still wired.
+    expect(src).toMatch(/onViewSource=\{handleViewSourceBlock\}/);
   });
 });
 

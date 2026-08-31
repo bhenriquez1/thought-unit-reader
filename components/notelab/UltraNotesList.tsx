@@ -15,7 +15,6 @@ import {
   deleteUltraNote,
   saveUltraNote,
   formatUltraNoteText,
-  getCanonicalNotebookSections,
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
@@ -30,9 +29,6 @@ import {
   PROFESSION_MODES,
   getStoredProfessionMode,
   setStoredProfessionMode,
-  getSectionLens,
-  getProfessorFieldLabel,
-  getConceptFieldLabel,
   type ProfessionMode,
 } from "@/lib/notelab/professionModes";
 import NotebookCanvas from "@/components/notelab/NotebookCanvas";
@@ -523,14 +519,12 @@ function NoteCard({
   const setSelectedKgNodeId = useKnowledgeSelectionStore((s) => s.setSelectedNodeId);
   const [cardsSaved, setCardsSaved] = useState(false);
   const [cardsSaving, setCardsSaving] = useState(false);
-  const [noteView, setNoteView] = useState<"page" | "notebook">(() => note.notebookScene ? "notebook" : "page");
   const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
   const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     setStudentDraft(note.studentNotes ?? "");
-    setNoteView(note.notebookScene ? "notebook" : "page");
-  }, [note.id, note.studentNotes, note.notebookScene]);
+  }, [note.id, note.studentNotes]);
 
   async function handleSaveStudentNotes() {
     if (studentSaveState === "saving") return;
@@ -595,16 +589,6 @@ function NoteCard({
   function handleJumpToReaderBlock(block: FinalizedNotebookBlock) {
     onNavigate?.(block.page ?? note.pageNumber);
   }
-
-  const canonicalSections = getCanonicalNotebookSections(note);
-  const sectionEvidence = (note.sections ?? [])
-    .filter((section) => section.label === "Source" || section.label === "Source Evidence")
-    .map((section, index) => ({ id: `section-source-${index}`, text: section.content, kind: "source" }));
-  const sourceEvidence = [
-    ...(note.visualAnchors?.map((anchor) => ({ id: anchor.id, text: anchor.exactText, kind: anchor.role })) ?? []),
-    ...(note.highlightAnchors?.map((anchor, index) => ({ id: `highlight-${index}`, text: anchor.text, kind: anchor.anchorType })) ?? []),
-    ...sectionEvidence,
-  ].filter((entry, index, entries) => entry.text.trim() && entries.findIndex((candidate) => candidate.text === entry.text) === index);
 
   return (
     <div
@@ -702,41 +686,28 @@ function NoteCard({
             </div>
           </div>
 
-          {/* A composed canvas is the primary notebook. The structured study
-              page is its accessible/readable companion, never the retired
-              Study Sheet or generated-card dashboard. */}
-          {note.notebookScene && (
-          <div data-testid="notebook-view-switcher" style={{ display: "flex", gap: 6, borderBottom: "1px solid rgba(255,255,255,0.07)", paddingBottom: 8 }}>
-            {(["notebook", "page"] as const).map((tab) => {
-              const active = noteView === tab;
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setNoteView(tab)}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: 7,
-                    border: active ? "1px solid rgba(252,211,77,0.5)" : "1px solid rgba(255,255,255,0.1)",
-                    background: active ? "rgba(252,211,77,0.1)" : "transparent",
-                    color: active ? "#fcd34d" : "rgba(148,163,184,0.7)",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {tab === "notebook" ? "🖊️ Visual notebook" : "📄 Study page"}
-                </button>
-              );
-            })}
-          </div>
+          {/* Correction (Study Page migration) — the Visual Notebook IS the
+              note now; there is no separate "Study page" to switch to. NU3
+              migrated the old Study Page's canonical sections and the
+              student's own notes into real notebook primitives
+              (deterministicNotebookBlocks.ts), so this canvas is always the
+              complete note, not just its AI-composed portion. A note whose
+              synthesis hasn't produced anything to show yet gets a
+              lightweight prompt to start writing below — never the retired
+              card dashboard. */}
+          {note.notebookSceneError && (
+            <div
+              role="status"
+              style={{ borderRadius: 8, border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.06)", color: "#fbbf24", padding: "8px 11px", fontSize: 11.5, lineHeight: 1.5 }}
+            >
+              ⚠ AI enhancement of this notebook didn't finish ({note.notebookSceneError}). Your own notes below are safe and still shown.
+            </div>
           )}
 
-          {/* Notebook tab — the real, persistent, student-editable tldraw
-              canvas (N3). storageKey is per-note so each note's composed
-              scene and any student edits to it persist independently. */}
-          {noteView === "notebook" && note.notebookScene && (
+          {/* The real, persistent, student-editable tldraw canvas (N3).
+              storageKey is per-note so each note's composed scene and any
+              student edits to it persist independently. */}
+          {note.notebookScene ? (
             <NotebookCanvas
               scene={note.notebookScene}
               storageKey={`notelab-notebook-${note.id}`}
@@ -748,12 +719,11 @@ function NoteCard({
               onAskProfessor={onAskProfessorAboutBlock ? (block) => onAskProfessorAboutBlock(note, block) : undefined}
               onPracticeRecall={handlePracticeRecallBlock}
             />
+          ) : (
+            <div style={{ borderRadius: 10, border: "1px dashed rgba(148,163,184,0.25)", padding: "18px 16px", textAlign: "center", color: "rgba(148,163,184,0.65)", fontSize: 12.5, lineHeight: 1.6 }}>
+              Nothing composed here yet. Write your own notes below to start this page's notebook.
+            </div>
           )}
-
-          {/* Canonical permanent study page. Historical note shapes are
-              migrated by getCanonicalNotebookSections; no old renderer can
-              become the learner-facing fallback. */}
-          {noteView === "page" && <>
 
           {note.tags && note.tags.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -767,8 +737,6 @@ function NoteCard({
               ))}
             </div>
           )}
-
-          <SectionsView sections={canonicalSections} mode={mode} />
 
           <NoteBlock accent="#38bdf8" bg="rgba(56,189,248,0.04)" icon="✍️" label="MY NOTES">
             <textarea
@@ -784,34 +752,6 @@ function NoteCard({
               </button>
             </div>
           </NoteBlock>
-
-          {/* Correction (Evidence-as-provenance) — a per-item "View Source"
-              action, not a standing Evidence workspace: collapsed by
-              default, scoped to this note's own page, and each item jumps
-              straight back to its own source passage rather than opening a
-              second surface competing with the note itself. */}
-          {sourceEvidence.length ? (
-            <details style={{ borderRadius: 10, border: "1px solid rgba(148,163,184,0.14)", background: "rgba(15,23,42,0.4)", padding: "10px 12px" }}>
-              <summary style={{ cursor: "pointer", color: "rgba(203,213,225,0.72)", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
-                SOURCE REFERENCES · PDF PAGE {note.pageNumber}
-              </summary>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
-                {sourceEvidence.slice(0, 8).map((anchor) => (
-                    <button
-                      type="button"
-                      key={anchor.id}
-                      onClick={() => onNavigate?.(note.pageNumber)}
-                      title="View source"
-                      style={{ textAlign: "left", borderRadius: 8, border: "1px solid rgba(148,163,184,0.12)", background: "rgba(255,255,255,0.025)", color: "rgba(226,232,240,0.78)", padding: "8px 10px", fontSize: 12, lineHeight: 1.5, cursor: "pointer" }}
-                    >
-                      <span style={{ color: "#67e8f9", fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>{anchor.kind}</span>
-                      <br />{anchor.text}
-                    </button>
-                  ))}
-              </div>
-            </details>
-          ) : null}
-
 
           {/* External Study Links */}
           {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
@@ -859,8 +799,6 @@ function NoteCard({
             );
           })()}
 
-          </> /* end noteView === "page" */}
-
           {/* Export options */}
           <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
             <ExportMenu
@@ -875,245 +813,6 @@ function NoteCard({
   );
 }
 
-// ── SectionsView — renders new-schema sections (Core Idea, Must Know, etc.) ───
-
-const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }> = {
-  "Big Idea":                       { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "💡" },
-  "Core Concepts":                  { accent: "#60a5fa", bg: "rgba(96,165,250,0.05)",  icon: "🧩" },
-  "Definitions":                    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📖" },
-  "Equations and Variables":        { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "∑" },
-  "Worked Example":                 { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "✏️" },
-  "Graph / Figure":                 { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "📈" },
-  "Biological / Real-World Application": { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)", icon: "🧬" },
-  "Common Mistakes":                { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "⚠️" },
-  "Memory Trick":                   { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
-  "Exam Signal":                    { accent: "#f59e0b", bg: "rgba(245,158,11,0.05)", icon: "🎯" },
-  "Recall Questions":               { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "❓" },
-  "Structured Notes":               { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "📝" },
-  "Key Facts / Clinical Pearls":    { accent: "#facc15", bg: "rgba(250,204,21,0.05)", icon: "💎" },
-  "Mechanism / Process":            { accent: "#34d399", bg: "rgba(52,211,153,0.05)", icon: "⚙️" },
-  "Clinical Reasoning":             { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧠" },
-  "Decision / Concept Map":         { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)", icon: "↔️" },
-  "Clinical / Application Connection": { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)", icon: "🦷" },
-  "Common Mistakes / Clinical Risks": { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "⚠️" },
-  "Exam-Important Concepts":        { accent: "#f59e0b", bg: "rgba(245,158,11,0.05)", icon: "🎯" },
-  "Source Evidence":                { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📍" },
-  "Chief Concern / Problem":        { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
-  "Why This Matters Clinically":    { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
-  "Diagnostic Reasoning":           { accent: "#c084fc", bg: "rgba(192,132,252,0.05)", icon: "🧩" },
-  "Procedure Logic":                { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "⚙️" },
-  "Decision Tree":                  { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🌳" },
-  "Danger Zone":                    { accent: "#f87171", bg: "rgba(248,113,113,0.06)", icon: "⚠️" },
-  "Complication Risk":              { accent: "#fb923c", bg: "rgba(251,146,60,0.06)",  icon: "🚧" },
-  "Clinical Pearl":                 { accent: "#facc15", bg: "rgba(250,204,21,0.06)",  icon: "💎" },
-  "Common Mistake":                 { accent: "#fb7185", bg: "rgba(251,113,133,0.06)", icon: "❌" },
-  "Case-Style Recall Questions":    { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "📝" },
-  "Connection Map":                 { accent: "#22d3ee", bg: "rgba(34,211,238,0.05)",  icon: "🔗" },
-  "Exam Strategy":                  { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🎓" },
-  "Memory Hook":                    { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
-  "Summary":                        { accent: "#fbbf24", bg: "rgba(251,191,36,0.05)",  icon: "🧾" },
-  "Source":                         { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
-};
-
-// Expert-notebook reading order for the card grid below. Sort, not filter —
-// any label absent from this list (future section) still renders, just last,
-// instead of silently disappearing (the lesson from Phase 4's SUBJECT_ORDER).
-const SECTION_ORDER = [
-  "Big Idea", "Structured Notes", "Key Facts / Clinical Pearls", "Core Concepts", "Definitions", "Mechanism / Process", "Clinical Reasoning", "Decision / Concept Map", "Clinical / Application Connection", "Common Mistakes / Clinical Risks", "Exam-Important Concepts", "Equations and Variables",
-  "Worked Example", "Graph / Figure", "Biological / Real-World Application",
-  "Common Mistakes", "Memory Trick", "Exam Signal", "Recall Questions", "Source Evidence",
-  "Chief Concern / Problem", "Why This Matters Clinically", "Diagnostic Reasoning",
-  "Procedure Logic", "Decision Tree", "Danger Zone", "Complication Risk",
-  "Clinical Pearl", "Common Mistake", "Case-Style Recall Questions",
-  "Connection Map", "Exam Strategy", "Memory Hook", "Summary", "Source",
-];
-
-function SectionsView({ sections, mode }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[]; mode: ProfessionMode }) {
-  // Provenance belongs in the expandable evidence inspector below the page,
-  // not as a competing card inside the learner's notebook.
-  const ordered = sections.filter((section) => section.label !== "Source Evidence" && section.label !== "Source").sort((a, b) => {
-    const ai = SECTION_ORDER.indexOf(a.label);
-    const bi = SECTION_ORDER.indexOf(b.label);
-    return (ai === -1 ? SECTION_ORDER.length : ai) - (bi === -1 ? SECTION_ORDER.length : bi);
-  });
-  return (
-    <div data-testid="adaptive-notebook-sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, alignItems: "start" }}>
-      {ordered.map((sec) => {
-        const style = SECTION_STYLE[sec.label] ?? { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "•" };
-        const lens = getSectionLens(mode, sec.label);
-        const label = lens?.label ?? sec.label;
-        const icon = lens?.icon ?? style.icon;
-        return (
-          <section key={sec.label} style={{ gridColumn: sec.label === "Big Idea" || sec.label === "Mechanism / Process" || sec.label === "Decision / Concept Map" ? "1 / -1" : undefined, borderRadius: 10, borderTop: `3px solid ${style.accent}80`, background: style.bg, padding: sec.label === "Big Idea" ? "16px 18px" : "12px 14px", breakInside: "avoid" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: style.accent, marginBottom: 7 }}>
-              {icon} {label.toUpperCase()}
-            </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {sec.content}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-// N1 (NoteLab adaptivity correction) — this used to gate on a fixed
-// allowlist of known section labels (NEW_SCHEMA_LABELS), so a note whose
-// sections came from buildNoteFromStudyModel's fixed 14-slot template (or
-// its since-removed "math-textbook" sibling) would render via SectionsView,
-// while a note whose sections were derived from model.noteCards' adaptive,
-// AI-chosen titles — anything from "Must Know" to a concept's own title —
-// often did NOT match the allowlist and silently fell through to the
-// legacy coreIdea/concept-block layout instead. Any note with sections has
-// them because buildNoteFromStudyModel actually built them (always at
-// least a "Source" entry) — there's no longer a separate "old schema" to
-// distinguish from a "new" one, so presence is the only signal needed.
-function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
-  return !!sections?.length;
-}
-
-// ── ConceptMiniTable — condensed multi-concept overview (NoteLab v2) ──────
-
-function ConceptMiniTable({ concepts, mode }: { concepts: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept[]; mode: ProfessionMode }) {
-  return (
-    <div style={{ borderRadius: 9, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
-      <div style={{ padding: "8px 13px", background: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(148,163,184,0.65)" }}>
-        📋 MINI TABLE
-      </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-        <thead>
-          <tr>
-            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}></th>
-            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}>{getConceptFieldLabel(mode, "pattern").toUpperCase()}</th>
-            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(148,163,184,0.5)" }}>{getConceptFieldLabel(mode, "trap").toUpperCase()}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {concepts.map((c) => (
-            <tr key={c.ordinal} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <td style={{ padding: "7px 10px", verticalAlign: "top", fontWeight: 700, color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap" }}>
-                {c.ordinal}. {c.title}
-              </td>
-              <td style={{ padding: "7px 10px", verticalAlign: "top", color: "rgba(255,255,255,0.7)" }}>
-                {c.pattern ?? "—"}
-              </td>
-              <td style={{ padding: "7px 10px", verticalAlign: "top", color: "#fca5a5" }}>
-                {c.trap ?? "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ── ConceptBlock — individually collapsible ───────────────────────────────
-
-function ConceptBlock({
-  concept, mode, note, starred, onToggleStar, onCardsGenerated,
-}: {
-  concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept;
-  mode: ProfessionMode;
-  note: UltraNote;
-  starred: boolean;
-  onToggleStar: () => void;
-  onCardsGenerated?: (setId: string) => void;
-}) {
-  const [collapsed, setCollapsed] = useState(true);
-  const [cardSaving, setCardSaving] = useState(false);
-  const [cardSaved, setCardSaved] = useState(false);
-
-  function handleToggleStar(e: React.MouseEvent) {
-    e.stopPropagation();
-    onToggleStar();
-  }
-
-  async function handleGenerateCard(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (cardSaving) return;
-    setCardSaving(true);
-    try {
-      const set = buildRecallSetFromNote(note, { sourceLabel: "notelab", conceptOrdinals: [concept.ordinal] });
-      await saveRecallSet(set);
-      setCardSaved(true);
-      onCardsGenerated?.(set.id);
-      setTimeout(() => setCardSaved(false), 2500);
-    } catch (err) {
-      console.error("[NOTELAB_CONCEPT_CARD_SAVE_FAILED]", String(err));
-    } finally {
-      setCardSaving(false);
-    }
-  }
-
-  return (
-    <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
-      <div
-        onClick={() => setCollapsed((c) => !c)}
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.03)" }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", flex: 1 }}>
-          🧩 {concept.ordinal}. {concept.title}
-        </span>
-        <button
-          type="button"
-          onClick={handleToggleStar}
-          title="Star this concept"
-          style={{ flexShrink: 0, padding: "3px 7px", borderRadius: 6, border: starred ? "1px solid rgba(252,211,77,0.5)" : "1px solid rgba(255,255,255,0.12)", background: starred ? "rgba(252,211,77,0.14)" : "rgba(255,255,255,0.04)", color: starred ? "#fcd34d" : "rgba(148,163,184,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-        >
-          {starred ? "⭐" : "☆"}
-        </button>
-        <button
-          type="button"
-          onClick={handleGenerateCard}
-          disabled={cardSaving}
-          title="Generate a recall card from this concept"
-          style={{ flexShrink: 0, padding: "3px 7px", borderRadius: 6, border: cardSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)", background: cardSaved ? "rgba(99,102,241,0.14)" : "rgba(99,102,241,0.06)", color: cardSaved ? "#a5b4fc" : "#818cf8", fontSize: 11, fontWeight: 600, cursor: cardSaving ? "wait" : "pointer", opacity: cardSaving ? 0.6 : 1 }}
-        >
-          {cardSaving ? "…" : cardSaved ? "✓" : "🃏"}
-        </button>
-        <span style={{ fontSize: 10, color: "rgba(148,163,184,0.35)" }}>{collapsed ? "▶" : "▼"}</span>
-      </div>
-      {!collapsed && (
-        <div style={{ padding: "0 13px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
-          {concept.pattern        && <NoteRow label={getConceptFieldLabel(mode, "pattern")}        text={concept.pattern}        color="#7dd3fc" />}
-          {concept.surgicalReason && <NoteRow label={getConceptFieldLabel(mode, "surgicalReason")} text={concept.surgicalReason} color="#fde68a" />}
-          {concept.trap           && <NoteRow label={getConceptFieldLabel(mode, "trap")}           text={concept.trap}           color="#fca5a5" />}
-          {concept.rule           && <NoteRow label={getConceptFieldLabel(mode, "rule")}            text={concept.rule}           color="#fcd34d" />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── ProfessorSection ──────────────────────────────────────────────────────
-
-function ProfessorSection({ notes, mode }: { notes: NonNullable<UltraNote["professorNotes"]>; mode: ProfessionMode }) {
-  const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
-    { icon: "💡", label: getProfessorFieldLabel(mode, "whyItMatters"),    text: notes.whyItMatters    ?? "", color: "#fbbf24" },
-    { icon: "⚙️", label: getProfessorFieldLabel(mode, "keyMechanism"),    text: notes.keyMechanism    ?? "", color: "#38bdf8" },
-    { icon: "⚠️", label: getProfessorFieldLabel(mode, "commonConfusion"), text: notes.commonConfusion ?? "", color: "#f87171" },
-    { icon: "🧠", label: getProfessorFieldLabel(mode, "memoryAnchor"),    text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
-    { icon: "🔗", label: getProfessorFieldLabel(mode, "reasoningFlow"),   text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
-    { icon: "🎓", label: getProfessorFieldLabel(mode, "examSignal"),      text: notes.examSignal      ?? "", color: "#fca5a5" },
-  ].filter((r) => r.text.length > 0);
-
-  if (!rows.length) return null;
-  return (
-    <NoteBlock accent="#93c5fd" bg="rgba(96,165,250,0.04)" icon="🧑‍🏫" label="PROFESSOR NOTES">
-      {rows.map((r) => (
-        <div key={r.label} style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: r.color, marginBottom: 3 }}>
-            {r.icon} {r.label}
-          </div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65 }}>{r.text}</div>
-        </div>
-      ))}
-    </NoteBlock>
-  );
-}
-
 // ── Reusable block wrapper ────────────────────────────────────────────────
 
 function NoteBlock({ accent, bg, icon, label, children }: {
@@ -1125,15 +824,6 @@ function NoteBlock({ accent, bg, icon, label, children }: {
         {icon} {label}
       </div>
       {children}
-    </div>
-  );
-}
-
-function NoteRow({ label, text, color }: { label: string; text: string; color: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, wordBreak: "break-word" }}>{text}</div>
     </div>
   );
 }
