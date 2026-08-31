@@ -125,6 +125,7 @@ import { LEARNING_PROFILE_LABELS } from "@/types/workspace";
 import {
   firebaseConnected,
   uploadPDF,
+  hashPDFDocumentId,
   getPDFLibrary,
   deletePDF,
   signInWithGoogle,
@@ -4124,6 +4125,7 @@ export default function ThoughtUnitReader() {
     try {
       let url: string;
       let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string };
+      const stableDocumentId = await hashPDFDocumentId(file);
 
       const canUseFirebase = firebaseConnected && !!user;
 
@@ -4187,7 +4189,7 @@ export default function ThoughtUnitReader() {
           url = await uploadPDF(file, USER_ID);
           getPDFLibrary(USER_ID).then(setPdfLibrary);
           libEntry = {
-            id: String(Date.now()),
+            id: stableDocumentId,
             name: file.name,
             url,
             uploadedAt: new Date().toISOString(),
@@ -4195,7 +4197,7 @@ export default function ThoughtUnitReader() {
         } catch (error) {
           console.error("Firebase upload failed, falling back to local:", error);
           // Firebase failed — save locally with IDB binary for durability
-          const documentId = crypto.randomUUID();
+          const documentId = stableDocumentId;
           url = createBlobUrl(file);
           const uploadedAt = new Date().toISOString();
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
@@ -4209,7 +4211,7 @@ export default function ThoughtUnitReader() {
         }
       } else {
         // Guest mode or bypass: blob URL for this session + IDB binary for future sessions
-        const documentId = crypto.randomUUID();
+        const documentId = stableDocumentId;
         url = createBlobUrl(file);
         const uploadedAt = new Date().toISOString();
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
@@ -4223,7 +4225,7 @@ export default function ThoughtUnitReader() {
       setFileUrl(url);
 
       // TOC from URL (fire-and-forget — outline extraction via PDF.js is async)
-      const documentId = file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+      const documentId = stableDocumentId;
       generateTOC(url).then((tocEntries) => {
         if (tocEntries && tocEntries.length > 0) {
           setTableOfContents(tocEntries);

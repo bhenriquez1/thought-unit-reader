@@ -9,6 +9,7 @@ import type { ThoughtUnitDetail } from "@/lib/insights/buildThoughtUnitDetail";
 import type { NoteCard } from "@/lib/insights/synthesizeTeachingOutput";
 import type { FinalizedNotebookBlock, NotebookPrimitive } from "@/lib/notelab/notebookScene";
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
+import { currentFirebaseUid, deleteOwnedRecord, saveOwnedRecord } from "@/lib/firebase/durableState";
 
 export type CardType = "fact" | "concept" | "mechanism" | "application" | "dat-question" | "weak-review";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -307,6 +308,10 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
   // Mirror to localStorage for sync reads
   lsUpsert(c);
 
+  if (currentFirebaseUid() && c.documentId && c.pageTruthKey) {
+    await saveOwnedRecord("recall", c.id, c as unknown as Record<string, unknown>);
+  }
+
   // Notify RecallLab to re-render
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("recall-lab-updated"));
@@ -326,6 +331,7 @@ export async function deleteRecallSet(id: string): Promise<void> {
     console.warn("[RECALL_IDB_DELETE_FAIL]", String(e));
   }
   lsRemove(id);
+  if (currentFirebaseUid()) await deleteOwnedRecord("recall", id);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("recall-lab-updated"));
   }
