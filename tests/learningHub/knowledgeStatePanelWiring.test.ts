@@ -3,9 +3,14 @@
 // in Learning Hub's Overview tab (pages/index.tsx), fed the real Knowledge
 // Graph nodes already loaded for the active book (kgNodes, from
 // useKnowledgeGraph — the same hook the Knowledge Graph/Sources sub-tabs
-// already use), and that clicking a node jumps to its source page and
-// switches to the Reader tab — not a component that exists but is never
-// rendered.
+// already use), and that each of its three lists deep-links to the module
+// it's actually about — not a component that exists but is never rendered.
+//
+// L6 — previously every list (due-for-recall/weak/recently-mastered) routed
+// identically to Reader regardless of which one was clicked. Now each kind
+// routes through the shared handleDeepLink dispatcher to its own module
+// (Section 10: "deep-link everything, never send the student to a module
+// homepage").
 //
 // No jsdom/render harness for pages/index.tsx in this repo — source
 // inspection, matching this repo's established pattern for this file.
@@ -28,13 +33,17 @@ describe("pages/index.tsx — KnowledgeStatePanel is mounted in Learning Hub's O
     expect(overviewBlock).toMatch(/nodes=\{kgNodes\}/);
   });
 
-  it("REQUIRED: onOpenNode jumps to the node's source page and switches to the reader tab", () => {
+  it("REQUIRED: onOpenNode routes each list kind to its own module via the shared deep-link dispatcher", () => {
     const idx = SRC.indexOf("<KnowledgeStatePanel");
     expect(idx).toBeGreaterThan(-1);
-    const block = SRC.slice(idx, idx + 400);
-    expect(block).toMatch(/onOpenNode=\{\(node\) => \{/);
-    expect(block).toMatch(/syncToPage\(page, \{ reason: 'PROGRAMMATIC' \}\);/);
-    expect(block).toMatch(/trySwitchShellTab\("reader", "reader"\);/);
+    const block = SRC.slice(idx, idx + 900);
+    expect(block).toMatch(/onOpenNode=\{\(node, kind\) => \{/);
+    // due-for-recall → Recall, not Reader
+    expect(block).toMatch(/handleDeepLink\(\{ module: "recall", bookId, knowledgeNodeId: node\.id \}\);/);
+    // weak/"Test Lab Recommended" → TestLab, not Reader
+    expect(block).toMatch(/handleDeepLink\(\{ module: "testlab", bookId, knowledgeNodeId: node\.id \}\);/);
+    // recently-mastered → Reader (browsing the source is the correct action here)
+    expect(block).toMatch(/handleDeepLink\(\{ module: "reader", bookId, page: node\.sourcePages\[0\], knowledgeNodeId: node\.id \}\);/);
   });
 });
 

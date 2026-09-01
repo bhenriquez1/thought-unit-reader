@@ -30,6 +30,8 @@ import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import AdaptiveSyllabusPanel from "@/components/syllabus/AdaptiveSyllabusPanel";
 import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
+import { buildNextBestAction, type DeepLinkTarget } from "@/lib/learningHub/nextBestAction";
+import { CUSTOM_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/customProfile";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
@@ -5344,6 +5346,72 @@ export default function ThoughtUnitReader() {
     );
   }, [chapterProgressList, bookId]);
 
+  // L6 (Learning Hub orchestration correction, Section 9) — ONE ranked "what
+  // should I do next?" recommendation over the canonical KnowledgeNodeProgress
+  // state, instead of Learning Hub always offering the same "read the next
+  // unread page" CTA regardless of whether a concept is actually overdue for
+  // review or weak. See lib/learningHub/nextBestAction.ts's own header for
+  // the priority rationale.
+  const nextBestAction = useMemo(
+    () => buildNextBestAction({ nodes: kgNodes, progressByNodeId: kgProgressByNodeId, nextTopicRecommendation, bookId }),
+    [kgNodes, kgProgressByNodeId, nextTopicRecommendation, bookId]
+  );
+
+  // Section 10 ("deep-link everything, never send the student to a module
+  // homepage") — one dispatcher shared by the Next Best Action card and
+  // KnowledgeStatePanel's three lists, so every "what should I do next"
+  // click routes to the module the recommendation is actually about instead
+  // of always landing on Reader. NoteLab/Recall land on that module's own
+  // view rather than a concept-scoped note/session — the cross-module
+  // selection store's Reader-auto-navigate effect (above) would fight a
+  // reused-for-that-purpose selection write, and Recall 2.0 has no external
+  // "launch a session for node X" seam yet; both are real follow-ups, not
+  // silently faked here.
+  const handleDeepLink = useCallback((target: DeepLinkTarget) => {
+    switch (target.module) {
+      case "reader":
+        if (target.page) syncToPage(target.page, { reason: "PROGRAMMATIC" });
+        trySwitchShellTab("reader", "reader");
+        return;
+      case "notelab":
+        trySwitchShellTab("notelab", "notelab");
+        return;
+      case "recall":
+        trySwitchShellTab("study", "study");
+        return;
+      case "testlab": {
+        const profileId = (() => {
+          try { return localStorage.getItem("avrrio:testlab:activeProfileId:v2") || CUSTOM_EXAM_PROFILE_ID; }
+          catch { return CUSTOM_EXAM_PROFILE_ID; }
+        })();
+        const params = new URLSearchParams({ examType: profileId });
+        if (target.bookId) params.set("sourceBookId", target.bookId);
+        router.push(`/apex/generator?${params.toString()}`);
+        return;
+      }
+    }
+  }, [syncToPage, trySwitchShellTab, router]);
+
+  // Overview's "Continue Learning" CTA content — kept as its own memo so the
+  // reader-fallback case (nothing due/weak yet) renders identically to the
+  // pre-L6 CTA rather than reformatting text that already reads fine.
+  const nextBestActionCard = useMemo(() => {
+    if (!nextBestAction) {
+      return { eyebrow: "Continue Learning", title: uploadedFile?.name ?? bookId, subtitle: `p.${currentPage} of ${pdfPageCount}` };
+    }
+    if (nextBestAction.recommendedModule === "recall") {
+      return { eyebrow: "⏰ Review Due", title: nextBestAction.reason, subtitle: nextBestAction.sourceEvidence[0] };
+    }
+    if (nextBestAction.recommendedModule === "notelab") {
+      return { eyebrow: "🎯 Weak Concept", title: nextBestAction.reason, subtitle: nextBestAction.sourceEvidence[0] };
+    }
+    return {
+      eyebrow: "Continue Learning",
+      title: uploadedFile?.name ?? bookId,
+      subtitle: `→ ${nextTopicRecommendation?.chapterTitle ?? ""} · p.${nextBestAction.deepLinkTarget.page ?? currentPage}`,
+    };
+  }, [nextBestAction, uploadedFile, bookId, currentPage, pdfPageCount, nextTopicRecommendation]);
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
@@ -6030,18 +6098,20 @@ export default function ThoughtUnitReader() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
-                  {/* Continue Learning CTA */}
+                  {/* Next Best Action CTA — L6: routes to whichever module
+                      the highest-priority recommendation is actually about
+                      (Recall/NoteLab/Reader), not always Reader. Falls back
+                      to "keep reading" when nothing else needs attention. */}
                   <button
-                    onClick={() => { trySwitchShellTab("reader", "reader"); }}
+                    onClick={() => {
+                      if (nextBestAction) handleDeepLink(nextBestAction.deepLinkTarget);
+                      else trySwitchShellTab("reader", "reader");
+                    }}
                     className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
                   >
-                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
-                    <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
-                    <div className="mt-2 text-xs text-indigo-300 font-medium">
-                      {nextTopicRecommendation
-                        ? `→ ${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
-                        : `p.${currentPage} of ${pdfPageCount}`}
-                    </div>
+                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">{nextBestActionCard.eyebrow}</div>
+                    <div className="text-sm font-semibold text-white truncate">{nextBestActionCard.title}</div>
+                    <div className="mt-2 text-xs text-indigo-300 font-medium truncate">{nextBestActionCard.subtitle}</div>
                   </button>
 
                   {/* Stats row */}
@@ -6085,10 +6155,16 @@ export default function ThoughtUnitReader() {
                       the same store TestLab/Recall/Whiteboard already read/write. */}
                   <KnowledgeStatePanel
                     nodes={kgNodes}
-                    onOpenNode={(node) => {
-                      const page = node.sourcePages[0];
-                      if (page) syncToPage(page, { reason: 'PROGRAMMATIC' });
-                      trySwitchShellTab("reader", "reader");
+                    onOpenNode={(node, kind) => {
+                      // L6 — each list now routes to the module it's about
+                      // instead of every list going to Reader.
+                      if (kind === "due") {
+                        handleDeepLink({ module: "recall", bookId, knowledgeNodeId: node.id });
+                      } else if (kind === "weak") {
+                        handleDeepLink({ module: "testlab", bookId, knowledgeNodeId: node.id });
+                      } else {
+                        handleDeepLink({ module: "reader", bookId, page: node.sourcePages[0], knowledgeNodeId: node.id });
+                      }
                     }}
                   />
 
@@ -6477,7 +6553,7 @@ export default function ThoughtUnitReader() {
                 <div className="text-sm font-semibold text-slate-200">Avrrio TestLab — Practice Exams</div>
                 <div className="text-xs text-slate-500 mt-1">Full-length simulations with section scoring</div>
                 <button
-                  onClick={() => { router.push("/apex"); }}
+                  onClick={() => { handleDeepLink({ module: "testlab", bookId }); }}
                   className="mt-4 px-5 py-2 rounded-lg bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 text-xs font-semibold hover:bg-indigo-600/60 transition-colors"
                 >
                   Open TestLab →
