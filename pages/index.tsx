@@ -50,6 +50,7 @@ import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
 import KnowledgeStatePanel from "@/components/learningHub/KnowledgeStatePanel";
+import LibraryRowProgress from "@/components/library/LibraryRowProgress";
 import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
 import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
@@ -7452,9 +7453,13 @@ export default function ThoughtUnitReader() {
                   key={pdf.id}
                   className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
                 >
-                  <span onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId)} className="cursor-pointer">
-                    {pdf.name}
-                  </span>
+                  <div onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId)} className="cursor-pointer min-w-0 flex-1">
+                    <div className="truncate">{pdf.name}</div>
+                    {/* L7 — every saved book shows meaningful progress, not
+                        just a filename (Learning Hub orchestration
+                        correction, Section 8). */}
+                    <LibraryRowProgress bookId={pdf.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book"} />
+                  </div>
                   <button
                     onClick={() => handleDeletePDF(pdf.id, pdf.name, pdf.isLocal, pdf.localDocumentId)}
                     className={`${

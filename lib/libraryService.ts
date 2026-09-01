@@ -65,10 +65,19 @@ export interface TopStudentNote extends LibraryItem {
 }
 
 class LibraryService {
+  // L7 (Learning Hub orchestration correction) — this used to target
+  // `users/${userId}/library`, the exact same Firestore collection
+  // lib/firebase.ts's uploadPDF/getPDFLibrary/deletePDF (the live "My
+  // Library" PDF drawer) already own — a real doc-shape collision if this
+  // service were ever wired up (it isn't reachable from any rendered UI
+  // today; components/LibraryPanel.tsx, its one consumer, is imported but
+  // never rendered). Renamed to its own collection so reviving this
+  // feature can never collide with the PDF drawer's data. No existing
+  // production data to migrate: this path has never had a live writer.
   private getCollectionRef(userId: string) {
     const db = getDbInstance();
     if (!db) throw new Error("Firebase DB not initialized");
-    return collection(db, `users/${userId}/library`);
+    return collection(db, `users/${userId}/libraryNotes`);
   }
 
   async saveItem(item: Omit<LibraryItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
