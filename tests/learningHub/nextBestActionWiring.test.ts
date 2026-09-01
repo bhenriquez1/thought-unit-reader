@@ -44,11 +44,12 @@ describe("pages/index.tsx — handleDeepLink routes every module to real navigat
     expect(block).toMatch(/case "recall":\s*\n\s*trySwitchShellTab\("study", "study"\);/);
   });
 
-  it("REQUIRED: testlab target builds a real generator URL carrying sourceBookId — never a bare '/apex' push", () => {
+  it("REQUIRED: testlab target builds a real generator URL carrying sourceDocumentId (the real Library identity, never target.bookId/title) — never a bare '/apex' push", () => {
     const idx = SRC.indexOf("const handleDeepLink = useCallback(");
-    const block = SRC.slice(idx, idx + 1400);
+    const block = SRC.slice(idx, idx + 1700);
     expect(block).toMatch(/case "testlab": \{/);
-    expect(block).toMatch(/params\.set\("sourceBookId", target\.bookId\);/);
+    expect(block).toMatch(/params\.set\("sourceDocumentId", resolvedDocumentId\);/);
+    expect(block).not.toMatch(/sourceBookId/);
     expect(block).toMatch(/router\.push\(`\/apex\/generator\?\$\{params\.toString\(\)\}`\);/);
   });
 });

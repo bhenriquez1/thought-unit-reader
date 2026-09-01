@@ -70,7 +70,10 @@ describe("buildRecallSetFromNote — documentId/pageTruthKey inherit from the no
 });
 
 describe("buildRecallSetFromNoteCard — same inheritance for the single-card 'Generate Card' action", () => {
-  const noteCard: NoteCard = { type: "mechanism", title: "Buffer capacity", body: "Resists pH change near pKa." };
+  const noteCard: NoteCard = {
+    type: "mechanism", title: "Buffer capacity", body: "Resists pH change near pKa.",
+    visual: null, priorityTier: null, sourceAnchorHints: null, span: null,
+  };
 
   it("inherits documentId/pageTruthKey from the note", () => {
     const set = buildRecallSetFromNoteCard(makeNote(), noteCard);

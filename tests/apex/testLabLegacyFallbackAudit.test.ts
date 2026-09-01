@@ -39,12 +39,16 @@ describe("canonical TestLab — source-first workspace", () => {
     expect(src).toMatch(/never a generic substitute or a fake successful result/);
   });
 
-  it("passes the chosen source and mode into the detailed builder", () => {
+  it("passes the chosen source (by stable documentId, not bookId/title) and mode into the detailed builder", () => {
     const dashboard = read(DASHBOARD);
     const generator = read("app/apex/generator/page.tsx");
-    expect(dashboard).toMatch(/params\.set\("sourceBookId", bookId\)/);
-    expect(generator).toMatch(/searchParams\?\.get\('sourceBookId'\)/);
-    expect(generator).toMatch(/books\.find\(\(book\) => book\.bookId === requestedSourceBookId\)/);
+    // TestLab source binding fix — documentId is the real deep-link
+    // identity now; sourceBookId is still accepted on the generator page
+    // only as a legacy fallback for an already-generated link, never as
+    // the value this app itself writes.
+    expect(dashboard).toMatch(/params\.set\("sourceDocumentId", documentId\)/);
+    expect(generator).toMatch(/searchParams\?\.get\('sourceDocumentId'\)/);
+    expect(generator).toMatch(/books\.find\(\(book\) => book\.documentId === requestedSourceDocumentId\)/);
   });
 
   it("defaults the new source-first experience to Custom Exam instead of inheriting the old DAT dashboard preference", () => {
