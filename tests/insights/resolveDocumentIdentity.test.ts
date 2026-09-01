@@ -77,10 +77,16 @@ describe("resolveDocumentIdentity.ts — wired into the canonical pageTruthKey b
     expect(block).not.toMatch(/documentId:\s*bookId,/);
   });
 
-  it("resolvedDocumentId is memoized off resolveDocumentIdentity({ documentId: currentLocalDocumentId, fileUrl, bookId })", () => {
+  it("resolvedDocumentId is memoized off resolveDocumentIdentity({ documentId: canonicalDocumentId ?? currentLocalDocumentId, fileUrl, bookId })", () => {
     const idx = src.indexOf("const resolvedDocumentId = useMemo(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 250);
-    expect(block).toMatch(/resolveDocumentIdentity\(\{ documentId: currentLocalDocumentId, fileUrl, bookId \}\)/);
+    // Identity-spine remediation — canonicalDocumentId takes priority.
+    // currentLocalDocumentId alone used to be the sole "documentId" input
+    // here, but it's never set for a Firebase-uploaded/reopened book (see
+    // canonicalDocumentId's own declaration comment in pages/index.tsx),
+    // so resolvedDocumentId silently fell back to a hash of the Storage
+    // URL for those books instead of the real Firestore documentId.
+    expect(block).toMatch(/resolveDocumentIdentity\(\{ documentId: canonicalDocumentId \?\? currentLocalDocumentId, fileUrl, bookId \}\)/);
   });
 });

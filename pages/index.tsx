@@ -604,6 +604,23 @@ export default function ThoughtUnitReader() {
     setPage: setCurrentPage,
     setTotalPages,
   } = useCurrentLearningContext();
+  // Identity-spine remediation — the real canonical Library documentId
+  // (Firestore doc id / SHA-256 content hash) for whatever book is
+  // currently open, regardless of source. Deliberately NOT the same state
+  // as currentLocalDocumentId above: that field's contract elsewhere in
+  // this file is narrower and load-bearing — "a local IndexedDB blob
+  // exists under this key" (it gates the pdfSourceFailed "Try Again"
+  // retry button, which calls getDocumentFile(currentLocalDocumentId)).
+  // A Firebase-uploaded/reopened book has no local IDB blob, so it must
+  // never populate that field — but it still has a real, stable
+  // documentId (the Firestore doc id already returned by
+  // getPDFLibrary()/uploadPDF()) that resolvedDocumentId below needs.
+  // Before this, a Firebase-sourced book's resolvedDocumentId silently
+  // fell back to a hash of the Storage download URL instead — a
+  // different, stable-but-incompatible id that could never match this
+  // same book's real documentId anywhere that reads it from the Library
+  // (e.g. TestLab's source picker matching ?sourceDocumentId=).
+  const [canonicalDocumentId, setCanonicalDocumentId] = useState<string | null>(null);
   // True when PDF.js fails to load the source file (distinct from text-analysis failures).
   const [pdfSourceFailed, setPdfSourceFailed] = useState(false);
 
@@ -629,7 +646,7 @@ export default function ThoughtUnitReader() {
   // Same TDZ workaround as syncToPageRef above — handleLoadPDF is declared
   // much later in this component; populated by an effect right after its
   // own declaration, read via .current by handleViewSourcePickFromLibrary.
-  const handleLoadPDFRef = useRef<((url: string, name?: string, localDocumentId?: string) => void) | null>(null);
+  const handleLoadPDFRef = useRef<((url: string, name?: string, localDocumentId?: string, documentId?: string) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   // P0 fix — a ViewSourceLink whose documentId doesn't (yet) match the
@@ -1518,6 +1535,7 @@ export default function ThoughtUnitReader() {
           const blob = new Blob([data], { type: 'application/pdf' });
           const sessionUrl = createBlobUrl(blob);
           setCurrentLocalDocumentId(restored.currentLocalDocumentId);
+          setCanonicalDocumentId(restored.currentLocalDocumentId);
           setFileUrl(sessionUrl);
           generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
           const restoredBookId = restored.bookId || 'book';
@@ -1589,7 +1607,7 @@ export default function ThoughtUnitReader() {
       (p) => p.name.replace(/\.[Pp][Dd][Ff]$/, "") === pendingViewSourceLink.documentId,
     );
     if (match) {
-      handleLoadPDFRef.current?.(match.url, match.name, match.localDocumentId);
+      handleLoadPDFRef.current?.(match.url, match.name, match.localDocumentId, match.id);
     } else {
       setShowLibrary(true);
     }
@@ -2011,8 +2029,8 @@ export default function ThoughtUnitReader() {
   // across every cache keyed on it (annotation plans, professor lesson
   // plans, content hashes). See lib/insights/resolveDocumentIdentity.ts.
   const resolvedDocumentId = useMemo(
-    () => resolveDocumentIdentity({ documentId: currentLocalDocumentId, fileUrl, bookId }),
-    [currentLocalDocumentId, fileUrl, bookId],
+    () => resolveDocumentIdentity({ documentId: canonicalDocumentId ?? currentLocalDocumentId, fileUrl, bookId }),
+    [canonicalDocumentId, currentLocalDocumentId, fileUrl, bookId],
   );
 
   // Knowledge Graph: resolve/create nodes when study model is ready.
@@ -2746,14 +2764,32 @@ export default function ThoughtUnitReader() {
 
   /* =========================================================================
      🔹 Load PDF Library (Firebase) or keep session list (guest)
+     Identity-spine remediation — this effect used to also re-fire on every
+     `showLibrary` toggle, which meant a GUEST simply opening the "My
+     Library" drawer re-ran the `else` branch and wiped `pdfLibrary` to
+     `[]` — even with a real PDF already open in Reader and real entries
+     already restored from `avrrio-local-library`/appended at upload time.
+     The underlying storage was never touched (a refresh still restored
+     everything correctly); only the drawer's displayed state went empty.
+     Clearing now only happens on an actual sign-out transition ([user] as
+     the sole dependency); a signed-in user's Library still refreshes from
+     Firestore each time the drawer opens (a real, low-cost value — it
+     picks up an upload/delete made from another tab or device), via the
+     second effect below, which never clears anything for a guest.
   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
-      setPdfLibrary([]); // clear when signed out
+      setPdfLibrary([]); // clear only when actually signed out, not on every drawer toggle
     }
-  }, [user, showLibrary]);
+  }, [user]);
+
+  useEffect(() => {
+    if (firebaseConnected && user && showLibrary) {
+      getPDFLibrary(USER_ID).then(setPdfLibrary);
+    }
+  }, [showLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* =========================================================================
      🔹 Chapter Absorption Pipeline Functions
@@ -4235,6 +4271,10 @@ export default function ThoughtUnitReader() {
             url,
             uploadedAt: new Date().toISOString(),
           };
+          // Identity-spine remediation — see canonicalDocumentId's own
+          // declaration for why this can't just reuse
+          // setCurrentLocalDocumentId here.
+          setCanonicalDocumentId(stableDocumentId);
         } catch (error) {
           console.error("Firebase upload failed, falling back to local:", error);
           // Firebase failed — save locally with IDB binary for durability
@@ -4244,6 +4284,7 @@ export default function ThoughtUnitReader() {
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
           setCurrentLocalDocumentId(documentId);
+          setCanonicalDocumentId(documentId);
           // Only persist the localStorage library entry after IDB binary is confirmed.
           // setFileUrl runs immediately (below) so the viewer opens without waiting.
           persistToIDB(documentId)
@@ -4258,6 +4299,7 @@ export default function ThoughtUnitReader() {
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
         setCurrentLocalDocumentId(documentId);
+        setCanonicalDocumentId(documentId);
         persistToIDB(documentId)
           .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
           .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
@@ -4407,7 +4449,7 @@ export default function ThoughtUnitReader() {
      For local entries (localDocumentId set): reconstructs a session blob URL
      from the IndexedDB binary. Falls back to the stored URL for Firebase entries.
   ========================================================================= */
-  const handleLoadPDF = useCallback(async (url: string, name?: string, localDocumentId?: string) => {
+  const handleLoadPDF = useCallback(async (url: string, name?: string, localDocumentId?: string, documentId?: string) => {
     setPageTextByPage(new Map());
     setCurrentPage(1);
     setThoughtUnits([]);
@@ -4430,6 +4472,12 @@ export default function ThoughtUnitReader() {
         const blob = new Blob([data], { type: 'application/pdf' });
         const sessionUrl = createBlobUrl(blob);
         setCurrentLocalDocumentId(localDocumentId);
+        // Identity-spine remediation — for a local/guest entry, the
+        // Library's own documentId (pdf.id) and the IDB blob key are
+        // always the same value (see the upload code's libEntry
+        // construction), so this is just as correct as localDocumentId
+        // here; passed explicitly rather than assumed equal.
+        setCanonicalDocumentId(documentId ?? localDocumentId);
         setFileUrl(sessionUrl);
         generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
         // Re-run background processing to rebuild thought units
@@ -4440,8 +4488,14 @@ export default function ThoughtUnitReader() {
         setMissingPDFEntry({ name: name || 'this book', documentId: localDocumentId });
       }
     } else {
-      // Firebase URL or other durable URL — use directly
+      // Firebase URL or other durable URL — use directly. No local IDB
+      // blob exists for this book, so currentLocalDocumentId must stay
+      // null (see its own declaration comment) — but canonicalDocumentId
+      // still gets the real Library documentId the caller passed in, so
+      // resolvedDocumentId resolves correctly instead of falling back to
+      // a hash of the Storage URL.
       setCurrentLocalDocumentId(null);
+      setCanonicalDocumentId(documentId ?? null);
       setFileUrl(url);
       generateTOC(url).then(setTableOfContents).catch(() => {});
     }
@@ -7461,7 +7515,7 @@ export default function ThoughtUnitReader() {
                   key={pdf.id}
                   className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
                 >
-                  <div onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId)} className="cursor-pointer min-w-0 flex-1">
+                  <div onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId, pdf.id)} className="cursor-pointer min-w-0 flex-1">
                     <div className="truncate">{pdf.name}</div>
                     {/* L7 — every saved book shows meaningful progress, not
                         just a filename (Learning Hub orchestration
