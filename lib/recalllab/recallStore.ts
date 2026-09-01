@@ -589,8 +589,16 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
       opts?.conceptOrdinals?.length ? `note-${note.id}-c${opts.conceptOrdinals.join("-")}` : `note-${note.id}`
     ),
     bookId:       note.bookId,
-    documentId:   opts?.documentId,
-    pageTruthKey: opts?.pageTruthKey,
+    // L5 (Recall consolidation) — documentId/pageTruthKey now inherit from
+    // the source note the same way knowledgeNodeId already did below, so a
+    // call site that only threads a note (WhiteboardPanel, ChiefResidentPanel,
+    // NoteLab's own "Generate Cards" button) doesn't silently drop canonical
+    // identity the note already carries. Without this, the resulting
+    // RecallSet — and every RecallBlueprint migrated from it — could never
+    // pass recordRecallBlueprintRating's identity gate, so grading it would
+    // never reach KnowledgeNodeProgress.
+    documentId:   opts?.documentId ?? note.documentId,
+    pageTruthKey: opts?.pageTruthKey ?? note.pageTruthKey,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
     pageNumber:   note.pageNumber,
@@ -622,8 +630,10 @@ export function buildRecallSetFromNoteCard(note: UltraNote, noteCard: NoteCard, 
   return {
     id:           stableRecallId(opts?.documentId ?? note.bookId, note.pageNumber, `notecard-${note.id}-${noteCard.type}`),
     bookId:       note.bookId,
-    documentId:   opts?.documentId,
-    pageTruthKey: opts?.pageTruthKey,
+    // L5 (Recall consolidation) — see buildRecallSetFromNote's identical
+    // fallback for why documentId/pageTruthKey inherit from the note.
+    documentId:   opts?.documentId ?? note.documentId,
+    pageTruthKey: opts?.pageTruthKey ?? note.pageTruthKey,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
     pageNumber:   note.pageNumber,
@@ -678,8 +688,10 @@ export function buildRecallSetFromNotebookBlock(note: UltraNote, block: Finalize
   return {
     id:           stableRecallId(opts?.documentId ?? note.bookId, note.pageNumber, `notebook-${note.id}-${block.id}`),
     bookId:       note.bookId,
-    documentId:   opts?.documentId,
-    pageTruthKey: opts?.pageTruthKey,
+    // L5 (Recall consolidation) — see buildRecallSetFromNote's identical
+    // fallback for why documentId/pageTruthKey inherit from the note.
+    documentId:   opts?.documentId ?? note.documentId,
+    pageTruthKey: opts?.pageTruthKey ?? note.pageTruthKey,
     bookTitle:    note.bookTitle ?? opts?.bookTitle,
     sourceLabel:  opts?.sourceLabel ?? "notelab",
     pageNumber:   block.page ?? note.pageNumber,

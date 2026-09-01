@@ -95,11 +95,16 @@ describe("pages/index.tsx — the RightPanel call site and Focus-Cycle auto-save
     expect(src).toMatch(/setPageKnowledgeNodeId\(node\.id\)/);
   });
 
-  it("REQUIRED: sendCurrentPageToRecallLab (Focus Cycle auto-save) also threads documentId/knowledgeNodeId", () => {
+  it("REQUIRED: sendCurrentPageToRecallLab (Focus Cycle auto-save) also threads documentId/pageTruthKey/knowledgeNodeId", () => {
     const idx = src.indexOf("const sendCurrentPageToRecallLab = useCallback(");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 700);
+    const block = src.slice(idx, idx + 1100);
     expect(block).toMatch(/documentId:\s*resolvedDocumentId,/);
+    // L5 (Recall consolidation) — pageTruthKey used to be silently dropped
+    // here even though documentId/knowledgeNodeId were both threaded,
+    // which alone is enough to fail recordRecallBlueprintRating's identity
+    // gate (it requires all three).
+    expect(block).toMatch(/pageTruthKey:\s*resolvedDocumentId \? buildPageTruthKey\(resolvedDocumentId, currentPage\) : undefined,/);
     expect(block).toMatch(/knowledgeNodeId:\s*pageKgNodeIdRef\.current,/);
   });
 });
