@@ -174,6 +174,7 @@ import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePl
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 import { resolveOrCreateNode, getNodeProgress } from "@/lib/knowledge/knowledgeGraphStore";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { recordPageReached } from "@/lib/reader/readingProgressStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
@@ -2047,6 +2048,23 @@ export default function ThoughtUnitReader() {
 
     const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
 
+    // L3 (Learning Hub orchestration correction) — "Reader creates evidence."
+    // Node IDENTITY was already being resolved/created here on every page
+    // load; nothing ever turned that into a PROGRESS signal. Adult Reader
+    // never fired a concept-level exposure event — only Elena (kids mode)
+    // did (lib/elena/childLearningState.ts) — so KnowledgeNodeProgress.
+    // exposureCount/lastStudiedAt never reflected real adult reading
+    // activity at all. One exposure event per distinct node actually
+    // resolved this page load (deduped — two anchors can fuzzy-match onto
+    // the SAME node via resolveOrCreateNode's own tier-2 resolution, and
+    // that must count as one encounter, not two). "Encountered," not
+    // "learned" — this never touches understandingScore/recallScore/
+    // masteryScore, only exposureCount/lastStudiedAt/the evidence log (see
+    // applyLearningEvent's own "exposure" case).
+    const exposedNodeIds = new Set<string>();
+    const occurredAt = new Date().toISOString();
+    const readerPageTruthKey = buildPageTruthKey(resolvedDocumentId, currentPage);
+
     for (const anchor of visualAnchors) {
       if (!anchor.id) continue;
       resolveOrCreateNode(anchor, resolvedDocumentId, bookId, currentPage, chapterCandidateId, profileId)
@@ -2057,6 +2075,13 @@ export default function ThoughtUnitReader() {
             pageKgNodeIdRef.current = node.id;
             setPageKnowledgeNodeId(node.id);
           }
+          if (exposedNodeIds.has(node.id)) return;
+          exposedNodeIds.add(node.id);
+          recordLearningEvent(
+            node.id, resolvedDocumentId,
+            { kind: "exposure", sourceType: "read", occurredAt, sourceId: anchor.id },
+            readerPageTruthKey,
+          ).catch(err => console.error("[KG_WIRE] exposure record error", { nodeId: node.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
         })
         .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
     }
