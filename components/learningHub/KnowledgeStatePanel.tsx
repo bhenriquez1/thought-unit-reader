@@ -30,9 +30,15 @@ import { selectWeakNodes } from "@/lib/examEngine/examScope";
 import { selectDueForRecall, selectRecentlyMastered } from "@/lib/learningHub/knowledgeStateSelectors";
 import type { KnowledgeNode, KnowledgeNodeProgress } from "@/lib/knowledge/knowledgeGraphSchema";
 
+/** L6 — which list a node click came from, so the caller can route each
+ *  list to the module it's actually about (Recall for due-for-recall,
+ *  TestLab for the weak/"recommended" list, Reader for browsing a mastered
+ *  concept's source) instead of every list navigating identically. */
+export type KnowledgeStateListKind = "due" | "weak" | "mastered";
+
 export interface KnowledgeStatePanelProps {
   nodes: KnowledgeNode[];
-  onOpenNode: (node: KnowledgeNode) => void;
+  onOpenNode: (node: KnowledgeNode, kind: KnowledgeStateListKind) => void;
 }
 
 const WEAK_ACCURACY_THRESHOLD = 60;
@@ -50,12 +56,14 @@ function NodeList({
   title,
   nodes,
   accent,
+  kind,
   onOpenNode,
 }: {
   title: string;
   nodes: KnowledgeNode[];
   accent: Accent;
-  onOpenNode: (node: KnowledgeNode) => void;
+  kind: KnowledgeStateListKind;
+  onOpenNode: (node: KnowledgeNode, kind: KnowledgeStateListKind) => void;
 }) {
   return (
     <div className="rounded-lg border border-white/10 bg-slate-900/60 p-3">
@@ -64,7 +72,7 @@ function NodeList({
         {nodes.map((n) => (
           <button
             key={n.id}
-            onClick={() => onOpenNode(n)}
+            onClick={() => onOpenNode(n, kind)}
             className={`w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs font-medium border transition-colors ${ACCENT_CLASSES[accent]}`}
           >
             <span className="truncate">{n.title}</span>
@@ -126,13 +134,13 @@ export default function KnowledgeStatePanel({ nodes, onOpenNode }: KnowledgeStat
     <div className="space-y-3">
       <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">Knowledge State</div>
       {dueForRecall.length > 0 && (
-        <NodeList title="⏰ Due for Recall" nodes={dueForRecall} accent="amber" onOpenNode={onOpenNode} />
+        <NodeList title="⏰ Due for Recall" nodes={dueForRecall} accent="amber" kind="due" onOpenNode={onOpenNode} />
       )}
       {weakConcepts.length > 0 && (
-        <NodeList title="🎯 Test Lab Recommended" nodes={weakConcepts} accent="rose" onOpenNode={onOpenNode} />
+        <NodeList title="🎯 Test Lab Recommended" nodes={weakConcepts} accent="rose" kind="weak" onOpenNode={onOpenNode} />
       )}
       {recentlyMastered.length > 0 && (
-        <NodeList title="✅ Recently Mastered" nodes={recentlyMastered} accent="emerald" onOpenNode={onOpenNode} />
+        <NodeList title="✅ Recently Mastered" nodes={recentlyMastered} accent="emerald" kind="mastered" onOpenNode={onOpenNode} />
       )}
     </div>
   );
