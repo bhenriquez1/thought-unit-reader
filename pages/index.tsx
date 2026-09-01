@@ -5386,12 +5386,16 @@ export default function ThoughtUnitReader() {
           catch { return CUSTOM_EXAM_PROFILE_ID; }
         })();
         const params = new URLSearchParams({ examType: profileId });
-        if (target.bookId) params.set("sourceBookId", target.bookId);
+        // TestLab source binding fix — resolvedDocumentId (the real
+        // content-hash Library identity) is what TestLab's own resolution
+        // logic keys on, never target.bookId (filename). See
+        // lib/library/userLibrary.ts's own header comment.
+        if (resolvedDocumentId) params.set("sourceDocumentId", resolvedDocumentId);
         router.push(`/apex/generator?${params.toString()}`);
         return;
       }
     }
-  }, [syncToPage, trySwitchShellTab, router]);
+  }, [syncToPage, trySwitchShellTab, router, resolvedDocumentId]);
 
   // Overview's "Continue Learning" CTA content — kept as its own memo so the
   // reader-fallback case (nothing due/weak yet) renders identically to the
@@ -6868,7 +6872,11 @@ export default function ThoughtUnitReader() {
                 const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for TestLab?");
                 if (!ok) return;
               }
-              router.push("/apex");
+              // TestLab source binding fix — carry the book actually open
+              // in Reader so TestLab preselects it instead of falling back
+              // to a note-count-ranked guess. See
+              // lib/library/userLibrary.ts's own header comment.
+              router.push(resolvedDocumentId ? `/apex?sourceDocumentId=${encodeURIComponent(resolvedDocumentId)}` : "/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
             title="Open Avrrio TestLab"

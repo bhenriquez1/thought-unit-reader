@@ -54,12 +54,14 @@ describe("lib/examEngine/profileGeneration.ts — book-grounded generation (prod
 describe("app/apex/page.tsx — canonical builder entry requires a grounded Reader source", () => {
   it("loads the same catalogue as the detailed generator and disables both build actions without a selected book", () => {
     expect(PAGE_SRC).toMatch(/getUserBookCatalogue\(\)/);
-    expect(PAGE_SRC).toMatch(/setSelectedBookId/);
+    // TestLab source binding fix — selection is keyed by documentId now,
+    // never bookId/title.
+    expect(PAGE_SRC).toMatch(/setSelectedDocumentId/);
     expect((PAGE_SRC.match(/disabled=\{!selectedBook\}/g) ?? []).length).toBe(2);
   });
 
   it("routes generation through the detailed source-grounded builder rather than launching a legacy static bank", () => {
-    expect(PAGE_SRC).toMatch(/router\.push\(buildGeneratorUrl\(profileId, selectedBookId \|\| undefined, mode\)\)/);
+    expect(PAGE_SRC).toMatch(/router\.push\(buildGeneratorUrl\(profileId, selectedDocumentId \?\? undefined, mode\)\)/);
     expect(PAGE_SRC).not.toMatch(/ExamGenerator|generateWeakTopicsPracticeExam|generateFullSimulationExam/);
   });
 });

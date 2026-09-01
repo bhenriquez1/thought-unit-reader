@@ -4,6 +4,7 @@
 // the single canonical DAT subject classifier shared by all consumers.
 
 import { getAllUltraNotesAsync } from "@/lib/notelab/ultraNoteStore";
+import { loadUserLibrary } from "@/lib/library/userLibrary";
 import type { TocItem } from "@/lib/stores/tocStore";
 import type { DifficultyLevel } from "@/lib/examEngine/types";
 import {
@@ -27,6 +28,12 @@ export const DAT_SUBJECTS: DATSubject[] = [
 
 export interface CatalogueBook {
   bookId: string;
+  /** Stable identity — see lib/library/userLibrary.ts's LibraryRecord.
+   *  This is what TestLab's own selection state and URL deep-links key on;
+   *  bookId (filename-derived) is kept only because the rest of the app's
+   *  content-grounding lookups (notes, KnowledgeNodes) are already keyed
+   *  by it. */
+  documentId: string;
   bookTitle: string;
   subject: DATSubject;
   /** "high" = multiple specific signals; "low" = single/generic match or no match */
@@ -34,9 +41,35 @@ export interface CatalogueBook {
   noteCount: number;
   /** Human-readable reason for the classification — shown in the subject mismatch banner. */
   classificationReason?: string;
+  uploadedAt: string;
+  isLocal: boolean;
+  localDocumentId?: string;
 }
 
 const SUBJECT_OVERRIDE_KEY = (bookId: string) => `avrrio:v1:subject-override:${bookId}`;
+const LAST_SELECTED_DOCUMENT_ID_KEY = "avrrio:testlab:selectedDocumentId:v1";
+
+/** Persist TestLab's own last-picked source, so a refresh (with no
+ *  incoming deep-link) can restore it — but ONLY as a fallback default,
+ *  always re-validated against the live catalogue before use (see
+ *  app/apex/page.tsx / app/apex/generator/page.tsx's resolution effects).
+ *  Never itself treated as the source of truth for a title. */
+export function setLastSelectedTestLabDocumentId(documentId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (documentId) localStorage.setItem(LAST_SELECTED_DOCUMENT_ID_KEY, documentId);
+    else localStorage.removeItem(LAST_SELECTED_DOCUMENT_ID_KEY);
+  } catch { /* quota */ }
+}
+
+export function getLastSelectedTestLabDocumentId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(LAST_SELECTED_DOCUMENT_ID_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /** Persist a user-chosen subject override for a book. */
 export function setSubjectOverride(bookId: string, subject: DATSubject | null): void {
@@ -63,39 +96,49 @@ export function classifyBook(bookId: string, bookTitle?: string): Classification
   return classifyDATSubject(bookId, bookTitle);
 }
 
-/** Build a catalogue of books that have UltraNotes, inferring DAT subject.
- *  Reads from IndexedDB (authoritative) instead of the stale LS mirror. */
+/** Build TestLab's book catalogue from the canonical Library (the same
+ *  persistent Firebase/local records Reader's "My Library" drawer reads —
+ *  see lib/library/userLibrary.ts) — every uploaded book appears here
+ *  immediately, even with zero notes yet, and a deleted book disappears
+ *  immediately. Sorted most-recently-uploaded first, never by historical
+ *  note count.
+ *
+ *  This function used to build its book list entirely from UltraNote
+ *  activity — every book that had ever accumulated study notes, ranked by
+ *  note count, with no documentId and no relationship to the Library at
+ *  all. That meant a heavily-annotated book from weeks ago permanently
+ *  outranked a brand-new upload with zero notes yet as TestLab's default
+ *  selection — the reported "TestLab keeps showing a stale previous book"
+ *  bug. UltraNotes are still used here, but only to enrich each Library
+ *  book with a note count / DAT-subject classification — never to decide
+ *  which books exist or which one is selected by default. */
 export async function getUserBookCatalogue(): Promise<CatalogueBook[]> {
-  const notes = await getAllUltraNotesAsync();
-  const countMap = new Map<string, { bookTitle: string; count: number }>();
+  const [library, notes] = await Promise.all([
+    loadUserLibrary(),
+    getAllUltraNotesAsync().catch(() => []),
+  ]);
 
+  const noteCountByBookId = new Map<string, number>();
   for (const note of notes) {
-    const entry = countMap.get(note.bookId);
-    if (entry) {
-      entry.count += 1;
-    } else {
-      countMap.set(note.bookId, {
-        bookTitle: note.bookTitle ?? note.bookId,
-        count: 1,
-      });
-    }
+    noteCountByBookId.set(note.bookId, (noteCountByBookId.get(note.bookId) ?? 0) + 1);
   }
 
-  const books: CatalogueBook[] = [];
-  for (const [bookId, { bookTitle, count }] of countMap.entries()) {
-    const override = getSubjectOverride(bookId);
-    const { subject: detected, confidence, reason } = classifyBook(bookId, bookTitle);
-    books.push({
-      bookId,
-      bookTitle,
+  return library.map((record) => {
+    const override = getSubjectOverride(record.bookId);
+    const { subject: detected, confidence, reason } = classifyBook(record.bookId, record.title);
+    return {
+      bookId: record.bookId,
+      documentId: record.documentId,
+      bookTitle: record.title,
       subject: override ?? detected,
       subjectConfidence: override ? "high" : confidence,
-      noteCount: count,
+      noteCount: noteCountByBookId.get(record.bookId) ?? 0,
       classificationReason: override ? undefined : reason,
-    });
-  }
-
-  return books.sort((a, b) => b.noteCount - a.noteCount);
+      uploadedAt: record.uploadedAt,
+      isLocal: record.isLocal,
+      localDocumentId: record.localDocumentId,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
