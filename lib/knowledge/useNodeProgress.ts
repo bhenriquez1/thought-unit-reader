@@ -1,9 +1,9 @@
 // lib/knowledge/useNodeProgress.ts
 // React hook: read and write KnowledgeNodeProgress for a single node.
 
-import { useState, useEffect, useCallback } from "react";
-import type { KnowledgeNodeProgress } from "./knowledgeGraphSchema";
-import { getNodeProgress, saveNodeProgress } from "./knowledgeGraphStore";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { KnowledgeNode, KnowledgeNodeProgress } from "./knowledgeGraphSchema";
+import { getNodeProgress, saveNodeProgress, getProgressForNodes } from "./knowledgeGraphStore";
 import { applyLearningEvent, emptyProgress, type LearningStateEvent } from "./learningStateEvents";
 
 export interface UseNodeProgressResult {
@@ -71,4 +71,51 @@ export function useNodeProgress(nodeId: string | null, documentId: string | null
   );
 
   return { progress, isLoading, update, recordEvent };
+}
+
+export interface UseNodeProgressListResult {
+  progressByNodeId: Map<string, KnowledgeNodeProgress>;
+  isLoading: boolean;
+  /** Re-fetch from IDB (call after an external write — e.g. a Recall grade
+   *  or Whiteboard lesson completion elsewhere in the app — that this hook
+   *  itself has no way to observe). */
+  refresh: () => void;
+}
+
+/** L2 (Learning Hub orchestration correction) — bulk sibling of
+ *  useNodeProgress, for a caller that needs progress across MANY nodes at
+ *  once (e.g. lib/syllabus/chapterProgress.ts's per-chapter rollup over
+ *  every KnowledgeNode in the active book, sourced from useKnowledgeGraph).
+ *  Loads once per distinct node-id set (keyed by a joined id string so a
+ *  same-length-different-nodes array, or the SAME ids in stable order
+ *  re-rendering under a new array reference, doesn't reload spuriously),
+ *  and exposes refresh() for callers to invoke on the app's existing
+ *  "something was saved elsewhere" signals (mirrors the
+ *  noteLabRefreshKey/recallLabRefreshKey pattern pages/index.tsx already
+ *  uses for its other Syllabus-tab cross-module reads). */
+export function useNodeProgressList(nodes: KnowledgeNode[]): UseNodeProgressListResult {
+  const [progressByNodeId, setProgressByNodeId] = useState<Map<string, KnowledgeNodeProgress>>(new Map());
+  const [isLoading, setIsLoading] = useState(false);
+  const nodeIdsRef = useRef<string[]>([]);
+  nodeIdsRef.current = nodes.map((n) => n.id);
+  const nodeIdsKey = nodeIdsRef.current.join(",");
+
+  const load = useCallback(async () => {
+    const nodeIds = nodeIdsRef.current;
+    if (nodeIds.length === 0) { setProgressByNodeId(new Map()); return; }
+    setIsLoading(true);
+    try {
+      const loaded = await getProgressForNodes(nodeIds);
+      setProgressByNodeId(loaded);
+    } catch (err) {
+      console.error("[NODE_PROGRESS_LIST] load error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeIdsKey]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { progressByNodeId, isLoading, refresh: load };
 }

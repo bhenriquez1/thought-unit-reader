@@ -132,6 +132,33 @@ export async function getNodeProgress(nodeId: string): Promise<KnowledgeNodeProg
   });
 }
 
+/** L2 (Learning Hub orchestration correction) — bulk lookup for a known set
+ *  of node ids (typically "every node in the active book," from
+ *  getNodesByBook), so a caller aggregating progress across many nodes
+ *  (e.g. lib/syllabus/chapterProgress.ts's per-chapter rollup) doesn't have
+ *  to await getNodeProgress() one at a time. One readonly transaction,
+ *  every .get() issued in parallel within it; a node with no progress
+ *  record yet is simply absent from the returned map, not an error. */
+export async function getProgressForNodes(nodeIds: string[]): Promise<Map<string, KnowledgeNodeProgress>> {
+  const result = new Map<string, KnowledgeNodeProgress>();
+  if (nodeIds.length === 0) return result;
+  const db = await openKnowledgeGraphIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROGRESS_STORE, "readonly");
+    const store = tx.objectStore(PROGRESS_STORE);
+    let remaining = nodeIds.length;
+    for (const nodeId of nodeIds) {
+      const req = store.get(nodeId);
+      req.onsuccess = () => {
+        if (req.result) result.set(nodeId, req.result as KnowledgeNodeProgress);
+        remaining -= 1;
+        if (remaining === 0) resolve(result);
+      };
+      req.onerror = () => reject(req.error);
+    }
+  });
+}
+
 export async function saveNodeProgress(progress: KnowledgeNodeProgress): Promise<void> {
   const db = await openKnowledgeGraphIDB();
   await new Promise<void>((resolve, reject) => {

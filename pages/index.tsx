@@ -177,6 +177,7 @@ import { resolveOrCreateNode, getNodeProgress } from "@/lib/knowledge/knowledgeG
 import { recordPageReached } from "@/lib/reader/readingProgressStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
+import { useNodeProgressList } from "@/lib/knowledge/useNodeProgress";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
 
@@ -1628,6 +1629,12 @@ export default function ThoughtUnitReader() {
   useEffect(() => { if (bookId) setDocumentTitle(bookId); }, [bookId, setDocumentTitle]);
   // useKnowledgeGraph must be called after bookId is available
   const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
+  // L2 (Learning Hub orchestration correction) — the canonical per-concept
+  // learning state for every node above, so chapterProgressList below can
+  // roll up real understand/recall/mastery signal instead of a second,
+  // independently-computed number (see lib/syllabus/chapterProgress.ts's
+  // own header comment).
+  const { progressByNodeId: kgProgressByNodeId, refresh: refreshKgProgress } = useNodeProgressList(kgNodes);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
   useEffect(() => {
@@ -5242,9 +5249,23 @@ export default function ThoughtUnitReader() {
     getHighlightsByBook(bookId).then(setSyllabusSavedHighlights).catch(() => {});
   }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
 
+  // L2 — same "refresh whenever the Syllabus tab opens or a note/recall
+  // card is saved elsewhere" trigger as the two effects above, for the
+  // canonical KnowledgeNodeProgress data chapterProgressList now rolls up
+  // (a Recall grade or Whiteboard lesson completion writes progress via
+  // recordLearningEvent elsewhere in the app; this hook has no way to
+  // observe that on its own).
+  useEffect(() => {
+    if (activeShellTab !== "syllabus" || !bookId) return;
+    refreshKgProgress();
+  }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Chapter Progress Engine (Phase 1+2): derives chapters from the live
   // syllabusToc tree and rolls up Read/Understand/Recall/Mastery % per
-  // chapter — the data the Course Dashboard renders below.
+  // chapter — the data the Course Dashboard renders below. L2: understand/
+  // recall/mastery/weakTopics are now rollups over the canonical
+  // KnowledgeNodeProgress for this book's nodes (kgNodes/kgProgressByNodeId
+  // above), not a second, independently-computed number.
   const chapterProgressList = useMemo(() => {
     if (!syllabusToc.length) return [];
     const chapters = buildChaptersFromToc(syllabusToc, pdfPageCount || 1);
@@ -5253,9 +5274,13 @@ export default function ThoughtUnitReader() {
     const notes = getNotesByBook(bookId);
     return chapters.map((chapter) => ({
       chapter,
-      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides, savedHighlights: syllabusSavedHighlights }),
+      progress: computeChapterProgress(chapter, {
+        visitedPages, recallSets, notes,
+        studyGuides: syllabusStudyGuides, savedHighlights: syllabusSavedHighlights,
+        nodes: kgNodes, progressByNodeId: kgProgressByNodeId,
+      }),
     }));
-  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, syllabusSavedHighlights, currentPage, activeShellTab]);
+  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, syllabusSavedHighlights, kgNodes, kgProgressByNodeId, currentPage, activeShellTab]);
 
   const courseProgress = useMemo(
     () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
