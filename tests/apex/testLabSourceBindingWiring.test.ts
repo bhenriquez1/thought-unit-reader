@@ -17,9 +17,13 @@ describe("app/apex/page.tsx — dashboard source resolution never falls back to 
   });
 
   it("REQUIRED: resolution priority is query param, then legacy bookId param, then last-selected, then most-recent upload — never a raw fallback string", () => {
-    const idx = DASHBOARD_SRC.indexOf("setSelectedDocumentId((current) => {");
+    // P1 remediation L3 — the searchParams reads moved earlier in
+    // loadWorkspace (they're now also used by the missing-source retry
+    // check), so the anchor is the const declarations, not the
+    // setSelectedDocumentId callback itself.
+    const idx = DASHBOARD_SRC.indexOf('const requestedDocId = searchParams?.get("sourceDocumentId") ?? "";');
     expect(idx).toBeGreaterThan(-1);
-    const block = DASHBOARD_SRC.slice(idx, idx + 900);
+    const block = DASHBOARD_SRC.slice(idx, idx + 2200);
     expect(block).toMatch(/searchParams\?\.get\("sourceDocumentId"\)/);
     expect(block).toMatch(/searchParams\?\.get\("sourceBookId"\)/);
     expect(block).toMatch(/getLastSelectedTestLabDocumentId\(\)/);
