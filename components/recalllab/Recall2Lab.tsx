@@ -10,6 +10,8 @@ import {
   getBlueprintsForDocumentAsync,
   saveBlueprintsDedup,
   saveBlueprintsPreservingProgress,
+  deleteBlueprint,
+  deleteBlueprints,
 } from "@/lib/recalllab/recall2Store";
 import { recallSetToBlueprints } from "@/lib/recalllab/recall2Builder";
 import { buildSessionQueue, buildTestLabRemediationQueue, computeRecall2Stats, type RecallWeaknessSignal } from "@/lib/recalllab/recall2Srs";
@@ -143,6 +145,22 @@ export default function Recall2Lab({
     setView({ kind: "session", queue, phases: ["mixed"], canonical: true, title: mode.title });
   }, [identity]);
 
+  // P1 remediation — "students need control over their own Recall
+  // material." deleteBlueprint()/deleteBlueprints() already existed and
+  // worked correctly (IDB + localStorage mirror) but had zero UI wiring
+  // anywhere in the app. reload() re-reads the authoritative IDB list so
+  // the dashboard reflects the deletion immediately, same as every other
+  // mutation in this component.
+  const handleDeleteCard = useCallback(async (id: string) => {
+    await deleteBlueprint(id);
+    reload();
+  }, [reload]);
+
+  const handleClearAllCards = useCallback(async () => {
+    await deleteBlueprints(blueprints.map((b) => b.id));
+    reload();
+  }, [blueprints, reload]);
+
   if (view.kind === "session") {
     return (
       <Recall2Session
@@ -166,6 +184,8 @@ export default function Recall2Lab({
         onStartCanonical={startCanonicalMode}
         onStartStored={(queue, phases, title) => setView({ kind: "session", queue, phases, canonical: true, title })}
         onNavigateToPage={onNavigateToPage}
+        onDeleteCard={handleDeleteCard}
+        onClearAllCards={handleClearAllCards}
       />
     </div>
   );
@@ -184,6 +204,8 @@ function CanonicalRecallHome({
   onStartCanonical,
   onStartStored,
   onNavigateToPage,
+  onDeleteCard,
+  onClearAllCards,
 }: {
   modes: CanonicalRecallModeBundle[];
   blueprints: RecallBlueprint[];
@@ -191,9 +213,13 @@ function CanonicalRecallHome({
   onStartCanonical: (mode: CanonicalRecallModeBundle) => Promise<void>;
   onStartStored: (queue: RecallBlueprint[], phases: SessionPhase[], title: string) => void;
   onNavigateToPage?: (page: number) => void;
+  onDeleteCard: (id: string) => Promise<void>;
+  onClearAllCards: () => Promise<void>;
 }) {
   const [starting, setStarting] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
   const stats = useMemo(() => computeRecall2Stats(blueprints, nodeSignals), [blueprints, nodeSignals]);
   const dueQueue = useMemo(() => buildSessionQueue(blueprints, ["mixed"], nodeSignals), [blueprints, nodeSignals]);
   const weakQueue = useMemo(() => buildSessionQueue(blueprints, ["weak"], nodeSignals), [blueprints, nodeSignals]);
@@ -270,7 +296,23 @@ function CanonicalRecallHome({
       </section>
 
       <section className="mt-4 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
-        <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Source-linked cards</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Source-linked cards</div>
+          {blueprints.length > 0 && (
+            <button
+              type="button"
+              disabled={clearingAll}
+              onClick={() => {
+                if (!window.confirm(`Delete all ${blueprints.length} card${blueprints.length === 1 ? "" : "s"} for this book? This can't be undone.`)) return;
+                setClearingAll(true);
+                void onClearAllCards().finally(() => setClearingAll(false));
+              }}
+              className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {clearingAll ? "Clearing…" : `Clear all ${blueprints.length}`}
+            </button>
+          )}
+        </div>
         {blueprints.length === 0 ? (
           <div className="py-8 text-center"><div className="text-3xl">🧠</div><p className="mt-3 text-sm text-slate-400">Save a Thought Unit to Recall or answer a current-page retrieval mode to begin.</p></div>
         ) : (
@@ -279,6 +321,20 @@ function CanonicalRecallHome({
               <div key={card.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.025] p-3">
                 <div className="min-w-0 flex-1"><div className="truncate text-sm text-slate-200">{card.front}</div><div className="mt-1 text-[10px] text-slate-500">{card.sourceKind ?? "saved evidence"}{card.pageNumber ? ` · page ${card.pageNumber}` : ""}</div></div>
                 {card.pageNumber && onNavigateToPage && <button type="button" onClick={() => onNavigateToPage(card.pageNumber!)} className="rounded-lg bg-white/5 px-2 py-1 text-xs text-sky-300 hover:bg-white/10">View evidence</button>}
+                <button
+                  type="button"
+                  disabled={deletingId === card.id}
+                  aria-label="Delete card"
+                  title="Delete card"
+                  onClick={() => {
+                    if (!window.confirm("Delete this card? This can't be undone.")) return;
+                    setDeletingId(card.id);
+                    void onDeleteCard(card.id).finally(() => setDeletingId(null));
+                  }}
+                  className="rounded-lg bg-white/5 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {deletingId === card.id ? "…" : "🗑"}
+                </button>
               </div>
             ))}
           </div>
