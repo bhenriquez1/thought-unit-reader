@@ -70,6 +70,7 @@ describe("notebookBlockToShapeSpecs — text primitives", () => {
     expect(heading.props.size).toBe("l");
     expect(label.props.size).toBe("s");
     expect(text.props.size).toBe("m");
+    expect(text.props.font).toBe("draw");
   });
 
   it("a freehand block's text is prefixed with a pencil marker to distinguish it from typed content", () => {
@@ -159,7 +160,7 @@ describe("notebookBlockToShapeSpecs — M1: concept_group/bracket/handwritten_te
     const text = notebookBlockToShapeSpecs(makePositioned({ id: "t1", primitive: "text" }))[0];
     expect(handwritten.type).toBe("text");
     expect(handwritten.props.font).toBe("draw");
-    expect(text.props.font).toBe("sans");
+    expect(text.props.font).toBe("draw");
   });
 
   it("bracket produces two shapes — a vertical bar plus label text — not a single boxed rectangle", () => {
