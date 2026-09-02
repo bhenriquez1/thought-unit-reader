@@ -181,6 +181,7 @@ import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { recordPageReached } from "@/lib/reader/readingProgressStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
+import { disambiguateBookNodes } from "@/lib/knowledge/disambiguateBookNodes";
 import { useNodeProgressList } from "@/lib/knowledge/useNodeProgress";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
@@ -1650,7 +1651,16 @@ export default function ThoughtUnitReader() {
   // Keep documentTitle in CLC in sync with bookId (the PDF filename without extension).
   useEffect(() => { if (bookId) setDocumentTitle(bookId); }, [bookId, setDocumentTitle]);
   // useKnowledgeGraph must be called after bookId is available
-  const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
+  const { nodes: rawKgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
+  // P1 remediation L8 — useKnowledgeGraph groups by bookId (filename-derived,
+  // kept for progress continuity across re-uploads of the same book), which
+  // means two unrelated documents sharing a generic filename would otherwise
+  // have their concepts/progress silently merged in every view below. Every
+  // consumer reads the disambiguated kgNodes, never rawKgNodes directly.
+  const kgNodes = useMemo(
+    () => disambiguateBookNodes(rawKgNodes, canonicalDocumentId),
+    [rawKgNodes, canonicalDocumentId],
+  );
   // L2 (Learning Hub orchestration correction) — the canonical per-concept
   // learning state for every node above, so chapterProgressList below can
   // roll up real understand/recall/mastery signal instead of a second,
