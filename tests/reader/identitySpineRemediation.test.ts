@@ -71,6 +71,32 @@ describe("canonicalDocumentId — the real Library documentId, set on every real
   });
 });
 
+describe("startBookProcessing's canonicalDocumentId argument — a successful Firebase upload must stamp CanonicalThoughtUnits with the same id Knowledge Graph nodes/TestLab use", () => {
+  // Bug found by automated review on PR #748 (merged), verified real: this
+  // call site used to re-derive its 4th argument via
+  // resolveDocumentIdentity({ documentId: libEntry.localDocumentId, fileUrl: url, bookId: documentId }).
+  // libEntry.localDocumentId is only ever set on the two local/guest upload
+  // fallback branches — a SUCCESSFUL Firebase upload's libEntry never sets
+  // it, so that expression silently fell through to a hash of the Storage
+  // download URL instead of stableDocumentId. Every CanonicalThoughtUnit
+  // created during processing then carried a DIFFERENT identity than the
+  // Knowledge Graph nodes and TestLab's exam builder, both of which key off
+  // the real stableDocumentId (canonicalDocumentId React state) — losing
+  // grounded question content for every signed-in user's successful upload,
+  // the most common path.
+  it("REQUIRED: startBookProcessing's 4th argument is documentId itself (already === stableDocumentId for every upload branch), not a re-derived resolveDocumentIdentity(...) call reading libEntry.localDocumentId", () => {
+    const callIdx = SRC.indexOf("startBookProcessing(file, documentId, 1, documentId);");
+    expect(callIdx).toBeGreaterThan(-1);
+    const declIdx = SRC.indexOf("const documentId = stableDocumentId;");
+    expect(declIdx).toBeGreaterThan(-1);
+    expect(declIdx).toBeLessThan(callIdx);
+    // The old broken expression is only quoted inside this fix's own
+    // explanatory comment now (for context) — never as an argument to a
+    // real startBookProcessing(...) call.
+    expect(SRC).not.toMatch(/startBookProcessing\([^)]*resolveDocumentIdentity/);
+  });
+});
+
 describe("Library drawer no longer wipes itself when a guest simply opens it", () => {
   it("REQUIRED: the clear-on-sign-out effect is keyed only on [user], not [user, showLibrary]", () => {
     const idx = SRC.indexOf("if (firebaseConnected && user) {\n      getPDFLibrary(USER_ID).then(setPdfLibrary);\n    } else {\n      setPdfLibrary([]);");
