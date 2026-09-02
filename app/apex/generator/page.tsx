@@ -37,6 +37,7 @@ import type { ReadingProgressRecord } from '@/lib/reader/readingProgressStore';
 import { EXAM_SCOPE_OPTIONS, resolveExamScope, defaultScopeFor } from '@/lib/examEngine/examScope';
 import type { ExamScope } from '@/lib/examEngine/examScope';
 import { getNodesByBook, getNodeProgress } from '@/lib/knowledge/knowledgeGraphStore';
+import { disambiguateBookNodes } from '@/lib/knowledge/disambiguateBookNodes';
 import type { KnowledgeNode, KnowledgeNodeProgress } from '@/lib/knowledge/knowledgeGraphSchema';
 
 const SECTION_COLORS: Record<string, string> = {
@@ -247,9 +248,14 @@ function ExamGeneratorPage() {
     getNodesByBook(bookId)
       .then(async (nodes) => {
         if (!alive) return;
-        setAllNodes(nodes);
+        // P1 remediation L8 — getNodesByBook groups by the filename-derived
+        // bookId, which two unrelated documents can share; disambiguate down
+        // to the documentId(s) actually corroborated as this same book
+        // before it feeds weak-concept detection / exam scope below.
+        const disambiguated = disambiguateBookNodes(nodes, selectedDocumentId);
+        setAllNodes(disambiguated);
         const entries = await Promise.all(
-          nodes.map(async (n) => [n.id, await getNodeProgress(n.id).catch(() => null)] as const),
+          disambiguated.map(async (n) => [n.id, await getNodeProgress(n.id).catch(() => null)] as const),
         );
         if (!alive) return;
         const map = new Map<string, KnowledgeNodeProgress>();
@@ -258,7 +264,7 @@ function ExamGeneratorPage() {
       })
       .catch(() => { if (alive) { setAllNodes([]); setNodeProgressById(new Map()); } });
     return () => { alive = false; };
-  }, [bookId]);
+  }, [bookId, selectedDocumentId]);
 
   // --- Derived ---
   const modeConfig = PRACTICE_MODES.find((m) => m.id === practiceMode)!;

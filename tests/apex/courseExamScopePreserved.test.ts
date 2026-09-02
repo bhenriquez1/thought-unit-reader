@@ -33,8 +33,12 @@ describe("app/apex/generator/page.tsx — a Course Exam type's scope survives th
   });
 
   it("the bookId-load effect's own dependency array still excludes courseExamType — reading it via ref must not turn every type click into a node/progress refetch", () => {
+    // P1 remediation L8 added selectedDocumentId to this same effect's deps
+    // (so its own getNodesByBook disambiguation stays in sync with the
+    // canonical document identity, not just its bookId mirror) — courseExamType
+    // itself must still be absent, which is what this test actually guards.
     const idx = SRC.indexOf("getReadingProgress(bookId)");
-    const effectEndIdx = SRC.indexOf("}, [bookId]);", idx);
+    const effectEndIdx = SRC.indexOf("}, [bookId, selectedDocumentId]);", idx);
     expect(effectEndIdx).toBeGreaterThan(idx);
   });
 });
