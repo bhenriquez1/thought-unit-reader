@@ -68,8 +68,9 @@ describe("pages/api/page-annotation-plan.ts — SurgeonAnnotationPlan endpoint",
     expect(src).toMatch(/quotesPlausible\(finalPlan, body\.pageText, validSentenceIds\)/);
   });
 
-  it("parses the response through SurgeonAnnotationPlanSchema, not the old canonicalUnitIds-based schema", () => {
-    expect(src).toMatch(/SurgeonAnnotationPlanSchema/);
+  it("parses the response through parseSurgeonAnnotationPlanLenient (SurgeonAnnotationPlanSchema under the hood), not the old canonicalUnitIds-based schema", () => {
+    expect(src).toMatch(/import \{\s*\n\s*parseSurgeonAnnotationPlanLenient,/);
+    expect(src).toMatch(/parseSurgeonAnnotationPlanLenient\(parsed\)/);
     expect(src).not.toMatch(/canonicalUnitIds/);
   });
 
@@ -429,6 +430,36 @@ describe("pages/api/page-annotation-plan.ts — sentenceCount diagnostic (real p
     expect(countSentences("One. Two. Three?")).toBe(3);
     expect(countSentences("A single sentence with no terminal punctuation")).toBe(1);
     expect(countSentences("")).toBe(0);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — schema resilience (L5): one malformed annotation never sinks the whole plan", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: the coverage-repair pass also uses the lenient parser, not the strict schema directly — a second LLM pass off the same prompt carries the same collision risk", () => {
+    const idx = src.indexOf("const repaired = parseSurgeonAnnotationPlanLenient(repairParsed);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/if \(repaired\) \{/);
+    expect(block).toMatch(/repaired\.plan/);
+  });
+
+  it("REQUIRED: logs a distinct, non-fatal diagnostic when annotations were dropped, separate from the failure log", () => {
+    const idx = src.indexOf("if (lenient.droppedAnnotationCount > 0) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 250);
+    expect(block).toMatch(/console\.warn\("\[SURGEON_PLAN_ANNOTATIONS_DROPPED\]"/);
+    expect(block).toMatch(/droppedAnnotationCount: lenient\.droppedAnnotationCount,/);
+    expect(block).toMatch(/survivingCount: lenient\.plan\.annotations\.length,/);
+  });
+
+  it("still returns the malformed-plan degraded envelope when the lenient parse itself returns null", () => {
+    const idx = src.indexOf("const lenient = parseSurgeonAnnotationPlanLenient(parsed);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/if \(!lenient\) \{/);
+    expect(block).toMatch(/stage: "schema_validation"/);
   });
 });
 
