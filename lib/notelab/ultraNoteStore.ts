@@ -8,7 +8,7 @@ import type { DATStudySheet } from "@/lib/notelab/datStudySheet";
 import type { AdaptiveStudySheet } from "@/lib/notelab/adaptiveStudySheet";
 import { inferNoteSubject, type NoteSubject } from "@/lib/canonical/classifier";
 import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
-import { currentFirebaseUid, listNotebookSemanticStates, saveNotebookSemanticState } from "@/lib/firebase/durableState";
+import { currentFirebaseUid, listNotebookSemanticStates, saveNotebookSemanticState, deleteNotebookSemanticState } from "@/lib/firebase/durableState";
 
 // Re-export NoteSubject so callers that import it from here don't need to change.
 export type { NoteSubject };
@@ -545,6 +545,20 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
 }
 
 export async function deleteUltraNote(id: string): Promise<void> {
+  // Cloud delete goes first: getAllUltraNotesAsync() merges every Firestore
+  // notebook doc back into IDB/LS on each read for a signed-in user, so if
+  // the local copies were removed first but the cloud delete then failed,
+  // the "deleted" note would resurrect on the very next load.
+  if (currentFirebaseUid()) {
+    console.log("[NOTELAB_CLOUD_DELETE]", { id });
+    try {
+      await deleteNotebookSemanticState(id);
+    } catch (e) {
+      console.error("[NOTELAB_CLOUD_DELETE_FAIL]", { id, error: String(e) });
+      throw e; // re-throw so UI can show error and keep the note visible
+    }
+  }
+
   console.log("[NOTELAB_IDB_DELETE]", { id });
   try {
     await idbDeleteNote(id);

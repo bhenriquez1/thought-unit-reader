@@ -172,6 +172,24 @@ export async function saveNotebookSemanticState(input: {
   await saveNotebookPage({ ...input, tldrawSnapshot: existing?.tldrawSnapshot ?? null }, existing?.version ?? 0);
 }
 
+/** Deletes a notebook's cloud record — the parent doc listNotebookSemanticStates()
+ *  reads, plus its pages subcollection. Without this, a note deleted locally
+ *  keeps its Firestore doc, which getAllUltraNotesAsync() merges back in on
+ *  the very next read and resurrects it. */
+export async function deleteNotebookSemanticState(notebookId: string): Promise<void> {
+  const { uid, db } = requireServices();
+  const notebookRef = doc(db, "users", uid, "notebooks", notebookId);
+  const path = safeNotebookPath(notebookId);
+  try {
+    const pagesSnap = await getDocs(collection(notebookRef, "pages"));
+    await Promise.all(pagesSnap.docs.map((pageDoc) => deleteDoc(pageDoc.ref)));
+    await deleteDoc(notebookRef);
+  } catch (error) {
+    logPersistenceFailure("delete", path, error);
+    throw error;
+  }
+}
+
 export async function saveOwnedRecord(area: "stickyNotes" | "learningState" | "recall" | "tests" | "preferences", id: string, value: Record<string, unknown>) {
   const { uid, db } = requireServices();
   await setDoc(doc(db, "users", uid, area, id), {
