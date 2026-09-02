@@ -47,6 +47,15 @@ const BOXED_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set([
   "callout", "diagram", "concept_map", "image", "table", "timeline", "flow", "comparison", "equation_work", "concept_group",
 ]);
 
+// NoteLab is a notebook, so its prose should look penned rather than like a
+// dashboard full of UI text. Tables and source anchors remain sans-serif for
+// legibility; authored notes, labels, examples, formulas and callouts use
+// tldraw's bundled handwriting face.
+const HANDWRITTEN_PRIMITIVES: ReadonlySet<NotebookPrimitive> = new Set([
+  "heading", "label", "text", "example", "formula", "freehand", "handwritten_text",
+  "callout", "equation_work",
+]);
+
 function fontSizeFor(primitive: NotebookPrimitive): "s" | "m" | "l" {
   if (primitive === "heading") return "l";
   if (primitive === "label") return "s";
@@ -128,7 +137,7 @@ export function notebookBlockToShapeSpecs(block: PositionedNotebookBlock, color 
       id: createShapeId(idBase), type: "text", x: block.x, y: block.y,
       props: {
         richText: toRichText(block.primitive === "freehand" ? `✏️ ${block.content}` : block.content),
-        font: block.primitive === "heading" || block.primitive === "handwritten_text" ? "draw" : "sans",
+        font: HANDWRITTEN_PRIMITIVES.has(block.primitive) ? "draw" : "sans",
         size: fontSizeFor(block.primitive), color, autoSize: false, w: block.w,
       },
       meta,
@@ -148,7 +157,7 @@ export function notebookBlockToShapeSpecs(block: PositionedNotebookBlock, color 
         richText: toRichText(bodyText),
         fill: isFrame ? "none" : "semi",
         dash: isFrame ? "dashed" : "solid",
-        size: "m", color, font: "sans",
+        size: "m", color, font: HANDWRITTEN_PRIMITIVES.has(block.primitive) ? "draw" : "sans",
       },
       meta,
     }];

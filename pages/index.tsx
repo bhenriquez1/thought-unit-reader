@@ -4209,6 +4209,14 @@ export default function ThoughtUnitReader() {
     setViewMode("reader");
     setBookId(file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
 
+    // Open the selected book immediately. Hashing a large PDF and uploading it
+    // to Firebase can each take seconds (or minutes on a slow connection), but
+    // neither is required for PDF.js to render page 1 from the local File.
+    // Persistence, identity, indexing, and cloud upload continue below while
+    // the reader is already usable.
+    const immediatePreviewUrl = createBlobUrl(file);
+    setFileUrl(immediatePreviewUrl);
+
     try {
       let url: string;
       let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean; localDocumentId?: string };
@@ -4289,7 +4297,7 @@ export default function ThoughtUnitReader() {
           console.error("Firebase upload failed, falling back to local:", error);
           // Firebase failed — save locally with IDB binary for durability
           const documentId = stableDocumentId;
-          url = createBlobUrl(file);
+          url = immediatePreviewUrl;
           const uploadedAt = new Date().toISOString();
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
@@ -4318,7 +4326,7 @@ export default function ThoughtUnitReader() {
       } else {
         // Guest mode or bypass: blob URL for this session + IDB binary for future sessions
         const documentId = stableDocumentId;
-        url = createBlobUrl(file);
+        url = immediatePreviewUrl;
         const uploadedAt = new Date().toISOString();
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
@@ -4332,11 +4340,14 @@ export default function ThoughtUnitReader() {
           .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
       }
 
-      setFileUrl(url);
+      // Keep the local preview mounted to avoid reloading the entire PDF after
+      // a successful cloud upload. The durable cloud URL is still recorded in
+      // the library entry and will be used on a later open.
+      if (url === immediatePreviewUrl) setFileUrl(url);
 
       // TOC from URL (fire-and-forget — outline extraction via PDF.js is async)
       const documentId = stableDocumentId;
-      generateTOC(url).then((tocEntries) => {
+      generateTOC(immediatePreviewUrl).then((tocEntries) => {
         if (tocEntries && tocEntries.length > 0) {
           setTableOfContents(tocEntries);
           const tocItems = tocEntries.map((entry: any, idx: number) => ({
