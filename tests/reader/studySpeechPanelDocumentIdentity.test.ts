@@ -95,6 +95,9 @@ describe("pages/index.tsx — the real resolvedDocumentId reaches <RightPanel>",
   });
 
   it("resolvedDocumentId itself is still built via resolveDocumentIdentity — the RC1 fix from the Thought Unit Engine audit is untouched", () => {
-    expect(src).toMatch(/const resolvedDocumentId = useMemo\(\s*\n\s*\(\) => resolveDocumentIdentity\(\{ documentId: currentLocalDocumentId, fileUrl, bookId \}\),/);
+    // Identity-spine remediation added a canonicalDocumentId preference in
+    // front of currentLocalDocumentId (see tests/insights/resolveDocumentIdentity.test.ts
+    // for why) — resolveDocumentIdentity itself is still the resolver.
+    expect(src).toMatch(/const resolvedDocumentId = useMemo\(\s*\n\s*\(\) => resolveDocumentIdentity\(\{ documentId: canonicalDocumentId \?\? currentLocalDocumentId, fileUrl, bookId \}\),/);
   });
 });

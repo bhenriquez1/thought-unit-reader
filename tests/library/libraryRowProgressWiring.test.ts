@@ -23,7 +23,7 @@ describe("pages/index.tsx — the Library drawer renders real per-book progress,
   it("still loads the book on click and still offers delete — the progress line is additive, not a replacement", () => {
     const idx = SRC.indexOf("pdfLibrary.map((pdf) => (");
     const block = SRC.slice(idx, idx + 1200);
-    expect(block).toMatch(/onClick=\{\(\) => handleLoadPDF\(pdf\.url, pdf\.name, pdf\.localDocumentId\)\}/);
+    expect(block).toMatch(/onClick=\{\(\) => handleLoadPDF\(pdf\.url, pdf\.name, pdf\.localDocumentId, pdf\.id\)\}/);
     expect(block).toMatch(/onClick=\{\(\) => handleDeletePDF\(pdf\.id, pdf\.name, pdf\.isLocal, pdf\.localDocumentId\)\}/);
   });
 });
