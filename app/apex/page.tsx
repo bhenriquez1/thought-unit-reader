@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -92,6 +92,16 @@ function TestLabWorkspace() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<DatAttempt[]>([]);
   const [readiness, setReadiness] = useState<DatReadinessState | null>(null);
+  // P1 remediation L3 — a book was explicitly requested by documentId/
+  // bookId but the freshly-loaded catalogue doesn't contain it yet. The
+  // two most plausible real causes (a guest upload's localStorage write
+  // still finishing when this route did a hard cross-router navigation,
+  // or a slow Firebase auth-state resolution on this fresh page load) are
+  // both transient — this self-heals with exactly one automatic retry
+  // per mount rather than permanently showing "Add a source in Reader
+  // first" for a book that really is there. A ref, not state: retrying
+  // must not itself trigger a re-render/re-run of the mount effect.
+  const retriedForMissingSourceRef = useRef(false);
 
   const loadWorkspace = useCallback(async () => {
     setBooksLoading(true);
@@ -102,6 +112,20 @@ function TestLabWorkspace() {
         listAttempts(),
         loadReadinessState(getCurrentApexUserId()),
       ]);
+
+      const requestedDocId = searchParams?.get("sourceDocumentId") ?? "";
+      const requestedBookId = searchParams?.get("sourceBookId") ?? "";
+      const requestedSpecificBook = !!(requestedDocId || requestedBookId);
+      const requestedBookMissing =
+        requestedSpecificBook &&
+        !catalogue.some((b) => b.documentId === requestedDocId || b.bookId === requestedBookId);
+
+      if (requestedBookMissing && !retriedForMissingSourceRef.current) {
+        retriedForMissingSourceRef.current = true;
+        setTimeout(() => { void loadWorkspace(); }, 1200);
+        return; // keep the "Loading…" state through the retry — never flash the empty state for a book that really exists
+      }
+
       setBooks(catalogue);
       setAttempts(savedAttempts);
       setReadiness(savedReadiness);
@@ -115,20 +139,18 @@ function TestLabWorkspace() {
       //   4. nothing — an empty catalogue means no selection, not a guess
       setSelectedDocumentId((current) => {
         if (current) return current;
-        const requestedDocId = searchParams?.get("sourceDocumentId") ?? "";
-        const legacyBookId = searchParams?.get("sourceBookId") ?? "";
         const fromParam =
           catalogue.find((b) => b.documentId === requestedDocId) ??
-          (legacyBookId ? catalogue.find((b) => b.bookId === legacyBookId) : undefined);
+          (requestedBookId ? catalogue.find((b) => b.bookId === requestedBookId) : undefined);
         if (fromParam) return fromParam.documentId;
         const lastSelected = getLastSelectedTestLabDocumentId();
         const fromLastSelected = lastSelected ? catalogue.find((b) => b.documentId === lastSelected) : undefined;
         if (fromLastSelected) return fromLastSelected.documentId;
         return catalogue[0]?.documentId ?? null;
       });
+      setBooksLoading(false);
     } catch {
       setBooksError("TestLab could not load your saved sources. Your Reader data was not changed.");
-    } finally {
       setBooksLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

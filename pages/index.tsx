@@ -4285,10 +4285,24 @@ export default function ThoughtUnitReader() {
           setPdfLibrary((prev) => [libEntry, ...prev]);
           setCurrentLocalDocumentId(documentId);
           setCanonicalDocumentId(documentId);
-          // Only persist the localStorage library entry after IDB binary is confirmed.
-          // setFileUrl runs immediately (below) so the viewer opens without waiting.
+          // P1 remediation L3 — write the durable catalog entry
+          // immediately, synchronously, rather than waiting for the IDB
+          // blob write to resolve first. The old ordering ("only persist
+          // the localStorage library entry after IDB binary is
+          // confirmed") created a real race: navigating away — e.g.
+          // clicking "TestLab," which forces a hard cross-router reload
+          // across the pages/app-router boundary — before that async
+          // chain resolved tore down the in-flight promise before
+          // persistLocalLibraryEntry ever ran, silently losing this book
+          // from the Library on the very next load despite the upload
+          // having visibly "succeeded." If the IDB write itself later
+          // fails, the student still gets an explicit "this book's file
+          // is missing" prompt the next time they try to reopen it
+          // (handleLoadPDF's existing missingPDFEntry path) rather than
+          // the book silently vanishing from their Library with no
+          // explanation at all.
+          persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
           persistToIDB(documentId)
-            .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
             .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
         }
       } else {
@@ -4300,8 +4314,11 @@ export default function ThoughtUnitReader() {
         setPdfLibrary((prev) => [libEntry, ...prev]);
         setCurrentLocalDocumentId(documentId);
         setCanonicalDocumentId(documentId);
+        // P1 remediation L3 — see the identical comment in the Firebase-
+        // fallback branch above for why this must be synchronous, not
+        // chained after persistToIDB.
+        persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
         persistToIDB(documentId)
-          .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
           .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
       }
 
