@@ -359,3 +359,14 @@ export async function deleteBlueprint(id: string): Promise<void> {
   lsWrite(all);
   notifyUpdate();
 }
+
+/** Delete several blueprints at once (a "clear this book's cards" bulk
+ *  action) — one localStorage rewrite and one notifyUpdate for the whole
+ *  batch, rather than calling deleteBlueprint() in a loop. */
+export async function deleteBlueprints(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  for (const id of ids) await idbDelete(id);
+  const all = await idbGetAll();
+  lsWrite(all);
+  notifyUpdate();
+}
