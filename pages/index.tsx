@@ -4354,15 +4354,23 @@ export default function ThoughtUnitReader() {
 
       // Phase 2: text extraction + thought-unit parsing.
       // Viewer already shows page 1 — never block or remove the PDF on parse failures.
-      // libEntry.localDocumentId is the real crypto.randomUUID() when this
-      // upload got a local IDB copy (the two fallback branches above); a
-      // successful Firebase upload doesn't create one, so fall back to a
-      // hash of the upload URL — still real per-instance identity, just
-      // derived rather than random. Read directly off libEntry/url rather
-      // than the reactive currentLocalDocumentId store field, which would
-      // still read its PRE-upload (stale) value this synchronously after
-      // the setCurrentLocalDocumentId(...) calls above.
-      startBookProcessing(file, documentId, 1, resolveDocumentIdentity({ documentId: libEntry.localDocumentId, fileUrl: url, bookId: documentId }));
+      // Bug fix (found by automated review on #748, verified): this used to
+      // re-derive the canonicalDocumentId argument via
+      // resolveDocumentIdentity({ documentId: libEntry.localDocumentId, ... }).
+      // libEntry.localDocumentId is only ever set on the two local/fallback
+      // upload branches above — a SUCCESSFUL Firebase upload's libEntry never
+      // sets it, so that expression silently fell through to a hash of the
+      // Storage download URL instead of stableDocumentId. Every
+      // CanonicalThoughtUnit created during processing (see the
+      // `documentId: canonicalDocumentId ?? documentId` stamp below) then
+      // carried a DIFFERENT identity than the Knowledge Graph nodes and
+      // TestLab's exam builder, which both key off the real stableDocumentId
+      // (canonicalDocumentId React state, set above) — losing grounded
+      // question content for every signed-in user's successful upload, the
+      // most common path. documentId here already IS stableDocumentId
+      // (assigned two lines above) for all three upload branches, so it's
+      // simply passed straight through — no re-derivation needed.
+      startBookProcessing(file, documentId, 1, documentId);
 
       setPdfParsingState({ isLoading: false, error: null, progress: '' });
 
