@@ -18,9 +18,12 @@ service firebase.storage {
     }
 
     // Legacy path remains owner-readable/writable during the additive
-    // migration. It must not be used for new uploads.
+    // migration. It must not be used for new uploads. Write size is capped
+    // to match the canonical path's own limit — this path previously had no
+    // cap at all, an unbounded storage-cost surface under the owner's own uid.
     match /pdfs/{uid}/{objectPath=**} {
-      allow read, write: if isSelf(uid);
+      allow read, delete: if isSelf(uid);
+      allow create, update: if isSelf(uid) && request.resource.size <= 250 * 1024 * 1024;
     }
   }
 }

@@ -14,12 +14,35 @@
 //
 // This is the data layer Study Plan Lab's chapter/unit/exam-prep plans read
 // from — without it, those plans would have nothing real to plan against.
+//
+// L2 (Learning Hub orchestration correction) — "Do NOT let every module
+// invent its own mastery number... create/reuse one canonical concept-level
+// Learning State." understandPct/recallPct/masteryPct/weakTopics used to be
+// computed independently here, straight from raw RecallCard/UltraNote
+// records — a second, disconnected mastery model sitting alongside
+// lib/knowledge/knowledgeGraphSchema.ts's KnowledgeNodeProgress (the same
+// store TestLab/Recall/Whiteboard already read/write through, keyed by
+// KnowledgeNode.id). They're now rollups OVER that canonical per-node state,
+// scoped to whichever nodes' sourcePages fall in a chapter's own page
+// ranges — never a second, independently-computed number.
+//
+// readPct stays page-visit-based, deliberately NOT switched to a node
+// signal: "encountered/exposed" (a page being visited) and "the learner's
+// state on the concepts in it" are legitimately different signals — see the
+// correction's own section 1 ("Do not equate 'page opened' with
+// 'mastered'"). recallCardCount/recallReviewedCount/noteCount/
+// studyGuideCount/thoughtUnits are still raw cross-link counts (how many of
+// each artifact exist in this chapter) — a different, complementary
+// question from "how well does the learner know this material," which is
+// what the *Pct fields and weakTopics answer.
 
 import type { TocNode } from "@/lib/readerContracts";
-import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
+import type { RecallSet } from "@/lib/recalllab/recallStore";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { StudyGuideRecord } from "@/lib/studyguide/types";
 import type { SavedHighlight } from "@/lib/highlights/savedHighlightsStore";
+import type { KnowledgeNode, KnowledgeNodeProgress } from "@/lib/knowledge/knowledgeGraphSchema";
+import { selectWeakNodes } from "@/lib/examEngine/examScope";
 
 // Minimal shape `computeChapterProgress` needs from a "chapter" — satisfied
 // both by `SyllabusTopic` (structurally) and by the chapters this module
@@ -94,6 +117,19 @@ export interface ChapterProgressInputs {
   notes: UltraNote[];
   studyGuides: StudyGuideRecord[];
   savedHighlights?: SavedHighlight[];
+  /** Canonical per-concept learning state — see this file's own header
+   *  comment. Every KnowledgeNode for the active book/document, and its
+   *  matching progress record when one exists (a node with no entry here
+   *  has never been engaged at all — treated as 0 across the board, not
+   *  excluded, same as the pre-L2 formula treated an unreviewed recall
+   *  card as a 0 that still counted toward the average). Optional — a
+   *  caller that hasn't loaded Knowledge Graph data (or genuinely has none
+   *  yet) simply gets 0% understand/recall/mastery, the same "no signal
+   *  yet" reading an empty node set already produces; Study Plan Lab's own
+   *  tests build plans on top of ChapterProgress without needing to
+   *  fabricate KG fixtures for a dimension they don't exercise. */
+  nodes?: KnowledgeNode[];
+  progressByNodeId?: Map<string, KnowledgeNodeProgress>;
 }
 
 export function pagesInRanges(ranges: Array<{ start: number; end: number }>): number[] {
@@ -112,16 +148,31 @@ export function pageInRanges(page: number, ranges: Array<{ start: number; end: n
 // per chapter — a chapter can accumulate far more than is useful to list.
 const THOUGHT_UNIT_TREE_CAP = 30;
 
-// Per-card recall confidence: an unreviewed card contributes 0 (not yet
-// attempted at all). A reviewed card scores by its most recent difficulty
-// rating, so repeated "hard" ratings keep recallPct honest instead of
-// crediting a card just for having been looked at once.
-function cardScore(c: RecallCard): number {
-  if (c.reviewCount === 0) return 0;
-  if (c.difficulty === "easy") return 100;
-  if (c.difficulty === "medium") return 60;
-  if (c.difficulty === "hard") return 25;
-  return c.isMissed ? 25 : 70;
+// Same "weak" definition TestLab's own weak-area exam scope uses
+// (lib/examEngine/examScope.ts's own default) — a concept flagged weak in
+// the Syllabus tree means the same thing it means in TestLab, not a
+// second, independently-tuned threshold.
+const WEAK_ACCURACY_THRESHOLD = 60;
+const MIN_ATTEMPTS_FOR_SIGNAL = 3;
+
+function nodesInChapter(nodes: KnowledgeNode[], ranges: Array<{ start: number; end: number }>): KnowledgeNode[] {
+  return nodes.filter((n) => n.sourcePages.some((p) => pageInRanges(p, ranges)));
+}
+
+// Averages a KnowledgeNodeProgress field across every node in the chapter —
+// a node with no progress record yet contributes 0 to the sum but still
+// counts in the denominator, the exact same "unreviewed counts as 0, but
+// still counts" rule the pre-L2 card-based formula used. An empty node set
+// (no KnowledgeNodes resolved for this chapter yet) reads as 0%, not NaN —
+// "no signal yet," same as the old "no cards yet" case.
+function averageProgressScore(
+  nodes: KnowledgeNode[],
+  progressByNodeId: Map<string, KnowledgeNodeProgress>,
+  field: "understandingScore" | "recallScore",
+): number {
+  if (nodes.length === 0) return 0;
+  const total = nodes.reduce((sum, n) => sum + (progressByNodeId.get(n.id)?.[field] ?? 0), 0);
+  return Math.round(total / nodes.length);
 }
 
 // StudyGuideRecord has no page range, only a free-text chapterTitle — match it
@@ -137,24 +188,27 @@ export function computeChapterProgress(
   topic: ChapterLike,
   inputs: ChapterProgressInputs
 ): ChapterProgress {
+  const kgNodes = inputs.nodes ?? [];
+  const kgProgressByNodeId = inputs.progressByNodeId ?? new Map<string, KnowledgeNodeProgress>();
   const pages = pagesInRanges(topic.pageRanges);
   const pageCount = pages.length || 1; // guard against a malformed/empty range
   const visitedPageCount = pages.filter((p) => inputs.visitedPages.has(p)).length;
   const readPct = Math.round((visitedPageCount / pageCount) * 100);
 
+  // Cross-link counts — how many of each artifact exist in this chapter, a
+  // different question from "how well does the learner know it" (below).
   const notesInChapter = inputs.notes.filter((n) => pageInRanges(n.pageNumber, topic.pageRanges));
-  const notedPages = new Set(notesInChapter.map((n) => n.pageNumber));
-  const understandPct = visitedPageCount > 0
-    ? Math.min(100, Math.round((notedPages.size / visitedPageCount) * 100))
-    : 0;
-
   const recallSetsInChapter = inputs.recallSets.filter((s) => pageInRanges(s.pageNumber, topic.pageRanges));
   const cards = recallSetsInChapter.flatMap((s) => s.cards);
   const recallCardCount = cards.length;
   const recallReviewedCount = cards.filter((c) => c.reviewCount > 0).length;
-  const recallPct = recallCardCount > 0
-    ? Math.round(cards.reduce((sum, c) => sum + cardScore(c), 0) / recallCardCount)
-    : 0;
+
+  // understandPct/recallPct — rollups over the canonical KnowledgeNodeProgress
+  // for every node whose sourcePages fall in this chapter, not a second,
+  // independently-computed number. See this file's own header comment.
+  const chapterNodes = nodesInChapter(kgNodes, topic.pageRanges);
+  const understandPct = averageProgressScore(chapterNodes, kgProgressByNodeId, "understandingScore");
+  const recallPct = averageProgressScore(chapterNodes, kgProgressByNodeId, "recallScore");
 
   // Weighted toward recall — reading and understanding a chapter doesn't mean
   // much for exam readiness if nothing has stuck on review.
@@ -167,20 +221,18 @@ export function computeChapterProgress(
     .slice(0, THOUGHT_UNIT_TREE_CAP)
     .map((h) => ({ id: h.id, page: h.page, text: h.text, anchorType: h.anchorType }));
 
-  // Weak topics: cards that have been reviewed at least once and scored
-  // poorly, labeled with the card's tag (concept title) when present,
-  // otherwise a trimmed front-of-card snippet. Deduped, capped at 5.
-  const weakTopics: string[] = [];
-  const seenWeak = new Set<string>();
-  for (const c of cards) {
-    if (c.reviewCount === 0) continue;
-    if (c.difficulty !== "hard" && !c.isMissed) continue;
-    const label = (c.tag || c.front).trim().slice(0, 60);
-    if (!label || seenWeak.has(label)) continue;
-    seenWeak.add(label);
-    weakTopics.push(label);
-    if (weakTopics.length >= 5) break;
-  }
+  // Weak topics — the same selectWeakNodes() gate TestLab's own weak-area
+  // exam scope uses (enough graded attempts to be meaningful, recallScore
+  // below the shared threshold), scoped to this chapter's own nodes and
+  // labeled by the node's real title — never a second, chapter-local
+  // definition of "weak." Deduped by construction (one entry per node),
+  // capped at 5.
+  const weakTopics = selectWeakNodes({
+    nodes: chapterNodes,
+    progressByNodeId: kgProgressByNodeId,
+    weakAccuracyThreshold: WEAK_ACCURACY_THRESHOLD,
+    minAttemptsForSignal: MIN_ATTEMPTS_FOR_SIGNAL,
+  }).slice(0, 5).map((n) => n.title);
 
   let status: ChapterStatus;
   if (readPct === 0) {

@@ -27,6 +27,7 @@ import {
 } from "@/lib/notelab/notebookPlanner";
 import type { CanonicalThoughtUnit } from "@/lib/canonical/types";
 import type { NotebookStyleProfile } from "@/lib/notelab/notebookStyleProfile";
+import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
 
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
@@ -38,6 +39,31 @@ export const config = {
   maxDuration: 60,
   api: { bodyParser: { sizeLimit: "1mb" } },
 };
+
+// P1 remediation L6 — this route had no timeout, no retry, and no failure
+// classification, unlike its Chat-Completions-based siblings
+// (page-annotation-plan.ts, professor-lesson-plan.ts): an upstream hang
+// rode all the way to the platform's own maxDuration cutoff (a generic
+// 504, not an informative error), and every failure — timeout, rate
+// limit, malformed request, null output, schema mismatch — collapsed into
+// the same undifferentiated 500. PLAN_TIMEOUT_MS leaves headroom under
+// maxDuration for one retry within the request's own budget, same
+// reasoning as professor-lesson-plan.ts's own PLAN_TIMEOUT_MS.
+const PLAN_TIMEOUT_MS  = 28_000;
+const RETRY_BACKOFF_MS = 700;
+
+async function callNotebookPlanner(
+  input: Parameters<typeof openai.responses.parse>[0],
+  timeoutMs: number,
+) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await openai.responses.parse(input, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 let FORMAT: ReturnType<typeof zodTextFormat> | null = null;
 try {
@@ -93,47 +119,102 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasStyleProfile: !!styleProfile,
   });
 
+  const input: Parameters<typeof openai.responses.parse>[0] = {
+    model: "gpt-4o",
+    temperature: 0.3,
+    max_output_tokens: 2200,
+    text: { format: FORMAT },
+    input: [
+      { role: "system", content: buildNotebookPlannerSystemPrompt({ styleProfile: styleProfile ?? null }) },
+      {
+        role: "user",
+        content: buildNotebookPlannerUserPrompt(units, {
+          bookTitle,
+          pageNumber,
+          professorExplanation: professorExplanation ?? null,
+          studentNotes: studentNotes ?? null,
+          supplementalSources: supplementalSources ?? null,
+          existingNotebookSummary: existingNotebookSummary ?? null,
+          relatedConceptKnowledge: relatedConceptKnowledge ?? null,
+        }),
+      },
+    ],
+  };
+
   const t0 = Date.now();
+  let response: Awaited<ReturnType<typeof callNotebookPlanner>>;
+  let attempts = 1;
   try {
-    const response = await openai.responses.parse({
-      model: "gpt-4o",
-      temperature: 0.3,
-      max_output_tokens: 2200,
-      text: { format: FORMAT },
-      input: [
-        { role: "system", content: buildNotebookPlannerSystemPrompt({ styleProfile: styleProfile ?? null }) },
-        {
-          role: "user",
-          content: buildNotebookPlannerUserPrompt(units, {
-            bookTitle,
-            pageNumber,
-            professorExplanation: professorExplanation ?? null,
-            studentNotes: studentNotes ?? null,
-            supplementalSources: supplementalSources ?? null,
-            existingNotebookSummary: existingNotebookSummary ?? null,
-            relatedConceptKnowledge: relatedConceptKnowledge ?? null,
-          }),
-        },
-      ],
-    });
-
-    const plan = response.output_parsed;
-    if (!plan) {
-      DEV && console.error("[NOTEBOOK_PLAN:null-output]");
-      return res.status(500).json({ error: "Model returned no structured output." });
+    try {
+      response = await callNotebookPlanner(input, PLAN_TIMEOUT_MS);
+    } catch (firstErr: any) {
+      // Same reasoning as page-annotation-plan.ts's own retry guard: a 400
+      // means THIS request is malformed for the resolved model — retrying
+      // the identical request just reproduces the identical failure.
+      if (isInvalidRequestError(firstErr)) throw firstErr;
+      attempts = 2;
+      console.warn("[NOTEBOOK_PLAN:retry]", {
+        page: pageNumber,
+        attempt: 1,
+        error: firstErr?.message ?? String(firstErr),
+        elapsedMs: Date.now() - t0,
+      });
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+      response = await callNotebookPlanner(input, PLAN_TIMEOUT_MS);
     }
-
-    const validated = NotebookPlanSchema.parse(plan);
-    DEV && console.log("[NOTEBOOK_PLAN:success]", {
+  } catch (err: any) {
+    const isTimeout       = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");
+    const isRateLimited   = err instanceof OpenAI.APIError && err.status === 429;
+    const isInvalidRequest = isInvalidRequestError(err);
+    const stage = isTimeout ? "timeout" : isRateLimited ? "rate_limited" : isInvalidRequest ? "invalid_request" : "provider_request";
+    console.error("[NOTEBOOK_PLAN:failed]", {
+      stage,
+      attempts,
+      page: pageNumber,
+      unitCount: units.length,
+      error:     err?.message ?? String(err),
+      status:    err?.status ?? null,
       elapsedMs: Date.now() - t0,
-      blockCount: validated.blocks.length,
-      primitives: validated.blocks.map((b) => b.primitive),
     });
-
-    return res.status(200).json(validated);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    DEV && console.error("[NOTEBOOK_PLAN:error]", { elapsedMs: Date.now() - t0, msg });
-    return res.status(500).json({ error: msg.slice(0, 300) });
+    return res.status(500).json({
+      error: isTimeout
+        ? "Notebook plan generation timed out."
+        : isRateLimited
+        ? "Notebook plan generation is rate-limited — try again shortly."
+        : isInvalidRequest
+        ? "Notebook plan generation failed due to a request configuration error."
+        : "Notebook plan generation is temporarily unavailable.",
+      code: stage,
+    });
   }
+
+  const plan = response.output_parsed;
+  if (!plan) {
+    console.error("[NOTEBOOK_PLAN:failed]", { stage: "provider_response", page: pageNumber, attempts, elapsedMs: Date.now() - t0 });
+    return res.status(500).json({ error: "Model returned no structured output.", code: "provider_response" });
+  }
+
+  let validated: ReturnType<typeof NotebookPlanSchema.parse>;
+  try {
+    validated = NotebookPlanSchema.parse(plan);
+  } catch (schemaErr: unknown) {
+    console.error("[NOTEBOOK_PLAN:failed]", {
+      stage: "schema_validation",
+      page: pageNumber,
+      attempts,
+      elapsedMs: Date.now() - t0,
+      error: schemaErr instanceof Error ? schemaErr.message : String(schemaErr),
+    });
+    return res.status(500).json({ error: "Notebook plan generation returned a malformed plan.", code: "schema_validation" });
+  }
+
+  console.log("[NOTEBOOK_PLAN:success]", {
+    page: pageNumber,
+    attempts,
+    elapsedMs: Date.now() - t0,
+    blockCount: validated.blocks.length,
+    primitives: validated.blocks.map((b) => b.primitive),
+  });
+
+  return res.status(200).json(validated);
 }

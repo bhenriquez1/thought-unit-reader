@@ -220,3 +220,75 @@ export type PageAnnotationPlan = SurgeonAnnotationPlan;
 export function parseSurgeonAnnotationPlan(raw: unknown): SurgeonAnnotationPlan {
   return SurgeonAnnotationPlanSchema.parse(raw);
 }
+
+// ── Lenient parse — tolerates the canonicalType/annotationType vocabulary
+// collision without weakening the schema ────────────────────────────────────
+// The system prompt's rule 3 describes "trap" using its own synonyms
+// ("a common mistake, exception, or warning") in the same breath as the
+// canonicalType field, and separately offers annotationType — a richer,
+// kebab-case taxonomy (including "exception", "common-trap", "clinical-pearl",
+// "evidence-example") that overlaps canonicalType's 8-value vocabulary under
+// different spellings. That's a real risk the model returns one of those
+// values in the strict canonicalType slot instead. Because canonicalType is
+// validated as part of the whole plan in one Zod pass, a single wrong value
+// used to fail validation for the ENTIRE page's plan — discarding every
+// other correctly-formed annotation along with it. Known aliases are
+// normalized before validation; anything not in this list still fails, same
+// as before — this closes the specific collision, it does not loosen the
+// schema for genuinely malformed output.
+const CANONICAL_TYPE_ALIASES: Record<string, CanonicalType> = {
+  exception:             "trap",
+  warning:                "trap",
+  "common-trap":          "trap",
+  "clinical-pearl":       "clinicalPearl",
+  "evidence-example":     "supportingEvidence",
+  "supporting-evidence":  "supportingEvidence",
+  "procedure-step":       "procedure",
+  "decision-point":       "decision",
+};
+
+function normalizeCanonicalType(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return CANONICAL_TYPE_ALIASES[value] ?? value;
+}
+
+export interface LenientPlanParseResult {
+  plan: SurgeonAnnotationPlan;
+  /** Annotations dropped because they failed schema validation even after
+   *  alias normalization — a genuinely malformed entry, not a plan-wide
+   *  failure. */
+  droppedAnnotationCount: number;
+}
+
+/** Validates each annotation independently after alias-normalizing its
+ *  canonicalType, instead of validating the whole plan (and every
+ *  annotation in it) as one unit. One malformed annotation is dropped
+ *  rather than sinking every other valid annotation on the same page.
+ *  Returns null when the plan's own top-level shape is invalid or zero
+ *  annotations survive — same failure signal parseSurgeonAnnotationPlan's
+ *  callers already handle via safeParse. */
+export function parseSurgeonAnnotationPlanLenient(raw: unknown): LenientPlanParseResult | null {
+  if (typeof raw !== "object" || raw === null || !Array.isArray((raw as { annotations?: unknown }).annotations)) {
+    return null;
+  }
+  const { annotations, ...rest } = raw as { annotations: unknown[] };
+  const survivors: SurgeonAnnotation[] = [];
+  let droppedAnnotationCount = 0;
+  for (const entry of annotations) {
+    const normalized = typeof entry === "object" && entry !== null
+      ? { ...entry, canonicalType: normalizeCanonicalType((entry as { canonicalType?: unknown }).canonicalType) }
+      : entry;
+    const result = SurgeonAnnotationSchema.safeParse(normalized);
+    if (result.success) survivors.push(result.data);
+    else droppedAnnotationCount++;
+  }
+  // Only bail when the input actually had annotations and every single one
+  // was malformed — a plan that started with zero annotations is a
+  // legitimately sparse page (the strict schema allows this too, see
+  // SurgeonAnnotationPlanSchema's own "accepts a plan with zero
+  // annotations" case), not a parse failure.
+  if (annotations.length > 0 && survivors.length === 0) return null;
+  const planResult = SurgeonAnnotationPlanSchema.safeParse({ ...rest, annotations: survivors });
+  if (!planResult.success) return null;
+  return { plan: planResult.data, droppedAnnotationCount };
+}

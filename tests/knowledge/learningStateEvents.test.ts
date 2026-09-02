@@ -216,6 +216,37 @@ describe("applyLearningEvent — confidence-reported and misconception-observed"
   });
 });
 
+// L2 (Learning Hub orchestration correction) — masteryScore is documented
+// on KnowledgeNodeProgress as "composite — see computeMastery()" but no
+// write path (this reducer, nor recordLearningEvent.ts) ever actually set
+// it, so every stored progress record's masteryScore stayed 0 forever
+// regardless of real signal. Fixed by recomputing it via computeMastery()
+// on every event application.
+describe("applyLearningEvent — masteryScore is kept live via computeMastery()", () => {
+  it("REQUIRED: a recall-graded event raises masteryScore to match computeMastery() of the resulting scores, not 0", () => {
+    const next = applyLearningEvent(emptyProgress("n1", "doc-1"), { kind: "recall-graded", difficulty: "easy", occurredAt: T1, sourceId: "card-1" });
+    // recallScore=10, understandingScore=0, memoryStrength=5, confidenceScore=0
+    // -> round(10*0.35 + 0*0.35 + 5*0.20 + 0*0.10) = round(4.5) = 5 (banker's-adjacent Math.round rounds .5 up)
+    expect(next.masteryScore).toBeGreaterThan(0);
+    expect(next.masteryScore).toBe(Math.round(10 * 0.35 + 0 * 0.35 + 5 * 0.2 + 0 * 0.1));
+  });
+
+  it("REQUIRED: repeated real recall/whiteboard signal accumulates into a masteryScore that can actually reach the 'mastered' range — the concrete regression this fixes", () => {
+    let p = emptyProgress("n1", "doc-1");
+    for (let i = 0; i < 15; i++) {
+      p = applyLearningEvent(p, { kind: "recall-graded", difficulty: "easy", occurredAt: T1, sourceId: `card-${i}` });
+    }
+    p = applyLearningEvent(p, { kind: "whiteboard-lesson-completed", occurredAt: T1, sourceId: "lesson-1", snapshotId: "snap-1" });
+    expect(p.masteryScore).toBeGreaterThan(0);
+  });
+
+  it("an event that touches no scoring field at all (teaching-step-completed) still recomputes to the SAME masteryScore as before, since the underlying inputs are unchanged", () => {
+    const base = emptyProgress("n1", "doc-1");
+    const next = applyLearningEvent(base, { kind: "teaching-step-completed", stepId: 1, occurredAt: T1, sourceId: "step-1" });
+    expect(next.masteryScore).toBe(base.masteryScore);
+  });
+});
+
 describe("applyLearningEvent — teaching-step-completed (Phase B3)", () => {
   it("REQUIRED: is evidence-only — no score field changes at all", () => {
     const base = emptyProgress("n1", "doc-1");

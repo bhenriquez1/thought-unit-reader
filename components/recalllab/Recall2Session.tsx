@@ -204,7 +204,12 @@ export default function Recall2Session({
     const updated = applyConfidence(card, confidence, occurredAt);
     updatedRef.current.set(updated.id, updated);
     learningWritesRef.current = learningWritesRef.current
-      .then(async () => { await recordRecallBlueprintRating(updated, confidence, occurredAt); })
+      .then(async () => {
+        const result = await recordRecallBlueprintRating(updated, confidence, occurredAt);
+        if (!result.recorded) {
+          console.warn("[RECALL_LEARNING_STATE_SKIPPED]", { blueprintId: updated.id, reason: result.reason });
+        }
+      })
       .catch(err => { console.error("[RECALL_LEARNING_STATE_WRITE_FAILED]", err); });
 
     // Update queue entry with new confidence history (for coach context)

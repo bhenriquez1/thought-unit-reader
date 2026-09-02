@@ -26,6 +26,7 @@ import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, getNotesByBoo
 import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
 import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
 import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
@@ -1696,6 +1697,9 @@ export function RightPanel({
         recall={shadowRecall}
         bookId={ctx?.documentId}
         pageNumber={ctx?.pageNumber}
+        documentId={resolvedDocumentId}
+        pageTruthKey={pageTruthKey}
+        knowledgeNodeId={knowledgeNodeId}
         preReadRecallItems={studyModel?.preReadRecallItems}
         synthForDerive={teachingSynthesis ? {
           coreIdea:       teachingSynthesis.coreIdea,
@@ -3428,6 +3432,9 @@ function MiniTestPanel({
   title = "Page Checkpoint",
   recallSetIdPrefix = "missed",
   topicLabel = "Mini Test Missed",
+  documentId,
+  pageTruthKey,
+  knowledgeNodeId,
 }: {
   items: MiniTestItemData[];
   bookId: string;
@@ -3438,6 +3445,10 @@ function MiniTestPanel({
    *  so their saves don't collide on the same stable RecallSet id. */
   recallSetIdPrefix?: string;
   topicLabel?: string;
+  /** L5 (Recall consolidation) — see PreReadRecallDrawer's identical props. */
+  documentId?: string;
+  pageTruthKey?: string;
+  knowledgeNodeId?: string | null;
 }) {
   const [answers, setAnswers] = useState<string[]>(() => Array(items.length).fill(""));
   const [submitted, setSubmitted] = useState(false);
@@ -3492,6 +3503,13 @@ function MiniTestPanel({
       topic: `${topicLabel} — Page ${pageNumber}`,
       cards: missedCards,
       createdAt: Date.now(),
+      // L5 (Recall consolidation) — without these, RecallLab.tsx's
+      // forDocument() filter (scoped by documentId) never surfaces this set
+      // for migration into Recall 2.0 at all, so it would silently be
+      // unreachable from the live Recall UI, not just ungraded.
+      documentId,
+      pageTruthKey,
+      knowledgeNodeId: knowledgeNodeId ?? undefined,
     }).catch((e) => console.error("[RECALL_MISSED_SAVE_FAIL]", String(e)));
     setSavedMissed(true);
     setTimeout(() => setSavedMissed(false), 2500);
@@ -4165,6 +4183,9 @@ function PreReadRecallDrawer({
   pageNumber,
   preReadRecallItems,
   synthForDerive,
+  documentId,
+  pageTruthKey,
+  knowledgeNodeId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -4173,6 +4194,14 @@ function PreReadRecallDrawer({
   pageNumber?: number;
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
   synthForDerive?: SynthesisForRecall | null;
+  /** L5 (Recall consolidation) — the real resolved document identity, so
+   *  "Save Missed to Recall Lab" produces a set that's actually visible to
+   *  Recall 2.0 (RecallLab.tsx's forDocument() filters legacy sets by
+   *  documentId — a set without one is orphaned, never migrated) and can
+   *  grade into KnowledgeNodeProgress. */
+  documentId?: string;
+  pageTruthKey?: string;
+  knowledgeNodeId?: string | null;
 }) {
   if (!open) return null;
 
@@ -4206,6 +4235,9 @@ function PreReadRecallDrawer({
               title="Pre-Read Recall"
               recallSetIdPrefix="shadow-missed"
               topicLabel="Shadow Recall Missed"
+              documentId={documentId}
+              pageTruthKey={pageTruthKey}
+              knowledgeNodeId={knowledgeNodeId}
             />
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
@@ -4411,6 +4443,25 @@ function GenerateNoteButton({
    *  from or fall back to recomposing, so with zero canonical units to ground
    *  a synthesis in, the note just keeps no notebookScene (card view) rather
    *  than inventing a fallback scene-builder for a case that never applies. */
+  /** L4 (Learning Hub orchestration correction) — "Learning Hub should
+   *  understand whether a concept has durable notes... Do not use note
+   *  creation itself as mastery evidence." An exposure event (never
+   *  understandingScore/recallScore/masteryScore — see applyLearningEvent's
+   *  own "exposure" case) is the correct-strength signal: it makes
+   *  KnowledgeNodeProgress.exposureCount/lastStudiedAt reflect real NoteLab
+   *  engagement without claiming the student has learned anything just
+   *  because a note exists. Gated on knowledgeNodeId/documentId both being
+   *  resolved already — never guessed, same discipline useNodeProgress.ts's
+   *  own update()/recordEvent() use. */
+  function recordNoteLabExposure(note: UltraNote) {
+    if (!note.knowledgeNodeId || !note.documentId) return;
+    recordLearningEvent(
+      note.knowledgeNodeId, note.documentId,
+      { kind: "exposure", sourceType: "notelab", occurredAt: new Date().toISOString(), sourceId: note.id },
+      note.pageTruthKey,
+    ).catch((err) => console.error("[NOTELAB_EXPOSURE_RECORD_ERROR]", { noteId: note.id, err: err instanceof Error ? err.message : String(err) }));
+  }
+
   async function composeNoteNotebookSceneInBackground(savedNote: UltraNote, documentId: string) {
     try {
       const units = await getCanonicalUnitsByPage(documentId, savedNote.pageNumber - 1);
@@ -4426,6 +4477,7 @@ function GenerateNoteButton({
         // already performs) are real content that must still render as a
         // notebook, never vanish silently for lack of an AI call.
         await saveDeterministicNotebookScene(existingNote, savedNote.bookId, savedNote.pageNumber);
+        recordNoteLabExposure(existingNote);
         return;
       }
 
@@ -4463,6 +4515,7 @@ function GenerateNoteButton({
       const latestNotes = await getNotesByBookAsync(savedNote.bookId);
       const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
       await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });
+      recordNoteLabExposure(latest);
 
       const persisted = await isUltraNotePersisted(savedNote.id);
       console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", { noteId: savedNote.id, persistenceSaveSuccess: persisted });

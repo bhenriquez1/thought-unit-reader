@@ -23,7 +23,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import {
-  SurgeonAnnotationPlanSchema,
+  parseSurgeonAnnotationPlanLenient,
   type SurgeonAnnotationPlan,
 } from "@/lib/insights/pageAnnotationPlan";
 import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
@@ -553,15 +553,22 @@ export default async function handler(
     return;
   }
 
-  const result = SurgeonAnnotationPlanSchema.safeParse(parsed);
-  if (!result.success) {
+  const lenient = parseSurgeonAnnotationPlanLenient(parsed);
+  if (!lenient) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation", durationMs: Date.now() - startedAt });
     res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
   }
+  if (lenient.droppedAnnotationCount > 0) {
+    console.warn("[SURGEON_PLAN_ANNOTATIONS_DROPPED]", {
+      ...diagnosticIds,
+      droppedAnnotationCount: lenient.droppedAnnotationCount,
+      survivingCount: lenient.plan.annotations.length,
+    });
+  }
 
   const validSentenceIds = new Set(pageSentences.map(s => s.id));
-  let finalPlan: SurgeonAnnotationPlan = { ...result.data, pageRoles: inferredInstructionalRoles(result.data) };
+  let finalPlan: SurgeonAnnotationPlan = { ...lenient.plan, pageRoles: inferredInstructionalRoles(lenient.plan) };
   if (!quotesPlausible(finalPlan, body.pageText, validSentenceIds)) {
     console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "sentence_grounding", durationMs: Date.now() - startedAt });
     res.status(200).json(degraded("Advanced page analysis could not be grounded to this page.", "sentence_grounding", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
@@ -582,9 +589,9 @@ export default async function handler(
       const repairRaw = repairCompletion.choices[0]?.message?.content;
       if (repairRaw) {
         const repairParsed = JSON.parse(repairRaw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim());
-        const repaired = SurgeonAnnotationPlanSchema.safeParse(repairParsed);
-        if (repaired.success) {
-          const candidate = { ...repaired.data, pageRoles: inferredInstructionalRoles(repaired.data) };
+        const repaired = parseSurgeonAnnotationPlanLenient(repairParsed);
+        if (repaired) {
+          const candidate = { ...repaired.plan, pageRoles: inferredInstructionalRoles(repaired.plan) };
           if (candidate.pageTruthKey === body.pageTruthKey && quotesPlausible(candidate, body.pageText, validSentenceIds)) {
             finalPlan = candidate;
           }

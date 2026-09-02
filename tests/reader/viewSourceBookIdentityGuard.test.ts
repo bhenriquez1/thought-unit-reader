@@ -52,7 +52,10 @@ describe("pages/index.tsx — View Source never silently shows the wrong book's 
     const block = SRC.slice(idx, idx + 500);
     expect(block).toMatch(/pdfLibrary\.find\(/);
     expect(block).toMatch(/p\.name\.replace\(\/\\\.\[Pp\]\[Dd\]\[Ff\]\$\/, ""\) === pendingViewSourceLink\.documentId/);
-    expect(block).toMatch(/handleLoadPDFRef\.current\?\.\(match\.url, match\.name, match\.localDocumentId\);/);
+    // Identity-spine remediation — also threads match.id (the real
+    // canonical Library documentId) through, so resolvedDocumentId
+    // resolves correctly for a Firebase-sourced book opened this way too.
+    expect(block).toMatch(/handleLoadPDFRef\.current\?\.\(match\.url, match\.name, match\.localDocumentId, match\.id\);/);
     expect(block).toMatch(/setShowLibrary\(true\);/); // falls back to the library drawer when no match exists
   });
 });

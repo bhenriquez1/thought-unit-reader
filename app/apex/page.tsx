@@ -1,10 +1,15 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { getUserBookCatalogue, type CatalogueBook } from "@/lib/apex/bookCatalogue";
+import {
+  getUserBookCatalogue,
+  getLastSelectedTestLabDocumentId,
+  setLastSelectedTestLabDocumentId,
+  type CatalogueBook,
+} from "@/lib/apex/bookCatalogue";
 import { getCurrentApexUserId } from "@/lib/apex/currentApexUserId";
 import { listAttempts, loadReadinessState } from "@/lib/datApex/idbStore";
 import type { DatAttempt, DatReadinessState } from "@/lib/datApex/types";
@@ -27,9 +32,13 @@ function readStoredProfile(): string {
   }
 }
 
-function buildGeneratorUrl(profileId: string, bookId?: string, mode?: "practice" | "simulation"): string {
+function buildGeneratorUrl(profileId: string, documentId?: string, mode?: "practice" | "simulation"): string {
   const params = new URLSearchParams({ examType: profileId });
-  if (bookId) params.set("sourceBookId", bookId);
+  // TestLab source binding fix — documentId (stable, content-hash identity)
+  // is the only identity this deep-link carries now; the generator page
+  // never falls back to a title/filename. See
+  // lib/library/userLibrary.ts's own header comment.
+  if (documentId) params.set("sourceDocumentId", documentId);
   if (mode) params.set("mode", mode === "practice" ? "quick" : "full");
   return `/apex/generator?${params.toString()}`;
 }
@@ -72,13 +81,27 @@ function SourceCard({ book, selected, onSelect }: { book: CatalogueBook; selecte
 
 function TestLabWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [profileId, setProfileId] = useState(readStoredProfile);
   const [books, setBooks] = useState<CatalogueBook[]>([]);
   const [booksLoading, setBooksLoading] = useState(true);
   const [booksError, setBooksError] = useState<string | null>(null);
-  const [selectedBookId, setSelectedBookId] = useState("");
+  // TestLab source binding fix — selection is keyed by documentId (stable
+  // content-hash identity), never bookId/title/filename. null means "no
+  // valid selection" and must render as empty, never a stale fallback.
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<DatAttempt[]>([]);
   const [readiness, setReadiness] = useState<DatReadinessState | null>(null);
+  // P1 remediation L3 — a book was explicitly requested by documentId/
+  // bookId but the freshly-loaded catalogue doesn't contain it yet. The
+  // two most plausible real causes (a guest upload's localStorage write
+  // still finishing when this route did a hard cross-router navigation,
+  // or a slow Firebase auth-state resolution on this fresh page load) are
+  // both transient — this self-heals with exactly one automatic retry
+  // per mount rather than permanently showing "Add a source in Reader
+  // first" for a book that really is there. A ref, not state: retrying
+  // must not itself trigger a re-render/re-run of the mount effect.
+  const retriedForMissingSourceRef = useRef(false);
 
   const loadWorkspace = useCallback(async () => {
     setBooksLoading(true);
@@ -89,20 +112,83 @@ function TestLabWorkspace() {
         listAttempts(),
         loadReadinessState(getCurrentApexUserId()),
       ]);
+
+      const requestedDocId = searchParams?.get("sourceDocumentId") ?? "";
+      const requestedBookId = searchParams?.get("sourceBookId") ?? "";
+      const requestedSpecificBook = !!(requestedDocId || requestedBookId);
+      const requestedBookMissing =
+        requestedSpecificBook &&
+        !catalogue.some((b) => b.documentId === requestedDocId || b.bookId === requestedBookId);
+
+      if (requestedBookMissing && !retriedForMissingSourceRef.current) {
+        retriedForMissingSourceRef.current = true;
+        setTimeout(() => { void loadWorkspace(); }, 1200);
+        return; // keep the "Loading…" state through the retry — never flash the empty state for a book that really exists
+      }
+
       setBooks(catalogue);
       setAttempts(savedAttempts);
       setReadiness(savedReadiness);
-      setSelectedBookId((current) => current || catalogue[0]?.bookId || "");
+      // Resolution priority, never a hardcoded/cached title fallback:
+      //   1. an incoming deep-link (?sourceDocumentId=..., or the legacy
+      //      ?sourceBookId=... a bookmarked link might still carry)
+      //   2. this device's own last-picked TestLab source, IF it still
+      //      resolves to a real catalogue entry (a deleted/renamed book
+      //      is never shown)
+      //   3. the most recently uploaded book in the Library
+      //   4. nothing — an empty catalogue means no selection, not a guess
+      setSelectedDocumentId((current) => {
+        if (current) return current;
+        const fromParam =
+          catalogue.find((b) => b.documentId === requestedDocId) ??
+          (requestedBookId ? catalogue.find((b) => b.bookId === requestedBookId) : undefined);
+        if (fromParam) return fromParam.documentId;
+        const lastSelected = getLastSelectedTestLabDocumentId();
+        const fromLastSelected = lastSelected ? catalogue.find((b) => b.documentId === lastSelected) : undefined;
+        if (fromLastSelected) return fromLastSelected.documentId;
+        return catalogue[0]?.documentId ?? null;
+      });
+      setBooksLoading(false);
     } catch {
       setBooksError("TestLab could not load your saved sources. Your Reader data was not changed.");
-    } finally {
       setBooksLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
 
-  const selectedBook = useMemo(() => books.find((book) => book.bookId === selectedBookId) ?? null, [books, selectedBookId]);
+  const selectedBook = useMemo(
+    () => books.find((book) => book.documentId === selectedDocumentId) ?? null,
+    [books, selectedDocumentId],
+  );
+
+  // Persist every real selection (deep-linked, restored, or manually
+  // picked) as this device's own "last selected" — but only once it's a
+  // validated catalogue entry, never a raw id.
+  useEffect(() => {
+    if (selectedBook) setLastSelectedTestLabDocumentId(selectedBook.documentId);
+  }, [selectedBook]);
+
+  // Diagnostics — dev-only. selectedTestLabDocumentId and
+  // displayedDocument's own documentId MUST always agree, because
+  // selectedBook is derived by looking selectedDocumentId up in the same
+  // books array that renders it; if they ever disagree, something is
+  // tracking a title/id independently of this lookup.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const diagnostics = {
+      selectedTestLabDocumentId: selectedDocumentId,
+      selectedLibraryRecordFound: !!selectedBook,
+      selectedDocumentTitle: selectedBook?.bookTitle ?? null,
+      sourceThoughtUnitCount: selectedBook?.noteCount ?? 0,
+    };
+    if (selectedBook && selectedDocumentId !== selectedBook.documentId) {
+      console.error("[TESTLAB_SOURCE_STATE_MISMATCH]", diagnostics);
+    } else {
+      console.log("[TESTLAB_SOURCE_DIAGNOSTICS]", diagnostics);
+    }
+  }, [selectedDocumentId, selectedBook]);
 
   const chooseProfile = useCallback((id: string) => {
     setProfileId(id);
@@ -110,8 +196,8 @@ function TestLabWorkspace() {
   }, []);
 
   const openBuilder = useCallback((mode?: "practice" | "simulation") => {
-    router.push(buildGeneratorUrl(profileId, selectedBookId || undefined, mode));
-  }, [profileId, selectedBookId, router]);
+    router.push(buildGeneratorUrl(profileId, selectedDocumentId ?? undefined, mode));
+  }, [profileId, selectedDocumentId, router]);
 
   return (
     <div className="min-h-dvh bg-[radial-gradient(circle_at_15%_0%,rgba(6,182,212,0.18),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(124,58,237,0.14),transparent_32%),linear-gradient(145deg,#020617,#0b1120_48%,#111827)] text-white">
@@ -158,7 +244,7 @@ function TestLabWorkspace() {
                 <Link href="/" className="mt-4 inline-flex rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold hover:bg-violet-400">Open Reader</Link>
               </div>
             )}
-            {!booksLoading && books.length > 0 && <div className="max-h-80 space-y-3 overflow-y-auto pr-1">{books.map((book) => <SourceCard key={book.bookId} book={book} selected={book.bookId === selectedBookId} onSelect={() => setSelectedBookId(book.bookId)} />)}</div>}
+            {!booksLoading && books.length > 0 && <div className="max-h-80 space-y-3 overflow-y-auto pr-1">{books.map((book) => <SourceCard key={book.documentId} book={book} selected={book.documentId === selectedDocumentId} onSelect={() => setSelectedDocumentId(book.documentId)} />)}</div>}
           </section>
         </div>
 

@@ -21,6 +21,7 @@ import {
 import { buildRecallSetFromNote, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
 import type { FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
 import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
 import { findRelatedNotes } from "@/lib/notelab/relatedNotes";
@@ -542,6 +543,13 @@ function NoteCard({
         bookId: updated.bookId, pageNumber: updated.pageNumber,
       });
       await saveUltraNote(scene.blocks.length > 0 ? { ...updated, notebookScene: scene } : updated);
+      if (updated.knowledgeNodeId && updated.documentId) {
+        recordLearningEvent(
+          updated.knowledgeNodeId, updated.documentId,
+          { kind: "exposure", sourceType: "notelab", occurredAt: new Date().toISOString(), sourceId: updated.id },
+          updated.pageTruthKey,
+        ).catch((err) => console.error("[NOTELAB_EXPOSURE_RECORD_ERROR]", { noteId: updated.id, err: err instanceof Error ? err.message : String(err) }));
+      }
       setStudentSaveState("saved");
       setTimeout(() => setStudentSaveState("idle"), 1800);
     } catch (error) {

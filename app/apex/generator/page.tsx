@@ -18,6 +18,8 @@ import { resolveProfileById } from '@/lib/examEngine/profiles/profileRegistry';
 import type { ExamProfile } from '@/lib/examEngine/types';
 import {
   getUserBookCatalogue,
+  getLastSelectedTestLabDocumentId,
+  setLastSelectedTestLabDocumentId,
   DAT_SUBJECTS,
   PRACTICE_MODES,
   DIFFICULTY_OPTIONS,
@@ -35,6 +37,7 @@ import type { ReadingProgressRecord } from '@/lib/reader/readingProgressStore';
 import { EXAM_SCOPE_OPTIONS, resolveExamScope, defaultScopeFor } from '@/lib/examEngine/examScope';
 import type { ExamScope } from '@/lib/examEngine/examScope';
 import { getNodesByBook, getNodeProgress } from '@/lib/knowledge/knowledgeGraphStore';
+import { disambiguateBookNodes } from '@/lib/knowledge/disambiguateBookNodes';
 import type { KnowledgeNode, KnowledgeNodeProgress } from '@/lib/knowledge/knowledgeGraphSchema';
 
 const SECTION_COLORS: Record<string, string> = {
@@ -91,12 +94,25 @@ function ExamGeneratorPage() {
   });
   const selectedProfile: ExamProfile = resolveProfileById(examProfileId);
   const [subjectFilter, setSubjectFilter] = useState<'all' | DATSubject>('all');
+  // TestLab source binding fix — sourceDocumentId (stable content-hash
+  // identity) is the primary deep-link param; sourceBookId is accepted
+  // only as a legacy fallback for an already-generated link. Neither is
+  // ever used as a display value directly — both are resolved against the
+  // live catalogue first (see the resolution effect below).
+  const requestedSourceDocumentId = searchParams?.get('sourceDocumentId') ?? '';
   const requestedSourceBookId = searchParams?.get('sourceBookId') ?? '';
   const launchIntent = searchParams?.get('mode') === 'full'
     ? 'simulation'
     : searchParams?.get('mode') === 'quick'
       ? 'practice'
       : null;
+  // selectedDocumentId is the one source of truth for "which book is
+  // selected" — bookId (below) is kept only because every existing
+  // content-grounding lookup in this file (getNotesByBook,
+  // getNodesByBook, buildExam, ...) is already keyed by the filename-
+  // derived bookId; it's derived from selectedDocumentId via the sync
+  // effect right after the book-resolution effect, never set directly.
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [bookId, setBookId] = useState<string>('');
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [chaptersExpanded, setChaptersExpanded] = useState(false);
@@ -156,11 +172,55 @@ function ExamGeneratorPage() {
   // selected when the student enters the detailed builder. Validate the
   // URL value against the loaded catalogue so a stale/deleted book id can
   // never create a phantom selection or widen generation to another book.
+  // Resolution priority (never a hardcoded/cached title fallback):
+  //   1. ?sourceDocumentId — the real deep-link identity
+  //   2. ?sourceBookId — legacy param a bookmarked link might still carry
+  //   3. this device's own last-picked TestLab source, IF still valid
+  //   4. the most recently uploaded book in the Library
+  //   5. nothing — an empty catalogue means no selection, not a guess
   useEffect(() => {
-    if (books.length === 0 || bookId) return;
-    const requested = books.find((book) => book.bookId === requestedSourceBookId);
-    setBookId(requested?.bookId ?? books[0].bookId);
-  }, [books, bookId, requestedSourceBookId]);
+    if (books.length === 0 || selectedDocumentId) return;
+    const fromParam =
+      books.find((book) => book.documentId === requestedSourceDocumentId) ??
+      (requestedSourceBookId ? books.find((book) => book.bookId === requestedSourceBookId) : undefined);
+    if (fromParam) { setSelectedDocumentId(fromParam.documentId); return; }
+    const lastSelected = getLastSelectedTestLabDocumentId();
+    const fromLastSelected = lastSelected ? books.find((book) => book.documentId === lastSelected) : undefined;
+    setSelectedDocumentId(fromLastSelected?.documentId ?? books[0].documentId);
+  }, [books, selectedDocumentId, requestedSourceDocumentId, requestedSourceBookId]);
+
+  // bookId is a reactive mirror of selectedDocumentId, kept in sync here
+  // rather than set directly anywhere else in this file — every
+  // downstream content-grounding lookup already keyed on bookId
+  // (getNotesByBook, getNodesByBook, buildExam, ...) keeps working
+  // unchanged, but can never drift from the validated Library selection.
+  useEffect(() => {
+    const match = selectedDocumentId ? books.find((b) => b.documentId === selectedDocumentId) : null;
+    setBookId(match?.bookId ?? '');
+    if (match) setLastSelectedTestLabDocumentId(match.documentId);
+  }, [selectedDocumentId, books]);
+
+  // Diagnostics — dev-only. selectedTestLabDocumentId and the displayed
+  // book's own documentId must always agree; selectedBook (below) is
+  // derived by looking selectedDocumentId up in the same books array that
+  // renders it, so disagreement here means something started tracking a
+  // title/id independently of that lookup.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const match = selectedDocumentId ? books.find((b) => b.documentId === selectedDocumentId) : null;
+    const diagnostics = {
+      activeReaderDocumentId: requestedSourceDocumentId || null,
+      selectedTestLabDocumentId: selectedDocumentId,
+      selectedLibraryRecordFound: !!match,
+      selectedDocumentTitle: match?.bookTitle ?? null,
+      sourceThoughtUnitCount: match?.noteCount ?? 0,
+    };
+    if (match && selectedDocumentId !== match.documentId) {
+      console.error('[TESTLAB_SOURCE_STATE_MISMATCH]', diagnostics);
+    } else {
+      console.log('[TESTLAB_SOURCE_DIAGNOSTICS]', diagnostics);
+    }
+  }, [selectedDocumentId, books, requestedSourceDocumentId]);
 
   // Reload Reader progress + Knowledge Graph nodes whenever the selected
   // book changes, and default the scope to "Completed material only" when
@@ -188,9 +248,14 @@ function ExamGeneratorPage() {
     getNodesByBook(bookId)
       .then(async (nodes) => {
         if (!alive) return;
-        setAllNodes(nodes);
+        // P1 remediation L8 — getNodesByBook groups by the filename-derived
+        // bookId, which two unrelated documents can share; disambiguate down
+        // to the documentId(s) actually corroborated as this same book
+        // before it feeds weak-concept detection / exam scope below.
+        const disambiguated = disambiguateBookNodes(nodes, selectedDocumentId);
+        setAllNodes(disambiguated);
         const entries = await Promise.all(
-          nodes.map(async (n) => [n.id, await getNodeProgress(n.id).catch(() => null)] as const),
+          disambiguated.map(async (n) => [n.id, await getNodeProgress(n.id).catch(() => null)] as const),
         );
         if (!alive) return;
         const map = new Map<string, KnowledgeNodeProgress>();
@@ -199,7 +264,7 @@ function ExamGeneratorPage() {
       })
       .catch(() => { if (alive) { setAllNodes([]); setNodeProgressById(new Map()); } });
     return () => { alive = false; };
-  }, [bookId]);
+  }, [bookId, selectedDocumentId]);
 
   // --- Derived ---
   const modeConfig = PRACTICE_MODES.find((m) => m.id === practiceMode)!;
@@ -265,8 +330,8 @@ function ExamGeneratorPage() {
     setGenerationError(null);
   }
 
-  function handleBookSelect(id: string) {
-    setBookId(id);
+  function handleBookSelect(documentId: string) {
+    setSelectedDocumentId(documentId);
     setSelectedChapterIds(new Set());
     setSelectedNodeIds(new Set());
     setGeneratedExam(null);
@@ -555,18 +620,18 @@ function ExamGeneratorPage() {
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {filteredBooks.map((book) => {
-                        const isSelected = bookId === book.bookId;
+                        const isSelected = selectedDocumentId === book.documentId;
                         const badgeClass = SUBJECT_COLORS[book.subject] ?? SUBJECT_COLORS.Other;
                         const bookToc = tocs[book.bookId];
                         return (
                           <div
-                            key={book.bookId}
+                            key={book.documentId}
                             className={`text-left p-4 rounded-lg border-2 transition-all cursor-pointer ${
                               isSelected
                                 ? 'border-blue-500 bg-blue-500/10'
                                 : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
                             }`}
-                            onClick={() => handleBookSelect(book.bookId)}
+                            onClick={() => handleBookSelect(book.documentId)}
                           >
                             <div className="font-medium text-white text-sm leading-tight mb-2">
                               {book.bookTitle}
@@ -576,8 +641,8 @@ function ExamGeneratorPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleBookSelect(book.bookId);
-                                  setSubjectPickerOpen((v) => !v || bookId !== book.bookId);
+                                  handleBookSelect(book.documentId);
+                                  setSubjectPickerOpen((v) => !v || selectedDocumentId !== book.documentId);
                                 }}
                                 className={`px-2 py-0.5 rounded text-xs border ${badgeClass} flex items-center gap-1`}
                                 title={book.subjectConfidence === 'low' ? 'Subject inferred with low confidence — click to change' : 'Click to change subject'}

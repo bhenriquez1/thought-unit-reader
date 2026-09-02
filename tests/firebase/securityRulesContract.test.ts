@@ -24,6 +24,16 @@ describe("Firebase security configuration contract", () => {
     expect(rules).not.toMatch(/match \/\{allPaths=\*\*\}/);
   });
 
+  it("REQUIRED (L7): the legacy /pdfs/{uid}/** path caps write size the same as the canonical path — it used to have no cap at all, an unbounded storage-cost surface", () => {
+    const rules = read("storage.rules");
+    const idx = rules.indexOf("match /pdfs/{uid}/{objectPath=**} {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = rules.slice(idx, idx + 300);
+    expect(block).toMatch(/allow read, delete: if isSelf\(uid\);/);
+    expect(block).toMatch(/allow create, update: if isSelf\(uid\) && request\.resource\.size <= 250 \* 1024 \* 1024;/);
+    expect(block).not.toMatch(/allow read, write: if isSelf\(uid\);/);
+  });
+
   it("version-controls every rules and indexes file referenced by firebase.json", () => {
     const config = JSON.parse(read("firebase.json"));
     expect(config.firestore.rules).toBe("firestore.rules");

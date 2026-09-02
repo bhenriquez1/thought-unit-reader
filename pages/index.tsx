@@ -30,6 +30,8 @@ import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import AdaptiveSyllabusPanel from "@/components/syllabus/AdaptiveSyllabusPanel";
 import { recordPageVisit, getVisitedPages } from "@/lib/syllabus/pageVisitStore";
 import { computeChapterProgress, computeCourseProgress, computeNextTopicRecommendation, buildChaptersFromToc, computeWeakAreas, buildPrerequisiteChain } from "@/lib/syllabus/chapterProgress";
+import { buildNextBestAction, type DeepLinkTarget } from "@/lib/learningHub/nextBestAction";
+import { CUSTOM_EXAM_PROFILE_ID } from "@/lib/examEngine/profiles/customProfile";
 import { getHighlightsByBook } from "@/lib/highlights/savedHighlightsStore";
 import ChapterDashboard from "@/components/syllabus/ChapterDashboard";
 import AskPagePanel        from "@/components/elena/AskPagePanel";
@@ -48,6 +50,7 @@ import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import StudyPlanLab from "@/components/studyplan/StudyPlanLab";
 import LearningHubLaunchPanel from "@/components/learningHub/LearningHubLaunchPanel";
 import KnowledgeStatePanel from "@/components/learningHub/KnowledgeStatePanel";
+import LibraryRowProgress from "@/components/library/LibraryRowProgress";
 import VisualKnowledgeRoadmap from "@/components/learningHub/VisualKnowledgeRoadmap";
 import LearningSourcesPanel from "@/components/learningHub/LearningSourcesPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
@@ -174,9 +177,12 @@ import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePl
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import type { ReadingCursor } from "@/lib/readingFocus/readingFocusStore";
 import { resolveOrCreateNode, getNodeProgress } from "@/lib/knowledge/knowledgeGraphStore";
+import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { recordPageReached } from "@/lib/reader/readingProgressStore";
 import { useKnowledgeSelectionStore } from "@/lib/knowledge/knowledgeSelectionStore";
 import { useKnowledgeGraph } from "@/lib/knowledge/useKnowledgeGraph";
+import { disambiguateBookNodes } from "@/lib/knowledge/disambiguateBookNodes";
+import { useNodeProgressList } from "@/lib/knowledge/useNodeProgress";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
 
@@ -599,6 +605,23 @@ export default function ThoughtUnitReader() {
     setPage: setCurrentPage,
     setTotalPages,
   } = useCurrentLearningContext();
+  // Identity-spine remediation — the real canonical Library documentId
+  // (Firestore doc id / SHA-256 content hash) for whatever book is
+  // currently open, regardless of source. Deliberately NOT the same state
+  // as currentLocalDocumentId above: that field's contract elsewhere in
+  // this file is narrower and load-bearing — "a local IndexedDB blob
+  // exists under this key" (it gates the pdfSourceFailed "Try Again"
+  // retry button, which calls getDocumentFile(currentLocalDocumentId)).
+  // A Firebase-uploaded/reopened book has no local IDB blob, so it must
+  // never populate that field — but it still has a real, stable
+  // documentId (the Firestore doc id already returned by
+  // getPDFLibrary()/uploadPDF()) that resolvedDocumentId below needs.
+  // Before this, a Firebase-sourced book's resolvedDocumentId silently
+  // fell back to a hash of the Storage download URL instead — a
+  // different, stable-but-incompatible id that could never match this
+  // same book's real documentId anywhere that reads it from the Library
+  // (e.g. TestLab's source picker matching ?sourceDocumentId=).
+  const [canonicalDocumentId, setCanonicalDocumentId] = useState<string | null>(null);
   // True when PDF.js fails to load the source file (distinct from text-analysis failures).
   const [pdfSourceFailed, setPdfSourceFailed] = useState(false);
 
@@ -624,7 +647,7 @@ export default function ThoughtUnitReader() {
   // Same TDZ workaround as syncToPageRef above — handleLoadPDF is declared
   // much later in this component; populated by an effect right after its
   // own declaration, read via .current by handleViewSourcePickFromLibrary.
-  const handleLoadPDFRef = useRef<((url: string, name?: string, localDocumentId?: string) => void) | null>(null);
+  const handleLoadPDFRef = useRef<((url: string, name?: string, localDocumentId?: string, documentId?: string) => void) | null>(null);
   // Banner shown when the Reader is opened via "View Source in Reader" from DAT Apex.
   const [viewSourceBanner, setViewSourceBanner] = useState<{ pageNumber: number; quote: string } | null>(null);
   // P0 fix — a ViewSourceLink whose documentId doesn't (yet) match the
@@ -1513,6 +1536,7 @@ export default function ThoughtUnitReader() {
           const blob = new Blob([data], { type: 'application/pdf' });
           const sessionUrl = createBlobUrl(blob);
           setCurrentLocalDocumentId(restored.currentLocalDocumentId);
+          setCanonicalDocumentId(restored.currentLocalDocumentId);
           setFileUrl(sessionUrl);
           generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
           const restoredBookId = restored.bookId || 'book';
@@ -1584,7 +1608,7 @@ export default function ThoughtUnitReader() {
       (p) => p.name.replace(/\.[Pp][Dd][Ff]$/, "") === pendingViewSourceLink.documentId,
     );
     if (match) {
-      handleLoadPDFRef.current?.(match.url, match.name, match.localDocumentId);
+      handleLoadPDFRef.current?.(match.url, match.name, match.localDocumentId, match.id);
     } else {
       setShowLibrary(true);
     }
@@ -1627,7 +1651,22 @@ export default function ThoughtUnitReader() {
   // Keep documentTitle in CLC in sync with bookId (the PDF filename without extension).
   useEffect(() => { if (bookId) setDocumentTitle(bookId); }, [bookId, setDocumentTitle]);
   // useKnowledgeGraph must be called after bookId is available
-  const { nodes: kgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
+  const { nodes: rawKgNodes, selectedNodeId: kgSelectedNodeId, setSelectedNodeId: kgSetSelectedNodeId } = useKnowledgeGraph(bookId || null);
+  // P1 remediation L8 — useKnowledgeGraph groups by bookId (filename-derived,
+  // kept for progress continuity across re-uploads of the same book), which
+  // means two unrelated documents sharing a generic filename would otherwise
+  // have their concepts/progress silently merged in every view below. Every
+  // consumer reads the disambiguated kgNodes, never rawKgNodes directly.
+  const kgNodes = useMemo(
+    () => disambiguateBookNodes(rawKgNodes, canonicalDocumentId),
+    [rawKgNodes, canonicalDocumentId],
+  );
+  // L2 (Learning Hub orchestration correction) — the canonical per-concept
+  // learning state for every node above, so chapterProgressList below can
+  // roll up real understand/recall/mastery signal instead of a second,
+  // independently-computed number (see lib/syllabus/chapterProgress.ts's
+  // own header comment).
+  const { progressByNodeId: kgProgressByNodeId, refresh: refreshKgProgress } = useNodeProgressList(kgNodes);
 
   // ── KG selection → navigate reader + highlight anchor ─────────────────────
   useEffect(() => {
@@ -2000,8 +2039,8 @@ export default function ThoughtUnitReader() {
   // across every cache keyed on it (annotation plans, professor lesson
   // plans, content hashes). See lib/insights/resolveDocumentIdentity.ts.
   const resolvedDocumentId = useMemo(
-    () => resolveDocumentIdentity({ documentId: currentLocalDocumentId, fileUrl, bookId }),
-    [currentLocalDocumentId, fileUrl, bookId],
+    () => resolveDocumentIdentity({ documentId: canonicalDocumentId ?? currentLocalDocumentId, fileUrl, bookId }),
+    [canonicalDocumentId, currentLocalDocumentId, fileUrl, bookId],
   );
 
   // Knowledge Graph: resolve/create nodes when study model is ready.
@@ -2040,6 +2079,23 @@ export default function ThoughtUnitReader() {
 
     const primaryAnchor = visualAnchors.find(a => a.role === "coreIdea") ?? visualAnchors[0];
 
+    // L3 (Learning Hub orchestration correction) — "Reader creates evidence."
+    // Node IDENTITY was already being resolved/created here on every page
+    // load; nothing ever turned that into a PROGRESS signal. Adult Reader
+    // never fired a concept-level exposure event — only Elena (kids mode)
+    // did (lib/elena/childLearningState.ts) — so KnowledgeNodeProgress.
+    // exposureCount/lastStudiedAt never reflected real adult reading
+    // activity at all. One exposure event per distinct node actually
+    // resolved this page load (deduped — two anchors can fuzzy-match onto
+    // the SAME node via resolveOrCreateNode's own tier-2 resolution, and
+    // that must count as one encounter, not two). "Encountered," not
+    // "learned" — this never touches understandingScore/recallScore/
+    // masteryScore, only exposureCount/lastStudiedAt/the evidence log (see
+    // applyLearningEvent's own "exposure" case).
+    const exposedNodeIds = new Set<string>();
+    const occurredAt = new Date().toISOString();
+    const readerPageTruthKey = buildPageTruthKey(resolvedDocumentId, currentPage);
+
     for (const anchor of visualAnchors) {
       if (!anchor.id) continue;
       resolveOrCreateNode(anchor, resolvedDocumentId, bookId, currentPage, chapterCandidateId, profileId)
@@ -2050,6 +2106,13 @@ export default function ThoughtUnitReader() {
             pageKgNodeIdRef.current = node.id;
             setPageKnowledgeNodeId(node.id);
           }
+          if (exposedNodeIds.has(node.id)) return;
+          exposedNodeIds.add(node.id);
+          recordLearningEvent(
+            node.id, resolvedDocumentId,
+            { kind: "exposure", sourceType: "read", occurredAt, sourceId: anchor.id },
+            readerPageTruthKey,
+          ).catch(err => console.error("[KG_WIRE] exposure record error", { nodeId: node.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
         })
         .catch(err => console.error("[KG_WIRE] resolve error", { anchorId: anchor.id, page: currentPage, err: err instanceof Error ? err.message : String(err) }));
     }
@@ -2608,6 +2671,12 @@ export default function ThoughtUnitReader() {
       sourceLabel: "right-panel",
       studyModel: sm,
       documentId: resolvedDocumentId,
+      // L5 (Recall consolidation) — documentId/knowledgeNodeId were already
+      // threaded but pageTruthKey wasn't, so recall-graded events for cards
+      // saved this way could never pass recordRecallBlueprintRating's
+      // identity gate. Same buildPageTruthKey(resolvedDocumentId, page)
+      // convention already used at this file's other note-save call sites.
+      pageTruthKey: resolvedDocumentId ? buildPageTruthKey(resolvedDocumentId, currentPage) : undefined,
       knowledgeNodeId: pageKgNodeIdRef.current,
     });
     try {
@@ -2705,14 +2774,32 @@ export default function ThoughtUnitReader() {
 
   /* =========================================================================
      🔹 Load PDF Library (Firebase) or keep session list (guest)
+     Identity-spine remediation — this effect used to also re-fire on every
+     `showLibrary` toggle, which meant a GUEST simply opening the "My
+     Library" drawer re-ran the `else` branch and wiped `pdfLibrary` to
+     `[]` — even with a real PDF already open in Reader and real entries
+     already restored from `avrrio-local-library`/appended at upload time.
+     The underlying storage was never touched (a refresh still restored
+     everything correctly); only the drawer's displayed state went empty.
+     Clearing now only happens on an actual sign-out transition ([user] as
+     the sole dependency); a signed-in user's Library still refreshes from
+     Firestore each time the drawer opens (a real, low-cost value — it
+     picks up an upload/delete made from another tab or device), via the
+     second effect below, which never clears anything for a guest.
   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
-      setPdfLibrary([]); // clear when signed out
+      setPdfLibrary([]); // clear only when actually signed out, not on every drawer toggle
     }
-  }, [user, showLibrary]);
+  }, [user]);
+
+  useEffect(() => {
+    if (firebaseConnected && user && showLibrary) {
+      getPDFLibrary(USER_ID).then(setPdfLibrary);
+    }
+  }, [showLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* =========================================================================
      🔹 Chapter Absorption Pipeline Functions
@@ -4202,6 +4289,10 @@ export default function ThoughtUnitReader() {
             url,
             uploadedAt: new Date().toISOString(),
           };
+          // Identity-spine remediation — see canonicalDocumentId's own
+          // declaration for why this can't just reuse
+          // setCurrentLocalDocumentId here.
+          setCanonicalDocumentId(stableDocumentId);
         } catch (error) {
           console.error("Firebase upload failed, falling back to local:", error);
           // Firebase failed — save locally with IDB binary for durability
@@ -4211,10 +4302,25 @@ export default function ThoughtUnitReader() {
           libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
           setPdfLibrary((prev) => [libEntry, ...prev]);
           setCurrentLocalDocumentId(documentId);
-          // Only persist the localStorage library entry after IDB binary is confirmed.
-          // setFileUrl runs immediately (below) so the viewer opens without waiting.
+          setCanonicalDocumentId(documentId);
+          // P1 remediation L3 — write the durable catalog entry
+          // immediately, synchronously, rather than waiting for the IDB
+          // blob write to resolve first. The old ordering ("only persist
+          // the localStorage library entry after IDB binary is
+          // confirmed") created a real race: navigating away — e.g.
+          // clicking "TestLab," which forces a hard cross-router reload
+          // across the pages/app-router boundary — before that async
+          // chain resolved tore down the in-flight promise before
+          // persistLocalLibraryEntry ever ran, silently losing this book
+          // from the Library on the very next load despite the upload
+          // having visibly "succeeded." If the IDB write itself later
+          // fails, the student still gets an explicit "this book's file
+          // is missing" prompt the next time they try to reopen it
+          // (handleLoadPDF's existing missingPDFEntry path) rather than
+          // the book silently vanishing from their Library with no
+          // explanation at all.
+          persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
           persistToIDB(documentId)
-            .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
             .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
         }
       } else {
@@ -4225,8 +4331,12 @@ export default function ThoughtUnitReader() {
         libEntry = { id: documentId, name: file.name, url, uploadedAt, isLocal: true, localDocumentId: documentId };
         setPdfLibrary((prev) => [libEntry, ...prev]);
         setCurrentLocalDocumentId(documentId);
+        setCanonicalDocumentId(documentId);
+        // P1 remediation L3 — see the identical comment in the Firebase-
+        // fallback branch above for why this must be synchronous, not
+        // chained after persistToIDB.
+        persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId });
         persistToIDB(documentId)
-          .then(() => persistLocalLibraryEntry({ id: documentId, name: file.name, uploadedAt, localDocumentId: documentId }))
           .catch(() => console.warn('[storage] IDB save failed — book will not restore after refresh'));
       }
 
@@ -4255,15 +4365,23 @@ export default function ThoughtUnitReader() {
 
       // Phase 2: text extraction + thought-unit parsing.
       // Viewer already shows page 1 — never block or remove the PDF on parse failures.
-      // libEntry.localDocumentId is the real crypto.randomUUID() when this
-      // upload got a local IDB copy (the two fallback branches above); a
-      // successful Firebase upload doesn't create one, so fall back to a
-      // hash of the upload URL — still real per-instance identity, just
-      // derived rather than random. Read directly off libEntry/url rather
-      // than the reactive currentLocalDocumentId store field, which would
-      // still read its PRE-upload (stale) value this synchronously after
-      // the setCurrentLocalDocumentId(...) calls above.
-      startBookProcessing(file, documentId, 1, resolveDocumentIdentity({ documentId: libEntry.localDocumentId, fileUrl: url, bookId: documentId }));
+      // Bug fix (found by automated review on #748, verified): this used to
+      // re-derive the canonicalDocumentId argument via
+      // resolveDocumentIdentity({ documentId: libEntry.localDocumentId, ... }).
+      // libEntry.localDocumentId is only ever set on the two local/fallback
+      // upload branches above — a SUCCESSFUL Firebase upload's libEntry never
+      // sets it, so that expression silently fell through to a hash of the
+      // Storage download URL instead of stableDocumentId. Every
+      // CanonicalThoughtUnit created during processing (see the
+      // `documentId: canonicalDocumentId ?? documentId` stamp below) then
+      // carried a DIFFERENT identity than the Knowledge Graph nodes and
+      // TestLab's exam builder, which both key off the real stableDocumentId
+      // (canonicalDocumentId React state, set above) — losing grounded
+      // question content for every signed-in user's successful upload, the
+      // most common path. documentId here already IS stableDocumentId
+      // (assigned two lines above) for all three upload branches, so it's
+      // simply passed straight through — no re-derivation needed.
+      startBookProcessing(file, documentId, 1, documentId);
 
       setPdfParsingState({ isLoading: false, error: null, progress: '' });
 
@@ -4377,7 +4495,7 @@ export default function ThoughtUnitReader() {
      For local entries (localDocumentId set): reconstructs a session blob URL
      from the IndexedDB binary. Falls back to the stored URL for Firebase entries.
   ========================================================================= */
-  const handleLoadPDF = useCallback(async (url: string, name?: string, localDocumentId?: string) => {
+  const handleLoadPDF = useCallback(async (url: string, name?: string, localDocumentId?: string, documentId?: string) => {
     setPageTextByPage(new Map());
     setCurrentPage(1);
     setThoughtUnits([]);
@@ -4400,6 +4518,12 @@ export default function ThoughtUnitReader() {
         const blob = new Blob([data], { type: 'application/pdf' });
         const sessionUrl = createBlobUrl(blob);
         setCurrentLocalDocumentId(localDocumentId);
+        // Identity-spine remediation — for a local/guest entry, the
+        // Library's own documentId (pdf.id) and the IDB blob key are
+        // always the same value (see the upload code's libEntry
+        // construction), so this is just as correct as localDocumentId
+        // here; passed explicitly rather than assumed equal.
+        setCanonicalDocumentId(documentId ?? localDocumentId);
         setFileUrl(sessionUrl);
         generateTOC(sessionUrl).then(setTableOfContents).catch(() => {});
         // Re-run background processing to rebuild thought units
@@ -4410,8 +4534,14 @@ export default function ThoughtUnitReader() {
         setMissingPDFEntry({ name: name || 'this book', documentId: localDocumentId });
       }
     } else {
-      // Firebase URL or other durable URL — use directly
+      // Firebase URL or other durable URL — use directly. No local IDB
+      // blob exists for this book, so currentLocalDocumentId must stay
+      // null (see its own declaration comment) — but canonicalDocumentId
+      // still gets the real Library documentId the caller passed in, so
+      // resolvedDocumentId resolves correctly instead of falling back to
+      // a hash of the Storage URL.
       setCurrentLocalDocumentId(null);
+      setCanonicalDocumentId(documentId ?? null);
       setFileUrl(url);
       generateTOC(url).then(setTableOfContents).catch(() => {});
     }
@@ -5253,9 +5383,23 @@ export default function ThoughtUnitReader() {
     getHighlightsByBook(bookId).then(setSyllabusSavedHighlights).catch(() => {});
   }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]);
 
+  // L2 — same "refresh whenever the Syllabus tab opens or a note/recall
+  // card is saved elsewhere" trigger as the two effects above, for the
+  // canonical KnowledgeNodeProgress data chapterProgressList now rolls up
+  // (a Recall grade or Whiteboard lesson completion writes progress via
+  // recordLearningEvent elsewhere in the app; this hook has no way to
+  // observe that on its own).
+  useEffect(() => {
+    if (activeShellTab !== "syllabus" || !bookId) return;
+    refreshKgProgress();
+  }, [activeShellTab, bookId, noteLabRefreshKey, recallLabRefreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Chapter Progress Engine (Phase 1+2): derives chapters from the live
   // syllabusToc tree and rolls up Read/Understand/Recall/Mastery % per
-  // chapter — the data the Course Dashboard renders below.
+  // chapter — the data the Course Dashboard renders below. L2: understand/
+  // recall/mastery/weakTopics are now rollups over the canonical
+  // KnowledgeNodeProgress for this book's nodes (kgNodes/kgProgressByNodeId
+  // above), not a second, independently-computed number.
   const chapterProgressList = useMemo(() => {
     if (!syllabusToc.length) return [];
     const chapters = buildChaptersFromToc(syllabusToc, pdfPageCount || 1);
@@ -5264,9 +5408,13 @@ export default function ThoughtUnitReader() {
     const notes = getNotesByBook(bookId);
     return chapters.map((chapter) => ({
       chapter,
-      progress: computeChapterProgress(chapter, { visitedPages, recallSets, notes, studyGuides: syllabusStudyGuides, savedHighlights: syllabusSavedHighlights }),
+      progress: computeChapterProgress(chapter, {
+        visitedPages, recallSets, notes,
+        studyGuides: syllabusStudyGuides, savedHighlights: syllabusSavedHighlights,
+        nodes: kgNodes, progressByNodeId: kgProgressByNodeId,
+      }),
     }));
-  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, syllabusSavedHighlights, currentPage, activeShellTab]);
+  }, [syllabusToc, pdfPageCount, bookId, syllabusStudyGuides, syllabusSavedHighlights, kgNodes, kgProgressByNodeId, currentPage, activeShellTab]);
 
   const courseProgress = useMemo(
     () => computeCourseProgress(chapterProgressList.map((c) => c.chapter), chapterProgressList.map((c) => c.progress)),
@@ -5298,6 +5446,76 @@ export default function ThoughtUnitReader() {
       recallSets
     );
   }, [chapterProgressList, bookId]);
+
+  // L6 (Learning Hub orchestration correction, Section 9) — ONE ranked "what
+  // should I do next?" recommendation over the canonical KnowledgeNodeProgress
+  // state, instead of Learning Hub always offering the same "read the next
+  // unread page" CTA regardless of whether a concept is actually overdue for
+  // review or weak. See lib/learningHub/nextBestAction.ts's own header for
+  // the priority rationale.
+  const nextBestAction = useMemo(
+    () => buildNextBestAction({ nodes: kgNodes, progressByNodeId: kgProgressByNodeId, nextTopicRecommendation, bookId }),
+    [kgNodes, kgProgressByNodeId, nextTopicRecommendation, bookId]
+  );
+
+  // Section 10 ("deep-link everything, never send the student to a module
+  // homepage") — one dispatcher shared by the Next Best Action card and
+  // KnowledgeStatePanel's three lists, so every "what should I do next"
+  // click routes to the module the recommendation is actually about instead
+  // of always landing on Reader. NoteLab/Recall land on that module's own
+  // view rather than a concept-scoped note/session — the cross-module
+  // selection store's Reader-auto-navigate effect (above) would fight a
+  // reused-for-that-purpose selection write, and Recall 2.0 has no external
+  // "launch a session for node X" seam yet; both are real follow-ups, not
+  // silently faked here.
+  const handleDeepLink = useCallback((target: DeepLinkTarget) => {
+    switch (target.module) {
+      case "reader":
+        if (target.page) syncToPage(target.page, { reason: "PROGRAMMATIC" });
+        trySwitchShellTab("reader", "reader");
+        return;
+      case "notelab":
+        trySwitchShellTab("notelab", "notelab");
+        return;
+      case "recall":
+        trySwitchShellTab("study", "study");
+        return;
+      case "testlab": {
+        const profileId = (() => {
+          try { return localStorage.getItem("avrrio:testlab:activeProfileId:v2") || CUSTOM_EXAM_PROFILE_ID; }
+          catch { return CUSTOM_EXAM_PROFILE_ID; }
+        })();
+        const params = new URLSearchParams({ examType: profileId });
+        // TestLab source binding fix — resolvedDocumentId (the real
+        // content-hash Library identity) is what TestLab's own resolution
+        // logic keys on, never target.bookId (filename). See
+        // lib/library/userLibrary.ts's own header comment.
+        if (resolvedDocumentId) params.set("sourceDocumentId", resolvedDocumentId);
+        router.push(`/apex/generator?${params.toString()}`);
+        return;
+      }
+    }
+  }, [syncToPage, trySwitchShellTab, router, resolvedDocumentId]);
+
+  // Overview's "Continue Learning" CTA content — kept as its own memo so the
+  // reader-fallback case (nothing due/weak yet) renders identically to the
+  // pre-L6 CTA rather than reformatting text that already reads fine.
+  const nextBestActionCard = useMemo(() => {
+    if (!nextBestAction) {
+      return { eyebrow: "Continue Learning", title: uploadedFile?.name ?? bookId, subtitle: `p.${currentPage} of ${pdfPageCount}` };
+    }
+    if (nextBestAction.recommendedModule === "recall") {
+      return { eyebrow: "⏰ Review Due", title: nextBestAction.reason, subtitle: nextBestAction.sourceEvidence[0] };
+    }
+    if (nextBestAction.recommendedModule === "notelab") {
+      return { eyebrow: "🎯 Weak Concept", title: nextBestAction.reason, subtitle: nextBestAction.sourceEvidence[0] };
+    }
+    return {
+      eyebrow: "Continue Learning",
+      title: uploadedFile?.name ?? bookId,
+      subtitle: `→ ${nextTopicRecommendation?.chapterTitle ?? ""} · p.${nextBestAction.deepLinkTarget.page ?? currentPage}`,
+    };
+  }, [nextBestAction, uploadedFile, bookId, currentPage, pdfPageCount, nextTopicRecommendation]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -5985,18 +6203,20 @@ export default function ThoughtUnitReader() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {bookId ? (
                 <>
-                  {/* Continue Learning CTA */}
+                  {/* Next Best Action CTA — L6: routes to whichever module
+                      the highest-priority recommendation is actually about
+                      (Recall/NoteLab/Reader), not always Reader. Falls back
+                      to "keep reading" when nothing else needs attention. */}
                   <button
-                    onClick={() => { trySwitchShellTab("reader", "reader"); }}
+                    onClick={() => {
+                      if (nextBestAction) handleDeepLink(nextBestAction.deepLinkTarget);
+                      else trySwitchShellTab("reader", "reader");
+                    }}
                     className="w-full rounded-xl border border-indigo-500/30 bg-indigo-600/20 hover:bg-indigo-600/30 transition-colors p-4 text-left"
                   >
-                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">Continue Learning</div>
-                    <div className="text-sm font-semibold text-white truncate">{uploadedFile?.name ?? bookId}</div>
-                    <div className="mt-2 text-xs text-indigo-300 font-medium">
-                      {nextTopicRecommendation
-                        ? `→ ${nextTopicRecommendation.chapterTitle} · p.${nextTopicRecommendation.page}`
-                        : `p.${currentPage} of ${pdfPageCount}`}
-                    </div>
+                    <div className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">{nextBestActionCard.eyebrow}</div>
+                    <div className="text-sm font-semibold text-white truncate">{nextBestActionCard.title}</div>
+                    <div className="mt-2 text-xs text-indigo-300 font-medium truncate">{nextBestActionCard.subtitle}</div>
                   </button>
 
                   {/* Stats row */}
@@ -6040,10 +6260,16 @@ export default function ThoughtUnitReader() {
                       the same store TestLab/Recall/Whiteboard already read/write. */}
                   <KnowledgeStatePanel
                     nodes={kgNodes}
-                    onOpenNode={(node) => {
-                      const page = node.sourcePages[0];
-                      if (page) syncToPage(page, { reason: 'PROGRAMMATIC' });
-                      trySwitchShellTab("reader", "reader");
+                    onOpenNode={(node, kind) => {
+                      // L6 — each list now routes to the module it's about
+                      // instead of every list going to Reader.
+                      if (kind === "due") {
+                        handleDeepLink({ module: "recall", bookId, knowledgeNodeId: node.id });
+                      } else if (kind === "weak") {
+                        handleDeepLink({ module: "testlab", bookId, knowledgeNodeId: node.id });
+                      } else {
+                        handleDeepLink({ module: "reader", bookId, page: node.sourcePages[0], knowledgeNodeId: node.id });
+                      }
                     }}
                   />
 
@@ -6432,7 +6658,7 @@ export default function ThoughtUnitReader() {
                 <div className="text-sm font-semibold text-slate-200">Avrrio TestLab — Practice Exams</div>
                 <div className="text-xs text-slate-500 mt-1">Full-length simulations with section scoring</div>
                 <button
-                  onClick={() => { router.push("/apex"); }}
+                  onClick={() => { handleDeepLink({ module: "testlab", bookId }); }}
                   className="mt-4 px-5 py-2 rounded-lg bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 text-xs font-semibold hover:bg-indigo-600/60 transition-colors"
                 >
                   Open TestLab →
@@ -6746,7 +6972,11 @@ export default function ThoughtUnitReader() {
                 const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for TestLab?");
                 if (!ok) return;
               }
-              router.push("/apex");
+              // TestLab source binding fix — carry the book actually open
+              // in Reader so TestLab preselects it instead of falling back
+              // to a note-count-ranked guess. See
+              // lib/library/userLibrary.ts's own header comment.
+              router.push(resolvedDocumentId ? `/apex?sourceDocumentId=${encodeURIComponent(resolvedDocumentId)}` : "/apex");
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
             title="Open Avrrio TestLab"
@@ -7331,9 +7561,13 @@ export default function ThoughtUnitReader() {
                   key={pdf.id}
                   className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
                 >
-                  <span onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId)} className="cursor-pointer">
-                    {pdf.name}
-                  </span>
+                  <div onClick={() => handleLoadPDF(pdf.url, pdf.name, pdf.localDocumentId, pdf.id)} className="cursor-pointer min-w-0 flex-1">
+                    <div className="truncate">{pdf.name}</div>
+                    {/* L7 — every saved book shows meaningful progress, not
+                        just a filename (Learning Hub orchestration
+                        correction, Section 8). */}
+                    <LibraryRowProgress bookId={pdf.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book"} />
+                  </div>
                   <button
                     onClick={() => handleDeletePDF(pdf.id, pdf.name, pdf.isLocal, pdf.localDocumentId)}
                     className={`${
