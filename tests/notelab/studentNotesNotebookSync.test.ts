@@ -24,7 +24,7 @@ describe("components/notelab/UltraNotesList.tsx — handleSaveStudentNotes keeps
   });
 
   const idx = SRC.indexOf("async function handleSaveStudentNotes()");
-  const fn = SRC.slice(idx, idx + 1400);
+  const fn = SRC.slice(idx, idx + 1800);
 
   it("REQUIRED: the handler actually exists", () => {
     expect(idx).toBeGreaterThan(-1);
@@ -38,7 +38,16 @@ describe("components/notelab/UltraNotesList.tsx — handleSaveStudentNotes keeps
   });
 
   it("REQUIRED: only attaches the recomputed scene when it actually has content — never overwrites notebookScene with an empty one", () => {
-    expect(fn).toMatch(/await saveUltraNote\(scene\.blocks\.length > 0 \? \{ \.\.\.updated, notebookScene: scene \} : updated\);/);
+    expect(fn).toMatch(/scene\.blocks\.length > 0\s*\n\s*\? \{ \.\.\.updated, notebookScene: scene, notebookSceneStatus: "ready" \}/);
+  });
+
+  // L13 (NoteLab visual-execution correction) — a student typing content
+  // into a note previously "empty"/"failed" now flips its status to
+  // "ready" too, so the empty-state prompt / failed-Retry banner don't
+  // linger next to a notebook that visibly has content.
+  it("REQUIRED (L13): sets notebookSceneStatus alongside notebookScene, not just the scene field itself", () => {
+    expect(fn).toMatch(/notebookSceneStatus: "ready"/);
+    expect(fn).toMatch(/notebookSceneStatus: updated\.notebookSceneStatus === "pending" \? "pending" : "empty"/);
   });
 
   it("REQUIRED: this is a purely local/deterministic recomposition — no AI call, no network request, in this handler", () => {

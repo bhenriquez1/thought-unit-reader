@@ -333,18 +333,53 @@ describe("UltraNotesList.tsx — Notebook wiring (NU4 — Study Page tab split r
     expect(src).toMatch(/\{note\.notebookScene \? \(\s*<NotebookCanvas/);
   });
 
-  it("REQUIRED: a note with no notebookScene at all shows an explicit empty-state prompt, never the retired card dashboard as a fallback", () => {
+  // L13 (NoteLab visual-execution correction) — "'Nothing composed here yet'
+  // should almost never appear after the user has already saved material
+  // from Reader... either render the visual note or explicitly say
+  // generation failed and give Retry." notebookSceneStatus now tells apart
+  // "still composing" (pending), "genuinely nothing to compose" (empty/
+  // legacy undefined — the ONLY case this generic copy is still accurate
+  // for), and "composition failed" (its own banner + Retry, below).
+  it("REQUIRED (L13): a genuinely empty note (no notebookScene, status 'empty' or legacy-undefined) shows the explicit empty-state prompt, never the retired card dashboard as a fallback", () => {
     const idx = src.indexOf("{note.notebookScene ? (");
     const block = src.slice(idx, src.indexOf(")}", idx) + 2);
     expect(block).toMatch(/Nothing composed here yet\. Write your own notes below/);
   });
 
-  it("REQUIRED: a persisted notebookSceneError (NU1/NU3's fallback path) is surfaced as a passive, non-blocking notice — never a second competing dashboard, no retry action here (NotebookCanvas's own hard-failure state already owns retry)", () => {
-    const idx = src.indexOf("{note.notebookSceneError && (");
+  it("REQUIRED (L13): a note with no notebookScene but status 'pending' shows a composing indicator, not the generic empty-state prompt", () => {
+    const idx = src.indexOf("{note.notebookScene ? (");
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(/note\.notebookSceneStatus === "pending"/);
+    expect(block).toMatch(/Composing your visual notebook/);
+  });
+
+  it("REQUIRED (L13): a note with status 'failed' (or a legacy note with notebookSceneError and no status) renders neither the composing indicator nor the generic empty-state prompt below the canvas — the amber banner above already covers it, including Retry", () => {
+    const idx = src.indexOf("{note.notebookScene ? (");
+    const block = src.slice(idx, src.indexOf(")}", idx) + 2);
+    expect(block).toMatch(
+      /\(note\.notebookSceneStatus === "failed" \|\| \(!note\.notebookSceneStatus && note\.notebookSceneError\)\) \? null/,
+    );
+  });
+
+  it("REQUIRED (L13): a failed composition (status 'failed', or a legacy note with notebookSceneError and no status) is surfaced as a banner with an explicit Retry action — no longer 'no retry action here', since UltraNotesList.tsx can now call the same shared composeNoteNotebookSceneInBackground RightPanel.tsx's save uses", () => {
+    const idx = src.indexOf('note.notebookSceneStatus === "failed" || (!note.notebookSceneStatus && note.notebookSceneError)');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, src.indexOf(")}", idx) + 2);
     expect(block).toMatch(/AI enhancement of this notebook didn't finish/);
-    expect(block).not.toMatch(/onClick/);
+    expect(block).toMatch(/onClick=\{handleRetryCompose\}/);
+    expect(block).toMatch(/🔁 Retry/);
+  });
+
+  it("REQUIRED (L13): handleRetryCompose sets notebookSceneStatus 'pending' first, then calls the shared composeNoteNotebookSceneInBackground with the note's own documentId (falling back to bookId)", () => {
+    const idx = src.indexOf("async function handleRetryCompose()");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/notebookSceneStatus: "pending"/);
+    expect(block).toMatch(/composeNoteNotebookSceneInBackground\(note, note\.documentId \?\? note\.bookId\)/);
+  });
+
+  it("REQUIRED (L13): imports composeNoteNotebookSceneInBackground from the shared lib module, not a local re-implementation", () => {
+    expect(src).toMatch(/import \{ composeNoteNotebookSceneInBackground \} from "@\/lib\/notelab\/composeNotebookScene";/);
   });
 
   it("REQUIRED: each note gets its own persistenceKey derived from its own id — one note's notebook edits never bleed into another's", () => {

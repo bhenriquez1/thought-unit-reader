@@ -23,11 +23,7 @@ import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, getNotesByBookAsync, isUltraNotePersisted, inferSubject, type UltraNote } from "@/lib/notelab/ultraNoteStore";
-import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/notelab/notebookPlanner";
-import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
-import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
-import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
-import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
+import { composeNoteNotebookSceneInBackground } from "@/lib/notelab/composeNotebookScene";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, computeDeckStats, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { persistVisualAnchorsAsHighlights } from "@/lib/highlights/persistAnchorsAsHighlights";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
@@ -4405,6 +4401,11 @@ function GenerateNoteButton({
       if (knowledgeNodeId) {
         note.knowledgeNodeId = knowledgeNodeId;
       }
+      // L13 — set BEFORE the save so the very first read of this note (e.g.
+      // NoteLab already open in another tab, or a fast re-render here) sees
+      // "pending" rather than undefined/no-status, which UltraNotesList.tsx
+      // treats as the legacy "nothing ever attempted" case.
+      note.notebookSceneStatus = "pending";
 
       await saveUltraNote(note);
 
@@ -4437,126 +4438,12 @@ function GenerateNoteButton({
     }
   }
 
-  /** P3 — the general "Generate Ultra Note" save path's own notebookScene
-   *  synthesis, modeled on WhiteboardPanel.tsx's composeNotebookSceneInBackground.
-   *  Simpler than that one: there's no taught lesson here to extract narration
-   *  from or fall back to recomposing, so with zero canonical units to ground
-   *  a synthesis in, the note just keeps no notebookScene (card view) rather
-   *  than inventing a fallback scene-builder for a case that never applies. */
-  /** L4 (Learning Hub orchestration correction) — "Learning Hub should
-   *  understand whether a concept has durable notes... Do not use note
-   *  creation itself as mastery evidence." An exposure event (never
-   *  understandingScore/recallScore/masteryScore — see applyLearningEvent's
-   *  own "exposure" case) is the correct-strength signal: it makes
-   *  KnowledgeNodeProgress.exposureCount/lastStudiedAt reflect real NoteLab
-   *  engagement without claiming the student has learned anything just
-   *  because a note exists. Gated on knowledgeNodeId/documentId both being
-   *  resolved already — never guessed, same discipline useNodeProgress.ts's
-   *  own update()/recordEvent() use. */
-  function recordNoteLabExposure(note: UltraNote) {
-    if (!note.knowledgeNodeId || !note.documentId) return;
-    recordLearningEvent(
-      note.knowledgeNodeId, note.documentId,
-      { kind: "exposure", sourceType: "notelab", occurredAt: new Date().toISOString(), sourceId: note.id },
-      note.pageTruthKey,
-    ).catch((err) => console.error("[NOTELAB_EXPOSURE_RECORD_ERROR]", { noteId: note.id, err: err instanceof Error ? err.message : String(err) }));
-  }
-
-  async function composeNoteNotebookSceneInBackground(savedNote: UltraNote, documentId: string) {
-    try {
-      const units = await getCanonicalUnitsByPage(documentId, savedNote.pageNumber - 1);
-
-      const existingNotes = await getNotesByBookAsync(savedNote.bookId);
-      const existingNote = existingNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-
-      if (units.length === 0) {
-        // Correction (Study Page migration) — zero canonical units means no
-        // AI synthesis can run (nothing to ground it in), but the student's
-        // own notes and the deterministic Study Page sections (Big Idea/Key
-        // Facts/etc. — the same reorganization getCanonicalNotebookSections
-        // already performs) are real content that must still render as a
-        // notebook, never vanish silently for lack of an AI call.
-        await saveDeterministicNotebookScene(existingNote, savedNote.bookId, savedNote.pageNumber);
-        recordNoteLabExposure(existingNote);
-        return;
-      }
-
-      const relatedConceptKnowledge = savedNote.knowledgeNodeId
-        ? await gatherConceptNotebookContent(savedNote.knowledgeNodeId, savedNote.id)
-        : null;
-
-      const scene = await generateNotebookScene(units, {
-        bookId: savedNote.bookId,
-        bookTitle: savedNote.bookTitle,
-        pageNumber: savedNote.pageNumber,
-        studentNotes: existingNote.studentNotes ?? null,
-        existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
-        relatedConceptKnowledge,
-      });
-      // Correction (NoteLab pipeline diagnostics) — "Add diagnostics:
-      // visualPlanGenerated / visualPrimitiveCount / ... /
-      // persistenceSaveSuccess / persistenceLoadSuccess." generateNotebookScene
-      // throwing lands in the catch below, never silently returning
-      // undefined, so reaching this line already proves visualPlanGenerated.
-      console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", {
-        noteId: savedNote.id, visualPlanGenerated: true, visualPrimitiveCount: scene.blocks.length,
-      });
-
-      // Correction (Study Page migration) — the AI scene never sees the
-      // student's own notes or the note's legacy Study Page fields as
-      // renderable primitives, only as prompt context (see
-      // buildNotebookPlannerUserPrompt's MULTI-SOURCE CONTEXT section); fold
-      // both in as real blocks so the Visual Notebook is the complete "one
-      // note," not just its AI-composed portion.
-      const mergedScene = mergeDeterministicContentIntoScene(scene, existingNote, {
-        bookId: savedNote.bookId, pageNumber: savedNote.pageNumber,
-      });
-
-      const latestNotes = await getNotesByBookAsync(savedNote.bookId);
-      const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-      await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });
-      recordNoteLabExposure(latest);
-
-      const persisted = await isUltraNotePersisted(savedNote.id);
-      console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", { noteId: savedNote.id, persistenceSaveSuccess: persisted });
-    } catch (err) {
-      const message = (err as any)?.message ?? String(err);
-      console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", err);
-      // "Show an explicit recoverable error... rather than reverting to the
-      // old card view [silently]." Persisted onto the note itself (not just
-      // logged) since this background task has no live UI to report to —
-      // the next time UltraNotesList reloads this note, it can show the
-      // student something went wrong instead of an unexplained blank tab.
-      // Even on an AI failure, still fall back to whatever deterministic
-      // (student/derived) content the note itself has — "never silently
-      // lost" covers a failed synthesis, not only a missing one.
-      try {
-        const latestNotes = await getNotesByBookAsync(savedNote.bookId);
-        const latest = latestNotes.find((n) => n.pageNumber === savedNote.pageNumber) ?? savedNote;
-        await saveDeterministicNotebookScene(latest, savedNote.bookId, savedNote.pageNumber, { notebookSceneError: message.slice(0, 200) });
-      } catch (persistErr) {
-        console.error("[NOTELAB_GENERATE_BACKGROUND_ERROR]", { persistenceSaveSuccess: false, persistErr });
-      }
-    }
-  }
-
-  /** Shared by both the "no canonical units" branch and the AI-failure
-   *  fallback above: recompute the note's deterministic (student/derived)
-   *  blocks and persist them as its notebookScene — but only when there's
-   *  actually something to show. A note with no studentNotes and no
-   *  resolvable Study Page sections stays without a notebookScene rather
-   *  than getting an empty one that would render a blank Visual Notebook
-   *  tab for nothing (see UltraNotesList.tsx's `note.notebookScene &&` gate). */
-  async function saveDeterministicNotebookScene(
-    note: UltraNote, bookId: string, pageNumber: number, extra: Partial<UltraNote> = {},
-  ) {
-    const scene = mergeDeterministicContentIntoScene(note.notebookScene ?? null, note, { bookId, pageNumber });
-    if (scene.blocks.length === 0) {
-      if (Object.keys(extra).length) await saveUltraNote({ ...note, ...extra });
-      return;
-    }
-    await saveUltraNote({ ...note, ...extra, notebookScene: scene });
-  }
+  // L13 — composeNoteNotebookSceneInBackground/recordNoteLabExposure/
+  // saveDeterministicNotebookScene used to live here as local functions,
+  // reachable only from this component's own handleGenerate. Lifted to
+  // lib/notelab/composeNotebookScene.ts (imported above, unchanged
+  // behavior) so UltraNotesList.tsx's Retry action can call the exact same
+  // composition logic instead of a second, drifting copy of it.
 
   return (
     <button

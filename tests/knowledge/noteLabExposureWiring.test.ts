@@ -9,31 +9,36 @@ import path from "path";
 // that both real NoteLab write paths fire a "notelab" exposure event, and
 // only an exposure event, never a score field.
 
-const rightPanelSource = fs.readFileSync(
-  path.join(__dirname, "../../components/reader/RightPanel.tsx"),
-  "utf8",
-);
 const ultraNotesListSource = fs.readFileSync(
   path.join(__dirname, "../../components/notelab/UltraNotesList.tsx"),
   "utf8",
 );
+// L13 (NoteLab visual-execution correction) — recordNoteLabExposure and
+// composeNoteNotebookSceneInBackground were lifted out of RightPanel.tsx
+// into lib/notelab/composeNotebookScene.ts, so UltraNotesList.tsx's Retry
+// action can call the same composition logic RightPanel.tsx's initial save
+// does. This describe block now reads that shared file instead.
+const composeSource = fs.readFileSync(
+  path.join(__dirname, "../../lib/notelab/composeNotebookScene.ts"),
+  "utf8",
+);
 
-describe("RightPanel.tsx — recordNoteLabExposure (composeNoteNotebookSceneInBackground)", () => {
+describe("lib/notelab/composeNotebookScene.ts — recordNoteLabExposure (composeNoteNotebookSceneInBackground)", () => {
   it("imports recordLearningEvent", () => {
-    expect(rightPanelSource).toMatch(
+    expect(composeSource).toMatch(
       /import\s*\{\s*recordLearningEvent\s*\}\s*from\s*"@\/lib\/knowledge\/recordLearningEvent"/,
     );
   });
 
   it("defines a recordNoteLabExposure helper gated on knowledgeNodeId and documentId", () => {
-    expect(rightPanelSource).toMatch(
+    expect(composeSource).toMatch(
       /function recordNoteLabExposure\(note: UltraNote\) \{\s*\n\s*if \(!note\.knowledgeNodeId \|\| !note\.documentId\) return;/,
     );
   });
 
   it("fires an exposure event with sourceType notelab, keyed to the note's own id", () => {
-    const helperMatch = rightPanelSource.match(
-      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n  \}/,
+    const helperMatch = composeSource.match(
+      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n\}/,
     );
     expect(helperMatch).toBeTruthy();
     const helperBody = helperMatch![0];
@@ -44,16 +49,16 @@ describe("RightPanel.tsx — recordNoteLabExposure (composeNoteNotebookSceneInBa
   });
 
   it("never touches understandingScore/recallScore/masteryScore directly", () => {
-    const helperMatch = rightPanelSource.match(
-      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n  \}/,
+    const helperMatch = composeSource.match(
+      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n\}/,
     );
     const helperBody = helperMatch![0];
     expect(helperBody).not.toMatch(/understandingScore|recallScore|masteryScore/);
   });
 
   it("is fire-and-forget: errors are caught and logged, never thrown into the caller", () => {
-    const helperMatch = rightPanelSource.match(
-      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n  \}/,
+    const helperMatch = composeSource.match(
+      /function recordNoteLabExposure\(note: UltraNote\) \{[\s\S]*?\n\}/,
     );
     const helperBody = helperMatch![0];
     expect(helperBody).toMatch(/\.catch\(/);
@@ -61,7 +66,7 @@ describe("RightPanel.tsx — recordNoteLabExposure (composeNoteNotebookSceneInBa
   });
 
   it("is called from the zero-canonical-units deterministic-scene branch", () => {
-    const deterministicBranch = rightPanelSource.match(
+    const deterministicBranch = composeSource.match(
       /if \(units\.length === 0\) \{[\s\S]*?\n\s*return;\s*\n\s*\}/,
     );
     expect(deterministicBranch).toBeTruthy();
@@ -69,17 +74,17 @@ describe("RightPanel.tsx — recordNoteLabExposure (composeNoteNotebookSceneInBa
   });
 
   it("is called from the main AI-synthesis success path, after the note is saved", () => {
-    const saveIdx = rightPanelSource.indexOf(
-      "await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined });",
+    const saveIdx = composeSource.indexOf(
+      'await saveUltraNote({ ...latest, notebookScene: mergedScene, notebookSceneError: undefined, notebookSceneStatus: "ready" });',
     );
-    const exposureIdx = rightPanelSource.indexOf("recordNoteLabExposure(latest);");
+    const exposureIdx = composeSource.indexOf("recordNoteLabExposure(latest);");
     expect(saveIdx).toBeGreaterThan(-1);
     expect(exposureIdx).toBeGreaterThan(saveIdx);
   });
 
   it("is not called from the catch/failure branch's own deterministic-scene fallback", () => {
-    const catchBranch = rightPanelSource.slice(rightPanelSource.indexOf("} catch (err) {"));
-    const fallbackCallEnd = catchBranch.indexOf("saveDeterministicNotebookScene(");
+    const catchBranch = composeSource.slice(composeSource.indexOf("} catch (err) {"));
+    const fallbackCallEnd = catchBranch.indexOf('notebookSceneStatus: "failed",');
     expect(fallbackCallEnd).toBeGreaterThan(-1);
     const afterFallbackCall = catchBranch.slice(fallbackCallEnd, fallbackCallEnd + 400);
     expect(afterFallbackCall).not.toMatch(/recordNoteLabExposure/);
