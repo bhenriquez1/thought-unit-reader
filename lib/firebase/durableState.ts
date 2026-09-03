@@ -190,6 +190,56 @@ export async function deleteNotebookSemanticState(notebookId: string): Promise<v
   }
 }
 
+// ── L14 — CanonicalThoughtUnit cloud mirror ─────────────────────────────────
+// CanonicalThoughtUnits (lib/canonical/store.ts) previously lived ONLY in
+// browser-local IndexedDB, never synced to Firebase. That meant NoteLab's AI
+// notebook synthesis (grounded by getCanonicalUnitsByPage) silently found
+// zero units — and produced no visual note at all — on any device/session
+// other than the one that originally processed a given book. Approved by
+// Brian: a small (~2-5 units/page), best-effort mirror under the existing
+// users/{uid}/{document=**} catch-all rule (firestore.rules) — no rules or
+// index changes required, since this is a direct document read/write by
+// full path, never a filtered query.
+function safeCanonicalUnitsPagePath(documentId: string, pageIndex: number): string {
+  return `users/[current-user]/canonicalUnits/${documentId}/pages/${pageIndex}`;
+}
+
+/** Returns null when the page has no cloud record at all (never attempted,
+ *  or never synced) — distinct from an empty array, which callers should
+ *  treat as "confirmed zero units," not "unknown." */
+export async function loadCanonicalUnitsPage(documentId: string, pageIndex: number): Promise<unknown[] | null> {
+  const { uid, db } = requireServices();
+  const path = safeCanonicalUnitsPagePath(documentId, pageIndex);
+  try {
+    const snap = await getDoc(doc(db, "users", uid, "canonicalUnits", documentId, "pages", String(pageIndex)));
+    if (!snap.exists()) return null;
+    const units = snap.data().units;
+    return Array.isArray(units) ? units : null;
+  } catch (error) {
+    logPersistenceFailure("get", path, error);
+    throw error;
+  }
+}
+
+/** Last-write-wins per page — CanonicalThoughtUnits are deterministically
+ *  re-derived from the source PDF text (lib/parser.ts's chunkTextToUnits),
+ *  never hand-edited, so unlike notebook pages there is no student-edit
+ *  conflict to guard against with a version check. */
+export async function saveCanonicalUnitsPage(documentId: string, pageIndex: number, units: unknown[]): Promise<void> {
+  const { uid, db } = requireServices();
+  const path = safeCanonicalUnitsPagePath(documentId, pageIndex);
+  try {
+    await setDoc(doc(db, "users", uid, "canonicalUnits", documentId, "pages", String(pageIndex)), {
+      documentId, pageIndex, units: withoutUndefined(units),
+      schemaVersion: DURABLE_SCHEMA_VERSION,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    logPersistenceFailure("set", path, error);
+    throw error;
+  }
+}
+
 export async function saveOwnedRecord(area: "stickyNotes" | "learningState" | "recall" | "tests" | "preferences", id: string, value: Record<string, unknown>) {
   const { uid, db } = requireServices();
   await setDoc(doc(db, "users", uid, area, id), {
