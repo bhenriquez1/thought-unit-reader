@@ -262,10 +262,16 @@ Rules:
       target node itself for node targets; use the edge's endpoint node ids for edge targets.
     - teachingGoal: what the learner should understand or be able to do after this step.
     - teachingStructure: the single semantic structure from rule 6 governing this step.
-    - visualNeeded: true only when a progressive visual materially helps. Definitions or plain
-      exposition may remain verbal on the PDF; mechanisms, procedures, spatial relationships,
-      comparisons, calculations, timelines, decision logic, and difficult interpretations often
-      benefit from a visual. Do not force every paragraph onto the Whiteboard.
+    - visualNeeded: default to false. The Reader/PDF page — its own text, figures, and highlights
+      — plus narration is the primary teaching surface; the Whiteboard is a tool Professor reaches
+      for occasionally, not its default destination. Set true ONLY when the step genuinely cannot
+      be taught well by staying on the page: a multi-step mechanism or procedure that must be built
+      up progressively, a spatial/structural relationship the page's own figure does not already
+      show, a comparison across items not already juxtaposed on the page, or a calculation/timeline
+      that benefits from being drawn out live. A definition, a relationship already visible in the
+      page's own figure, or plain exposition stays verbal (visualNeeded: false) even though it is
+      "about" a mechanism or a comparison in the abstract — judge whether THIS step needs drawing,
+      not whether its topic belongs to a category that sometimes does.
     - visualIntent: a concise semantic description of what the visual should reveal. When
       visualNeeded is true, describe an illustrative composition for the downstream tldraw
       Agent: use freehand contours, spatial sketches, hatching, pressure zones, symbols, arrows,
