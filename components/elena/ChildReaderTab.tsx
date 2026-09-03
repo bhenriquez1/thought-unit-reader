@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import ReadingBuddy from "@/components/elena/ReadingBuddy";
+import ChildWhiteboard from "@/components/elena/ChildWhiteboard";
 import type { ChildProfile, ChildLibraryEntry } from "@/lib/elena/types";
 import { detectContentProfile } from "@/lib/content/contentProfile";
 import { buildChildReadAloudText } from "@/lib/elena/storyReading";
@@ -103,6 +104,7 @@ export default function ChildReaderTab({
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [reading, setReading] = useState(false);
   const [spokenWord, setSpokenWord] = useState("");
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
 
   const stopReadAloud = useCallback(() => {
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
@@ -172,6 +174,13 @@ export default function ChildReaderTab({
         <div className="min-w-0 flex-1 truncate text-xs text-fuchsia-100/60">
           {reading ? <>Reading in page order · <mark className="rounded bg-yellow-300/70 px-1 text-slate-950">{spokenWord || "…"}</mark></> : "Dialogue and story text stay in source order."}
         </div>
+        <button
+          type="button"
+          onClick={() => setShowWhiteboard(v => !v)}
+          className="flex-shrink-0 rounded-xl bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30"
+        >
+          {showWhiteboard ? "📖 Back to book" : "🎨 Draw this page"}
+        </button>
       </div>
 
       {library.length > 1 && (
@@ -194,15 +203,24 @@ export default function ChildReaderTab({
       )}
 
       <div className="flex-shrink-0 mx-4 mb-3 h-[52vh] min-h-[320px] rounded-2xl overflow-hidden border border-white/10">
-        <SmartPDFViewer
-          fileUrl={bookFileUrl}
-          docId={activeBook.documentId}
-          pageTruthKey={`${activeBook.documentId}::${activeBook.currentPage}::t`}
-          currentPage={activeBook.currentPage}
-          onPageChange={onPageChange}
-          onPageCount={onPageCount}
-          onPageTextExtracted={onPageTextExtracted}
-        />
+        {showWhiteboard ? (
+          <ChildWhiteboard
+            documentId={activeBook.documentId}
+            currentPage={activeBook.currentPage}
+            bookTitle={activeBook.title}
+            onClose={() => setShowWhiteboard(false)}
+          />
+        ) : (
+          <SmartPDFViewer
+            fileUrl={bookFileUrl}
+            docId={activeBook.documentId}
+            pageTruthKey={`${activeBook.documentId}::${activeBook.currentPage}::t`}
+            currentPage={activeBook.currentPage}
+            onPageChange={onPageChange}
+            onPageCount={onPageCount}
+            onPageTextExtracted={onPageTextExtracted}
+          />
+        )}
       </div>
 
       <div className="flex-1 min-h-0 px-4 pb-4">

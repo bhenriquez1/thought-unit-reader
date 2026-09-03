@@ -207,6 +207,13 @@ interface Props {
    *  passed straight through to the Professor Lesson Planner so it teaches
    *  in a style that matches what kind of page this actually is. */
   pageTeachingType?:       string | null;
+  /** L18/L19 — who this lesson is being taught to. Passed straight through
+   *  to useProfessorLesson, which defaults it to "adult" when omitted — the
+   *  adult Reader (the only caller until L19) never sets this, so its
+   *  behavior is byte-for-byte unchanged. Elena Mode's ChildWhiteboard is
+   *  the first real "child" caller, selecting the simpler Director/runtime-
+   *  agent prompt variants L18 already wired end to end. */
+  audience?:               "adult" | "child";
   /** Start the full Professor performance as soon as the validated plan is
    * ready. Manual Whiteboard entry leaves this false and keeps existing
    * controls unchanged. */
@@ -385,7 +392,7 @@ function emphasisOverlaySpec(treatment: EmphasisTreatment, bounds: Bounds, seque
 export default function TldrawCanvas({
   noteCards, pageTitle, whiteboardGrammar = "flow",
   onAnchorClick, vsg, activeAnchorId, storageKey,
-  documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType,
+  documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType, audience,
   autoStartProfessor = false, onProfessorSurfaceChange,
   onTeachingStepStarted, onTeachingStepCompleted, onLessonCompleted,
 }: Props) {
@@ -452,6 +459,7 @@ export default function TldrawCanvas({
     pageTruthKey: effectivePageTruthKey,
     activeCanonicalUnitId: activeCanonicalUnitId ?? null,
     pageTeachingType: pageTeachingType ?? null,
+    audience,
     enabled: !!derivedVsg,
   });
 
