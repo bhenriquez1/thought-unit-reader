@@ -477,3 +477,92 @@ describe("computeVisualDensityDiagnostic", () => {
     expect(computeVisualDensityDiagnostic([shape], { x: 0, y: 0, w: 0, h: 0 }).canvasUtilizationRatio).toBe(0);
   });
 });
+
+// L15 (Whiteboard composable primitives, following Brian's Armando-Hasudungan-
+// style direction) — drawCrossSection/shadeRegion/circleFeature/
+// crossOutMisconception are new semantic TOOLS the agent can call, but each
+// decomposes into the SAME small set of rendering primitives (draw-freehand,
+// draw-shape) the runtime already draws — no renderer changes. This is
+// schema + verifier plumbing only; the runtime agent prompt isn't told about
+// these yet (L16), so these tests exercise verifyProfessorTldrawAgentResponse
+// directly with hand-built tool calls.
+describe("Professor tldraw Agent — L15 composable primitives", () => {
+  it("REQUIRED: drawCrossSection and shadeRegion reuse the exact same freehand pipeline as drawAnatomySketch — same action shape, just a different visualRole tag", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      model: "claude-test", stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawCrossSection", localId: "cross-section", sourceTargetId: "source-one", points: [{ x: 0, y: 0 }, { x: 40, y: 40 }, { x: 80, y: 0 }], color: "black", size: "m", dash: "draw", isPen: true, closed: true, fill: "pattern" },
+        { tool: "shadeRegion", localId: "shade", sourceTargetId: "source-one", points: [{ x: 0, y: 0 }, { x: 20, y: 20 }], color: "grey", size: "m", dash: "draw", isPen: true, closed: true, fill: "solid" },
+      ],
+    });
+    const crossSection = verified.actions.find(a => a.type === "draw-freehand" && a.visualRole === "drawCrossSection") as any;
+    const shade = verified.actions.find(a => a.type === "draw-freehand" && a.visualRole === "shadeRegion") as any;
+    expect(crossSection).toBeTruthy();
+    expect(shade).toBeTruthy();
+    expect(crossSection.shapeId).toBe("shape:prof-agent-1-cross-section");
+    expect(crossSection.targetId).toBe("source-one");
+    expect(crossSection.closed).toBe(true);
+  });
+
+  it("REQUIRED: circleFeature produces a fill:none circle draw-shape, grounded and clamped exactly like drawSymbol", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      model: "claude-test", stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "circleFeature", localId: "ring", sourceTargetId: "source-one", bounds: { x: -999, y: -999, w: 40, h: 40 }, color: "red", size: "m" },
+      ],
+    });
+    const ring = verified.actions.find(a => a.type === "draw-shape" && a.visualRole === "circleFeature") as any;
+    expect(ring).toBeTruthy();
+    expect(ring.shape).toBe("circle");
+    expect(ring.visualStyle.fill).toBe("none");
+    expect(ring.targetId).toBe("source-one");
+    // clamped into the expanded focus region, not left at the wildly out-of-bounds input
+    expect(ring.bounds.x).toBeGreaterThan(-999);
+  });
+
+  it("REQUIRED: circleFeature is deliberately-unlabeled — never counted as an empty container even with no attached label", () => {
+    const ring: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:ring", targetId: "s", shape: "circle", bounds: { x: 0, y: 0, w: 40, h: 40 }, visualRole: "circleFeature", durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([ring], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.emptyContainerCount).toBe(0);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(1);
+  });
+
+  it("REQUIRED: crossOutMisconception synthesizes two crossing freehand strokes from one tool call/localId — the agent picks WHERE, not how to draw an X", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      model: "claude-test", stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "crossOutMisconception", localId: "wrong-answer", sourceTargetId: "source-one", bounds: { x: 10, y: 10, w: 30, h: 30 }, color: "red", size: "m" },
+      ],
+    });
+    const strokes = verified.actions.filter(a => a.type === "draw-freehand" && a.visualRole === "crossOutMisconception");
+    expect(strokes.length).toBe(2);
+    // distinct shapeIds — tldraw needs a unique record id per visible stroke
+    const shapeIds = new Set(strokes.map(s => (s as any).shapeId));
+    expect(shapeIds.size).toBe(2);
+    // one localId accepted once, not twice, even though it produced 2 actions
+    expect(verified.localIds.filter(id => id === "wrong-answer").length).toBe(1);
+    for (const stroke of strokes) expect((stroke as any).targetId).toBe("source-one");
+  });
+
+  it("REQUIRED: an ungrounded sourceTargetId is rejected for every new tool, same as every existing one", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS })!;
+    const verified = verifyProfessorTldrawAgentResponse(request, {
+      model: "claude-test", stepId: 1, pass: "execute", complete: true,
+      assessment: { needsCorrection: false, issues: [] },
+      actions: [
+        { tool: "drawCrossSection", localId: "bad-1", sourceTargetId: "not-allowed", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], color: "black", size: "m", dash: "draw", isPen: true, closed: true, fill: "pattern" },
+        { tool: "circleFeature", localId: "bad-2", sourceTargetId: "not-allowed", bounds: { x: 0, y: 0, w: 10, h: 10 }, color: "red", size: "m" },
+        { tool: "crossOutMisconception", localId: "bad-3", sourceTargetId: "not-allowed", bounds: { x: 0, y: 0, w: 10, h: 10 }, color: "red", size: "m" },
+      ],
+    });
+    expect(verified.actions.length).toBe(1); // only the camera guardrail
+    expect(verified.actions[0].type).toBe("move-camera");
+    expect(verified.rejectedActionCount).toBe(3);
+  });
+});

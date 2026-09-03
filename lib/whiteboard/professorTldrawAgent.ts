@@ -22,7 +22,15 @@ const FillSchema = z.enum(["none", "semi", "solid", "pattern"]);
 const LocalIdSchema = z.string().min(1).max(48).regex(/^[a-zA-Z0-9_-]+$/);
 
 const FreehandToolSchema = z.object({
-  tool: z.enum(["drawFreehandStroke", "drawAnatomySketch", "drawMuscle", "drawBone", "drawNerve", "drawHatching", "drawBrace", "drawBracket"]),
+  // L15 (Whiteboard composable primitives) — drawCrossSection/shadeRegion
+  // are deliberately just two more named roles on this SAME points-based
+  // freehand tool, not new schema/renderer surface: a cross-section is a
+  // closed contour (optionally with an internal divider stroke, drawn as a
+  // second drawCrossSection call) and a shaded region is a closed, filled
+  // area — both already exactly what this tool draws. Composable vocabulary
+  // means new TEACHING semantics reuse the existing small set of rendering
+  // primitives, not a growing renderer.
+  tool: z.enum(["drawFreehandStroke", "drawAnatomySketch", "drawMuscle", "drawBone", "drawNerve", "drawHatching", "drawBrace", "drawBracket", "drawCrossSection", "shadeRegion"]),
   localId: LocalIdSchema,
   sourceTargetId: z.string().max(160).nullable().optional(),
   points: z.array(AgentPointSchema).min(2).max(64),
@@ -97,6 +105,36 @@ const NumberToolSchema = z.object({
   color: ColorSchema.default("violet"),
 });
 
+// L15 (Whiteboard composable primitives) — a hand-drawn ring AROUND
+// already-drawn content to direct attention to it, distinct from drawSymbol
+// (which draws a new structural shape). Composable: reuses the exact same
+// "circle" draw-shape rendering drawSymbol already has, just fill:"none"
+// and its own visualRole so it's treated as a deliberately-unlabeled
+// annotation (like drawPressureZone/highlightRegion) rather than an empty
+// container needing its own label.
+const CircleFeatureToolSchema = z.object({
+  tool: z.literal("circleFeature"),
+  localId: LocalIdSchema,
+  sourceTargetId: z.string().max(160).nullable().optional(),
+  bounds: AgentBoundsSchema,
+  color: ColorSchema.default("red"),
+  size: SizeSchema.default("m"),
+});
+
+// A strike/X mark over an existing wrong-answer or misconception region —
+// pairs with a "warn" tone narration. Composable: synthesized as two
+// crossing draw-freehand strokes from the given bounds at verification
+// time (see verifyProfessorTldrawAgentResponse), so it needs no new
+// renderer primitive — the agent only decides WHERE, not how to draw an X.
+const CrossOutToolSchema = z.object({
+  tool: z.literal("crossOutMisconception"),
+  localId: LocalIdSchema,
+  sourceTargetId: z.string().max(160).nullable().optional(),
+  bounds: AgentBoundsSchema,
+  color: ColorSchema.default("red"),
+  size: SizeSchema.default("m"),
+});
+
 const EraseToolSchema = z.object({
   tool: z.literal("eraseRegion"),
   targetLocalId: LocalIdSchema,
@@ -117,6 +155,8 @@ export const ProfessorTldrawToolCallSchema = z.union([
   ZoneToolSchema,
   CalloutToolSchema,
   NumberToolSchema,
+  CircleFeatureToolSchema,
+  CrossOutToolSchema,
   EraseToolSchema,
   CameraToolSchema,
 ]);
@@ -307,7 +347,10 @@ export function computeVisualDensityDiagnostic(
   actions: ProfessorTeachingAction[],
   activeTeachingBounds: Bounds | null,
 ): VisualDensityDiagnostic {
-  const DELIBERATELY_UNLABELED_ROLES = new Set(["drawPressureZone", "highlightRegion"]);
+  // L15 — circleFeature joins this set for the same reason as the original
+  // two: it's an annotation ring drawn AROUND already-drawn content to
+  // direct attention to it, not a new container that needs its own label.
+  const DELIBERATELY_UNLABELED_ROLES = new Set(["drawPressureZone", "highlightRegion", "circleFeature"]);
   const drawShapeIds = new Set(
     actions.filter((a): a is Extract<ProfessorTeachingAction, { type: "draw-shape" }> => a.type === "draw-shape").map(a => a.shapeId),
   );
@@ -602,7 +645,7 @@ export function verifyProfessorTldrawAgentResponse(
     }
 
     const shapeId = stableShapeId(stepId, call.localId);
-    if (call.tool === "drawFreehandStroke" || call.tool === "drawAnatomySketch" || call.tool === "drawMuscle" || call.tool === "drawBone" || call.tool === "drawNerve" || call.tool === "drawHatching" || call.tool === "drawBrace" || call.tool === "drawBracket") {
+    if (call.tool === "drawFreehandStroke" || call.tool === "drawAnatomySketch" || call.tool === "drawMuscle" || call.tool === "drawBone" || call.tool === "drawNerve" || call.tool === "drawHatching" || call.tool === "drawBrace" || call.tool === "drawBracket" || call.tool === "drawCrossSection" || call.tool === "shadeRegion") {
       const points = call.points.map(point => clampPoint(point, region));
       if (points.length < 2) continue;
       push({
@@ -756,6 +799,78 @@ export function verifyProfessorTldrawAgentResponse(
         text: String(call.number), x: bounds.x + bounds.w / 3, y: bounds.y + bounds.h / 4,
         visualStyle: { color: "black", size: "s" }, visualRole: call.tool, durationMs: 130, stepId,
       });
+      continue;
+    }
+
+    if (call.tool === "circleFeature") {
+      const bounds = clampBounds(call.bounds, region);
+      push({
+        type: "draw-shape",
+        actionId: actionId(call.localId, "circle-feature"),
+        shapeId,
+        targetId: sourceTarget(call, allowedSources),
+        shape: "circle",
+        bounds,
+        visualStyle: { color: call.color, fill: "none", dash: "draw", size: call.size },
+        visualRole: call.tool,
+        durationMs: 200,
+        stepId,
+      });
+      continue;
+    }
+
+    if (call.tool === "crossOutMisconception") {
+      // Synthesized, not agent-drawn: the agent decides WHERE (bounds) and
+      // the verifier draws the actual X as two crossing freehand strokes —
+      // same "composable, not a growing renderer" reasoning as
+      // drawCrossSection/shadeRegion above, just synthesized here instead
+      // of left to the agent's own stroke points.
+      //
+      // KNOWN LIMITATION: the two strokes get distinct shapeIds (`-a`/`-b`
+      // suffixes on this call's own stableShapeId) because tldraw needs a
+      // unique record id per visible shape — reusing one bare shapeId here
+      // would make the second createShape silently replace the first
+      // (unlike drawCallout/drawNumberBadge's shape+label pair, where the
+      // "write" action is special-cased to MERGE onto an existing shapeId
+      // rather than create an independent record). The cost: eraseRegion's
+      // `stableShapeId(stepId, call.targetLocalId)` computes the bare id,
+      // so it cannot currently find/remove either suffixed stroke — a
+      // crossOutMisconception mark this pass creates is not erasable by
+      // this same pass's inspect step. Narrow enough (the deterministic
+      // per-step rebuild already clears the whole teaching layer between
+      // steps) to accept for this phase rather than reworking erase to
+      // track one-to-many localId->shapeId — flag for L16/L17 if the
+      // agent's own inspect pass turns out to need it.
+      const bounds = clampBounds(call.bounds, region);
+      const targetId = sourceTarget(call, allowedSources);
+      const strokeStyle = { color: call.color, size: call.size, dash: "draw" as const, fill: "none" as const };
+      push({
+        type: "draw-freehand",
+        actionId: actionId(call.localId, "crossout-a"),
+        shapeId: `${shapeId}-a`,
+        targetId,
+        points: [{ x: bounds.x, y: bounds.y }, { x: bounds.x + bounds.w, y: bounds.y + bounds.h }],
+        visualStyle: strokeStyle,
+        visualRole: call.tool,
+        isPen: true,
+        closed: false,
+        durationMs: 180,
+        stepId,
+      });
+      push({
+        type: "draw-freehand",
+        actionId: actionId(call.localId, "crossout-b"),
+        shapeId: `${shapeId}-b`,
+        targetId,
+        points: [{ x: bounds.x + bounds.w, y: bounds.y }, { x: bounds.x, y: bounds.y + bounds.h }],
+        visualStyle: strokeStyle,
+        visualRole: call.tool,
+        isPen: true,
+        closed: false,
+        durationMs: 180,
+        stepId,
+      });
+      continue;
     }
   }
 
