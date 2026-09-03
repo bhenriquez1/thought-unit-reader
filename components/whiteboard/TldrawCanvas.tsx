@@ -90,16 +90,19 @@ const SPEECH_OWNER = "whiteboard" as const;
 const PROFESSOR_VOICE = "onyx";
 const PROFESSOR_AGENT_MAX_PASSES = 3;
 const PROFESSOR_AGENT_STRICT = process.env.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT === "true";
-// R2 (Phase 0 stabilization item 6 follow-up) — the pre-existing pass-0 gate
-// below only requires nontrivialVisualCount > 0, which a response of "9
-// generic boxes + 1 real arrow" still satisfies at a richness ratio of just
-// 0.10 (proven by tests/whiteboard/professorVisualRichness.test.ts, written
-// when this was measured but deliberately left unenforced). That test file's
-// own proposal — whichever of these two is looser — is applied here, but
-// ONLY behind PROFESSOR_AGENT_STRICT, per its explicit caution not to
-// promote a threshold derived from synthetic fixtures into the production
-// fallback path without live telemetry behind it. Non-strict/production
-// behavior is completely unchanged.
+// L12 (Whiteboard visual-execution correction) — the richness-ratio and
+// empty-container checks below used to be gated behind PROFESSOR_AGENT_STRICT
+// (default false; nothing in this repo ever set it true), so WD3's density
+// diagnostic was computed every pass but never actually rejected a live
+// production response — the only check that ever ran in production was the
+// much weaker nontrivialVisualCount === 0 floor below, which a response of
+// "9 generic boxes + 1 real arrow" still satisfies at a richness ratio of
+// just 0.10 (proven by tests/whiteboard/professorVisualRichness.test.ts).
+// Both checks now run unconditionally in every environment. PROFESSOR_AGENT_
+// STRICT still controls only resolveProfessorAgentFailure's
+// shouldStopPlayback — a rejection here degrades to the deterministic M7
+// layout (which always self-labels every shape) in production, and stops
+// playback outright only in strict dev/test mode.
 const VISUAL_RICHNESS_RATIO_FLOOR = 0.3;
 const VISUAL_RICHNESS_COUNT_FLOOR = 3;
 // Correction (Whiteboard density) — "if it creates five shapes and three of
@@ -107,8 +110,6 @@ const VISUAL_RICHNESS_COUNT_FLOOR = 3;
 // Both conditions must hold: an absolute floor (a single stray empty shape
 // among many real ones isn't a systemic problem) AND a ratio ceiling (empty
 // containers must be at least HALF of what got drawn, not just present).
-// Same PROFESSOR_AGENT_STRICT-only gating as VISUAL_RICHNESS_*, per the
-// explicit decision to validate this before it affects every lesson.
 const EMPTY_CONTAINER_COUNT_FLOOR = 3;
 const EMPTY_CONTAINER_RATIO_CEILING = 0.5;
 
@@ -1075,11 +1076,11 @@ export default function TldrawCanvas({
         if (passIndex === 0 && nontrivialVisualCount === 0) {
           throw new ProfessorAgentRequestError("no_visual_actions");
         }
-        // See VISUAL_RICHNESS_RATIO_FLOOR's comment above — strict-mode-only,
-        // and only reachable once the zero-nontrivial case above has already
-        // been ruled out, so this is specifically the "technically cleared
-        // the floor but is still mostly generic boxes" case.
-        if (PROFESSOR_AGENT_STRICT && passIndex === 0) {
+        // See VISUAL_RICHNESS_RATIO_FLOOR's comment above — only reachable
+        // once the zero-nontrivial case above has already been ruled out, so
+        // this is specifically the "technically cleared the floor but is
+        // still mostly generic boxes" case.
+        if (passIndex === 0) {
           const richnessRatio = totalActions > 0 ? nontrivialVisualCount / totalActions : 0;
           const passesRichnessFloor =
             richnessRatio >= VISUAL_RICHNESS_RATIO_FLOOR || nontrivialVisualCount >= VISUAL_RICHNESS_COUNT_FLOOR;

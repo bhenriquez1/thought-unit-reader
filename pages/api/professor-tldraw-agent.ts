@@ -50,6 +50,8 @@ Tool-call JSON forms:
 - erase: {"tool":"eraseRegion","targetLocalId":"EXACT prior id"}
 - camera: {"tool":"moveCamera|zoomTo|panTo|focusNode","localId":"...","bounds":{"x":0,"y":0,"w":500,"h":350},"retainShapeIds":[]}
 
+EMPTY CONTAINERS ARE REJECTED. A drawSymbol shape (rectangle/ellipse/diamond/hexagon/cloud/line) with no writeLabel ever attached to it (via attachToLocalId matching that shape's own localId) is an empty container. This whole step is rejected and replaced with a plain deterministic layout if too many of your shapes end up empty — so either attach a writeLabel to every drawSymbol shape you create in the SAME pass, or use drawCallout (which always carries its own label) instead. The only shapes allowed to stay unlabeled are drawPressureZone and highlightRegion — translucent regions, not factual containers. When in doubt, prefer a freehand stroke, arrow, or labeled callout over a bare drawSymbol shape.
+
 For execute: inspect the screenshot and structured shapes, then return a small progressive action sequence for THIS step. Use freehand strokes, arrows, spatial symbols, hatching and restrained color where they improve teaching. Do not merely reproduce every fallback rectangle.
 
 For inspect: inspect the UPDATED screenshot after your execute actions. If there is overlap, unclear emphasis, poor camera framing, or a missing relation already present in the validated step, return only local corrections. Otherwise return no actions. Never regenerate the entire board.

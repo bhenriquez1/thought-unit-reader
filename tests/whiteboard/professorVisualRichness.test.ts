@@ -1,14 +1,17 @@
 // tests/whiteboard/professorVisualRichness.test.ts
-// Stabilization item 6 — Whiteboard visual richness: measure first, don't
-// enforce yet.
+// Stabilization item 6 — Whiteboard visual richness, originally measure-
+// only. L12 (Whiteboard visual-execution correction) made the richness-ratio
+// and empty-container checks below enforce unconditionally in every
+// environment — they used to be gated behind PROFESSOR_AGENT_STRICT (default
+// false, never set true anywhere in the repo), so they were computed but
+// never actually rejected a live production response.
 //
-// components/whiteboard/TldrawCanvas.tsx's ensureRuntimeAgentVisualStep now
+// components/whiteboard/TldrawCanvas.tsx's ensureRuntimeAgentVisualStep
 // tracks, per agent run: totalActions, trivialActions, freehandCount (in
 // addition to the existing executeActions/correctionActions/cameraCommands/
 // nontrivialVisualCount/actualTldrawShapeDelta/fallbackReason), and a
 // calculated visualRichnessRatio = nontrivialVisualCount / totalActions.
-// These are pure instrumentation — nothing in production reads them to
-// reject a response. This file:
+// This file:
 //   1. Proves the metrics are actually wired (source-inspection — no
 //      jsdom/tldraw-editor harness in this repo for a real render).
 //   2. REPORTS, with real behavioral fixtures against the actual exported
@@ -51,22 +54,28 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
     expect(occurrences).toBe(2);
   });
 
-  // R2 — the richness ratio is now enforced, closing exactly the gap this
+  // R2 — the richness ratio is enforced, closing exactly the gap this
   // file's Part 2 fixtures below documented ("9 boxes + 1 arrow" used to
-  // pass at a ratio of 0.10). Only behind PROFESSOR_AGENT_STRICT, per this
-  // file's own original caution not to promote a synthetic-fixture-derived
-  // threshold into the production fallback path without live telemetry —
-  // production/non-strict behavior is unchanged from before R2.
-  it("REQUIRED (R2): a new low_visual_richness rejection site exists, gated behind PROFESSOR_AGENT_STRICT, applied only after the zero-nontrivial case is already ruled out", () => {
+  // pass at a ratio of 0.10).
+  //
+  // L12 (Whiteboard visual-execution correction) — this and empty_containers
+  // used to be gated behind PROFESSOR_AGENT_STRICT (default false, never set
+  // true anywhere in the repo), so neither ever actually rejected a live
+  // production response — WD3's density diagnostic was computed every pass
+  // but never acted on. Both now run unconditionally in every environment;
+  // PROFESSOR_AGENT_STRICT continues to control only whether a rejection
+  // stops playback outright (dev/test) or degrades to the deterministic
+  // fallback layout (production) — see resolveProfessorAgentFailure.
+  it("REQUIRED (R2): a new low_visual_richness rejection site exists, unconditional (not STRICT-gated), applied only after the zero-nontrivial case is already ruled out", () => {
     // Correction (Whiteboard density) added a 6th site: empty_containers,
-    // same PROFESSOR_AGENT_STRICT-only gating, right alongside this one —
-    // see the dedicated describe block below.
+    // same unconditional gating, right alongside this one — see the
+    // dedicated describe block below.
     const rejectionSites = (src.match(/throw new ProfessorAgentRequestError\(/g) ?? []).length;
     expect(rejectionSites).toBe(6); // the pre-existing 4, this one, and empty_containers
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("low_visual_richness"\);/);
     const idx = src.indexOf('throw new ProfessorAgentRequestError("no_visual_actions");');
     const block = src.slice(idx, idx + 600);
-    expect(block).toMatch(/if \(PROFESSOR_AGENT_STRICT && passIndex === 0\) \{/);
+    expect(block).toMatch(/if \(passIndex === 0\) \{/);
   });
 
   it("REQUIRED (R2): the richness floor matches this file's own original proposal — ratio >= 0.3 OR nontrivialVisualCount >= 3, whichever is looser", () => {
@@ -77,9 +86,10 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
     );
   });
 
-  it("production/non-strict behavior is unchanged — the new check is unreachable when PROFESSOR_AGENT_STRICT is false", () => {
-    const idx = src.indexOf("if (PROFESSOR_AGENT_STRICT && passIndex === 0) {");
+  it("REQUIRED (L12): the richness/empty-container block is reachable regardless of PROFESSOR_AGENT_STRICT — no 'PROFESSOR_AGENT_STRICT &&' guard remains on it", () => {
+    const idx = src.indexOf("if (passIndex === 0) {");
     expect(idx).toBeGreaterThan(-1);
+    expect(src).not.toMatch(/if \(PROFESSOR_AGENT_STRICT && passIndex === 0\)/);
   });
 
   it("the DEV debug strip surfaces the new metrics for a developer inspecting a real run", () => {
@@ -246,15 +256,15 @@ describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density cor
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("empty_containers"\);/);
   });
 
-  it("REQUIRED: gated behind PROFESSOR_AGENT_STRICT, alongside (not instead of) the richness-floor check — production/non-strict behavior unchanged", () => {
+  it("REQUIRED (L12): runs unconditionally, alongside (not instead of) the richness-floor check — both live in the same unconditional block, no PROFESSOR_AGENT_STRICT guard", () => {
     const idx = src.indexOf('throw new ProfessorAgentRequestError("low_visual_richness");');
     const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/tooManyEmptyContainers/);
     expect(block).toMatch(/throw new ProfessorAgentRequestError\("empty_containers"\);/);
-    // Both checks live inside the SAME `if (PROFESSOR_AGENT_STRICT && passIndex === 0)` block opened above them.
-    const strictIdx = src.indexOf("if (PROFESSOR_AGENT_STRICT && passIndex === 0) {");
-    expect(strictIdx).toBeGreaterThan(-1);
-    expect(strictIdx).toBeLessThan(idx);
+    // Both checks live inside the SAME `if (passIndex === 0)` block opened above them.
+    const gateIdx = src.indexOf("if (passIndex === 0) {");
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(gateIdx).toBeLessThan(idx);
   });
 
   it("REQUIRED: empty_containers is a real ProfessorAgentFailureReason value", () => {
