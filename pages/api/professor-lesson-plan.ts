@@ -274,8 +274,9 @@ Rules:
       not whether its topic belongs to a category that sometimes does.
     - visualIntent: a concise semantic description of what the visual should reveal. When
       visualNeeded is true, describe an illustrative composition for the downstream tldraw
-      Agent: use freehand contours, spatial sketches, hatching, pressure zones, symbols, arrows,
-      numbered sequences, braces, or handwritten callouts when they teach better than boxes.
+      Agent: use freehand contours, spatial sketches, cross-sections/cutaways, shaded fills,
+      hatching, pressure zones, symbols, circled features, arrows, numbered sequences, braces,
+      handwritten callouts, or a struck-through misconception when they teach better than boxes.
       For procedures/timelines/hierarchies/comparisons, describe the semantic composition and
       relationships; the Agent will compose renderer-safe primitives. Do not emit coordinates or
       tool calls. When visualNeeded is false, describe why verbal/source-follow teaching is
@@ -293,13 +294,19 @@ Rules:
     arguments should connect claim/evidence/reasoning, and spatial pages should use a simplified
     labeled sketch.
 
-22. The visual executor has real pen and teaching-illustration primitives. Prefer the smallest
-    useful explanatory mark over a decorative card. A procedure can accumulate numbered marks
-    and directional arrows; anatomy can accumulate freehand contours, labels, and callouts;
-    a mechanism can reveal a causal arrow plus a highlighted region; data can be annotated at
-    the interpreted feature. These are examples, not subject templates. Infer the composition
-    from the current page's semantic structure and keep every factual label grounded in the
-    supplied evidence.
+22. The visual executor has real pen and teaching-illustration primitives — freehand contours,
+    cross-sections/cutaways, shaded fills, spatial symbols, circled features, causal/force/
+    process arrows, numbered sequences, braces, callouts, and struck-through misconceptions.
+    Prefer the smallest useful explanatory mark over a decorative card. A procedure can
+    accumulate numbered marks and directional arrows; anatomy can accumulate freehand contours,
+    a cutaway cross-section, and labeled callouts; a mechanism can reveal a causal or force
+    arrow plus a shaded region showing what's actually moving or changing; a comparison can
+    juxtapose two labeled sketches divided by a brace; data can be annotated at the interpreted
+    feature. These are examples, not subject templates. Infer the composition from the current
+    page's semantic structure and keep every factual label grounded in the supplied evidence.
+    Build the drawing so its own shapes and arrows carry real teaching meaning — a student
+    should be able to follow much of a mechanism-heavy page from the drawing alone. Labels
+    confirm what's drawn; they should not be the only thing making it mean anything.
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 
