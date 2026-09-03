@@ -87,6 +87,32 @@ Return JSON only with:
 {"stepId":number,"pass":"execute|inspect","assessment":{"needsCorrection":boolean,"issues":string[]},"actions":ToolCall[],"complete":boolean}
 Do not include markdown or commentary.`;
 
+// L18 — appended (never substituted) onto SYSTEM_PROMPT when the request
+// carries audience:"child" (see ProfessorTldrawAgentRequestSchema/
+// buildProfessorTldrawAgentRequest, lib/whiteboard/professorTldrawAgent.ts).
+// An omitted/"adult" audience sends SYSTEM_PROMPT alone, byte-for-byte
+// unchanged from before this field existed. Every grounding/rejection rule
+// above still applies in full — this only narrows the DRAWING STYLE.
+const CHILD_AGENT_APPENDIX = `
+
+CHILD AUDIENCE OVERRIDE — this step is for a young child reading in Elena Mode. Draw simpler:
+- Prefer drawFreehandStroke, drawSymbol (simple friendly shapes — a circle, a rounded box, a
+  cloud), circleFeature, drawFlowArrow, drawCallout, drawNumberBadge, and writeLabel.
+- Avoid drawAnatomySketch/drawMuscle/drawBone/drawNerve, drawCrossSection, shadeRegion, and
+  drawHatching/drawBrace/drawBracket — these read as clinical/technical precision, not a
+  child-friendly sketch, even on a page whose SOURCE content is medical or scientific:
+  re-express the same grounded fact as a simple recognizable shape instead of a structural
+  cutaway.
+- One clear idea per step: fewer total shapes than an adult step would use, each one bigger
+  and simpler. Prefer reusing one clear visual motif across steps over introducing many
+  different unfamiliar shapes.
+- Bright, friendly, high-contrast colors. Keep every label short (matching the Director's own
+  shortLabel length for this audience) and in plain words — never the technical term the
+  source page uses, even when that term is in allowedLabels; use the simplest grounded phrase
+  from narration/relationships/sourceEvidenceText instead when one is available.
+- crossOutMisconception is still fine for "not this" moments — a big friendly X, not a clinical
+  correction mark.`;
+
 function textFromMessage(message: Anthropic.Message): string {
   return message.content
     .filter(block => block.type === "text")
@@ -131,11 +157,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         source: { type: "base64", media_type: "image/png", data: screenshotBase64 },
       });
     }
+    const systemPrompt = request.data.audience === "child" ? SYSTEM_PROMPT + CHILD_AGENT_APPENDIX : SYSTEM_PROMPT;
     const message = await client.messages.create({
       model: MODEL,
       max_tokens: 3600,
       temperature: 0,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content }],
     });
     const raw = textFromMessage(message).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");

@@ -190,4 +190,21 @@ describe("buildProfessorLessonCacheKey — documentId + pageTruthKey + activeCan
     const params = { documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: "u1", vsgId: "vsg-a" };
     expect(buildProfessorLessonCacheKey(params)).toBe(buildProfessorLessonCacheKey(params));
   });
+
+  // L18 — an "adult" plan and a "child" plan for the SAME page must never
+  // collide in the cache, but every existing (audience-less) caller's key
+  // must stay byte-for-byte identical to before this field existed.
+  it("REQUIRED (L18): omitting audience produces the exact same key as before this field existed — no suffix, adult path unchanged", () => {
+    const withoutField = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
+    const explicitAdult = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a", audience: "adult" });
+    expect(withoutField).toBe(`plesson:v${PLANNER_VERSION}:doc-1:doc-1::4::t:none:vsg-a`);
+    expect(explicitAdult).toBe(withoutField);
+  });
+
+  it("REQUIRED (L18): audience: 'child' produces a distinct key from the same page's adult key", () => {
+    const adult = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a" });
+    const child = buildProfessorLessonCacheKey({ documentId: "doc-1", pageTruthKey: "doc-1::4::t", activeCanonicalUnitId: null, vsgId: "vsg-a", audience: "child" });
+    expect(child).not.toBe(adult);
+    expect(child).toContain("child");
+  });
 });

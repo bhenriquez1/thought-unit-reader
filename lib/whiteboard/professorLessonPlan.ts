@@ -467,6 +467,13 @@ export interface ProfessorLessonSourceSnapshot {
    *  still correct to reuse. */
   vsgId:                 string;
   plannerVersion:         number;
+  /** L18 — caller-supplied, never inferred: which register/visual-complexity
+   *  the Director and runtime tldraw agent should teach at. Optional and
+   *  defaults to "adult" everywhere it's read (the API routes, the cache
+   *  key below) so the existing adult Reader — still the only real caller —
+   *  is byte-for-byte unchanged by this field's addition. Set by Elena Mode
+   *  once it has its own Whiteboard integration. */
+  audience?:              "adult" | "child";
 }
 
 export interface ProfessorLessonPlan {
@@ -569,7 +576,14 @@ export function buildProfessorLessonCacheKey(params: {
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
   vsgId: string;
+  /** L18 — an "adult" plan and a "child" plan for the SAME page must never
+   *  collide in the cache. Omitted (or "adult") leaves the key exactly as
+   *  it was before this field existed — only a "child" audience appends a
+   *  suffix, so every existing adult-only caller's cache key, and every
+   *  cache entry already written before this phase, is unaffected. */
+  audience?: "adult" | "child";
 }): string {
-  const { documentId, pageTruthKey, activeCanonicalUnitId, vsgId } = params;
-  return `plesson:v${PLANNER_VERSION}:${documentId}:${pageTruthKey}:${activeCanonicalUnitId ?? "none"}:${vsgId}`;
+  const { documentId, pageTruthKey, activeCanonicalUnitId, vsgId, audience } = params;
+  const suffix = audience === "child" ? ":child" : "";
+  return `plesson:v${PLANNER_VERSION}:${documentId}:${pageTruthKey}:${activeCanonicalUnitId ?? "none"}:${vsgId}${suffix}`;
 }

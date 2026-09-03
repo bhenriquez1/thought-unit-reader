@@ -310,9 +310,42 @@ Rules:
 
 Respond with a ProfessorLessonScript matching the required structure exactly.`;
 
+// L18 — appended (never substituted) onto SYSTEM_PROMPT for a "child"
+// audience, keeping the adult path byte-for-byte unchanged (audience
+// omitted/"adult" sends SYSTEM_PROMPT alone, exactly as before this field
+// existed). Placed last so it reads as an override of the preceding rules
+// rather than competing with them. Still fully static, developer-authored
+// text selected by a validated enum — never influenced by request-supplied
+// free text — so this preserves the same "system prompt is never
+// user-controlled" security property the file's header comment documents.
+const CHILD_AUDIENCE_APPENDIX = `
+
+CHILD AUDIENCE OVERRIDE — this lesson is for a young child reading in Elena Mode, not an adult
+or professional student. Everything above still applies (never invent facts, stay grounded in
+the supplied nodes/edges, one emphasis point, etc.) — these rules narrow HOW you teach, not
+whether you stay grounded:
+- Vocabulary and sentence length: short, concrete, everyday words. Avoid clinical, legal, or
+  technical jargon even when the source page uses it — translate it into a plain-language
+  equivalent a child would actually say (e.g. "a cut that won't stop bleeding" rather than
+  "hemorrhage"). shortLabel stays 2-5 words, simpler than the adult 2-8 word range.
+  narration uses short sentences a child could read aloud themselves.
+- visualGrammar: prefer "narrative", "procedure", "comparison", "hierarchy", "summary", or
+  "concept-map" — the concrete, story-shaped or step-shaped structures. Avoid choosing
+  "diagnosis"/"equation"/"data-interpretation" purely because the adult source page uses that
+  structure; re-express the same underlying idea through a simpler shape when you can do so
+  without inventing or dropping facts.
+- visualIntent: describe SIMPLE, friendly, big, concrete shapes and creatures/objects a child
+  recognizes — avoid describing cross-sections, cutaways, dense multi-layer compositions, or
+  clinical/anatomical precision. One clear idea per step, not a busy diagram. It's fine, and
+  often better, to repeat a simple visual motif across steps rather than introducing many
+  different unfamiliar shapes.
+- tone stays warm and encouraging; "warn" steps for a child mean "here's something to be
+  careful about," not a clinical risk warning.`;
+
 async function callOpenAI(
   client: OpenAI,
   model: string,
+  systemPrompt: string,
   userContent: string,
   timeoutMs: number,
   maxCompletionTokens: number,
@@ -332,7 +365,7 @@ async function callOpenAI(
         // annotation pass) only applies on models that support it.
         ...buildChatCompletionTuning(model, { temperature: 0.4, maxCompletionTokens }),
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user",   content: userContent },
         ],
         // Structured Outputs (strict:true) — the API itself enforces the
@@ -415,6 +448,14 @@ export default async function handler(
     ...(body.edges ?? []).map(e => e.id),
   ]);
 
+  // L18 — caller-supplied, never inferred from page content: any value
+  // besides the literal string "child" defaults to "adult", so a missing/
+  // malformed/legacy request body (every real caller today) behaves exactly
+  // as it did before this field existed.
+  const audience: "adult" | "child" = body.audience === "child" ? "child" : "adult";
+  const systemPrompt = audience === "child" ? SYSTEM_PROMPT + CHILD_AUDIENCE_APPENDIX : SYSTEM_PROMPT;
+  diagnosticIds = { ...diagnosticIds, audience };
+
   const userContent =
     `pageTruthKey: ${body.pageTruthKey}\n` +
     `documentId: ${body.documentId ?? "unknown"}\n` +
@@ -422,6 +463,7 @@ export default async function handler(
     `activeCanonicalUnitId: ${body.activeCanonicalUnitId ?? "none"}\n` +
     `pageTeachingType (this page's classification from the highlighting pass — a strong signal for visualGrammar and teaching style, see rule 6): ${body.pageTeachingType ?? "none"}\n` +
     `visualGrammarHint (already chosen by layout — you may confirm or override): ${body.visualGrammarHint ?? "flow"}\n` +
+    `audience: ${audience}\n` +
     `\nNodes:\n${JSON.stringify(body.nodes, null, 0)}\n` +
     `\nEdges:\n${JSON.stringify(body.edges ?? [], null, 0)}\n` +
     `\nProduce the ProfessorLessonScript JSON.`;
@@ -436,7 +478,7 @@ export default async function handler(
   let attempts = 1;
   try {
     try {
-      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
+      completion = await callOpenAI(client, model, systemPrompt, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
     } catch (firstErr: any) {
       // A 400 (invalid_request_error) means THIS request is malformed for the
       // resolved model — e.g. an unsupported parameter. Retrying the exact
@@ -451,7 +493,7 @@ export default async function handler(
         elapsedMs: Date.now() - startedAt,
       });
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-      completion = await callOpenAI(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
+      completion = await callOpenAI(client, model, systemPrompt, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens);
     }
   } catch (err: any) {
     const isTimeout        = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");

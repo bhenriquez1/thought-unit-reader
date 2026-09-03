@@ -65,17 +65,25 @@ interface Args {
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
   pageTeachingType?: string | null;
+  /** L18 — omitted by every current caller (the adult Reader); Elena Mode
+   *  will pass "child" once it has its own Whiteboard integration. */
+  audience?: "adult" | "child";
   enabled: boolean;
 }
 
-function identityKey(args: Pick<Args, "documentId" | "pageTruthKey" | "activeCanonicalUnitId"> & { vsgId: string }): string {
-  return `${args.documentId}::${args.pageTruthKey}::${args.activeCanonicalUnitId ?? "none"}::${args.vsgId}`;
+function identityKey(args: Pick<Args, "documentId" | "pageTruthKey" | "activeCanonicalUnitId" | "audience"> & { vsgId: string }): string {
+  // L18 — an "adult" and a "child" identity for the SAME page must be
+  // treated as genuinely different lessons (different effect re-run,
+  // different cache entry via buildProfessorLessonCacheKey below), never
+  // silently reusing one for the other. Suffix only appears for "child" so
+  // every existing (audience-less/adult) identityKey string is unchanged.
+  return `${args.documentId}::${args.pageTruthKey}::${args.activeCanonicalUnitId ?? "none"}::${args.vsgId}${args.audience === "child" ? "::child" : ""}`;
 }
 
 const GENERIC_ERROR_MESSAGE = "Unable to generate Whiteboard for this page.";
 
 export function useProfessorLesson({
-  vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType, enabled,
+  vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType, audience, enabled,
 }: Args): UseProfessorLessonResult {
   const [lessonPlan, setLessonPlan]   = useState<ProfessorLessonPlan | null>(null);
   const [status, setStatus]           = useState<ProfessorLessonStatus>("idle");
@@ -92,6 +100,8 @@ export function useProfessorLesson({
   vsgRef.current = vsg;
   const pageTeachingTypeRef = useRef(pageTeachingType);
   pageTeachingTypeRef.current = pageTeachingType;
+  const audienceRef = useRef(audience);
+  audienceRef.current = audience;
 
   const reanalyze = useCallback(() => {
     forceRefetchRef.current = true;
@@ -100,7 +110,7 @@ export function useProfessorLesson({
   }, []);
 
   const vsgId = vsg?.id ?? "no-vsg";
-  const key = identityKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
+  const key = identityKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId, audience });
 
   // ── Effect A: identity changed → reset + try cache ─────────────────────
   useEffect(() => {
@@ -112,7 +122,7 @@ export function useProfessorLesson({
     startedKeyRef.current = null;
 
     let cancelled = false;
-    const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
+    const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId, audience });
     (async () => {
       try {
         const stored = await getProfessorLessonPlan(cacheKey);
@@ -174,6 +184,7 @@ export function useProfessorLesson({
         const input = buildProfessorLessonInput({
           vsg: v, documentId, pageTruthKey, activeCanonicalUnitId,
           pageTeachingType: pageTeachingTypeRef.current,
+          audience: audienceRef.current,
         });
         const res = await fetch("/api/professor-lesson-plan", {
           method: "POST",
@@ -237,6 +248,7 @@ export function useProfessorLesson({
         const plan = buildProfessorTeachingActions(v, grounded, {
           documentId, pageNumber: v.sourcePageNumber ?? 0, pageTruthKey,
           activeCanonicalUnitId, vsgId: v.id, plannerVersion: PLANNER_VERSION,
+          ...(audienceRef.current ? { audience: audienceRef.current } : {}),
         });
         if (ctrl.signal.aborted) return;
         setLessonPlan(plan);
@@ -257,7 +269,7 @@ export function useProfessorLesson({
           durationMs: Date.now() - startedAt,
         });
 
-        const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId });
+        const cacheKey = buildProfessorLessonCacheKey({ documentId, pageTruthKey, activeCanonicalUnitId, vsgId, audience: audienceRef.current });
         saveProfessorLessonPlan(cacheKey, plan).catch(() => {});
       } catch (err: any) {
         if (ctrl.signal.aborted) return;

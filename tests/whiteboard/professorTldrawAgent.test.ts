@@ -79,6 +79,21 @@ describe("Professor tldraw Agent — visual context and current-step isolation",
     };
     expect(buildProfessorTldrawAgentRequest({ plan: verbalPlan, stepId: 1, pass: "execute", canvas: CANVAS })).toBeNull();
   });
+
+  // L18 — audience is read from plan.sourceSnapshot (caller context, set
+  // once per lesson), never computed here, and passed straight into the
+  // per-step agent request so the runtime tldraw agent's own prompt
+  // selection (pages/api/professor-tldraw-agent.ts) can see it.
+  it("REQUIRED (L18): threads plan.sourceSnapshot.audience into the request unchanged", () => {
+    const childPlan: ProfessorLessonPlan = { ...PLAN, sourceSnapshot: { ...PLAN.sourceSnapshot, audience: "child" } };
+    const request = buildProfessorTldrawAgentRequest({ plan: childPlan, stepId: 1, pass: "execute", canvas: CANVAS });
+    expect(request?.audience).toBe("child");
+  });
+
+  it("REQUIRED (L18): audience is undefined on the request when the plan never set it — the adult/default path", () => {
+    const request = buildProfessorTldrawAgentRequest({ plan: PLAN, stepId: 1, pass: "execute", canvas: CANVAS });
+    expect(request?.audience).toBeUndefined();
+  });
 });
 
 describe("Professor tldraw Agent — deterministic hands gate", () => {

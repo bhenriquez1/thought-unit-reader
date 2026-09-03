@@ -42,6 +42,11 @@ export interface ProfessorLessonInput {
   vsgId: string;
   nodes: ProfessorLessonNodeInput[];
   edges: ProfessorLessonEdgeInput[];
+  /** L18 — which register/visual-complexity to teach at. Optional; the API
+   *  route defaults a missing/invalid value to "adult", so every caller
+   *  that predates this field (the adult Reader, still the only real one)
+   *  is unaffected. */
+  audience?: "adult" | "child";
 }
 
 export function buildProfessorLessonInput(args: {
@@ -50,8 +55,9 @@ export function buildProfessorLessonInput(args: {
   pageTruthKey: string;
   activeCanonicalUnitId: string | null;
   pageTeachingType?: string | null;
+  audience?: "adult" | "child";
 }): ProfessorLessonInput {
-  const { vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType } = args;
+  const { vsg, documentId, pageTruthKey, activeCanonicalUnitId, pageTeachingType, audience } = args;
   return {
     documentId,
     pageNumber:  vsg.sourcePageNumber ?? 0,
@@ -60,6 +66,7 @@ export function buildProfessorLessonInput(args: {
     visualGrammarHint: vsg.grammar,
     pageTeachingType: pageTeachingType ?? null,
     vsgId: vsg.id,
+    ...(audience ? { audience } : {}),
     nodes: vsg.nodes.map(n => ({
       id: n.id,
       label: n.label,
