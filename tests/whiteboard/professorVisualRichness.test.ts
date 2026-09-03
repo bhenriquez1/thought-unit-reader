@@ -68,10 +68,10 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
   // fallback layout (production) — see resolveProfessorAgentFailure.
   it("REQUIRED (R2): a new low_visual_richness rejection site exists, unconditional (not STRICT-gated), applied only after the zero-nontrivial case is already ruled out", () => {
     // Correction (Whiteboard density) added a 6th site: empty_containers,
-    // same unconditional gating, right alongside this one — see the
-    // dedicated describe block below.
+    // same unconditional gating, right alongside this one. L17 added a 7th:
+    // label_dependent_only — see the dedicated describe blocks below.
     const rejectionSites = (src.match(/throw new ProfessorAgentRequestError\(/g) ?? []).length;
-    expect(rejectionSites).toBe(6); // the pre-existing 4, this one, and empty_containers
+    expect(rejectionSites).toBe(7); // the pre-existing 4, this one, empty_containers, and label_dependent_only
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("low_visual_richness"\);/);
     const idx = src.indexOf('throw new ProfessorAgentRequestError("no_visual_actions");');
     const block = src.slice(idx, idx + 600);
@@ -269,6 +269,49 @@ describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density cor
 
   it("REQUIRED: empty_containers is a real ProfessorAgentFailureReason value", () => {
     const libSrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
-    expect(libSrc).toMatch(/\| "empty_containers";/);
+    expect(libSrc).toMatch(/"empty_containers"/);
+  });
+});
+
+// L17 — operationalizes Brian's own acceptance test: "if removing the text
+// labels makes the Whiteboard meaningless, it isn't sufficiently visual."
+// A DIFFERENT gate from empty-container rejection above: the failure mode
+// this catches is "Reactants -> Products" (two LABELED generic boxes joined
+// by one arrow) — every box has a label so emptyContainerCount is 0 and the
+// step clears that check entirely, yet the illustration still conveys
+// nothing once the labels are stripped. See professorTldrawAgent.test.ts's
+// computeVisualDensityDiagnostic suite for behavioral coverage of the
+// label-dependent/label-independent math itself — this is wiring-only.
+describe("TldrawCanvas.tsx — label-dependent-only rejection (L17 acceptance-test enforcement)", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+
+  it("REQUIRED: the floor/ceiling constants exist with the documented reasoning", () => {
+    expect(src).toMatch(/const LABEL_DEPENDENT_COUNT_FLOOR = 2;/);
+    expect(src).toMatch(/const LABEL_INDEPENDENT_RATIO_FLOOR = 0\.4;/);
+  });
+
+  it("REQUIRED: the reject condition requires the count floor AND the ratio floor, mirroring the empty-container check's own dual-condition shape", () => {
+    expect(src).toMatch(
+      /density\.labelDependentShapeCount >= LABEL_DEPENDENT_COUNT_FLOOR\s*\n\s*&& \(density\.labelDependentShapeCount \+ density\.labelIndependentMeaningfulCount\) > 0\s*\n\s*&& \(density\.labelIndependentMeaningfulCount \/ \(density\.labelDependentShapeCount \+ density\.labelIndependentMeaningfulCount\)\) < LABEL_INDEPENDENT_RATIO_FLOOR/,
+    );
+    expect(src).toMatch(/throw new ProfessorAgentRequestError\("label_dependent_only"\);/);
+  });
+
+  it("REQUIRED: runs unconditionally alongside empty_containers/low_visual_richness, in the same unconditional block, no PROFESSOR_AGENT_STRICT guard", () => {
+    const idx = src.indexOf('throw new ProfessorAgentRequestError("label_dependent_only");');
+    expect(idx).toBeGreaterThan(-1);
+    const emptyContainersIdx = src.indexOf('throw new ProfessorAgentRequestError("empty_containers");');
+    expect(emptyContainersIdx).toBeGreaterThan(-1);
+    expect(emptyContainersIdx).toBeLessThan(idx);
+    const gateIdx = src.indexOf("if (passIndex === 0) {");
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(gateIdx).toBeLessThan(emptyContainersIdx);
+    expect(src.slice(gateIdx, idx)).not.toMatch(/PROFESSOR_AGENT_STRICT/);
+  });
+
+  it("REQUIRED: label_dependent_only is a real ProfessorAgentFailureReason value", () => {
+    const libSrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
+    expect(libSrc).toMatch(/"label_dependent_only"/);
   });
 });
