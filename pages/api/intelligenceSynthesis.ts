@@ -23,7 +23,7 @@ import {
   type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
-import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
+import { isInvalidRequestError, isInsufficientQuotaError } from "@/lib/insights/openaiErrorClassification";
 
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
@@ -45,7 +45,18 @@ export const config = {
 // in this file was DEV-gated, so a production failure ("OpenAI synthesis
 // failed", the observed "429 You have no credits remaining") left no server-
 // side trace at all to diagnose it by.
-const SYNTH_TIMEOUT_MS  = 28_000;
+//
+// Review follow-up (PR #759): the caller (components/reader/useTeachingSynthesis.ts)
+// aborts Stage 1 at 12_000ms and Stage 2 at 20_000ms. A single shared
+// 28_000ms per-attempt budget meant the server's first attempt regularly
+// outlived the caller's own deadline, and a retry after that ran with no
+// consumer left to receive it. Per-stage budgets below are sized with a
+// margin under each caller deadline; retrying is skipped entirely when the
+// first attempt's own failure was itself a timeout, since a second
+// full-length attempt structurally cannot finish before the caller has
+// already given up.
+const STAGE1_TIMEOUT_MS = 10_000; // caller aborts Stage 1 at 12_000ms
+const STAGE2_TIMEOUT_MS = 18_000; // caller aborts Stage 2 at 20_000ms
 const RETRY_BACKOFF_MS  = 700;
 
 async function callSynthesis(
@@ -62,21 +73,34 @@ async function callSynthesis(
 }
 
 type SynthesisFailureStage =
-  | "timeout" | "rate_limited" | "invalid_request" | "provider_request"
-  | "provider_response" | "schema_validation";
+  | "timeout" | "rate_limited" | "insufficient_quota" | "invalid_request"
+  | "provider_request" | "provider_response" | "schema_validation";
 
 function classifySynthesisFailure(err: any): SynthesisFailureStage {
   const isTimeout = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");
   if (isTimeout) return "timeout";
+  if (isInsufficientQuotaError(err)) return "insufficient_quota";
   if (err instanceof OpenAI.APIError && err.status === 429) return "rate_limited";
   if (isInvalidRequestError(err)) return "invalid_request";
   return "provider_request";
+}
+
+// A timeout means the prior attempt already spent its whole per-attempt
+// budget, so a same-size retry cannot finish before the caller's own
+// deadline — retrying just burns compute with no consumer left to receive
+// it. Permanent provider errors (malformed request, exhausted quota)
+// reproduce identically on retry. Only fast, transient failures — network
+// blips, retryable 5xx, genuine rate limits — are worth the backoff+retry.
+function isRetryableSynthesisFailure(err: unknown): boolean {
+  const failureStage = classifySynthesisFailure(err);
+  return failureStage !== "timeout" && failureStage !== "invalid_request" && failureStage !== "insufficient_quota";
 }
 
 function synthesisFailureMessage(failureStage: SynthesisFailureStage, label: string): string {
   switch (failureStage) {
     case "timeout": return `${label} timed out.`;
     case "rate_limited": return `${label} is rate-limited — try again shortly.`;
+    case "insufficient_quota": return `${label} is unavailable — the AI service account has run out of credits.`;
     case "invalid_request": return `${label} failed due to a request configuration error.`;
     default: return `${label} is temporarily unavailable.`;
   }
@@ -181,13 +205,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let attempts = 1;
     try {
       try {
-        response = await callSynthesis(s1Input, SYNTH_TIMEOUT_MS);
+        response = await callSynthesis(s1Input, STAGE1_TIMEOUT_MS);
       } catch (firstErr: any) {
-        if (isInvalidRequestError(firstErr)) throw firstErr;
+        if (!isRetryableSynthesisFailure(firstErr)) throw firstErr;
         attempts = 2;
         console.warn("[SYNTH:stage1:retry]", { attempt: 1, error: firstErr?.message ?? String(firstErr), elapsedMs: Date.now() - s1Start });
         await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-        response = await callSynthesis(s1Input, SYNTH_TIMEOUT_MS);
+        response = await callSynthesis(s1Input, STAGE1_TIMEOUT_MS);
       }
     } catch (err: any) {
       const failureStage = classifySynthesisFailure(err);
@@ -258,13 +282,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   let attempts = 1;
   try {
     try {
-      response = await callSynthesis(s2Input, SYNTH_TIMEOUT_MS);
+      response = await callSynthesis(s2Input, STAGE2_TIMEOUT_MS);
     } catch (firstErr: any) {
-      if (isInvalidRequestError(firstErr)) throw firstErr;
+      if (!isRetryableSynthesisFailure(firstErr)) throw firstErr;
       attempts = 2;
       console.warn("[SYNTH:stage2:retry]", { attempt: 1, error: firstErr?.message ?? String(firstErr), elapsedMs: Date.now() - s2Start });
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-      response = await callSynthesis(s2Input, SYNTH_TIMEOUT_MS);
+      response = await callSynthesis(s2Input, STAGE2_TIMEOUT_MS);
     }
   } catch (err: any) {
     const failureStage = classifySynthesisFailure(err);
