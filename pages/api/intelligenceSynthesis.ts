@@ -23,6 +23,7 @@ import {
   type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
+import { isInvalidRequestError } from "@/lib/insights/openaiErrorClassification";
 
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
@@ -35,6 +36,51 @@ export const config = {
   maxDuration: 60,
   api: { bodyParser: { sizeLimit: "1mb" } },
 };
+
+// L11 — live-testing diagnosis: this route had no request timeout, no retry,
+// and no failure classification at all (unlike its sibling
+// pages/api/notebook-plan.ts, which got the same fix in an earlier phase) —
+// every failure mode (timeout, rate limit, exhausted credits, malformed
+// output) collapsed into the same undifferentiated 500, AND every log line
+// in this file was DEV-gated, so a production failure ("OpenAI synthesis
+// failed", the observed "429 You have no credits remaining") left no server-
+// side trace at all to diagnose it by.
+const SYNTH_TIMEOUT_MS  = 28_000;
+const RETRY_BACKOFF_MS  = 700;
+
+async function callSynthesis(
+  input: Parameters<typeof openai.responses.parse>[0],
+  timeoutMs: number,
+) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await openai.responses.parse(input, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type SynthesisFailureStage =
+  | "timeout" | "rate_limited" | "invalid_request" | "provider_request"
+  | "provider_response" | "schema_validation";
+
+function classifySynthesisFailure(err: any): SynthesisFailureStage {
+  const isTimeout = err?.name === "AbortError" || /aborted|timed? ?out/i.test(err?.message ?? "");
+  if (isTimeout) return "timeout";
+  if (err instanceof OpenAI.APIError && err.status === 429) return "rate_limited";
+  if (isInvalidRequestError(err)) return "invalid_request";
+  return "provider_request";
+}
+
+function synthesisFailureMessage(failureStage: SynthesisFailureStage, label: string): string {
+  switch (failureStage) {
+    case "timeout": return `${label} timed out.`;
+    case "rate_limited": return `${label} is rate-limited — try again shortly.`;
+    case "invalid_request": return `${label} failed due to a request configuration error.`;
+    default: return `${label} is temporarily unavailable.`;
+  }
+}
 
 // Pre-build format objects at module load — schema errors surface at startup.
 let FORMAT_FULL: ReturnType<typeof zodTextFormat> | null = null;
@@ -120,36 +166,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       hasPageThesis: !!safeInput.pageThesis,
     });
     const s1Start = Date.now();
+    const s1Input: Parameters<typeof openai.responses.parse>[0] = {
+      model: "gpt-4o",
+      temperature: 0.2,
+      max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
+      text: { format: FORMAT_STAGE1 },
+      input: [
+        { role: "system", content: buildStage1SystemPrompt(safeDomain) },
+        { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildStage1UserPrompt(safeInput) },
+      ],
+    };
+
+    let response: Awaited<ReturnType<typeof callSynthesis>>;
+    let attempts = 1;
     try {
-      const response = await openai.responses.parse({
-        model: "gpt-4o",
-        temperature: 0.2,
-        max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
-        text: { format: FORMAT_STAGE1 },
-        input: [
-          { role: "system", content: buildStage1SystemPrompt(safeDomain) },
-          { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildStage1UserPrompt(safeInput) },
-        ],
+      try {
+        response = await callSynthesis(s1Input, SYNTH_TIMEOUT_MS);
+      } catch (firstErr: any) {
+        if (isInvalidRequestError(firstErr)) throw firstErr;
+        attempts = 2;
+        console.warn("[SYNTH:stage1:retry]", { attempt: 1, error: firstErr?.message ?? String(firstErr), elapsedMs: Date.now() - s1Start });
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+        response = await callSynthesis(s1Input, SYNTH_TIMEOUT_MS);
+      }
+    } catch (err: any) {
+      const failureStage = classifySynthesisFailure(err);
+      console.error("[SYNTH:stage1:failed]", {
+        stage: failureStage, attempts, error: err?.message ?? String(err), status: err?.status ?? null, elapsedMs: Date.now() - s1Start,
       });
-      DEV && console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
-      const s1 = response.output_parsed;
-      if (!s1) return res.status(500).json({ error: "Stage 1: no structured output" });
-      const validated = Stage1SynthesisSchema.parse(s1);
-      DEV && console.log("[SYNTH:stage1:api-done]", {
-        elapsedMs:      Date.now() - s1Start,
-        coreIdea:       validated.coreIdea?.slice(0, 60),
-        whyThisMatters: !!validated.whyThisMatters,
-        keyMechanism:   !!validated.keyMechanism,
-        commonConfusion: !!validated.commonConfusion,
-        anchors:        validated.highlightAnchors?.length ?? 0,
-        miniTest:       validated.miniTestItems?.length ?? 0,
-      });
-      return res.status(200).json(validated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      DEV && console.error("[SYNTH:stage1:api-error]", { elapsedMs: Date.now() - s1Start, msg });
-      return res.status(500).json({ error: msg.slice(0, 300) });
+      return res.status(500).json({ error: synthesisFailureMessage(failureStage, "Stage 1 synthesis"), code: failureStage });
     }
+
+    DEV && console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
+    const s1 = response.output_parsed;
+    if (!s1) {
+      console.error("[SYNTH:stage1:failed]", { stage: "provider_response", attempts, elapsedMs: Date.now() - s1Start });
+      return res.status(500).json({ error: "Stage 1: no structured output", code: "provider_response" });
+    }
+
+    let validated: ReturnType<typeof Stage1SynthesisSchema.parse>;
+    try {
+      validated = Stage1SynthesisSchema.parse(s1);
+    } catch (schemaErr: unknown) {
+      console.error("[SYNTH:stage1:failed]", {
+        stage: "schema_validation", attempts, elapsedMs: Date.now() - s1Start,
+        error: schemaErr instanceof Error ? schemaErr.message : String(schemaErr),
+      });
+      return res.status(500).json({ error: "Stage 1 synthesis returned a malformed result.", code: "schema_validation" });
+    }
+
+    DEV && console.log("[SYNTH:stage1:api-done]", {
+      elapsedMs:      Date.now() - s1Start,
+      coreIdea:       validated.coreIdea?.slice(0, 60),
+      whyThisMatters: !!validated.whyThisMatters,
+      keyMechanism:   !!validated.keyMechanism,
+      commonConfusion: !!validated.commonConfusion,
+      anchors:        validated.highlightAnchors?.length ?? 0,
+      miniTest:       validated.miniTestItems?.length ?? 0,
+    });
+    console.log("[SYNTH:stage1:success]", { attempts, elapsedMs: Date.now() - s1Start });
+    return res.status(200).json(validated);
   }
 
   // ── Stage 2: Full synthesis ─────────────────────────────────────────────────
@@ -165,50 +241,69 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   });
 
   const s2Start = Date.now();
+  DEV && console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
+
+  const s2Input: Parameters<typeof openai.responses.parse>[0] = {
+    model: "gpt-4o",
+    temperature: 0.3,
+    max_output_tokens: 1800,
+    text: { format: FORMAT_FULL },
+    input: [
+      { role: "system", content: buildSystemPrompt(safeDomain) },
+      { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildUserPrompt(safeInput) },
+    ],
+  };
+
+  let response: Awaited<ReturnType<typeof callSynthesis>>;
+  let attempts = 1;
   try {
-    DEV && console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
-
-    const response = await openai.responses.parse({
-      model: "gpt-4o",
-      temperature: 0.3,
-      max_output_tokens: 1800,
-      text: { format: FORMAT_FULL },
-      input: [
-        { role: "system", content: buildSystemPrompt(safeDomain) },
-        { role: "user",   content: buildPresetUserAugmentation(safePresetId) + "\n\n" + buildUserPrompt(safeInput) },
-      ],
-    });
-
-    const synthesis = response.output_parsed;
-    DEV && console.log("[SYNTH:cp4:openai-returned]", {
-      elapsedMs: Date.now() - s2Start,
-      hasOutput: !!synthesis,
-      rawSnip: JSON.stringify(synthesis ?? {}).slice(0, 300),
-    });
-
-    if (!synthesis) {
-      DEV && console.error("[SYNTH:cp4:null-output]");
-      return res.status(500).json({ error: "Model returned no structured output." });
+    try {
+      response = await callSynthesis(s2Input, SYNTH_TIMEOUT_MS);
+    } catch (firstErr: any) {
+      if (isInvalidRequestError(firstErr)) throw firstErr;
+      attempts = 2;
+      console.warn("[SYNTH:stage2:retry]", { attempt: 1, error: firstErr?.message ?? String(firstErr), elapsedMs: Date.now() - s2Start });
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+      response = await callSynthesis(s2Input, SYNTH_TIMEOUT_MS);
     }
-
-    const validated = TeachingSynthesisSchema.parse(synthesis);
-    DEV && console.log("[SYNTH:cp5:success]", {
-      coreIdea:     validated.coreIdea?.slice(0, 80) ?? null,
-      mechanism:    validated.mechanism?.slice(0, 80) ?? null,
-      conceptCount: validated.concepts?.length ?? 0,
-      anchorCount:  validated.highlightAnchors?.length ?? 0,
+  } catch (err: any) {
+    const failureStage = classifySynthesisFailure(err);
+    console.error("[SYNTH:stage2:failed]", {
+      stage: failureStage, attempts, error: err?.message ?? String(err), status: err?.status ?? null, elapsedMs: Date.now() - s2Start,
     });
-
-    return res.status(200).json(validated);
-
-  } catch (err: unknown) {
-    const msg   = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack   : undefined;
-    DEV && console.error("[SYNTH:error]", {
-      elapsedMs: Date.now() - s2Start,
-      message: msg,
-      stack: stack?.split("\n").slice(0, 10).join(" | "),
-    });
-    return res.status(500).json({ error: msg.slice(0, 300) });
+    return res.status(500).json({ error: synthesisFailureMessage(failureStage, "Synthesis"), code: failureStage });
   }
+
+  const synthesis = response.output_parsed;
+  DEV && console.log("[SYNTH:cp4:openai-returned]", {
+    elapsedMs: Date.now() - s2Start,
+    hasOutput: !!synthesis,
+    rawSnip: JSON.stringify(synthesis ?? {}).slice(0, 300),
+  });
+
+  if (!synthesis) {
+    console.error("[SYNTH:stage2:failed]", { stage: "provider_response", attempts, elapsedMs: Date.now() - s2Start });
+    return res.status(500).json({ error: "Model returned no structured output.", code: "provider_response" });
+  }
+
+  let validated: ReturnType<typeof TeachingSynthesisSchema.parse>;
+  try {
+    validated = TeachingSynthesisSchema.parse(synthesis);
+  } catch (schemaErr: unknown) {
+    console.error("[SYNTH:stage2:failed]", {
+      stage: "schema_validation", attempts, elapsedMs: Date.now() - s2Start,
+      error: schemaErr instanceof Error ? schemaErr.message : String(schemaErr),
+    });
+    return res.status(500).json({ error: "Synthesis returned a malformed result.", code: "schema_validation" });
+  }
+
+  DEV && console.log("[SYNTH:cp5:success]", {
+    coreIdea:     validated.coreIdea?.slice(0, 80) ?? null,
+    mechanism:    validated.mechanism?.slice(0, 80) ?? null,
+    conceptCount: validated.concepts?.length ?? 0,
+    anchorCount:  validated.highlightAnchors?.length ?? 0,
+  });
+  console.log("[SYNTH:stage2:success]", { attempts, elapsedMs: Date.now() - s2Start });
+
+  return res.status(200).json(validated);
 }
