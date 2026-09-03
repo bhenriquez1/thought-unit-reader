@@ -393,6 +393,7 @@ describe("computeVisualDensityDiagnostic", () => {
     expect(computeVisualDensityDiagnostic([], null)).toEqual({
       meaningfulPrimitiveCount: 0, emptyContainerCount: 0, totalShapeCount: 0,
       usedCanvasBounds: null, activeTeachingBounds: null, canvasUtilizationRatio: 0,
+      labelDependentShapeCount: 0, labelIndependentMeaningfulCount: 0,
     });
   });
 
@@ -475,6 +476,77 @@ describe("computeVisualDensityDiagnostic", () => {
     const shape: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:a", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
     expect(computeVisualDensityDiagnostic([shape], null).canvasUtilizationRatio).toBe(0);
     expect(computeVisualDensityDiagnostic([shape], { x: 0, y: 0, w: 0, h: 0 }).canvasUtilizationRatio).toBe(0);
+  });
+
+  // L17 — "if removing the text labels makes the Whiteboard meaningless, it
+  // isn't sufficiently visual." labelDependentShapeCount/
+  // labelIndependentMeaningfulCount are a SEPARATE partition from
+  // meaningfulPrimitiveCount/emptyContainerCount above: a LABELED drawSymbol
+  // box is "meaningful" by the old metric (it's self-labeled, not empty),
+  // but still label-DEPENDENT by this one — strip the text and it's just a
+  // box.
+  it("REQUIRED: the exact named failure mode — 'Reactants -> Products,' two LABELED drawSymbol boxes joined by one arrow — is almost entirely label-dependent", () => {
+    const reactants: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:reactants", targetId: "s", shape: "box", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const reactantsLabel: ProfessorTeachingAction = { type: "write", actionId: "a2", shapeId: "shape:reactants", targetId: "s", text: "Reactants", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const products: ProfessorTeachingAction = { type: "draw-shape", actionId: "a3", shapeId: "shape:products", targetId: "s", shape: "box", bounds: { x: 150, y: 0, w: 80, h: 40 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const productsLabel: ProfessorTeachingAction = { type: "write", actionId: "a4", shapeId: "shape:products", targetId: "s", text: "Products", x: 150, y: 0, durationMs: 1, stepId: 1 };
+    const arrow: ProfessorTeachingAction = { type: "draw-arrow", actionId: "a5", shapeId: "shape:arrow", targetId: "s", from: { x: 80, y: 20 }, to: { x: 150, y: 20 }, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([reactants, reactantsLabel, products, productsLabel, arrow], { x: 0, y: 0, w: 300, h: 100 });
+    // Both boxes are self-labeled, so the OLD metric sees no empty containers at all.
+    expect(diagnostic.emptyContainerCount).toBe(0);
+    expect(diagnostic.meaningfulPrimitiveCount).toBe(3); // 2 self-labeled shapes + 1 arrow
+    // But by the label-independent metric: 2 label-dependent boxes, only 1 label-independent mark (the arrow).
+    expect(diagnostic.labelDependentShapeCount).toBe(2);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(1);
+    const ratio = diagnostic.labelIndependentMeaningfulCount / (diagnostic.labelDependentShapeCount + diagnostic.labelIndependentMeaningfulCount);
+    expect(ratio).toBeCloseTo(1 / 3, 5); // well under LABEL_INDEPENDENT_RATIO_FLOOR (0.4) — this is exactly what L17 rejects
+  });
+
+  it("REQUIRED: drawSymbol counts as label-dependent whether or not it actually has a label — an UNLABELED drawSymbol is already caught by emptyContainerCount, but this metric agrees it's not label-independent either", () => {
+    const unlabeled: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:x", targetId: "s", shape: "ellipse" as any, bounds: { x: 0, y: 0, w: 40, h: 20 }, visualRole: "drawSymbol", durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([unlabeled], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.labelDependentShapeCount).toBe(1);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(0);
+  });
+
+  it("REQUIRED: drawCallout and drawNumberBadge are label-dependent too — always self-labeled by the OLD metric, but their shape alone (a cloud, a numeral-less circle) conveys nothing", () => {
+    const callout: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:callout", targetId: "s", shape: "cloud", bounds: { x: 0, y: 0, w: 80, h: 40 }, visualRole: "drawCallout", durationMs: 1, stepId: 1 };
+    const calloutLabel: ProfessorTeachingAction = { type: "write", actionId: "a2", shapeId: "shape:callout", targetId: "s", text: "Note", x: 0, y: 0, durationMs: 1, stepId: 1 };
+    const badge: ProfessorTeachingAction = { type: "draw-shape", actionId: "a3", shapeId: "shape:badge", targetId: "s", shape: "circle", bounds: { x: 0, y: 50, w: 28, h: 28 }, visualRole: "drawNumberBadge", durationMs: 1, stepId: 1 };
+    const badgeLabel: ProfessorTeachingAction = { type: "write", actionId: "a4", shapeId: "shape:badge", targetId: "s", text: "1", x: 0, y: 50, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([callout, calloutLabel, badge, badgeLabel], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.labelDependentShapeCount).toBe(2);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(0);
+  });
+
+  it("REQUIRED: drawPressureZone/highlightRegion/circleFeature are label-independent — their size/position IS the point, with or without a label", () => {
+    const zone: ProfessorTeachingAction = { type: "draw-shape", actionId: "a1", shapeId: "shape:zone", targetId: "s", shape: "circle", bounds: { x: 0, y: 0, w: 40, h: 40 }, visualRole: "drawPressureZone", opacity: 0.2, durationMs: 1, stepId: 1 };
+    const highlight: ProfessorTeachingAction = { type: "draw-shape", actionId: "a2", shapeId: "shape:highlight", targetId: "s", shape: "box", bounds: { x: 50, y: 0, w: 40, h: 40 }, visualRole: "highlightRegion", opacity: 0.2, durationMs: 1, stepId: 1 };
+    const ring: ProfessorTeachingAction = { type: "draw-shape", actionId: "a3", shapeId: "shape:ring", targetId: "s", shape: "circle", bounds: { x: 100, y: 0, w: 40, h: 40 }, visualRole: "circleFeature", durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([zone, highlight, ring], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.labelDependentShapeCount).toBe(0);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(3);
+  });
+
+  it("REQUIRED: freehand strokes (including drawCrossSection/shadeRegion/crossOutMisconception's synthesized X, all rendered as draw-freehand) and arrows are always label-independent", () => {
+    const crossSection: ProfessorTeachingAction = { type: "draw-freehand", actionId: "a1", shapeId: "shape:xs", targetId: "s", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], visualRole: "drawCrossSection", durationMs: 1, stepId: 1 };
+    const shade: ProfessorTeachingAction = { type: "draw-freehand", actionId: "a2", shapeId: "shape:shade", targetId: "s", points: [{ x: 20, y: 0 }, { x: 30, y: 10 }], visualRole: "shadeRegion", durationMs: 1, stepId: 1 };
+    const arrow: ProfessorTeachingAction = { type: "draw-arrow", actionId: "a3", shapeId: "shape:arrow", targetId: "s", from: { x: 0, y: 0 }, to: { x: 20, y: 20 }, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([crossSection, shade, arrow], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.labelDependentShapeCount).toBe(0);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(3);
+  });
+
+  it("a genuinely rich composition (cross-section + shaded region + one labeled callout) clears the L17 ratio floor comfortably", () => {
+    const crossSection: ProfessorTeachingAction = { type: "draw-freehand", actionId: "a1", shapeId: "shape:xs", targetId: "s", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], visualRole: "drawCrossSection", durationMs: 1, stepId: 1 };
+    const shade: ProfessorTeachingAction = { type: "draw-freehand", actionId: "a2", shapeId: "shape:shade", targetId: "s", points: [{ x: 20, y: 0 }, { x: 30, y: 10 }], visualRole: "shadeRegion", durationMs: 1, stepId: 1 };
+    const callout: ProfessorTeachingAction = { type: "draw-shape", actionId: "a3", shapeId: "shape:callout", targetId: "s", shape: "cloud", bounds: { x: 0, y: 50, w: 60, h: 30 }, visualRole: "drawCallout", durationMs: 1, stepId: 1 };
+    const calloutLabel: ProfessorTeachingAction = { type: "write", actionId: "a4", shapeId: "shape:callout", targetId: "s", text: "Note", x: 0, y: 50, durationMs: 1, stepId: 1 };
+    const diagnostic = computeVisualDensityDiagnostic([crossSection, shade, callout, calloutLabel], { x: 0, y: 0, w: 200, h: 100 });
+    expect(diagnostic.labelDependentShapeCount).toBe(1);
+    expect(diagnostic.labelIndependentMeaningfulCount).toBe(2);
+    const ratio = diagnostic.labelIndependentMeaningfulCount / (diagnostic.labelDependentShapeCount + diagnostic.labelIndependentMeaningfulCount);
+    expect(ratio).toBeCloseTo(2 / 3, 5); // well above the 0.4 floor
   });
 });
 

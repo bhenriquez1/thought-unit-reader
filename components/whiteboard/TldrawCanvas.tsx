@@ -112,10 +112,22 @@ const VISUAL_RICHNESS_COUNT_FLOOR = 3;
 // containers must be at least HALF of what got drawn, not just present).
 const EMPTY_CONTAINER_COUNT_FLOOR = 3;
 const EMPTY_CONTAINER_RATIO_CEILING = 0.5;
+// L17 — the correction's own acceptance test: "if removing the text labels
+// makes the Whiteboard meaningless, it isn't sufficiently visual." A step
+// full of LABELED generic boxes (the "Reactants -> Products" failure mode)
+// already clears the empty-container check above — each box IS labeled,
+// so none of them are "empty" — but still fails this test once the labels
+// are stripped. Only enforced once there's enough label-dependent content
+// to judge (a single simple labeled shape isn't a violation on its own),
+// mirroring EMPTY_CONTAINER_COUNT_FLOOR's own reasoning; the ratio floor is
+// a minimum proportion, not a maximum, so it's a floor rather than a ceiling.
+const LABEL_DEPENDENT_COUNT_FLOOR = 2;
+const LABEL_INDEPENDENT_RATIO_FLOOR = 0.4;
 
 const EMPTY_DENSITY_DIAGNOSTIC: VisualDensityDiagnostic = {
   meaningfulPrimitiveCount: 0, emptyContainerCount: 0, totalShapeCount: 0,
   usedCanvasBounds: null, activeTeachingBounds: null, canvasUtilizationRatio: 0,
+  labelDependentShapeCount: 0, labelIndependentMeaningfulCount: 0,
 };
 
 interface ProfessorAgentDiagnostic {
@@ -1100,6 +1112,20 @@ export default function TldrawCanvas({
             && density.emptyContainerCount / density.totalShapeCount >= EMPTY_CONTAINER_RATIO_CEILING;
           if (tooManyEmptyContainers) {
             throw new ProfessorAgentRequestError("empty_containers");
+          }
+          // L17 — the empty-container check above only catches UNLABELED
+          // generic boxes. A step can be entirely LABELED generic boxes
+          // joined by one arrow (exactly "Reactants -> Products," the
+          // correction's own named failure) and still clear both checks
+          // above — every box has a label, so none are "empty." This is
+          // the acceptance test itself: if the labels were stripped, would
+          // anything here still mean something?
+          const tooLabelDependent =
+            density.labelDependentShapeCount >= LABEL_DEPENDENT_COUNT_FLOOR
+            && (density.labelDependentShapeCount + density.labelIndependentMeaningfulCount) > 0
+            && (density.labelIndependentMeaningfulCount / (density.labelDependentShapeCount + density.labelIndependentMeaningfulCount)) < LABEL_INDEPENDENT_RATIO_FLOOR;
+          if (tooLabelDependent) {
+            throw new ProfessorAgentRequestError("label_dependent_only");
           }
         }
         if (verified.complete && !verified.needsCorrection) break;

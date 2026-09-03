@@ -271,7 +271,7 @@ export type ProfessorAgentFailureReason =
   | "missing_key" | "not_triggered" | "visual_needed_false" | "timeout"
   | "network_error" | "schema_reject" | "no_visual_actions"
   | "verification_reject" | "aborted" | "low_visual_richness"
-  | "empty_containers";
+  | "empty_containers" | "label_dependent_only";
 
 export class ProfessorAgentRequestError extends Error {
   constructor(public readonly reason: ProfessorAgentFailureReason, message = reason) {
@@ -332,6 +332,27 @@ export interface VisualDensityDiagnostic {
    *  null or degenerate. A low ratio is the direct, measurable version of
    *  "too much empty canvas remains." */
   canvasUtilizationRatio: number;
+  /** L17 — draw-shape actions whose meaning depends ENTIRELY on an attached
+   *  text label: a drawSymbol container (rectangle/ellipse/diamond/hexagon/
+   *  cloud/line — labeled or not, its shape alone conveys nothing
+   *  subject-specific), a drawCallout bubble, or a drawNumberBadge. Strip
+   *  every label in the pass and each of these becomes an undifferentiated
+   *  shape — this is the direct measure of the correction's "Reactants ->
+   *  Products" failure mode (two labeled boxes joined by one arrow), which
+   *  the pre-existing emptyContainerCount alone cannot catch: a LABELED
+   *  generic box is "meaningful" by that check, even though its shape still
+   *  carries no real teaching content once the label is gone. */
+  labelDependentShapeCount: number;
+  /** L17 — actions that convey real teaching meaning through their own
+   *  geometry, independent of any attached text: every freehand stroke
+   *  (drawFreehandStroke/drawAnatomySketch/.../drawCrossSection/shadeRegion/
+   *  crossOutMisconception — all rendered as draw-freehand), every arrow
+   *  (direction/relationship is visible without reading a label), and
+   *  draw-shape actions whose role is drawPressureZone/highlightRegion/
+   *  circleFeature (their size/position IS the point). Operationalizes the
+   *  correction's own acceptance test: "if removing the text labels makes
+   *  the Whiteboard meaningless, it isn't sufficiently visual." */
+  labelIndependentMeaningfulCount: number;
 }
 
 /**
@@ -359,14 +380,26 @@ export function computeVisualDensityDiagnostic(
       .map(a => a.shapeId),
   );
 
+  // L17 — draw-shape roles whose SHAPE alone (independent of any attached
+  // text) conveys no subject-specific meaning. A drawCallout/drawNumberBadge
+  // is always "self-labeled" (meaningfulPrimitiveCount already counts it,
+  // never emptyContainerCount), but that alone doesn't survive this
+  // correction's own acceptance test — strip the label and both are just an
+  // undifferentiated cloud/circle. drawSymbol joins them regardless of
+  // whether IT happens to be labeled or empty, for the same reason.
+  const LABEL_DEPENDENT_ROLES = new Set(["drawSymbol", "drawCallout", "drawNumberBadge"]);
+
   let meaningfulPrimitiveCount = 0;
   let emptyContainerCount = 0;
   let totalShapeCount = 0;
+  let labelDependentShapeCount = 0;
+  let labelIndependentMeaningfulCount = 0;
   const boundsList: Bounds[] = [];
 
   for (const action of actions) {
     if (action.type === "draw-freehand") {
       meaningfulPrimitiveCount++;
+      labelIndependentMeaningfulCount++;
       if (action.points.length > 0) {
         const xs = action.points.map(p => p.x);
         const ys = action.points.map(p => p.y);
@@ -378,6 +411,7 @@ export function computeVisualDensityDiagnostic(
       }
     } else if (action.type === "draw-arrow") {
       meaningfulPrimitiveCount++;
+      labelIndependentMeaningfulCount++;
       boundsList.push({
         x: Math.min(action.from.x, action.to.x), y: Math.min(action.from.y, action.to.y),
         w: Math.max(1, Math.abs(action.to.x - action.from.x)), h: Math.max(1, Math.abs(action.to.y - action.from.y)),
@@ -394,6 +428,13 @@ export function computeVisualDensityDiagnostic(
       const isSelfLabeled = shapeIdsWithText.has(action.shapeId);
       if (isDeliberatelyUnlabeled || isSelfLabeled) meaningfulPrimitiveCount++;
       else emptyContainerCount++;
+      // L17 — independent of the empty-container check above: does this
+      // shape's own GEOMETRY carry meaning, or only its (possibly present)
+      // label? isDeliberatelyUnlabeled roles are sized/positioned emphasis
+      // marks — meaningful with or without text. LABEL_DEPENDENT_ROLES are
+      // generic containers whose text IS the only content, labeled or not.
+      if (isDeliberatelyUnlabeled) labelIndependentMeaningfulCount++;
+      else if (action.visualRole && LABEL_DEPENDENT_ROLES.has(action.visualRole)) labelDependentShapeCount++;
     }
   }
 
@@ -402,7 +443,10 @@ export function computeVisualDensityDiagnostic(
   const teachingArea = activeTeachingBounds ? activeTeachingBounds.w * activeTeachingBounds.h : 0;
   const canvasUtilizationRatio = teachingArea > 0 ? usedArea / teachingArea : 0;
 
-  return { meaningfulPrimitiveCount, emptyContainerCount, totalShapeCount, usedCanvasBounds, activeTeachingBounds, canvasUtilizationRatio };
+  return {
+    meaningfulPrimitiveCount, emptyContainerCount, totalShapeCount, usedCanvasBounds, activeTeachingBounds, canvasUtilizationRatio,
+    labelDependentShapeCount, labelIndependentMeaningfulCount,
+  };
 }
 
 function visualBounds(action: ProfessorTeachingAction): Bounds | null {
