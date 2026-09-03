@@ -16,6 +16,7 @@
 
 import {
   parseSurgeonAnnotationPlanLenient,
+  describeLenientParseFailure,
   SurgeonAnnotationPlanSchema,
   type SurgeonAnnotation,
   type SurgeonAnnotationPlan,
@@ -113,5 +114,47 @@ describe("parseSurgeonAnnotationPlanLenient — the canonicalType/annotationType
     expect(result).not.toBeNull();
     expect(result!.plan.annotations).toHaveLength(0);
     expect(result!.droppedAnnotationCount).toBe(0);
+  });
+});
+
+describe("describeLenientParseFailure — L10: diagnostics for a production schema_validation failure that carried zero detail beyond the stage name", () => {
+  it("REQUIRED: reports the top-level shape problem when the response isn't an object or has no annotations array", () => {
+    expect(describeLenientParseFailure(null)).toEqual(["top-level response is not a JSON object"]);
+    expect(describeLenientParseFailure("a string")).toEqual(["top-level response is not a JSON object"]);
+    expect(describeLenientParseFailure({ pageTruthKey: "x" })).toEqual([
+      "top-level 'annotations' field is missing or not an array",
+    ]);
+  });
+
+  it("REQUIRED: reports the specific field and message for a genuinely malformed annotation (not one of the known aliases)", () => {
+    const raw = { ...VALID_PLAN, annotations: [{ ...VALID_ANNOTATION, canonicalType: "footnote" }] };
+    const issues = describeLenientParseFailure(raw);
+    expect(issues.some((i) => i.startsWith("annotations[0].canonicalType:"))).toBe(true);
+  });
+
+  it("REQUIRED: reports every malformed annotation's index, not just the first", () => {
+    const raw = {
+      ...VALID_PLAN,
+      annotations: [
+        { ...VALID_ANNOTATION, canonicalType: "footnote" },
+        { ...VALID_ANNOTATION, importance: "medium" },
+      ],
+    };
+    const issues = describeLenientParseFailure(raw);
+    expect(issues.some((i) => i.startsWith("annotations[0]."))).toBe(true);
+    expect(issues.some((i) => i.startsWith("annotations[1]."))).toBe(true);
+  });
+
+  it("REQUIRED: reports a plan-level field problem (e.g. missing pageThesis) separately from any annotation issues", () => {
+    const { pageThesis, ...withoutThesis } = VALID_PLAN;
+    const issues = describeLenientParseFailure(withoutThesis);
+    expect(issues.some((i) => i.startsWith("pageThesis:"))).toBe(true);
+  });
+
+  it("known aliases (the exact L5 collision) are NOT reported as errors — they're normalized before validation, same as parseSurgeonAnnotationPlanLenient itself", () => {
+    const raw = { ...VALID_PLAN, annotations: [{ ...VALID_ANNOTATION, canonicalType: "exception" }] };
+    expect(describeLenientParseFailure(raw)).toEqual([
+      "unknown validation failure — plan and every annotation parsed individually but the combined shape still failed",
+    ]);
   });
 });

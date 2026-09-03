@@ -292,3 +292,45 @@ export function parseSurgeonAnnotationPlanLenient(raw: unknown): LenientPlanPars
   if (!planResult.success) return null;
   return { plan: planResult.data, droppedAnnotationCount };
 }
+
+// ── Failure diagnostics ──────────────────────────────────────────────────────
+// L10 — a production schema_validation failure carried no detail beyond the
+// stage name: parseSurgeonAnnotationPlanLenient collapses every possible
+// cause (bad top-level shape, every annotation malformed, bad plan-level
+// fields) down to a single `null`, so there was nothing to log to actually
+// diagnose why a given request failed. This re-derives the specific Zod
+// issues purely for logging — it is never used to decide pass/fail;
+// parseSurgeonAnnotationPlanLenient remains the single source of truth for
+// that, unchanged.
+export function describeLenientParseFailure(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null) {
+    return ["top-level response is not a JSON object"];
+  }
+  const { annotations, ...rest } = raw as { annotations?: unknown };
+  if (!Array.isArray(annotations)) {
+    return ["top-level 'annotations' field is missing or not an array"];
+  }
+  const issues: string[] = [];
+  annotations.forEach((entry, index) => {
+    const normalized = typeof entry === "object" && entry !== null
+      ? { ...entry, canonicalType: normalizeCanonicalType((entry as { canonicalType?: unknown }).canonicalType) }
+      : entry;
+    const result = SurgeonAnnotationSchema.safeParse(normalized);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        issues.push(`annotations[${index}].${issue.path.join(".") || "(root)"}: ${issue.message}`);
+      }
+    }
+  });
+  // Plan-level fields (pageTruthKey/pageThesis/pageRole/...), validated with
+  // annotations zeroed out so any per-annotation issues already captured
+  // above aren't reported twice under a different path.
+  const planResult = SurgeonAnnotationPlanSchema.safeParse({ ...rest, annotations: [] });
+  if (!planResult.success) {
+    for (const issue of planResult.error.issues) {
+      if (issue.path[0] === "annotations") continue;
+      issues.push(`${issue.path.join(".") || "(root)"}: ${issue.message}`);
+    }
+  }
+  return issues.length > 0 ? issues : ["unknown validation failure — plan and every annotation parsed individually but the combined shape still failed"];
+}
