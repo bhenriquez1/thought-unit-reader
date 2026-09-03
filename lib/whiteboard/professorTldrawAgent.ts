@@ -191,6 +191,11 @@ export const ProfessorTldrawAgentRequestSchema = z.object({
   }),
   pageTruthKey: z.string().min(1).max(300),
   pass: z.enum(["execute", "inspect"]),
+  // L18 — caller-supplied via ProfessorLessonPlan.sourceSnapshot.audience
+  // (see buildProfessorTldrawAgentRequest below), never inferred here.
+  // Optional and defaults to "adult" wherever it's read (the API route),
+  // so a plan built before this field existed round-trips unchanged.
+  audience: z.enum(["adult", "child"]).optional(),
   step: z.object({
     stepId: z.number().int().nonnegative(),
     teachingGoal: z.string().min(1).max(600),
@@ -511,6 +516,7 @@ export function buildProfessorTldrawAgentRequest(args: {
     },
     pageTruthKey: args.plan.sourceSnapshot.pageTruthKey,
     pass: args.pass,
+    audience: args.plan.sourceSnapshot.audience,
     step: {
       stepId: step.stepId,
       teachingGoal: step.teachingGoal,

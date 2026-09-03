@@ -62,7 +62,7 @@ describe("Required regression 1 — a page change removes all prior highlights a
 
   it("useProfessorLesson.ts's identityKey includes documentId + pageTruthKey + VSG content identity — a page/content change drives the TldrawCanvas clear above", () => {
     const src = fs.readFileSync(LESSON_HOOK, "utf8");
-    expect(src).toMatch(/`\$\{args\.documentId\}::\$\{args\.pageTruthKey\}::\$\{args\.activeCanonicalUnitId \?\? "none"\}::\$\{args\.vsgId\}`/);
+    expect(src).toMatch(/`\$\{args\.documentId\}::\$\{args\.pageTruthKey\}::\$\{args\.activeCanonicalUnitId \?\? "none"\}::\$\{args\.vsgId\}\$\{args\.audience === "child" \? "::child" : ""\}`/);
   });
 });
 

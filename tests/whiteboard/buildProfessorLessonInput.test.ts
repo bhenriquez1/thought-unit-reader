@@ -61,4 +61,17 @@ describe("buildProfessorLessonInput — never sends raw page text or coordinates
     const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
     expect(input.pageTeachingType).toBeNull();
   });
+
+  // L18 — audience is caller-supplied context (Elena Mode will pass "child"
+  // once it has its own Whiteboard integration); the adult Reader, still
+  // the only real caller, omits it entirely.
+  it("REQUIRED (L18): passes audience through when supplied", () => {
+    const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null, audience: "child" });
+    expect(input.audience).toBe("child");
+  });
+
+  it("REQUIRED (L18): omits the audience field entirely when not supplied — never defaults it to 'adult' here (the API route owns that default)", () => {
+    const input = buildProfessorLessonInput({ vsg: VSG, documentId: "doc-1", pageTruthKey: "doc-1::7::t", activeCanonicalUnitId: null });
+    expect(input).not.toHaveProperty("audience");
+  });
 });

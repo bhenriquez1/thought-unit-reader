@@ -19,7 +19,7 @@ describe("pages/api/professor-lesson-plan.ts — Professor Lesson Planner endpoi
     expect(src).not.toMatch(/model:\s*"gpt-5\.5"/);
     expect(src).toMatch(/import \{ resolveTeachingModel \} from "@\/lib\/insights\/resolveOpenAIModel"/);
     expect(src).toMatch(/const model = await resolveTeachingModel\(client\)/);
-    expect(src).toMatch(/callOpenAI\(client, model, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens\)/);
+    expect(src).toMatch(/callOpenAI\(client, model, systemPrompt, userContent, PLAN_TIMEOUT_MS, maxCompletionTokens\)/);
   });
 
   it("uses real OpenAI Structured Outputs (strict JSON schema), not loose json_object mode — OpenAI is never asked to emit tldraw records, only ProfessorLessonScript", () => {

@@ -92,4 +92,14 @@ describe("Professor Director orchestration", () => {
     expect(camera?.type === "move-camera" && camera.focusBounds).toEqual(visualStep.focusBounds);
     expect(camera?.type === "move-camera" && camera.targetIds).not.toContain("shape:pn-definition");
   });
+
+  // L18 — sourceSnapshot passes straight through unchanged, so audience
+  // (caller context, not something this deterministic step ever computes)
+  // round-trips correctly from the request all the way to the plan the
+  // runtime tldraw agent later reads from.
+  it("REQUIRED (L18): sourceSnapshot.audience passes through unchanged, including when absent", () => {
+    expect(plan.sourceSnapshot.audience).toBeUndefined(); // SNAPSHOT above never set it
+    const childPlan = buildProfessorTeachingActions(VSG, GROUNDED, { ...SNAPSHOT, audience: "child" });
+    expect(childPlan.sourceSnapshot.audience).toBe("child");
+  });
 });
