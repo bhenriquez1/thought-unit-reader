@@ -244,6 +244,62 @@ function toYouTubeEmbed(url: string): string | null {
   }
 }
 
+// ── Focus timer (durable, wall-clock-deadline-based) ────────────────────────
+// L9 — the floating focus timer used to decrement a plain second counter via
+// setInterval and never persisted, so a reload or a backgrounded/throttled
+// tab either lost all progress or (since a throttled interval fires late,
+// not not-at-all) silently drifted. `deadline` is the real source of truth
+// while running — an absolute epoch ms the current segment ends at — so
+// `time` is always RE-DERIVED from `deadline - Date.now()`, never
+// accumulated. That makes it self-correcting: a throttled/delayed tick still
+// computes the exact right remaining time, and restoring persisted state
+// after a reload works the same way, with no separate "elapsed time"
+// bookkeeping to get wrong.
+export interface FocusTimerState {
+  mode: "focus" | "short_break" | "long_break";
+  time: number;
+  running: boolean;
+  deadline: number | null;
+}
+
+export interface FocusTimerSettings {
+  focus: number;
+  shortBreak: number;
+  longBreak: number;
+}
+
+/** Remaining seconds for `state` right now — `time` itself only reflects
+ *  this at the moment it was last computed, so anything that needs the
+ *  CURRENT value (pausing, persisting) should call this instead. */
+function computeFocusRemainingSeconds(state: FocusTimerState): number {
+  if (!state.running || state.deadline == null) return state.time;
+  return Math.max(0, Math.round((state.deadline - Date.now()) / 1000));
+}
+
+/** Re-derives `state` from wall-clock time, applying the same "segment
+ *  complete" transition (focus -> stopped, break -> auto-restart focus)
+ *  whether it's called from the once-a-second tick or from mount-time
+ *  rehydration after a reload/long background period. `cycleCompleted` is
+ *  reported separately since incrementing the cycle count is a side effect
+ *  the caller owns. */
+function advanceFocusTimer(
+  state: FocusTimerState,
+  settings: FocusTimerSettings,
+): { next: FocusTimerState; cycleCompleted: boolean } {
+  if (!state.running || state.deadline == null) return { next: state, cycleCompleted: false };
+  const remaining = computeFocusRemainingSeconds(state);
+  if (remaining > 0) return { next: { ...state, time: remaining }, cycleCompleted: false };
+  if (state.mode === "focus") {
+    return { next: { mode: "focus", time: 0, running: false, deadline: null }, cycleCompleted: true };
+  }
+  return {
+    next: { mode: "focus", time: settings.focus, running: true, deadline: Date.now() + settings.focus * 1000 },
+    cycleCompleted: false,
+  };
+}
+
+const FOCUS_TIMER_STORAGE_KEY = "avrrio-focus-timer-v1";
+
 /** Sanitize document title - filter out error-like titles */
 function sanitizeDocTitle(title: string | undefined, fallback: string = "Document"): string {
   if (!title) return fallback;
@@ -1846,11 +1902,13 @@ export default function ThoughtUnitReader() {
   const [focusInterruptionLabel, setFocusInterruptionLabel] = useState<string | null>(null);
   const [focusSoftLock, setFocusSoftLock] = useState(true);
   const [showAmbientPanel, setShowAmbientPanel] = useState(false);
-  const [focusState, setFocusState] = useState<{ mode: "focus" | "short_break" | "long_break"; time: number; running: boolean }>({
+  const [focusState, setFocusState] = useState<FocusTimerState>({
     mode: "focus",
     time: 1500,
     running: false,
+    deadline: null,
   });
+  const focusHydratedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1864,18 +1922,57 @@ export default function ThoughtUnitReader() {
     safeSetItem("avrrio-ambient-url", ambientUrl);
   }, [ambientUrl]);
 
+  // L9 — restore the timer once on mount, correcting for however long the
+  // tab was reloaded/backgrounded via the same wall-clock logic the regular
+  // tick uses below (advanceFocusTimer), so a segment that finished while
+  // the tab was closed resolves immediately instead of showing stale time.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(FOCUS_TIMER_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const restoredSettings: FocusTimerSettings =
+          parsed?.settings && typeof parsed.settings.focus === "number"
+            ? parsed.settings
+            : focusSettings;
+        const restoredState: FocusTimerState = {
+          mode: parsed?.mode === "short_break" || parsed?.mode === "long_break" ? parsed.mode : "focus",
+          time: typeof parsed?.time === "number" ? parsed.time : restoredSettings.focus,
+          running: !!parsed?.running,
+          deadline: typeof parsed?.deadline === "number" ? parsed.deadline : null,
+        };
+        if (parsed?.settings) setFocusSettings(restoredSettings);
+        if (typeof parsed?.cycleCount === "number") setCycleCount(parsed.cycleCount);
+        const { next, cycleCompleted } = advanceFocusTimer(restoredState, restoredSettings);
+        if (cycleCompleted) setCycleCount((c) => c + 1);
+        setFocusState(next);
+      }
+    } catch { /* corrupt/unavailable storage — keep defaults */ }
+    focusHydratedRef.current = true;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist mode/time/running/deadline + settings/cycleCount on every
+  // change, so a reload or the tab being closed never loses progress.
+  useEffect(() => {
+    if (typeof window === "undefined" || !focusHydratedRef.current) return;
+    safeSetItem(FOCUS_TIMER_STORAGE_KEY, JSON.stringify({
+      mode: focusState.mode,
+      time: focusState.time,
+      running: focusState.running,
+      deadline: focusState.deadline,
+      settings: focusSettings,
+      cycleCount,
+    }));
+  }, [focusState, focusSettings, cycleCount]);
+
   useEffect(() => {
     if (!focusState.running) return;
     const timer = window.setInterval(() => {
       setFocusState((prev) => {
-        if (prev.time > 1) return { ...prev, time: prev.time - 1 };
-        if (prev.mode === "focus") {
-          setCycleCount((c) => c + 1);
-          // Stop at 0 — session summary modal shown via effect
-          return { mode: "focus", time: 0, running: false };
-        }
-        // Break ends → auto-restart focus
-        return { mode: "focus", time: focusSettings.focus, running: true };
+        const { next, cycleCompleted } = advanceFocusTimer(prev, focusSettings);
+        if (cycleCompleted) setCycleCount((c) => c + 1);
+        return next;
       });
     }, 1000);
     return () => window.clearInterval(timer);
@@ -1899,7 +1996,7 @@ export default function ThoughtUnitReader() {
     const registerInterruption = (reason: string) => {
       setFocusInterruptions((prev) => prev + 1);
       setFocusInterruptionLabel(reason);
-      setFocusState((prev) => ({ ...prev, running: false }));
+      setFocusState((prev) => ({ ...prev, time: computeFocusRemainingSeconds(prev), running: false, deadline: null }));
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") registerInterruption("Tab hidden — session auto-paused.");
@@ -1914,11 +2011,15 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
+    // NoteLab is part of the same study workflow a focus session is meant to
+    // support (e.g. saving the session summary's "Save to NoteLab" action) —
+    // switching to it must never trip the same "leaving the cockpit"
+    // interruption prompt as navigating away to something unrelated.
+    const isProtected = !["reader", "toc", "syllabus", "podcast", "notelab"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
-      setFocusState((prev) => ({ ...prev, running: false }));
+      setFocusState((prev) => ({ ...prev, time: computeFocusRemainingSeconds(prev), running: false, deadline: null }));
       setFocusInterruptionLabel("Manual switch away from reader during focus.");
       setFocusInterruptions((prev) => prev + 1);
     }
@@ -7767,13 +7868,15 @@ export default function ThoughtUnitReader() {
             {/* Start / Pause · Reset · Full Screen */}
             <div style={{ display: "flex", gap: 8 }}>
               <button
-                onClick={() => setFocusState((prev) => ({ ...prev, running: !prev.running }))}
+                onClick={() => setFocusState((prev) => prev.running
+                  ? { ...prev, time: computeFocusRemainingSeconds(prev), running: false, deadline: null }
+                  : { ...prev, running: true, deadline: Date.now() + prev.time * 1000 })}
                 style={{ flex: 1, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600, background: focusState.running ? "#334155" : "#7c3aed", color: "#fff", border: "none", cursor: "pointer" }}
               >
                 {focusState.running ? "Pause" : "Start"}
               </button>
               <button
-                onClick={() => { setCycleCount(0); setFocusInterruptions(0); setFocusInterruptionLabel(null); setFocusState({ mode: "focus", time: focusSettings.focus, running: false }); setSessionPagesVisited(new Set()); setSessionNotesCount(0); setSessionCardsCount(0); }}
+                onClick={() => { setCycleCount(0); setFocusInterruptions(0); setFocusInterruptionLabel(null); setFocusState({ mode: "focus", time: focusSettings.focus, running: false, deadline: null }); setSessionPagesVisited(new Set()); setSessionNotesCount(0); setSessionCardsCount(0); }}
                 style={{ borderRadius: 8, padding: "8px 12px", fontSize: 13, background: "#1e293b", color: "#cbd5e1", border: "none", cursor: "pointer" }}
               >
                 Reset
@@ -7894,7 +7997,8 @@ export default function ThoughtUnitReader() {
                 onClick={() => {
                   setShowSessionSummary(false);
                   const isLong = cycleCount % 4 === 0;
-                  setFocusState({ mode: isLong ? "long_break" : "short_break", time: isLong ? focusSettings.longBreak : focusSettings.shortBreak, running: true });
+                  const breakSeconds = isLong ? focusSettings.longBreak : focusSettings.shortBreak;
+                  setFocusState({ mode: isLong ? "long_break" : "short_break", time: breakSeconds, running: true, deadline: Date.now() + breakSeconds * 1000 });
                 }}
                 className="rounded-lg py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors"
               >
