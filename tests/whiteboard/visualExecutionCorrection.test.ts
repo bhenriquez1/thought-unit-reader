@@ -82,9 +82,15 @@ describe("pages/api/professor-tldraw-agent.ts — the runtime agent is told the 
     expect(AGENT_PROMPT_SRC).toMatch(/attach a writeLabel to every drawSymbol shape you create in the SAME pass, or use drawCallout/);
   });
 
-  it("REQUIRED: names drawPressureZone/highlightRegion as the only shapes allowed to stay unlabeled — matching computeVisualDensityDiagnostic's own DELIBERATELY_UNLABELED_ROLES set exactly", () => {
+  it("REQUIRED: names drawPressureZone/highlightRegion as the only shapes allowed to stay unlabeled — matching computeVisualDensityDiagnostic's own DELIBERATELY_UNLABELED_ROLES set for the tools this prompt currently exposes to the agent", () => {
     expect(AGENT_PROMPT_SRC).toMatch(/The only shapes allowed to stay unlabeled are drawPressureZone and highlightRegion/);
     const densitySrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
-    expect(densitySrc).toMatch(/new Set\(\["drawPressureZone", "highlightRegion"\]\)/);
+    // L15 added "circleFeature" to this same set (also deliberately
+    // unlabeled — an annotation ring, not a container) — accurate ahead of
+    // schedule, since L16 is what actually tells the agent circleFeature
+    // exists. The prompt text above is still correct for the tools this
+    // prompt exposes today; both drawPressureZone/highlightRegion remain in
+    // the set regardless of what else joins it later.
+    expect(densitySrc).toMatch(/"drawPressureZone", "highlightRegion"/);
   });
 });
