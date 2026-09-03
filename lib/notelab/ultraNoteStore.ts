@@ -134,6 +134,27 @@ export interface UltraNote {
    *  correction's own instruction) — only a genuine thrown failure sets
    *  this. */
   notebookSceneError?: string;
+  /** L13 (NoteLab visual-execution correction) — "'Nothing composed here
+   *  yet' should almost never appear after the user has already saved
+   *  material from Reader... either render the visual note or explicitly
+   *  say generation failed and give Retry." Before this field, a note whose
+   *  background composition hadn't finished yet, one whose composition
+   *  genuinely had nothing to compose (a legitimately sparse page), and one
+   *  whose composition threw an error all rendered the SAME silent "Nothing
+   *  composed here yet" empty state as a note nobody had touched — this
+   *  field lets UltraNotesList tell those apart:
+   *   - "pending": set the moment the primary save fires, before the
+   *     background compose has resolved — the notebook is actively being
+   *     built, not empty.
+   *   - "ready": composition produced a real notebookScene (blocks.length > 0).
+   *   - "empty": composition genuinely found nothing to compose (no
+   *     canonical units AND no deterministic content) — a real, non-error
+   *     outcome; the "Nothing composed here yet" copy stays accurate here.
+   *   - "failed": composition threw (see notebookSceneError) — shown with
+   *     an explicit failure banner and a Retry action, never silently.
+   *  Optional/undefined for any note saved before this field existed — those
+   *  fall back to the pre-existing "empty" treatment, unchanged. */
+  notebookSceneStatus?: "pending" | "ready" | "empty" | "failed";
 }
 
 // ── Legacy note migration ─────────────────────────────────────────────────

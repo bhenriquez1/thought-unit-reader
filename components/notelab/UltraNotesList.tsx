@@ -21,6 +21,7 @@ import {
 import { buildRecallSetFromNote, buildRecallSetFromNotebookBlock, saveRecallSet } from "@/lib/recalllab/recallStore";
 import type { FinalizedNotebookBlock } from "@/lib/notelab/notebookScene";
 import { mergeDeterministicContentIntoScene } from "@/lib/notelab/deterministicNotebookBlocks";
+import { composeNoteNotebookSceneInBackground } from "@/lib/notelab/composeNotebookScene";
 import { recordLearningEvent } from "@/lib/knowledge/recordLearningEvent";
 import { useReadingFocusStore } from "@/lib/readingFocus/readingFocusStore";
 import { downloadNoteMarkdown, downloadNotePdf, downloadNoteDocx, downloadNotesMarkdown, downloadNotesPdf, downloadNotesDocx } from "@/lib/notelab/exportNote";
@@ -522,6 +523,26 @@ function NoteCard({
   const [cardsSaving, setCardsSaving] = useState(false);
   const [studentDraft, setStudentDraft] = useState(note.studentNotes ?? "");
   const [studentSaveState, setStudentSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // L13 — Retry re-runs the exact same composition composeNoteNotebookSceneInBackground
+  // (RightPanel.tsx's original save path) runs, from an existing saved note.
+  // Local "retrying" covers the gap between click and the background task's
+  // own eventual saveUltraNote — the parent list reloads notes on an
+  // interval/refreshKey elsewhere, so this note's own notebookSceneStatus
+  // will flip to "ready"/"empty"/"failed" once that write lands.
+  const [retrying, setRetrying] = useState(false);
+
+  async function handleRetryCompose() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await saveUltraNote({ ...note, notebookSceneStatus: "pending" });
+      await composeNoteNotebookSceneInBackground(note, note.documentId ?? note.bookId);
+    } catch (error) {
+      console.error("[NOTELAB_RETRY_COMPOSE_FAILED]", String(error));
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   useEffect(() => {
     setStudentDraft(note.studentNotes ?? "");
@@ -542,7 +563,16 @@ function NoteCard({
       const scene = mergeDeterministicContentIntoScene(updated.notebookScene ?? null, updated, {
         bookId: updated.bookId, pageNumber: updated.pageNumber,
       });
-      await saveUltraNote(scene.blocks.length > 0 ? { ...updated, notebookScene: scene } : updated);
+      // L13 — a student typing real content into a note previously "empty"
+      // (nothing to compose) or "failed" (AI synthesis threw) now produces
+      // a real scene locally; reflect that in status too, so the amber
+      // Retry banner / "Nothing composed here yet" copy don't linger next
+      // to a notebook that visibly has content now.
+      await saveUltraNote(
+        scene.blocks.length > 0
+          ? { ...updated, notebookScene: scene, notebookSceneStatus: "ready" }
+          : { ...updated, notebookSceneStatus: updated.notebookSceneStatus === "pending" ? "pending" : "empty" },
+      );
       if (updated.knowledgeNodeId && updated.documentId) {
         recordLearningEvent(
           updated.knowledgeNodeId, updated.documentId,
@@ -703,18 +733,33 @@ function NoteCard({
               synthesis hasn't produced anything to show yet gets a
               lightweight prompt to start writing below — never the retired
               card dashboard. */}
-          {note.notebookSceneError && (
+          {/* L13 — a note saved before notebookSceneStatus existed can still
+              carry a legacy notebookSceneError with no status; treat that
+              the same as "failed" rather than silently dropping its banner. */}
+          {(note.notebookSceneStatus === "failed" || (!note.notebookSceneStatus && note.notebookSceneError)) && (
             <div
               role="status"
-              style={{ borderRadius: 8, border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.06)", color: "#fbbf24", padding: "8px 11px", fontSize: 11.5, lineHeight: 1.5 }}
+              style={{ borderRadius: 8, border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.06)", color: "#fbbf24", padding: "8px 11px", fontSize: 11.5, lineHeight: 1.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}
             >
-              ⚠ AI enhancement of this notebook didn't finish ({note.notebookSceneError}). Your own notes below are safe and still shown.
+              <span>
+                ⚠ AI enhancement of this notebook didn't finish{note.notebookSceneError ? ` (${note.notebookSceneError})` : ""}. Your own notes below are safe and still shown.
+              </span>
+              <button type="button" onClick={handleRetryCompose} disabled={retrying} style={{ ...TOOL_BTN, flexShrink: 0 }}>
+                {retrying ? "Retrying…" : "🔁 Retry"}
+              </button>
             </div>
           )}
 
           {/* The real, persistent, student-editable tldraw canvas (N3).
               storageKey is per-note so each note's composed scene and any
-              student edits to it persist independently. */}
+              student edits to it persist independently.
+              L13 — "Nothing composed here yet" used to be the ONE fallback
+              for every reason notebookScene could be falsy: still composing,
+              genuinely nothing to compose, or composition having silently
+              failed. notebookSceneStatus (set by composeNoteNotebookSceneInBackground,
+              lib/notelab/composeNotebookScene.ts) now tells those apart —
+              this generic copy is reserved for the true "empty"/legacy-undefined
+              case; "pending" and "failed" get their own, more honest states. */}
           {note.notebookScene ? (
             <NotebookCanvas
               scene={note.notebookScene}
@@ -727,7 +772,11 @@ function NoteCard({
               onAskProfessor={onAskProfessorAboutBlock ? (block) => onAskProfessorAboutBlock(note, block) : undefined}
               onPracticeRecall={handlePracticeRecallBlock}
             />
-          ) : (
+          ) : note.notebookSceneStatus === "pending" ? (
+            <div style={{ borderRadius: 10, border: "1px dashed rgba(103,232,249,0.3)", padding: "18px 16px", textAlign: "center", color: "rgba(103,232,249,0.75)", fontSize: 12.5, lineHeight: 1.6 }}>
+              ⏳ Composing your visual notebook…
+            </div>
+          ) : (note.notebookSceneStatus === "failed" || (!note.notebookSceneStatus && note.notebookSceneError)) ? null /* the amber banner above already covers this state, including Retry */ : (
             <div style={{ borderRadius: 10, border: "1px dashed rgba(148,163,184,0.25)", padding: "18px 16px", textAlign: "center", color: "rgba(148,163,184,0.65)", fontSize: 12.5, lineHeight: 1.6 }}>
               Nothing composed here yet. Write your own notes below to start this page's notebook.
             </div>
