@@ -455,9 +455,12 @@ describe("pages/api/page-annotation-plan.ts — schema resilience (L5): one malf
   });
 
   it("still returns the malformed-plan degraded envelope when the lenient parse itself returns null", () => {
-    const idx = src.indexOf("const lenient = parseSurgeonAnnotationPlanLenient(parsed);");
+    // P1 remediation L10 widened this to a retry-with-the-validation-error
+    // flow (see the dedicated L10 describe block below) — lenient is now
+    // `let`, not `const`, since a successful retry replaces it.
+    const idx = src.indexOf("let lenient = parseSurgeonAnnotationPlanLenient(parsed);");
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 300);
+    const block = src.slice(idx, idx + 500);
     expect(block).toMatch(/if \(!lenient\) \{/);
     expect(block).toMatch(/stage: "schema_validation"/);
   });
@@ -495,5 +498,56 @@ describe("pages/api/page-annotation-plan.ts — sentenceId (deterministic ground
   it("validSentenceIds is built from the SAME pageSentences the model was shown, not re-derived some other way", () => {
     const idx = src.indexOf("const validSentenceIds = new Set(pageSentences.map(s => s.id));");
     expect(idx).toBeGreaterThan(-1);
+  });
+});
+
+describe("pages/api/page-annotation-plan.ts — L10: schema_validation carries exact field errors and gets one retry with them", () => {
+  let src: string;
+  beforeAll(() => { src = fs.readFileSync(ROUTE, "utf8"); });
+
+  it("REQUIRED: imports describeLenientParseFailure alongside the existing lenient-parse import", () => {
+    expect(src).toMatch(/import \{\s*\n\s*parseSurgeonAnnotationPlanLenient,\s*\n\s*describeLenientParseFailure,/);
+  });
+
+  it("REQUIRED: on a failed lenient parse, logs the specific validationIssues before attempting anything else — not just the bare stage name", () => {
+    const idx = src.indexOf("let lenient = parseSurgeonAnnotationPlanLenient(parsed);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/const validationIssues = describeLenientParseFailure\(parsed\);/);
+    expect(block).toMatch(/stage: "schema_validation",\s*\n\s*validationIssues,/);
+  });
+
+  it("REQUIRED: retries once, sending the exact validation issues and the model's own previous output back to it", () => {
+    const idx = src.indexOf("const validationIssues = describeLenientParseFailure(parsed);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 1800);
+    expect(block).toMatch(/Your previous response failed schema validation with these exact errors/);
+    expect(block).toMatch(/validationIssues\.map\(\(issue\) => `- \$\{issue\}`\)\.join\("\\n"\)/);
+    expect(block).toMatch(/Your previous output was:\\n\$\{raw\}/);
+    expect(block).toMatch(/await callOpenAI\(client, model, schemaRetryContent, PLAN_TIMEOUT_MS\)/);
+  });
+
+  it("REQUIRED: a successful schema retry replaces `lenient` and the request proceeds normally — it does not fall through to the degraded response", () => {
+    const idx = src.indexOf("const schemaRetryLenient = parseSurgeonAnnotationPlanLenient(schemaRetryParsed);");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/if \(schemaRetryLenient\) \{/);
+    expect(block).toMatch(/lenient = schemaRetryLenient;/);
+  });
+
+  it("REQUIRED: a thrown/failed schema retry is caught and logged, never crashes the handler — falls through to the existing degraded response", () => {
+    const idx = src.indexOf("} catch (schemaRetryError) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 200);
+    expect(block).toMatch(/console\.warn\("\[SURGEON_PLAN_SCHEMA_RETRY_FAILED\]"/);
+    const degradedIdx = src.indexOf('degraded("Advanced page analysis returned a malformed plan."', idx);
+    expect(degradedIdx).toBeGreaterThan(idx);
+  });
+
+  it("REQUIRED: still returns the same malformed-plan degraded envelope when lenient is still null after the retry attempt", () => {
+    const idx = src.lastIndexOf("if (!lenient) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = src.slice(idx, idx + 300);
+    expect(block).toMatch(/degraded\("Advanced page analysis returned a malformed plan\.", "schema_validation", requestId,/);
   });
 });

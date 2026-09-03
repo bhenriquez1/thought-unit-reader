@@ -24,6 +24,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import {
   parseSurgeonAnnotationPlanLenient,
+  describeLenientParseFailure,
   type SurgeonAnnotationPlan,
 } from "@/lib/insights/pageAnnotationPlan";
 import type { SurgeonAnnotationInput } from "@/lib/insights/buildSurgeonAnnotationInput";
@@ -553,9 +554,49 @@ export default async function handler(
     return;
   }
 
-  const lenient = parseSurgeonAnnotationPlanLenient(parsed);
+  let lenient = parseSurgeonAnnotationPlanLenient(parsed);
   if (!lenient) {
-    console.error("[SURGEON_PLAN_FAILED]", { ...diagnosticIds, stage: "schema_validation", durationMs: Date.now() - startedAt });
+    // L10 — surface exactly which field(s) failed instead of just the stage
+    // name, so a production failure like this is actually diagnosable.
+    const validationIssues = describeLenientParseFailure(parsed);
+    console.error("[SURGEON_PLAN_FAILED]", {
+      ...diagnosticIds,
+      stage: "schema_validation",
+      validationIssues,
+      durationMs: Date.now() - startedAt,
+    });
+
+    // One retry: tell the model exactly what failed and ask it to reproduce
+    // the complete plan with only those errors fixed. This is distinct from
+    // the transient-failure retry above (network/timeout/5xx) — the first
+    // call here already succeeded; it's the OUTPUT that didn't validate.
+    try {
+      const schemaRetryContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+        ...userContent,
+        {
+          type: "text",
+          text: `Your previous response failed schema validation with these exact errors:\n${validationIssues.map((issue) => `- ${issue}`).join("\n")}\nRe-produce the COMPLETE SurgeonAnnotationPlan JSON for the same page, fixing only these errors — do not change anything else. Your previous output was:\n${raw}`,
+        },
+      ];
+      const schemaRetryCompletion = await callOpenAI(client, model, schemaRetryContent, PLAN_TIMEOUT_MS);
+      const schemaRetryRaw = schemaRetryCompletion.choices[0]?.message?.content;
+      if (schemaRetryRaw) {
+        const schemaRetryJsonStr = schemaRetryRaw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+        const schemaRetryParsed = JSON.parse(schemaRetryJsonStr);
+        const schemaRetryLenient = parseSurgeonAnnotationPlanLenient(schemaRetryParsed);
+        if (schemaRetryLenient) {
+          console.warn("[SURGEON_PLAN_SCHEMA_RETRY_RECOVERED]", { ...diagnosticIds, durationMs: Date.now() - startedAt });
+          lenient = schemaRetryLenient;
+        }
+      }
+    } catch (schemaRetryError) {
+      console.warn("[SURGEON_PLAN_SCHEMA_RETRY_FAILED]", {
+        ...diagnosticIds,
+        reason: schemaRetryError instanceof Error ? schemaRetryError.name : "unknown",
+      });
+    }
+  }
+  if (!lenient) {
     res.status(200).json(degraded("Advanced page analysis returned a malformed plan.", "schema_validation", requestId, { model, upstreamStatus: 200, finishReason: choice?.finish_reason ?? null }));
     return;
   }
