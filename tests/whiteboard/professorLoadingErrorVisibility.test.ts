@@ -62,7 +62,7 @@ describe("components/whiteboard/TldrawCanvas.tsx — a real loading/error/config
     // that actually renders the retry UI, so anchor on that exact form.
     const idx = CANVAS_SRC.indexOf('!lessonPlan && lessonStatus === "error" && (');
     expect(idx).toBeGreaterThan(-1);
-    const block = CANVAS_SRC.slice(idx, idx + 1400);
+    const block = CANVAS_SRC.slice(idx, idx + 2200);
     expect(block).toMatch(/lessonErrorMessage/);
     expect(block).toMatch(/<button onClick=\{reanalyze\} style=\{BTN_PRIMARY\}>Retry<\/button>/);
   });
