@@ -31,19 +31,38 @@ interface ChildWhiteboardProps {
   onClose: () => void;
 }
 
+// L21 — extraction (childCanonicalExtraction.ts) runs off the reader's own
+// page-text-ready callback, asynchronously and best-effort. A child who taps
+// "Draw this page" right after landing on a fresh page can beat that
+// extraction to the punch: the first read below would then find zero units
+// even though they're about to exist. Rather than settle on the empty state
+// after a single read, retry a few times over a few seconds before giving up
+// — cheap (an IDB read), and covers the actual race instead of just the
+// permanently-empty case (a page with no real text, or extraction that never
+// runs at all) that the empty state is really for.
+const UNITS_POLL_MAX_ATTEMPTS = 5;
+const UNITS_POLL_DELAY_MS = 1500;
+
 export default function ChildWhiteboard({ documentId, currentPage, bookTitle, onClose }: ChildWhiteboardProps) {
-  // Loaded fresh per documentId/currentPage — extraction is best-effort and
-  // asynchronous (childCanonicalExtraction.ts runs off the reader's own
-  // page-text-ready callback), so a page the child just turned to may not
-  // have units yet; the "nothing to draw yet" state below handles that.
   const [units, setUnits] = useState<CanonicalThoughtUnit[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setUnits(null);
-    getCanonicalUnitsByPage(documentId, currentPage - 1)
-      .then((result) => { if (!cancelled) setUnits(result); })
-      .catch(() => { if (!cancelled) setUnits([]); });
+
+    async function load() {
+      for (let attempt = 0; !cancelled; attempt += 1) {
+        const result = await getCanonicalUnitsByPage(documentId, currentPage - 1).catch(() => []);
+        if (cancelled) return;
+        if (result.length > 0 || attempt >= UNITS_POLL_MAX_ATTEMPTS) {
+          setUnits(result);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, UNITS_POLL_DELAY_MS));
+      }
+    }
+    load();
+
     return () => { cancelled = true; };
   }, [documentId, currentPage]);
 
