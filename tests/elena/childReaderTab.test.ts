@@ -42,7 +42,7 @@ describe("ChildReaderTab — empty state offers upload, not a dead end", () => {
 
   it("lists the child's existing library as an alternative to uploading", () => {
     const idx = SRC.indexOf("function EmptyReaderState");
-    const block = SRC.slice(idx, idx + 1500);
+    const block = SRC.slice(idx, SRC.indexOf("\nexport default function ChildReaderTab", idx));
     expect(block).toMatch(/library\.map\(entry =>/);
     expect(block).toMatch(/onOpenBook\(entry\)/);
   });
