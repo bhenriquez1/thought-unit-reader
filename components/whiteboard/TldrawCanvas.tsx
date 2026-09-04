@@ -2182,12 +2182,19 @@ export default function TldrawCanvas({
               <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
                 {lessonErrorMessage ?? "Unable to generate Whiteboard for this page."}
               </span>
-              {lessonErrorCode && (
+              {/* L22 — code/stage/request-id are debugging aids for whoever
+                  reads them next (a developer, or an adult troubleshooting
+                  their own account), not information a child needs or can
+                  use. lessonErrorMessage itself is already the same generic,
+                  non-technical string on every failure path regardless of
+                  audience (see useProfessorLesson.ts's GENERIC_ERROR_MESSAGE)
+                  — only this diagnostic detail is audience-gated. */}
+              {audience !== "child" && lessonErrorCode && (
                 <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
                   code: {lessonErrorCode}
                 </span>
               )}
-              {lessonErrorDiagnostics && (
+              {audience !== "child" && lessonErrorDiagnostics && (
                 <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
                   stage: {lessonErrorDiagnostics.failureStage}
                   {lessonErrorDiagnostics.model ? ` · model: ${lessonErrorDiagnostics.model}` : ""}

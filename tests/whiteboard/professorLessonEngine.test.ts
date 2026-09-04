@@ -363,7 +363,7 @@ describe("No fallback — a Professor Lesson Planner failure shows a distinct re
     // conditional specifically, which is the one that renders the retry UI.
     const idx = src.indexOf('!lessonPlan && lessonStatus === "error" && (');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 1500);
+    const block = src.slice(idx, idx + 2200);
     expect(block).toMatch(/role="alert"/);
     expect(block).toMatch(/onClick=\{reanalyze\}/);
     expect(block).toMatch(/Retry/);
