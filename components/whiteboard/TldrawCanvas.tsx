@@ -2100,13 +2100,24 @@ export default function TldrawCanvas({
           <button onClick={handlePrev} disabled={atStart} title="Previous" style={atStart ? BTN_DISABLED : BTN_MUTED}>&#x25C4;</button>
           <button onClick={handlePlayPause} style={BTN_PRIMARY}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
           <button onClick={handleNext} disabled={atEnd} title="Next" style={atEnd ? BTN_DISABLED : BTN_MUTED}>&#x25BA;</button>
-          <button onClick={handleShowComplete} title="Show complete diagram" style={BTN_MUTED}>All</button>
+          {/* L21 — "Show complete diagram," the speed selector, SVG export,
+              and the opt-in student-editing affordance are adult power-user
+              controls (skip-ahead, playback tuning, export, drawing on top
+              of the professor's diagram) that add chrome without adding
+              anything a young reader needs to follow along. Hidden only for
+              audience: "child" — every other caller (audience omitted) is
+              visually unchanged. */}
+          {audience !== "child" && (
+            <button onClick={handleShowComplete} title="Show complete diagram" style={BTN_MUTED}>All</button>
+          )}
 
-          <select value={speed} onChange={e => setSpeed(e.target.value as PlaybackSpeed)} style={SELECT_STYLE} title="Speed">
-            <option value="slow">Slow</option>
-            <option value="normal">Normal</option>
-            <option value="fast">Fast</option>
-          </select>
+          {audience !== "child" && (
+            <select value={speed} onChange={e => setSpeed(e.target.value as PlaybackSpeed)} style={SELECT_STYLE} title="Speed">
+              <option value="slow">Slow</option>
+              <option value="normal">Normal</option>
+              <option value="fast">Fast</option>
+            </select>
+          )}
 
           <button
             onClick={() => { const next = !narrationEnabled; setNarrationEnabled(next); if (!next) stopNarration("narration-muted"); }}
@@ -2116,21 +2127,25 @@ export default function TldrawCanvas({
             {isSpeaking ? "🔊" : narrationEnabled ? "🔉" : "🔇"}
           </button>
 
-          <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
+          {audience !== "child" && (
+            <button onClick={handleExport} title="Export SVG" style={BTN_MUTED}>&#x2193; SVG</button>
+          )}
 
           {/* Read-only by default (locked during playback AND while paused/
               finished) — this is the explicit, deliberate opt-in to draw on
               top of the diagram. Disabled while playing (editing mid-lesson
               would fight with the locked teaching layer's own updates) and
               once already enabled (nothing left to opt into). */}
-          <button
-            onClick={() => setEditingEnabled(true)}
-            disabled={isPlaying || editingEnabled}
-            title={editingEnabled ? "Editing enabled" : "Unlock this canvas for your own annotations"}
-            style={isPlaying || editingEnabled ? BTN_DISABLED : BTN_MUTED}
-          >
-            {editingEnabled ? "✓ Editing" : "✎ Edit a copy"}
-          </button>
+          {audience !== "child" && (
+            <button
+              onClick={() => setEditingEnabled(true)}
+              disabled={isPlaying || editingEnabled}
+              title={editingEnabled ? "Editing enabled" : "Unlock this canvas for your own annotations"}
+              style={isPlaying || editingEnabled ? BTN_DISABLED : BTN_MUTED}
+            >
+              {editingEnabled ? "✓ Editing" : "✎ Edit a copy"}
+            </button>
+          )}
         </span>
       </div>
 
