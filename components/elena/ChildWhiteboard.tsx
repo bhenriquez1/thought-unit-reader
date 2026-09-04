@@ -93,7 +93,17 @@ export default function ChildWhiteboard({ documentId, currentPage, bookTitle, on
       </div>
       <div className="min-h-0 flex-1">
         {units === null ? (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-400">
+          // L23 — this state can hold for several seconds (the retry-poll
+          // above), so it needs to visibly be doing something rather than
+          // sitting on static text the whole time. Reuses ReadingBuddy.tsx's
+          // established three-dot "waiting" indicator for the same visual
+          // language a child already sees elsewhere in Elena Mode.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-slate-400">
+            <span className="inline-flex gap-1.5">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:0ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:150ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:300ms]" />
+            </span>
             Getting the page ready…
           </div>
         ) : vsgState.status !== "ready" ? (
