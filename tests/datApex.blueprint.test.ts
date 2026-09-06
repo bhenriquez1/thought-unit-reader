@@ -1,8 +1,6 @@
 // tests/datApex.blueprint.test.ts
 // DAT Apex — blueprint integrity, state machine transitions, and scoring types.
 
-import { describe, it, expect, vi } from "vitest";
-
 import {
   DAT_BLUEPRINT_2025,
   totalBlueprintItems,
@@ -403,4 +401,3 @@ describe("session state machine — invalid transitions", () => {
     expect(() => enterFinalReview(s)).toThrow(DatSessionTransitionError);
   });
 });
-

@@ -22,7 +22,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function ChiefResidentVoiceCall({ sourceContext, onExit }: ChiefResidentVoiceCallProps) {
-  const { status, error, transcript, isMuted, connect, disconnect, toggleMute } = useChiefResidentVoiceSession();
+  const { status, error, transcript, isMuted, connectionStage, connect, disconnect, toggleMute } = useChiefResidentVoiceSession();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,7 +66,13 @@ export default function ChiefResidentVoiceCall({ sourceContext, onExit }: ChiefR
           <p className="text-[11px] text-white/30">Listening — say hello to start.</p>
         )}
         {transcript.length === 0 && status === "connecting" && (
-          <p className="text-[11px] text-white/30">Connecting…</p>
+          <p className="text-[11px] text-white/30">
+            {connectionStage === "requesting-microphone" ? "Waiting for microphone permission…"
+              : connectionStage === "microphone-ready" ? "Preparing the secure voice connection…"
+              : connectionStage === "offer-created" ? "Starting the live session…"
+              : connectionStage === "upstream-accepted" ? "Connecting audio…"
+              : "Connecting…"}
+          </p>
         )}
         {transcript.map((turn, i) => (
           <div key={i} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>

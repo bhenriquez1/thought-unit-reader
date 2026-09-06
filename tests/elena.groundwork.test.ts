@@ -7,8 +7,6 @@
 //   3. Feature flags default to all-off.
 //   4. Elena Mode types are structurally distinct from LearningProfile.
 
-import { describe, it, expect } from "vitest";
-
 import type { LearningProfile } from "../types/workspace";
 import { LEARNING_PROFILE_LABELS } from "../types/workspace";
 

@@ -74,12 +74,12 @@ describe("Chief Resident staleness — the old click-time snapshot mechanism no 
     expect(src).not.toMatch(/handleOpenChiefResidentExplainConcept/);
   });
 
-  it("ChiefResidentModalShell receives currentPageStudyModel and pageTruthKey as live props — nothing is captured/frozen at click time to go stale", () => {
+  it("ChiefResidentModalShell receives currentPageStudyModel and immutable page truth as live props", () => {
     const idx = src.indexOf("<ChiefResidentModalShell");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 700);
     expect(block).toMatch(/studyModel=\{currentPageStudyModel\}/);
-    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(block).toMatch(/pageTruth=\{activeCurrentPageTruth\}/);
   });
 });
 

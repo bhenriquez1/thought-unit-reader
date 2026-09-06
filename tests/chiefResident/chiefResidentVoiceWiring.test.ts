@@ -15,7 +15,7 @@ const CALL_UI_FILE   = path.resolve(__dirname, "../../components/notelab/ChiefRe
 const PANEL_FILE     = path.resolve(__dirname, "../../components/notelab/ChiefResidentPanel.tsx");
 const SPEECH_FILE    = path.resolve(__dirname, "../../lib/speech/speechController.ts");
 
-describe("pages/api/chief-resident-voice-session.ts — ephemeral token minting only", () => {
+describe("pages/api/chief-resident-voice-session.ts — server-mediated SDP exchange", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(API_FILE, "utf8"); });
 
@@ -25,18 +25,18 @@ describe("pages/api/chief-resident-voice-session.ts — ephemeral token minting 
   });
 
   it("delegates request building and response validation to the pure agent module", () => {
-    expect(src).toMatch(/import \{\s*\n\s*buildVoiceSessionRequest,\s*\n\s*parseVoiceSessionResponse,/);
+    expect(src).toMatch(/import \{\s*\n\s*buildVoiceSessionRequest,\s*\n\s*parseVoiceCallAnswer,/);
     expect(src).toMatch(/buildVoiceSessionRequest\(/);
-    expect(src).toMatch(/parseVoiceSessionResponse\(raw, model, voice\)/);
+    expect(src).toMatch(/parseVoiceCallAnswer\(raw, model, requestId\)/);
   });
 
-  it("never returns the raw apiKey in a response — only the parsed ephemeral session object", () => {
+  it("never returns the raw apiKey in a response — only the parsed SDP answer", () => {
     expect(src).not.toMatch(/res\.status\(200\)\.json\(\{[^}]*apiKey/);
-    expect(src).toMatch(/return res\.status\(200\)\.json\(parsed\.session\);/);
+    expect(src).toMatch(/return res\.status\(200\)\.json\(parsed\.answer\);/);
   });
 
-  it("calls OpenAI's realtime session endpoint with a bearer token, not a query-string key", () => {
-    expect(src).toMatch(/https:\/\/api\.openai\.com\/v1\/realtime\/sessions/);
+  it("calls OpenAI's current realtime calls endpoint with a server-side bearer token", () => {
+    expect(src).toMatch(/https:\/\/api\.openai\.com\/v1\/realtime\/calls/);
     expect(src).toMatch(/Authorization: `Bearer \$\{apiKey\}`/);
   });
 
@@ -67,16 +67,14 @@ describe("lib/chiefResident/useChiefResidentVoiceSession.ts — WebRTC lifecycle
     expect(src).toMatch(/useEffect\(\(\) => \(\) => cleanup\(\), \[cleanup\]\);/);
   });
 
-  it("fetches an ephemeral session from our own API route before opening any connection to OpenAI directly", () => {
+  it("sends the browser SDP offer only to Avrrio's own route", () => {
     const fetchOwnRoute = src.indexOf('fetch("/api/chief-resident-voice-session"');
-    const fetchOpenAI = src.indexOf("REALTIME_BASE_URL");
     expect(fetchOwnRoute).toBeGreaterThan(-1);
-    expect(fetchOpenAI).toBeGreaterThan(-1);
-    expect(fetchOwnRoute).toBeLessThan(src.indexOf(`\${REALTIME_BASE_URL}`));
+    expect(src).toMatch(/JSON\.stringify\(\{ \.\.\.ctx, sdp: offer\.sdp \}\)/);
   });
 
-  it("authenticates the direct OpenAI connection with the ephemeral clientSecret, never reads process.env itself", () => {
-    expect(src).toMatch(/Authorization: `Bearer \$\{session\.clientSecret\}`/);
+  it("never receives a credential or calls OpenAI directly", () => {
+    expect(src).not.toMatch(/clientSecret|Authorization|api\.openai\.com/);
     expect(src).not.toMatch(/process\.env/);
   });
 });
@@ -87,7 +85,7 @@ describe("components/notelab/ChiefResidentVoiceCall.tsx — driven entirely by t
 
   it("imports and calls useChiefResidentVoiceSession rather than owning WebRTC state itself", () => {
     expect(src).toMatch(/import \{ useChiefResidentVoiceSession \} from "@\/lib\/chiefResident\/useChiefResidentVoiceSession";/);
-    expect(src).toMatch(/const \{ status, error, transcript, isMuted, connect, disconnect, toggleMute \} = useChiefResidentVoiceSession\(\);/);
+    expect(src).toMatch(/useChiefResidentVoiceSession\(\);/);
   });
 
   it("connects on mount and disconnects on unmount", () => {

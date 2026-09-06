@@ -1,10 +1,7 @@
 // pages/api/chief-resident-voice-session.ts
-// CR2 — mints a short-lived OpenAI Realtime API session for a Chief
-// Resident voice call. The real OPENAI_API_KEY is read server-side only
-// and never returned to the client; the client receives an ephemeral
-// client_secret (single-session, short expiry) and uses it to open its own
-// WebRTC connection directly to OpenAI (see
-// lib/chiefResident/useChiefResidentVoiceSession.ts).
+// Server-mediated OpenAI Realtime WebRTC handshake. The browser sends its
+// SDP offer here; this route creates the call and returns only the SDP answer.
+// OPENAI_API_KEY never leaves the server.
 //
 // See lib/chiefResident/chiefResidentVoiceAgent.ts for the pure
 // request/response shaping this route wraps.
@@ -12,7 +9,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import {
   buildVoiceSessionRequest,
-  parseVoiceSessionResponse,
+  parseVoiceCallAnswer,
   DEFAULT_VOICE_MODEL,
   DEFAULT_VOICE,
   type VoiceSessionSourceContext,
@@ -29,7 +26,7 @@ export const config = {
 // maxDuration without leaving a hung upstream call to time out on its own.
 const SESSION_TIMEOUT_MS = 10_000;
 
-interface RequestBody extends VoiceSessionSourceContext {}
+interface RequestBody extends VoiceSessionSourceContext { sdp: string }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -49,6 +46,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (typeof body.sourceText !== "string" || !body.sourceText.trim()) {
     return res.status(400).json({ error: "sourceText is required." });
   }
+  if (typeof body.sdp !== "string" || !body.sdp.trim()) {
+    return res.status(400).json({ error: "sdp is required." });
+  }
 
   const model = process.env.OPENAI_CHIEF_RESIDENT_VOICE_MODEL || DEFAULT_VOICE_MODEL;
   const voice = process.env.OPENAI_CHIEF_RESIDENT_VOICE || DEFAULT_VOICE;
@@ -65,13 +65,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SESSION_TIMEOUT_MS);
   try {
-    const upstream = await fetch("https://api.openai.com/v1/realtime/sessions", {
+    const form = new FormData();
+    form.set("sdp", new Blob([body.sdp], { type: "application/sdp" }), "offer.sdp");
+    form.set("session", new Blob([JSON.stringify(requestBody)], { type: "application/json" }), "session.json");
+    const upstream = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify(requestBody),
+      body: form,
       signal: ctrl.signal,
     });
 
@@ -81,14 +83,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(502).json({ error: "Could not start a live voice session.", code: "upstream_error" });
     }
 
-    const raw = await upstream.json();
-    const parsed = parseVoiceSessionResponse(raw, model, voice);
+    const raw = await upstream.text();
+    const requestId = upstream.headers.get("x-request-id") ?? undefined;
+    const parsed = parseVoiceCallAnswer(raw, model, requestId);
     if (!parsed.ok) {
       console.error("[CHIEF_RESIDENT_VOICE_SESSION_FAILED]", { stage: "parse", error: parsed.error });
       return res.status(502).json({ error: parsed.error, code: "malformed_response" });
     }
 
-    return res.status(200).json(parsed.session);
+    return res.status(200).json(parsed.answer);
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === "AbortError";
     console.error("[CHIEF_RESIDENT_VOICE_SESSION_FAILED]", {

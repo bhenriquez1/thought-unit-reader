@@ -346,7 +346,8 @@ describe("pages/index.tsx — SurgeonAnnotationPlan wiring", () => {
     const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/domain:\s*surgeonPageDomain/);
     expect(block).toMatch(/semanticPack:\s*activePack/);
-    expect(block).toMatch(/documentId:\s*resolvedDocumentId/);
+    expect(block).toMatch(/documentId:\s*activeCurrentPageTruth\.documentId/);
+    expect(block).toMatch(/pageTruthKey:\s*activeCurrentPageTruth\.pageTruthKey/);
   });
 
   it("useSurgeonAnnotations is called AFTER pageTruthKey is destructured from useActivePageIntelligence (no TDZ)", () => {

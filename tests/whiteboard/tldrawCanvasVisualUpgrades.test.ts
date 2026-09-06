@@ -360,11 +360,13 @@ describe("TldrawCanvas.tsx — read-only teaching canvas + explicit 'Edit a copy
     expect(block).toMatch(/editor\.updateInstanceState\(\{ isReadonly: true \}\)/);
   });
 
-  it("REQUIRED: the 'Edit a copy' button exists, is disabled while playing, and is disabled once already enabled", () => {
-    const idx = src.indexOf('onClick={() => setEditingEnabled(true)}');
+  it("REQUIRED: the edit button unlocks generated shapes and is disabled while playing or already enabled", () => {
+    const idx = src.indexOf('onClick={handleEnableEditing}');
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 250);
     expect(block).toMatch(/disabled=\{isPlaying \|\| editingEnabled\}/);
+    const handler = src.slice(src.indexOf("const handleEnableEditing"), src.indexOf("const handleEnableEditing") + 900);
+    expect(handler).toMatch(/isLocked: false/);
   });
 });
 

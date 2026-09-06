@@ -27,9 +27,9 @@ describe("canonicalToRecallCards — basic structure", () => {
     expect(canonicalToRecallCards([])).toHaveLength(0);
   });
 
-  it("generates one card per entry", () => {
+  it("generates semantic question families for each entry", () => {
     const cards = canonicalToRecallCards([CAUSE, EFFECT, DEFINITION]);
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(10);
   });
 
   it("each card has required RecallCard fields", () => {
@@ -52,30 +52,35 @@ describe("canonicalToRecallCards — basic structure", () => {
 // ── canonicalToRecallCards — question stems ───────────────────────────────────
 
 describe("canonicalToRecallCards — question stems", () => {
-  it("cause entry uses 'What causes:' stem", () => {
-    const [card] = canonicalToRecallCards([CAUSE]);
-    expect(card.front).toMatch(/What causes:/i);
+  it("cause entry uses identity, outcome, and sequence families", () => {
+    const cards = canonicalToRecallCards([CAUSE]);
+    expect(cards.map((card) => card.id)).toEqual(expect.arrayContaining([
+      expect.stringContaining("identity"),
+      expect.stringContaining("outcome"),
+      expect.stringContaining("sequence"),
+    ]));
   });
 
-  it("definition entry uses 'Define:' stem and title as label", () => {
+  it("definition entry begins with an identity prompt and uses the title as label", () => {
     const [card] = canonicalToRecallCards([DEFINITION]);
-    expect(card.front).toMatch(/Define:/i);
+    expect(card.front).toMatch(/^What is/i);
     expect(card.front).toContain("Caries");
   });
 
-  it("mechanism entry uses 'Explain the mechanism of:' stem", () => {
+  it("mechanism entry begins with a trigger prompt", () => {
     const [card] = canonicalToRecallCards([MECHANISM]);
-    expect(card.front).toMatch(/Explain the mechanism of:/i);
+    expect(card.front).toMatch(/^What triggers or initiates/i);
   });
 
-  it("warning entry includes warning emoji", () => {
+  it("warning entry uses an identity prompt without presentation-only emoji", () => {
     const [card] = canonicalToRecallCards([WARNING]);
-    expect(card.front).toContain("⚠️");
+    expect(card.front).toMatch(/^What is/i);
+    expect(card.front).not.toContain("⚠️");
   });
 
-  it("high-yield entry uses 'high-yield point' stem", () => {
+  it("high-yield entry uses an identity prompt", () => {
     const [card] = canonicalToRecallCards([HIGH_YIELD]);
-    expect(card.front).toMatch(/high-yield point/i);
+    expect(card.front).toMatch(/^What is/i);
   });
 
   it("formula entry uses title as label when present", () => {
@@ -83,15 +88,17 @@ describe("canonicalToRecallCards — question stems", () => {
     expect(card.front).toContain("pH Formula");
   });
 
-  it("memory-anchor entry uses 'How do you remember:' stem", () => {
+  it("memory-anchor entry uses an identity prompt", () => {
     const [card] = canonicalToRecallCards([MEMORY]);
-    expect(card.front).toMatch(/How do you remember:/i);
+    expect(card.front).toMatch(/^What is/i);
   });
 
-  it("unknown canonical type falls back to 'Explain:' stem", () => {
+  it("unknown canonical type falls back to conservative identity and distinction prompts", () => {
     const entry: CanonicalRecallInput = { id: "x1", text: "Some text", canonicalType: "unknown-type", importanceScore: 50 };
-    const [card] = canonicalToRecallCards([entry]);
-    expect(card.front).toMatch(/Explain:/i);
+    const cards = canonicalToRecallCards([entry]);
+    expect(cards).toHaveLength(2);
+    expect(cards[0].front).toMatch(/^What is/i);
+    expect(cards[1].front).toMatch(/^What distinguishes/i);
   });
 });
 
@@ -130,8 +137,10 @@ describe("canonicalToRecallCards — importance ordering", () => {
   it("critical-importance entry appears before medium-importance entry", () => {
     const cards = canonicalToRecallCards([DEFINITION, HIGH_YIELD]);
     // HIGH_YIELD importanceScore=92 → critical; DEFINITION importanceScore=55 → medium
-    expect(cards[0].id).toContain("h1");
-    expect(cards[1].id).toContain("d1");
+    const highYieldIndex = cards.findIndex((card) => card.id.includes("h1"));
+    const definitionIndex = cards.findIndex((card) => card.id.includes("d1"));
+    expect(highYieldIndex).toBeGreaterThanOrEqual(0);
+    expect(definitionIndex).toBeGreaterThan(highYieldIndex);
   });
 
   it("sorts critical before high before medium before reference", () => {
@@ -225,7 +234,7 @@ describe("buildRecallSetFromCanonical", () => {
 
   it("includes all generated cards", () => {
     const set = buildRecallSetFromCanonical([CAUSE, EFFECT, DEFINITION], OPTS);
-    expect(set.cards).toHaveLength(3);
+    expect(set.cards).toHaveLength(10);
   });
 
   it("falls back to 'Page N' topic when no pageTitle provided", () => {
