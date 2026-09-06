@@ -6,7 +6,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
-import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
+import { saveUltraNote, type UltraNote } from "@/lib/notelab/ultraNoteStore";
+import { composeNoteNotebookSceneInBackground } from "@/lib/notelab/composeNotebookScene";
 import type { TeachingMode, TeachingAudience } from "@/pages/api/chief-resident-teaching";
 import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
@@ -15,6 +16,12 @@ import {
   matchesFrozenSnapshot,
   type ChiefResidentFrozenSnapshot,
 } from "@/lib/reader/buildChiefResidentContext";
+import {
+  resolveChiefResidentTurn,
+  shouldOfferDelegation,
+  type ChiefResidentDelegation,
+  type ChiefResidentDelegationTarget,
+} from "@/lib/chiefResident/chiefResidentAgent";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,6 +30,10 @@ import {
 interface TeachingTurn {
   role: "user" | "assistant";
   content: string;
+  /** CR1 — set only on the one assistant turn (if any) where the Chief
+   *  Resident Agent decided a handoff was worth offering, and only the
+   *  first time that target was offered this session. */
+  delegation?: ChiefResidentDelegation;
 }
 
 interface ChiefResidentPanelProps {
@@ -187,6 +198,12 @@ export default function ChiefResidentPanel({
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // CR1 — the Chief Resident Agent never offers the same delegation target
+  // twice in one session (see chiefResidentAgent.ts's shouldOfferDelegation).
+  // A ref, not state: membership is only ever read/written inside the
+  // streaming callbacks below, never rendered directly.
+  const offeredDelegationsRef = useRef<Set<ChiefResidentDelegationTarget>>(new Set());
+  const [notelabDelegationState, setNotelabDelegationState] = useState<"idle" | "composing" | "done">("idle");
 
   // Auto-scroll on new content
   useEffect(() => {
@@ -202,7 +219,35 @@ export default function ChiefResidentPanel({
     setHasStarted(false);
     setSessionDone(false);
     setError(null);
+    offeredDelegationsRef.current = new Set();
+    setNotelabDelegationState("idle");
   }, [bookId, currentPage, pageTruthKey]);
+
+  // CR1 — turns a completed turn's raw text into the TeachingTurn the
+  // transcript actually stores: strips any delegation directive out of the
+  // visible content, and attaches it to the turn only the first time that
+  // target is offered this session.
+  const finalizeAssistantTurn = useCallback((full: string): TeachingTurn => {
+    const { visibleText, delegation } = resolveChiefResidentTurn(full);
+    if (delegation && shouldOfferDelegation(delegation.target, offeredDelegationsRef.current)) {
+      offeredDelegationsRef.current.add(delegation.target);
+      return { role: "assistant", content: visibleText, delegation };
+    }
+    return { role: "assistant", content: visibleText };
+  }, []);
+
+  const handleDelegateToNotelab = useCallback(async () => {
+    if (!activeNote || notelabDelegationState !== "idle") return;
+    setNotelabDelegationState("composing");
+    try {
+      await saveUltraNote({ ...activeNote, notebookSceneStatus: "pending" });
+      await composeNoteNotebookSceneInBackground(activeNote, activeNote.documentId ?? activeNote.bookId);
+    } catch (err) {
+      console.error("[CHIEF_RESIDENT_DELEGATE_NOTELAB_FAILED]", String(err));
+    } finally {
+      setNotelabDelegationState("done");
+    }
+  }, [activeNote, notelabDelegationState]);
 
   const getSourceText = useCallback((mode: TeachingMode): string => {
     if (mode === "teach-note") return activeNote ? buildNoteSourceText(activeNote) : "";
@@ -240,7 +285,7 @@ export default function ChiefResidentPanel({
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
-      setSessionMessages([{ role: "assistant", content: full }]);
+      setSessionMessages([finalizeAssistantTurn(full)]);
       setStreamingBuffer("");
       if (full.includes("📋 Before Rounds") || full.includes("Before Rounds:")) setSessionDone(true);
     } catch (e) {
@@ -248,7 +293,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [getSourceText, bookTitle, teachingAudience, bookId, currentPage, pageTruthKey]);
+  }, [getSourceText, bookTitle, teachingAudience, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const sendUserReply = useCallback(async () => {
     const msg = userInput.trim();
@@ -276,7 +321,7 @@ export default function ChiefResidentPanel({
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
-      setSessionMessages(prev => [...prev, { role: "assistant", content: full }]);
+      setSessionMessages(prev => [...prev, finalizeAssistantTurn(full)]);
       setStreamingBuffer("");
       if (full.includes("📋 Before Rounds") || full.includes("Before Rounds:")) setSessionDone(true);
     } catch (e) {
@@ -285,7 +330,7 @@ export default function ChiefResidentPanel({
       setIsStreaming(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey]);
+  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const requestSummary = useCallback(async () => {
     if (isStreaming || !selectedMode) return;
@@ -311,7 +356,7 @@ export default function ChiefResidentPanel({
         (token) => { accumulated += token; setStreamingBuffer(accumulated); },
         abortRef.current.signal
       );
-      setSessionMessages(prev => [...prev, { role: "assistant", content: full }]);
+      setSessionMessages(prev => [...prev, finalizeAssistantTurn(full)]);
       setStreamingBuffer("");
       setSessionDone(true);
     } catch (e) {
@@ -319,7 +364,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey]);
+  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const sendToRecall = useCallback(async () => {
     if (!activeNote) return;
@@ -435,6 +480,31 @@ export default function ChiefResidentPanel({
             }`}>
               {turn.role === "assistant" && <span className="text-[10px] font-bold text-emerald-400/70 block mb-1.5">🩺 Chief Resident</span>}
               {turn.content}
+              {turn.delegation && (
+                <div className="mt-3 pt-3 border-t border-white/10">
+                  <p className="text-[11px] text-white/50 mb-2">{turn.delegation.reason}</p>
+                  {turn.delegation.target === "notelab" ? (
+                    activeNote ? (
+                      <button
+                        onClick={handleDelegateToNotelab}
+                        disabled={notelabDelegationState !== "idle"}
+                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-sky-300 bg-sky-900/25 hover:bg-sky-900/40 border border-sky-700/30 disabled:opacity-50 transition-colors"
+                      >
+                        {notelabDelegationState === "composing" ? "Composing…" : notelabDelegationState === "done" ? "✓ Sent to NoteLab" : "📝 Compose this into NoteLab"}
+                      </button>
+                    ) : (
+                      <p className="text-[10.5px] text-white/30">Save a note for this page first, then this can be composed into NoteLab.</p>
+                    )
+                  ) : (
+                    // CR1 — Whiteboard delegation is a validated signal only;
+                    // actually opening Whiteboard Mode requires plumbing a
+                    // callback through this panel's two different parents
+                    // (ChiefResidentModalShell in the Reader vs. the NoteLab
+                    // tab), which is out of scope for this pass.
+                    <p className="text-[10.5px] text-white/30">Open Whiteboard Mode to continue this visually.</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

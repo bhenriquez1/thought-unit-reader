@@ -14,6 +14,7 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import { CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS } from "@/lib/chiefResident/chiefResidentAgent";
 
 export const config = {
   maxDuration: 60,
@@ -221,6 +222,9 @@ function getSystemPrompt(mode: TeachingMode, audience?: string): string {
   else if (mode === "explain-page")   base = EXPLAIN_PAGE_SYSTEM;
   else                                base = BASE_SYSTEM;
   if (audience && AUDIENCE_MODIFIERS[audience]) base += AUDIENCE_MODIFIERS[audience];
+  // CR1 — rapid-fire stays deliberately terse (question/verdict only, no
+  // room for a delegation aside); every other mode may offer a handoff.
+  if (mode !== "rapid-fire") base += CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS;
   return CONTENT_AUTHORITY + base;
 }
 
