@@ -7,6 +7,8 @@ import {
   resolveChiefResidentTurn,
   shouldOfferDelegation,
   CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS,
+  parseRealtimeDelegationToolCall,
+  REALTIME_DELEGATION_TOOLS,
   type ChiefResidentDelegationTarget,
 } from "../../lib/chiefResident/chiefResidentAgent";
 
@@ -89,5 +91,64 @@ describe("CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS", () => {
   it("documents the exact directive grammar resolveChiefResidentTurn parses", () => {
     expect(CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS).toContain("[[DELEGATE: NOTELAB | one-sentence reason]]");
     expect(CHIEF_RESIDENT_DELEGATION_DIRECTIVE_INSTRUCTIONS).toContain("[[DELEGATE: WHITEBOARD | one-sentence reason]]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR3 — the same delegation decision, expressed as Realtime API tools
+// ---------------------------------------------------------------------------
+
+describe("REALTIME_DELEGATION_TOOLS", () => {
+  it("declares exactly two tools, one per delegation target", () => {
+    expect(REALTIME_DELEGATION_TOOLS).toHaveLength(2);
+    const names = REALTIME_DELEGATION_TOOLS.map((t) => t.name);
+    expect(names).toEqual(["delegate_to_notelab", "delegate_to_whiteboard"]);
+  });
+
+  it("every tool requires a 'reason' string parameter", () => {
+    for (const tool of REALTIME_DELEGATION_TOOLS) {
+      expect(tool.type).toBe("function");
+      expect(tool.parameters.required).toEqual(["reason"]);
+      expect(tool.parameters.properties.reason.type).toBe("string");
+    }
+  });
+});
+
+describe("parseRealtimeDelegationToolCall — valid calls", () => {
+  it("parses a delegate_to_notelab call into a notelab delegation", () => {
+    const result = parseRealtimeDelegationToolCall("delegate_to_notelab", JSON.stringify({ reason: "Build a page for this" }));
+    expect(result).toEqual({ target: "notelab", reason: "Build a page for this" });
+  });
+
+  it("parses a delegate_to_whiteboard call into a whiteboard delegation", () => {
+    const result = parseRealtimeDelegationToolCall("delegate_to_whiteboard", JSON.stringify({ reason: "Draw this out" }));
+    expect(result).toEqual({ target: "whiteboard", reason: "Draw this out" });
+  });
+
+  it("trims surrounding whitespace from the reason", () => {
+    const result = parseRealtimeDelegationToolCall("delegate_to_notelab", JSON.stringify({ reason: "  spaced reason  " }));
+    expect(result?.reason).toBe("spaced reason");
+  });
+});
+
+describe("parseRealtimeDelegationToolCall — fails closed", () => {
+  it("returns null for an unrecognized tool name", () => {
+    expect(parseRealtimeDelegationToolCall("some_other_tool", JSON.stringify({ reason: "x" }))).toBeNull();
+  });
+
+  it("returns null for malformed (non-JSON) arguments", () => {
+    expect(parseRealtimeDelegationToolCall("delegate_to_notelab", "{not json")).toBeNull();
+  });
+
+  it("returns null when reason is missing", () => {
+    expect(parseRealtimeDelegationToolCall("delegate_to_notelab", JSON.stringify({}))).toBeNull();
+  });
+
+  it("returns null when reason is empty/whitespace-only", () => {
+    expect(parseRealtimeDelegationToolCall("delegate_to_notelab", JSON.stringify({ reason: "   " }))).toBeNull();
+  });
+
+  it("returns null when reason is not a string", () => {
+    expect(parseRealtimeDelegationToolCall("delegate_to_notelab", JSON.stringify({ reason: 42 }))).toBeNull();
   });
 });

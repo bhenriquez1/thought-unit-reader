@@ -4,12 +4,12 @@
 // discipline as the text mode (components/notelab/ChiefResidentPanel.tsx),
 // using OpenAI's Realtime API over WebRTC.
 //
-// Deliberately does NOT forward CR1's [[DELEGATE: ...]] directive
-// convention over voice yet (see chiefResidentAgent.ts) — the Realtime
-// API has its own native tool-calling mechanism (function definitions
-// passed at session-creation time, invoked mid-conversation via
-// data-channel events), which is a different shape than CR1's
-// text-parsed trailing-line convention and needs its own design pass.
+// CR3 — the session request now also declares REALTIME_DELEGATION_TOOLS
+// (chiefResidentAgent.ts) so the model can hand off to NoteLab/Whiteboard
+// mid-conversation via the Realtime API's native function-calling
+// mechanism, mirroring CR1's text-mode [[DELEGATE: ...]] directive but
+// expressed the way voice actually works — see chiefResidentAgent.ts's
+// own "CR3" section for why these are two mechanisms sharing one contract.
 //
 // Standard OpenAI Realtime-over-WebRTC pattern, followed here:
 //   1. The client asks OUR server for a short-lived ephemeral session (this
@@ -27,6 +27,7 @@
 // browser APIs — those stay the caller's job.
 
 import type { TeachingAudience } from "@/pages/api/chief-resident-teaching";
+import { REALTIME_DELEGATION_TOOLS, type RealtimeDelegationToolDefinition } from "./chiefResidentAgent";
 
 export const DEFAULT_VOICE_MODEL = "gpt-4o-realtime-preview";
 export const DEFAULT_VOICE = "alloy";
@@ -68,6 +69,8 @@ SPOKEN FORMAT — this is audio, not text:
 - Detect the subject from the content and adapt your teaching voice to it (a Chief Resident for medicine/dentistry, a professor for science, a Socratic guide for humanities, and so on), but say this naturally in conversation rather than announcing a persona.
 - Judge the student's reasoning, not just whether their answer is correct, and build on what they say.
 - Be direct. Never say "Great question!" or "Great answer!".
+
+DELEGATION (optional, use sparingly): You have two tools available — one to send this material to a permanent visual notebook page, one to suggest drawing this concept on a whiteboard. Call one only when you genuinely believe it would help, never on your first message, and never more than one per turn. Most turns should not call either.
 ${audienceNote}
 
 ${header}${pageNote}
@@ -88,6 +91,11 @@ export interface RealtimeSessionRequestBody {
   modalities: ["audio", "text"];
   instructions: string;
   turn_detection: RealtimeTurnDetectionConfig;
+  /** CR3 — the same two delegation tools every voice session offers.
+   *  Optional in the type only so existing tests/fixtures built before CR3
+   *  don't need updating; buildVoiceSessionRequest always sets it. */
+  tools?: RealtimeDelegationToolDefinition[];
+  tool_choice?: "auto";
 }
 
 export interface VoiceSessionRequestOptions {
@@ -107,6 +115,8 @@ export function buildVoiceSessionRequest(
     modalities: ["audio", "text"],
     instructions: buildVoiceSessionInstructions(ctx),
     turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 600 },
+    tools: REALTIME_DELEGATION_TOOLS,
+    tool_choice: "auto",
   };
 }
 
