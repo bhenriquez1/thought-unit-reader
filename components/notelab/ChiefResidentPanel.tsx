@@ -22,6 +22,7 @@ import {
   type ChiefResidentDelegation,
   type ChiefResidentDelegationTarget,
 } from "@/lib/chiefResident/chiefResidentAgent";
+import ChiefResidentVoiceCall from "@/components/notelab/ChiefResidentVoiceCall";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,6 +205,11 @@ export default function ChiefResidentPanel({
   // streaming callbacks below, never rendered directly.
   const offeredDelegationsRef = useRef<Set<ChiefResidentDelegationTarget>>(new Set());
   const [notelabDelegationState, setNotelabDelegationState] = useState<"idle" | "composing" | "done">("idle");
+  // CR2 — a live voice call is a wholly separate flow from the text mode
+  // picker/session below (its own WebRTC connection, no sessionMessages
+  // transcript, no selectedMode) — this flag short-circuits everything else
+  // in this component rather than threading voice state through it.
+  const [voiceCallActive, setVoiceCallActive] = useState(false);
 
   // Auto-scroll on new content
   useEffect(() => {
@@ -221,6 +227,7 @@ export default function ChiefResidentPanel({
     setError(null);
     offeredDelegationsRef.current = new Set();
     setNotelabDelegationState("idle");
+    setVoiceCallActive(false);
   }, [bookId, currentPage, pageTruthKey]);
 
   // CR1 — turns a completed turn's raw text into the TeachingTurn the
@@ -374,6 +381,24 @@ export default function ChiefResidentPanel({
   }, [activeNote, bookTitle, onRecallSaved]);
 
   // ---------------------------------------------------------------------------
+  // Render — live voice call (CR2)
+  // ---------------------------------------------------------------------------
+
+  if (voiceCallActive) {
+    return (
+      <ChiefResidentVoiceCall
+        sourceContext={{
+          sourceText: getSourceText("teach-page"),
+          title: bookTitle,
+          pageNumber: currentPage,
+          audience: teachingAudience,
+        }}
+        onExit={() => setVoiceCallActive(false)}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Render — idle (mode picker)
   // ---------------------------------------------------------------------------
 
@@ -405,6 +430,18 @@ export default function ChiefResidentPanel({
           )}
 
           <div className="space-y-2">
+            <button
+              onClick={() => setVoiceCallActive(true)}
+              className="w-full text-left rounded-xl border px-4 py-3.5 transition-colors border-sky-700/30 bg-sky-900/15 hover:bg-sky-900/25 hover:border-sky-600/40 cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🎙️</span>
+                <div>
+                  <div className="text-[12.5px] font-semibold text-white/85">Talk Live</div>
+                  <div className="text-[11px] text-white/40 mt-0.5">Have a real spoken conversation about this page</div>
+                </div>
+              </div>
+            </button>
             {MODES.map(m => {
               const disabled = m.needsNote && !activeNote;
               return (
