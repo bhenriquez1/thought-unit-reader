@@ -393,6 +393,7 @@ export default function ChiefResidentPanel({
           pageNumber: currentPage,
           audience: teachingAudience,
         }}
+        activeNote={activeNote}
         onExit={() => setVoiceCallActive(false)}
       />
     );

@@ -120,3 +120,106 @@ If — and only if — you judge that the student would genuinely benefit from a
 or
 [[DELEGATE: WHITEBOARD | one-sentence reason]]
 Most turns should NOT include this line. Only include it once you have actually taught the concept, not on your very first orienting message, and never more than one per message.`;
+
+// ---------------------------------------------------------------------------
+// CR3 — the same delegation decision, expressed as Realtime API tools
+// ---------------------------------------------------------------------------
+//
+// The trailing [[DELEGATE: ...]] line above only makes sense for a text
+// transcript the model is writing — it has nothing to "write" in a live
+// voice call. The Realtime API's own native mechanism for this is function
+// calling: tool definitions declared once at session-creation time
+// (lib/chiefResident/chiefResidentVoiceAgent.ts's buildVoiceSessionRequest
+// embeds REALTIME_DELEGATION_TOOLS below), and a function-call event
+// delivered over the WebRTC data channel mid-conversation whenever the
+// model decides to invoke one
+// (lib/chiefResident/useChiefResidentVoiceSession.ts handles that event).
+//
+// Both mechanisms are validated into the exact same ChiefResidentDelegation
+// shape and gated by the exact same shouldOfferDelegation() above, so text
+// and voice share one delegation contract and one set of consumers (the
+// same NoteLab-compose action, the same whiteboard signal-only rendering)
+// rather than voice growing a second, parallel notion of "delegation."
+//
+// Honesty note: the exact Realtime API function-calling event names/shapes
+// below (response.output_item.done carrying a "function_call" item) reflect
+// OpenAI's documented Realtime API behavior as of this module's writing,
+// but could not be verified against a live connection in this sandbox (no
+// OPENAI_API_KEY, no real WebRTC environment) — see
+// useChiefResidentVoiceSession.ts's own header for the same caveat.
+
+export interface RealtimeDelegationToolDefinition {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: { reason: { type: "string"; description: string } };
+    required: ["reason"];
+  };
+}
+
+/** Realtime API function name -> delegation target, and its inverse. Kept
+ *  as the single source of truth so the tool definitions below and the
+ *  parser that reads their call events can never name a target differently. */
+const REALTIME_TOOL_NAME: Record<ChiefResidentDelegationTarget, string> = {
+  notelab: "delegate_to_notelab",
+  whiteboard: "delegate_to_whiteboard",
+};
+
+const REALTIME_TARGET_BY_TOOL_NAME: Record<string, ChiefResidentDelegationTarget> = {
+  [REALTIME_TOOL_NAME.notelab]: "notelab",
+  [REALTIME_TOOL_NAME.whiteboard]: "whiteboard",
+};
+
+export const REALTIME_DELEGATION_TOOLS: RealtimeDelegationToolDefinition[] = [
+  {
+    type: "function",
+    name: REALTIME_TOOL_NAME.notelab,
+    description:
+      "Call this only when you genuinely believe the student would benefit from a permanent visual notebook page for the material just discussed. Most turns should not call this — do not call it on your first message.",
+    parameters: {
+      type: "object",
+      properties: { reason: { type: "string", description: "One sentence: why a NoteLab page would help right now." } },
+      required: ["reason"],
+    },
+  },
+  {
+    type: "function",
+    name: REALTIME_TOOL_NAME.whiteboard,
+    description:
+      "Call this only when you genuinely believe the student would benefit from seeing this concept drawn out step-by-step on a whiteboard. Most turns should not call this — do not call it on your first message.",
+    parameters: {
+      type: "object",
+      properties: { reason: { type: "string", description: "One sentence: why a whiteboard drawing would help right now." } },
+      required: ["reason"],
+    },
+  },
+];
+
+/**
+ * Pure — no network, no WebRTC. Validates a Realtime API function-call
+ * (tool name + its raw JSON arguments string) into the same
+ * ChiefResidentDelegation shape resolveChiefResidentTurn produces for text.
+ * Fails closed: an unrecognized tool name, malformed JSON, or a missing/
+ * empty reason all yield null — never a guessed delegation.
+ */
+export function parseRealtimeDelegationToolCall(
+  toolName: string,
+  rawArguments: string,
+): ChiefResidentDelegation | null {
+  const target = REALTIME_TARGET_BY_TOOL_NAME[toolName];
+  if (!target) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArguments);
+  } catch {
+    return null;
+  }
+
+  const reason = (parsed as { reason?: unknown } | null)?.reason;
+  if (typeof reason !== "string" || !reason.trim()) return null;
+
+  return { target, reason: reason.trim() };
+}

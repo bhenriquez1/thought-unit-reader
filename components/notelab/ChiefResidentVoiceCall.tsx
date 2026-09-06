@@ -3,13 +3,24 @@
 // CR2 — minimal live-voice-call UI: connect/mute/end, live captions. Owns
 // no WebRTC state itself — entirely driven by
 // lib/chiefResident/useChiefResidentVoiceSession.ts.
+//
+// CR3 — also renders the delegation card the hook surfaces (the Realtime
+// API tool-call equivalent of ChiefResidentPanel.tsx's text-mode
+// delegation card): a NoteLab handoff triggers the same
+// composeNoteNotebookSceneInBackground pipeline the text mode and
+// UltraNotesList's own Retry action use; a whiteboard handoff is signal-
+// only, same scope boundary CR1 established (no live tldraw Editor exists
+// inside a Chief Resident conversation to actually invoke).
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChiefResidentVoiceSession } from "@/lib/chiefResident/useChiefResidentVoiceSession";
 import type { VoiceSessionSourceContext } from "@/lib/chiefResident/chiefResidentVoiceAgent";
+import { saveUltraNote, type UltraNote } from "@/lib/notelab/ultraNoteStore";
+import { composeNoteNotebookSceneInBackground } from "@/lib/notelab/composeNotebookScene";
 
 interface ChiefResidentVoiceCallProps {
   sourceContext: VoiceSessionSourceContext;
+  activeNote: UltraNote | null;
   onExit: () => void;
 }
 
@@ -21,9 +32,23 @@ const STATUS_STYLES: Record<string, string> = {
   ended:      "border-white/10 text-white/40 bg-white/5",
 };
 
-export default function ChiefResidentVoiceCall({ sourceContext, onExit }: ChiefResidentVoiceCallProps) {
-  const { status, error, transcript, isMuted, connect, disconnect, toggleMute } = useChiefResidentVoiceSession();
+export default function ChiefResidentVoiceCall({ sourceContext, activeNote, onExit }: ChiefResidentVoiceCallProps) {
+  const { status, error, transcript, isMuted, delegation, connect, disconnect, toggleMute } = useChiefResidentVoiceSession();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [notelabDelegationState, setNotelabDelegationState] = useState<"idle" | "composing" | "done">("idle");
+
+  const handleDelegateToNotelab = useCallback(async () => {
+    if (!activeNote || notelabDelegationState !== "idle") return;
+    setNotelabDelegationState("composing");
+    try {
+      await saveUltraNote({ ...activeNote, notebookSceneStatus: "pending" });
+      await composeNoteNotebookSceneInBackground(activeNote, activeNote.documentId ?? activeNote.bookId);
+    } catch (err) {
+      console.error("[CHIEF_RESIDENT_VOICE_DELEGATE_NOTELAB_FAILED]", String(err));
+    } finally {
+      setNotelabDelegationState("done");
+    }
+  }, [activeNote, notelabDelegationState]);
 
   useEffect(() => {
     connect(sourceContext);
@@ -36,7 +61,7 @@ export default function ChiefResidentVoiceCall({ sourceContext, onExit }: ChiefR
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcript]);
+  }, [transcript, delegation]);
 
   return (
     <div className="flex flex-col h-full bg-[rgb(11,18,34)]">
@@ -80,6 +105,26 @@ export default function ChiefResidentVoiceCall({ sourceContext, onExit }: ChiefR
             </div>
           </div>
         ))}
+        {delegation && (
+          <div className="rounded-xl border border-sky-700/30 bg-sky-900/15 px-4 py-3">
+            <p className="text-[11px] text-white/50 mb-2">{delegation.reason}</p>
+            {delegation.target === "notelab" ? (
+              activeNote ? (
+                <button
+                  onClick={handleDelegateToNotelab}
+                  disabled={notelabDelegationState !== "idle"}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-sky-300 bg-sky-900/25 hover:bg-sky-900/40 border border-sky-700/30 disabled:opacity-50 transition-colors"
+                >
+                  {notelabDelegationState === "composing" ? "Composing…" : notelabDelegationState === "done" ? "✓ Sent to NoteLab" : "📝 Compose this into NoteLab"}
+                </button>
+              ) : (
+                <p className="text-[10.5px] text-white/30">Save a note for this page first, then this can be composed into NoteLab.</p>
+              )
+            ) : (
+              <p className="text-[10.5px] text-white/30">Open Whiteboard Mode to continue this visually.</p>
+            )}
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 

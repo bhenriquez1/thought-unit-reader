@@ -79,6 +79,35 @@ describe("lib/chiefResident/useChiefResidentVoiceSession.ts — WebRTC lifecycle
     expect(src).toMatch(/Authorization: `Bearer \$\{session\.clientSecret\}`/);
     expect(src).not.toMatch(/process\.env/);
   });
+
+  it("CR3: validates a function-call event through the pure agent module, never inlining its own parsing", () => {
+    expect(src).toMatch(/import \{\s*\n\s*parseRealtimeDelegationToolCall,\s*\n\s*shouldOfferDelegation,/);
+    expect(src).toMatch(/msg\.type === "response\.output_item\.done" && msg\.item\?\.type === "function_call"/);
+    expect(src).toMatch(/parseRealtimeDelegationToolCall\(name, rawArguments\)/);
+  });
+
+  it("CR3: gates a valid tool call through the same once-per-session offer check as the text mode", () => {
+    expect(src).toMatch(/const offeredDelegationsRef = useRef<Set<ChiefResidentDelegationTarget>>\(new Set\(\)\);/);
+    expect(src).toMatch(/shouldOfferDelegation\(parsed\.target, offeredDelegationsRef\.current\)/);
+  });
+
+  it("CR3: always acknowledges the tool call back to the model, offered or not, so its turn never hangs", () => {
+    const idx = src.indexOf("const acknowledgeToolCall");
+    const block = src.slice(idx, idx + 500);
+    expect(block).toMatch(/type: "conversation\.item\.create"/);
+    expect(block).toMatch(/type: "function_call_output"/);
+    expect(block).toMatch(/type: "response\.create"/);
+    // Both the not-offered and offered paths must call it.
+    const calls = src.match(/acknowledgeToolCall\(callId,/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("CR3: resets delegation state and the offer set on every new connect()", () => {
+    const idx = src.indexOf("const connect = useCallback");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/setDelegation\(null\);/);
+    expect(block).toMatch(/offeredDelegationsRef\.current = new Set\(\);/);
+  });
 });
 
 describe("components/notelab/ChiefResidentVoiceCall.tsx — driven entirely by the hook", () => {
@@ -87,12 +116,26 @@ describe("components/notelab/ChiefResidentVoiceCall.tsx — driven entirely by t
 
   it("imports and calls useChiefResidentVoiceSession rather than owning WebRTC state itself", () => {
     expect(src).toMatch(/import \{ useChiefResidentVoiceSession \} from "@\/lib\/chiefResident\/useChiefResidentVoiceSession";/);
-    expect(src).toMatch(/const \{ status, error, transcript, isMuted, connect, disconnect, toggleMute \} = useChiefResidentVoiceSession\(\);/);
+    expect(src).toMatch(/const \{ status, error, transcript, isMuted, delegation, connect, disconnect, toggleMute \} = useChiefResidentVoiceSession\(\);/);
   });
 
   it("connects on mount and disconnects on unmount", () => {
     expect(src).toMatch(/connect\(sourceContext\);/);
     expect(src).toMatch(/return \(\) => disconnect\(\);/);
+  });
+
+  it("CR3: renders the delegation card and reuses the same composeNoteNotebookSceneInBackground pipeline as the text mode", () => {
+    expect(src).toMatch(/\{delegation && \(/);
+    expect(src).toMatch(/import \{ composeNoteNotebookSceneInBackground \} from "@\/lib\/notelab\/composeNotebookScene";/);
+    expect(src).toMatch(/await composeNoteNotebookSceneInBackground\(activeNote, activeNote\.documentId \?\? activeNote\.bookId\);/);
+  });
+
+  it("CR3: a whiteboard delegation is rendered as a signal only — no direct call into the Whiteboard Artist Agent", () => {
+    expect(src).not.toMatch(/runWhiteboardArtistStep/);
+  });
+
+  it("CR3: accepts activeNote as a prop, required for the NoteLab delegation action to do anything", () => {
+    expect(src).toMatch(/activeNote: UltraNote \| null;/);
   });
 });
 
@@ -123,6 +166,12 @@ describe("components/notelab/ChiefResidentPanel.tsx — Talk Live entry point wi
     const modesMapIdx = src.indexOf("MODES.map(m =>");
     expect(talkLiveIdx).toBeGreaterThan(-1);
     expect(talkLiveIdx).toBeLessThan(modesMapIdx);
+  });
+
+  it("CR3: passes activeNote through to the voice call, so its delegation action can compose a real note", () => {
+    const idx = src.indexOf("if (voiceCallActive) {");
+    const block = src.slice(idx, idx + 400);
+    expect(block).toMatch(/activeNote=\{activeNote\}/);
   });
 });
 
