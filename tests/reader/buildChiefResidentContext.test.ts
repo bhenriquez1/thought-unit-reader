@@ -68,32 +68,68 @@ describe("buildChiefResidentContext — request body shape", () => {
 });
 
 describe("buildChiefResidentContext — canonicalUnits sorted highest-importance-first", () => {
+  // HA1 — canonicalUnits are now grounded against pageText before sorting
+  // (see lib/highlights/highlightAgent.ts), so every unit's text below must
+  // actually appear in the page text these tests supply, or it would be
+  // correctly dropped rather than sorted.
+  const GROUNDED_PAGE_TEXT =
+    "This page covers a low priority note, a mid priority note, and a high priority note.";
+
   it("sorts by priorityTier descending when present", () => {
     const units: CanonicalUnitInput[] = [
-      { text: "low",  priorityTier: 1 },
-      { text: "high", priorityTier: 5 },
-      { text: "mid",  priorityTier: 3 },
+      { text: "low priority note",  priorityTier: 1 },
+      { text: "high priority note", priorityTier: 5 },
+      { text: "mid priority note",  priorityTier: 3 },
     ];
-    const body = buildChiefResidentContext(makeArgs({ canonicalUnits: units }));
-    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["high", "mid", "low"]);
+    const body = buildChiefResidentContext(makeArgs({ pageText: GROUNDED_PAGE_TEXT, canonicalUnits: units }));
+    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["high priority note", "mid priority note", "low priority note"]);
   });
 
   it("falls back to importanceScore descending when priorityTier is absent", () => {
     const units: CanonicalUnitInput[] = [
-      { text: "low",  importanceScore: 10 },
-      { text: "high", importanceScore: 90 },
+      { text: "low priority note",  importanceScore: 10 },
+      { text: "high priority note", importanceScore: 90 },
     ];
-    const body = buildChiefResidentContext(makeArgs({ canonicalUnits: units }));
-    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["high", "low"]);
+    const body = buildChiefResidentContext(makeArgs({ pageText: GROUNDED_PAGE_TEXT, canonicalUnits: units }));
+    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["high priority note", "low priority note"]);
   });
 
   it("does not mutate the caller's original array", () => {
     const units: CanonicalUnitInput[] = [
-      { text: "low",  priorityTier: 1 },
-      { text: "high", priorityTier: 5 },
+      { text: "low priority note",  priorityTier: 1 },
+      { text: "high priority note", priorityTier: 5 },
     ];
-    buildChiefResidentContext(makeArgs({ canonicalUnits: units }));
-    expect(units.map(u => u.text)).toEqual(["low", "high"]);
+    buildChiefResidentContext(makeArgs({ pageText: GROUNDED_PAGE_TEXT, canonicalUnits: units }));
+    expect(units.map(u => u.text)).toEqual(["low priority note", "high priority note"]);
+  });
+});
+
+describe("buildChiefResidentContext — HA1: canonicalUnits are grounded against pageText before reaching the request", () => {
+  const PAGE_TEXT = "Atoms consist of a nucleus surrounded by electrons in discrete energy levels.";
+
+  it("drops a canonicalUnit whose text does not appear anywhere in pageText", () => {
+    const units: CanonicalUnitInput[] = [
+      { text: "electrons in discrete energy levels" }, // real substring of PAGE_TEXT
+      { text: "muscle contraction requires actin and myosin" }, // not grounded — must be dropped
+    ];
+    const body = buildChiefResidentContext(makeArgs({ pageText: PAGE_TEXT, canonicalUnits: units }));
+    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["electrons in discrete energy levels"]);
+  });
+
+  it("returns canonicalUnits: undefined when none of the supplied units ground (never an empty array)", () => {
+    const units: CanonicalUnitInput[] = [
+      { text: "this text is nowhere in the page" },
+    ];
+    const body = buildChiefResidentContext(makeArgs({ pageText: PAGE_TEXT, canonicalUnits: units }));
+    expect(body.canonicalUnits).toBeUndefined();
+  });
+
+  it("accepts a normalized match (smart quotes/dashes/whitespace differences) rather than requiring byte-exact text", () => {
+    const units: CanonicalUnitInput[] = [
+      { text: "a nucleus surrounded  by electrons" }, // double space, still normalizes to a real substring
+    ];
+    const body = buildChiefResidentContext(makeArgs({ pageText: PAGE_TEXT, canonicalUnits: units }));
+    expect(body.canonicalUnits?.map(u => u.text)).toEqual(["a nucleus surrounded  by electrons"]);
   });
 });
 

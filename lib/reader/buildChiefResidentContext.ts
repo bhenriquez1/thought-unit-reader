@@ -24,6 +24,7 @@ import type {
   TeachingMessage,
   CanonicalUnitInput,
 } from "@/pages/api/chief-resident-teaching";
+import { groundHighlightCandidates } from "@/lib/highlights/highlightAgent";
 
 /**
  * The frozen identity of "which page/document this Chief Resident request is
@@ -67,12 +68,22 @@ export function buildChiefResidentContext(args: BuildChiefResidentContextArgs): 
     mode, audience, selectedText, title, messages,
   } = args;
 
+  // HA1 — canonicalUnits must verify against this exact pageText before they
+  // can reach the model; see lib/highlights/highlightAgent.ts's header for
+  // why. A candidate that fails to verify is dropped, never substituted —
+  // closes off the same "ungrounded canonicalUnits" risk
+  // chief-resident-teaching.ts's own doc comment warns about, for any
+  // caller, present or future.
+  const groundedUnits = canonicalUnits && canonicalUnits.length > 0
+    ? groundHighlightCandidates(canonicalUnits, pageText).grounded.map((g) => g.candidate)
+    : [];
+
   return {
     mode,
     audience,
     sourceText:     pageText,
-    canonicalUnits: canonicalUnits && canonicalUnits.length > 0
-      ? [...canonicalUnits].sort((a, b) => IMPORTANCE_SORT_KEY(a) - IMPORTANCE_SORT_KEY(b))
+    canonicalUnits: groundedUnits.length > 0
+      ? [...groundedUnits].sort((a, b) => IMPORTANCE_SORT_KEY(a) - IMPORTANCE_SORT_KEY(b))
       : undefined,
     selectedText,
     title,
