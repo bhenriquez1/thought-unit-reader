@@ -27,6 +27,7 @@ import { generateNotebookScene, summarizeExistingNotebookScene } from "@/lib/not
 import { gatherConceptNotebookContent } from "@/lib/notelab/conceptAccumulation";
 import type { VisualNotebookScene } from "@/lib/notelab/notebookScene";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
+import type { CurrentPageTruth } from "@/lib/context/currentPageTruth";
 
 // SOLE Whiteboard rendering pipeline: Current Page -> Professor Lesson
 // Planner (TldrawCanvas + useProfessorLesson) -> tldraw Lesson -> Render.
@@ -45,6 +46,8 @@ import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
 const DEV = process.env.NODE_ENV === "development";
 
 type Props = {
+  /** Shared immutable page source; feature state such as highlights is excluded. */
+  pageTruth?: CurrentPageTruth;
   concept: string;
   context: string;
   lessonTitle?: string;
@@ -110,17 +113,18 @@ type Props = {
 };
 
 export default function WhiteboardPanel({
+  pageTruth,
   concept,
   context,
   lessonTitle = "Whiteboard Lesson",
 
-  currentPage,
-  pageTruthKey,
+  currentPage: legacyCurrentPage,
+  pageTruthKey: legacyPageTruthKey,
   studyModel,
   onAnchorStep,
   activeAnchorId,
-  bookId,
-  resolvedDocumentId,
+  bookId: legacyBookId,
+  resolvedDocumentId: legacyResolvedDocumentId,
   bookTitle,
   pageTitle,
   knowledgeNodeId,
@@ -134,6 +138,10 @@ export default function WhiteboardPanel({
   onProfessorSurfaceChange,
 }: Props) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const currentPage = pageTruth?.pageNumber ?? legacyCurrentPage;
+  const pageTruthKey = pageTruth?.pageTruthKey ?? legacyPageTruthKey;
+  const bookId = pageTruth?.bookId ?? legacyBookId;
+  const resolvedDocumentId = pageTruth?.documentId ?? legacyResolvedDocumentId;
 
   // "What kind of page is this?" — decided fresh from the current page by
   // the same classifier that shapes highlight selection (pageRole), not a
@@ -144,16 +152,13 @@ export default function WhiteboardPanel({
     [pageTeachingType, whiteboardGrammar],
   );
 
-  // Same canonical thought-unit entries feed both the VSG (below) and the
+  // Same neutral canonical thought-unit entries feed both the VSG (below) and the
   // Phase B3 Learning State / snapshot identity's thoughtUnitIds — computed
   // once so the two can never silently diverge.
-  // The Professor is allowed to teach only the current page's canonical
-  // Surgeon evidence. An empty/failed Surgeon plan stays empty and produces a
-  // truthful retry state upstream; it must never be replaced with NoteCards
-  // from the separate study-model analysis pipeline.
+  // Highlight/Surgeon output is intentionally not an input to this component.
   const resolvedCanonicalEntries = useMemo(
-    () => canonicalEntries ?? [],
-    [canonicalEntries],
+    () => pageTruth ? [...pageTruth.canonicalUnits] : (canonicalEntries ?? []),
+    [pageTruth, canonicalEntries],
   );
 
   const vsgState = useMemo((): VSGState => {

@@ -5,8 +5,6 @@
 //   "27 Unit 5 THE EVOLUTIONARY HISTORY…552" → "Unit 5 — Evolutionary History…"
 //   "2 H 2 1 O 2 2 H 2 O Reactants…" → low confidence, use safe fallback
 
-import { describe, it, expect } from "vitest";
-
 import {
   normalizeDisplayTitle,
   normalizeDisplayTitles,

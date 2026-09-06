@@ -7,7 +7,18 @@ import type { InstructionalPageRole, SurgeonAnnotation } from "../../lib/insight
 const treatment = {
   definition: "definitionBar", mechanism: "mechanismBrace", procedure: "procedureRail",
   decision: "decisionConnector", comparison: "comparisonBracket", trap: "trapNotch",
-  clinicalPearl: "pearlMarker", supportingEvidence: "evidenceUnderline",
+  "clinical-pearl": "pearlMarker", supportingEvidence: "evidenceUnderline",
+} as const;
+
+const annotationType = {
+  definition: "definition",
+  mechanism: "mechanism",
+  procedure: "procedure-step",
+  decision: "decision-point",
+  comparison: "comparison",
+  trap: "common-trap",
+  clinicalPearl: "clinical-pearl",
+  supportingEvidence: "evidence-example",
 } as const;
 
 function mark(exactQuote: string, canonicalType: SurgeonAnnotation["canonicalType"], importance: SurgeonAnnotation["importance"] = "high", sequenceIndex: number | null = null): SurgeonAnnotation {
@@ -16,7 +27,7 @@ function mark(exactQuote: string, canonicalType: SurgeonAnnotation["canonicalTyp
     pedagogicalReason: "Required instructional unit.", importance,
     treatment: treatment[canonicalType], spanScope: "fullSentence", sequenceIndex,
     conceptId: `concept-${canonicalType}-${sequenceIndex ?? 0}`,
-    annotationType: canonicalType === "mechanism" ? "mechanism" : canonicalType === "procedure" ? "procedure-step" : canonicalType === "decision" ? "decision-point" : canonicalType === "supportingEvidence" ? "evidence-example" : canonicalType,
+    annotationType: annotationType[canonicalType],
   };
 }
 

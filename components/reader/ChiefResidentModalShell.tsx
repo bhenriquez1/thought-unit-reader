@@ -21,14 +21,12 @@ import { motion } from "framer-motion";
 import ChiefResidentPanel from "@/components/notelab/ChiefResidentPanel";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
+import type { CurrentPageTruth } from "@/lib/context/currentPageTruth";
 
 interface ChiefResidentModalShellProps {
   onClose: () => void;
   studyModel: CurrentPageStudyModel | null;
-  pageText: string;
-  bookId: string;
-  currentPage: number;
-  pageTruthKey: string;
+  pageTruth: CurrentPageTruth;
   bookTitle?: string;
   /** Reader has no note concept — always null. Disables the panel's "Teach
    *  This Note" mode, the same way it's disabled in NoteLab before a note
@@ -40,10 +38,7 @@ interface ChiefResidentModalShellProps {
 export default function ChiefResidentModalShell({
   onClose,
   studyModel,
-  pageText,
-  bookId,
-  currentPage,
-  pageTruthKey,
+  pageTruth,
   bookTitle,
   activeNote,
   onRecallSaved,
@@ -84,10 +79,7 @@ export default function ChiefResidentModalShell({
         <div className="flex-1 overflow-hidden">
           <ChiefResidentPanel
             studyModel={studyModel}
-            pageText={pageText}
-            bookId={bookId}
-            currentPage={currentPage}
-            pageTruthKey={pageTruthKey}
+            pageTruth={pageTruth}
             bookTitle={bookTitle}
             activeNote={activeNote}
             onRecallSaved={onRecallSaved}

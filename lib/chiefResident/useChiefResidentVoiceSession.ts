@@ -49,9 +49,10 @@ import {
 import type { VoiceSessionSourceContext } from "./chiefResidentVoiceAgent";
 
 const SPEECH_OWNER = "chief-resident-voice" as const;
-const REALTIME_BASE_URL = "https://api.openai.com/v1/realtime";
-
 export type VoiceCallStatus = "idle" | "connecting" | "connected" | "error" | "ended";
+export type VoiceConnectionStage =
+  | "idle" | "requesting-microphone" | "microphone-ready" | "offer-created"
+  | "upstream-accepted" | "peer-connected" | "data-channel-open" | "receiving-audio" | "ended" | "error";
 
 export interface VoiceTranscriptEntry {
   role: "user" | "assistant";
@@ -63,6 +64,7 @@ export interface UseChiefResidentVoiceSessionResult {
   error: string | null;
   transcript: VoiceTranscriptEntry[];
   isMuted: boolean;
+  connectionStage: VoiceConnectionStage;
   /** CR3 — set at most once per target per call (see shouldOfferDelegation),
    *  the same delegation contract the text mode uses. */
   delegation: ChiefResidentDelegation | null;
@@ -71,9 +73,10 @@ export interface UseChiefResidentVoiceSessionResult {
   toggleMute: () => void;
 }
 
-interface VoiceSessionCredentialsResponse {
-  clientSecret: string;
+interface VoiceCallAnswerResponse {
+  answerSdp: string;
   model: string;
+  requestId?: string;
 }
 
 export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResult {
@@ -81,6 +84,7 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [isMuted, setIsMuted] = useState(false);
+  const [connectionStage, setConnectionStage] = useState<VoiceConnectionStage>("idle");
   const [delegation, setDelegation] = useState<ChiefResidentDelegation | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -89,6 +93,7 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const tokenRef = useRef<number | null>(null);
   const assistantBufferRef = useRef<string>("");
+  const generationRef = useRef(0);
   // CR3 — same once-per-target-per-session discipline as the text mode's
   // offeredDelegationsRef (components/notelab/ChiefResidentPanel.tsx), kept
   // as a separate set here since a text session and a voice call never
@@ -118,8 +123,10 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
   useEffect(() => () => cleanup(), [cleanup]);
 
   const disconnect = useCallback(() => {
+    generationRef.current += 1;
     cleanup();
     setStatus("ended");
+    setConnectionStage("ended");
   }, [cleanup]);
 
   // CR3 — sends a client event over the data channel (function_call_output
@@ -184,6 +191,9 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
       acknowledgeToolCall(callId, { status: "offered_to_student" });
     } else if (msg.type === "error") {
       console.error("[CHIEF_RESIDENT_VOICE_REALTIME_ERROR]", msg);
+      setStatus("error");
+      setConnectionStage("error");
+      setError("The live voice session reported a protocol error.");
     }
   }, [acknowledgeToolCall]);
 
@@ -194,6 +204,8 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     setTranscript([]);
     setDelegation(null);
     offeredDelegationsRef.current = new Set();
+    const generation = ++generationRef.current;
+    const isCurrent = () => generationRef.current === generation && !isSpeechStale(tokenRef.current ?? -1);
 
     // claimSpeech() force-stops any narration/TTS currently playing
     // anywhere else in the app (same discipline as ExplainStepChat's own
@@ -203,24 +215,13 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     tokenRef.current = token;
 
     try {
-      const sessionRes = await fetch("/api/chief-resident-voice-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ctx),
-      });
-      if (!sessionRes.ok) {
-        const errBody = await sessionRes.json().catch(() => ({} as { error?: string }));
-        throw new Error(errBody.error || `Could not start voice session (${sessionRes.status})`);
-      }
-      const session = (await sessionRes.json()) as VoiceSessionCredentialsResponse;
-
-      if (isSpeechStale(token)) return; // superseded by a newer claim while awaiting the fetch
-
+      setConnectionStage("requesting-microphone");
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (isSpeechStale(token)) {
+      if (!isCurrent()) {
         mic.getTracks().forEach((track) => track.stop());
         return;
       }
+      setConnectionStage("microphone-ready");
       micStreamRef.current = mic;
 
       const pc = new RTCPeerConnection();
@@ -231,40 +232,66 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
       audioEl.autoplay = true;
       audioElRef.current = audioEl;
       pc.ontrack = (event) => {
+        if (!isCurrent()) return;
         audioEl.srcObject = event.streams[0];
         registerActiveAudio(token, audioEl, () => cleanup());
         notifySpeechStart(token, SPEECH_OWNER);
+        setConnectionStage("receiving-audio");
+      };
+      pc.onconnectionstatechange = () => {
+        if (!isCurrent()) return;
+        if (pc.connectionState === "connected") setConnectionStage("peer-connected");
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          setStatus("error");
+          setConnectionStage("error");
+          setError("The live voice connection was interrupted.");
+          cleanup();
+        }
       };
 
       const dc = pc.createDataChannel("oai-events");
       dc.addEventListener("message", handleDataChannelMessage);
+      dc.addEventListener("open", () => {
+        if (!isCurrent()) return;
+        setConnectionStage("data-channel-open");
+        setStatus("connected");
+      });
+      dc.addEventListener("error", () => {
+        if (!isCurrent()) return;
+        setStatus("error");
+        setConnectionStage("error");
+        setError("The live voice event channel failed.");
+      });
       dataChannelRef.current = dc;
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      if (!offer.sdp || !isCurrent()) return;
+      setConnectionStage("offer-created");
 
-      const sdpRes = await fetch(`${REALTIME_BASE_URL}?model=${encodeURIComponent(session.model)}`, {
+      const sessionRes = await fetch("/api/chief-resident-voice-session", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.clientSecret}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...ctx, sdp: offer.sdp }),
       });
-      if (!sdpRes.ok) throw new Error(`Voice connection was rejected (${sdpRes.status}).`);
-      const answerSdp = await sdpRes.text();
-      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      if (!sessionRes.ok) {
+        const errBody = await sessionRes.json().catch(() => ({} as { error?: string }));
+        throw new Error(errBody.error || `Could not start voice session (${sessionRes.status})`);
+      }
+      const session = (await sessionRes.json()) as VoiceCallAnswerResponse;
 
-      if (isSpeechStale(token)) {
+      if (!isCurrent()) {
         cleanup();
         return;
       }
-      setStatus("connected");
+      setConnectionStage("upstream-accepted");
+      await pc.setRemoteDescription({ type: "answer", sdp: session.answerSdp });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       notifySpeechError(token, SPEECH_OWNER, message);
       cleanup();
       setStatus("error");
+      setConnectionStage("error");
       setError(message);
     }
   }, [status, cleanup, handleDataChannelMessage]);
@@ -277,5 +304,5 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     });
   }, []);
 
-  return { status, error, transcript, isMuted, delegation, connect, disconnect, toggleMute };
+  return { status, error, transcript, isMuted, connectionStage, delegation, connect, disconnect, toggleMute };
 }

@@ -77,16 +77,16 @@ describe("Chief Resident — Reader and NoteLab render the same component with t
     expect(shellSrc).toMatch(/import ChiefResidentPanel from "@\/components\/notelab\/ChiefResidentPanel"/);
   });
 
-  it("both the Reader shell's render and NoteLab's direct render pass pageTruthKey from the SAME pages/index.tsx variable", () => {
+  it("both the Reader shell and NoteLab pass the same immutable page truth", () => {
     const shellCallIdx = indexSrc.indexOf("<ChiefResidentModalShell");
     expect(shellCallIdx).toBeGreaterThan(-1);
     const shellBlock = indexSrc.slice(shellCallIdx, shellCallIdx + 700);
-    expect(shellBlock).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(shellBlock).toMatch(/pageTruth=\{activeCurrentPageTruth\}/);
 
     const panelCallIdx = indexSrc.indexOf("<ChiefResidentPanel");
     expect(panelCallIdx).toBeGreaterThan(-1);
     const panelBlock = indexSrc.slice(panelCallIdx, indexSrc.indexOf("/>", panelCallIdx));
-    expect(panelBlock).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(panelBlock).toMatch(/pageTruth=\{activeCurrentPageTruth\}/);
   });
 });
 

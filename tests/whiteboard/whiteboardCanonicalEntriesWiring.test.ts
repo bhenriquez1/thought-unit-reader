@@ -16,16 +16,16 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
   let src: string;
   beforeAll(() => { src = fs.readFileSync(INDEX_FILE, "utf8"); });
 
-  it("imports surgeonAnnotationsToCanonicalEntries from the Scene Builder adapter", () => {
-    expect(src).toMatch(/import \{ surgeonAnnotationsToCanonicalEntries \} from "@\/lib\/whiteboard\/visualSceneGraph"/);
+  it("creates one immutable CurrentPageTruth snapshot", () => {
+    expect(src).toMatch(/import \{ useCurrentPageTruth \} from "@\/lib\/context\/useCurrentPageTruth"/);
   });
 
-  it("derives whiteboardCanonicalEntries from surgeonAnnotations.wholePageAnnotations (not the lossy highlightTargets, and not groundedAnnotations' PDF-margin-note density cap)", () => {
+  it("derives whiteboardCanonicalEntries from neutral CurrentPageTruth, not Highlight Agent output", () => {
     const idx = src.indexOf("const whiteboardCanonicalEntries = useMemo(");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 300);
-    expect(block).toMatch(/surgeonAnnotationsToCanonicalEntries\(surgeonAnnotations\.wholePageAnnotations, resolvedDocumentId, currentPage\)/);
-    expect(block).not.toMatch(/surgeonAnnotations\.groundedAnnotations/);
+    expect(block).toMatch(/activeCurrentPageTruth\.canonicalUnits/);
+    expect(block).not.toMatch(/surgeonAnnotations/);
   });
 
   it("the real <WhiteboardPanel> JSX block passes canonicalEntries={whiteboardCanonicalEntries}", () => {
@@ -35,20 +35,20 @@ describe("pages/index.tsx — canonicalEntries actually reaches <WhiteboardPanel
     expect(block).toMatch(/canonicalEntries=\{whiteboardCanonicalEntries\}/);
   });
 
-  it("whiteboardCanonicalEntries is computed AFTER surgeonAnnotations is declared (no TDZ)", () => {
-    const hookIdx = src.indexOf("const surgeonAnnotations = useSurgeonAnnotations({");
+  it("whiteboardCanonicalEntries is computed after CurrentPageTruth is declared", () => {
+    const hookIdx = src.indexOf("const activeCurrentPageTruth = useCurrentPageTruth(");
     const deriveIdx = src.indexOf("const whiteboardCanonicalEntries = useMemo(");
     expect(hookIdx).toBeGreaterThan(-1);
     expect(deriveIdx).toBeGreaterThan(hookIdx);
   });
 });
 
-describe("WhiteboardPanel.tsx — canonical Surgeon evidence is exclusive", () => {
+describe("WhiteboardPanel.tsx — neutral current-page evidence is exclusive", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(PANEL_FILE, "utf8"); });
 
   it("does not fall back to NoteCards from the independent study-model pipeline", () => {
-    expect(src).toMatch(/\(\) => canonicalEntries \?\? \[\]/);
+    expect(src).toMatch(/pageTruth \? \[\.\.\.pageTruth\.canonicalUnits\] : \(canonicalEntries \?\? \[\]\)/);
     expect(src).not.toMatch(/noteCardsToCanonicalEntries/);
     expect(src).toMatch(/noteCards=\{\[\]\}/);
   });

@@ -55,14 +55,11 @@ describe("ChiefResidentModalShell.tsx (Reader) — chrome only, no teaching UI o
     expect(src).not.toMatch(/useState<ChatTurn/);
   });
 
-  it("passes studyModel/pageText/bookId/currentPage/pageTruthKey through to the shared panel — the same shape NoteLab passes", () => {
+  it("passes studyModel and the immutable page truth through to the shared panel", () => {
     const idx = src.indexOf("<ChiefResidentPanel");
     const block = src.slice(idx, idx + 400);
     expect(block).toMatch(/studyModel=\{studyModel\}/);
-    expect(block).toMatch(/pageText=\{pageText\}/);
-    expect(block).toMatch(/bookId=\{bookId\}/);
-    expect(block).toMatch(/currentPage=\{currentPage\}/);
-    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(block).toMatch(/pageTruth=\{pageTruth\}/);
   });
 
   it("activeNote is always null — Reader has no note concept, this disables the panel's Teach-This-Note mode the same way NoteLab disables it before a note is open", () => {
@@ -82,10 +79,10 @@ describe("ChiefResidentPanel.tsx (NoteLab) — shared builder + response validat
     expect(src).toMatch(/import \{\s*\n\s*buildChiefResidentContext,\s*\n\s*matchesFrozenSnapshot,\s*\n\s*type ChiefResidentFrozenSnapshot,\s*\n\s*\} from "@\/lib\/reader\/buildChiefResidentContext"/);
   });
 
-  it("requires a pageTruthKey prop", () => {
+  it("requires one CurrentPageTruth prop", () => {
     const idx = src.indexOf("interface ChiefResidentPanelProps");
     const block = src.slice(idx, idx + 500);
-    expect(block).toMatch(/pageTruthKey:\s*string;/);
+    expect(block).toMatch(/pageTruth:\s*CurrentPageTruth;/);
   });
 
   it("all three request call sites (startSession, sendUserReply, requestSummary) build a frozen snapshot and use buildChiefResidentContext", () => {
@@ -131,19 +128,19 @@ describe("pages/index.tsx — one Chief Resident open handler, wired to both ent
     expect(src).toMatch(/<ChiefResidentModalShell/);
   });
 
-  it("the ChiefResidentModalShell render passes LIVE props (currentPageStudyModel/pageText/pageTruthKey), not a captured context object", () => {
+  it("the ChiefResidentModalShell render passes the live immutable page truth", () => {
     const idx = src.indexOf("<ChiefResidentModalShell");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, src.indexOf("/>", idx) > -1 ? src.indexOf("/>", idx) : idx + 700);
     expect(block).toMatch(/studyModel=\{currentPageStudyModel\}/);
-    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(block).toMatch(/pageTruth=\{activeCurrentPageTruth\}/);
   });
 
-  it("the NoteLab <ChiefResidentPanel> render (the second, pre-existing one this file also renders) still receives pageTruthKey={pageTruthKey}", () => {
+  it("the NoteLab <ChiefResidentPanel> receives the same immutable page truth", () => {
     const idx = src.indexOf("<ChiefResidentPanel");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, src.indexOf("/>", idx));
-    expect(block).toMatch(/pageTruthKey=\{pageTruthKey\}/);
+    expect(block).toMatch(/pageTruth=\{activeCurrentPageTruth\}/);
   });
 
   it("RightPanel and WhiteboardPanel and PdfContextMenu all call the single handleOpenChiefResident — no scope-specific handler survives", () => {

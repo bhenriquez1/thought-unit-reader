@@ -444,6 +444,21 @@ export default function TldrawCanvas({
   const createdShapeIdsRef  = useRef<Set<string>>(new Set());
   const targetIdToShapeIdRef = useRef<Map<string, string>>(new Map());
   const shapeIdToTargetIdRef = useRef<Map<string, string>>(new Map());
+
+  // Convert the generated teaching layer into ordinary editable tldraw shapes.
+  // This is an explicit user action and is disabled during playback, so it never
+  // races Professor's reveal engine. Once unlocked, shapes are treated as the
+  // student's copy and survive same-lesson rebuilds just like their annotations.
+  const handleEnableEditing = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || isPlayingRef.current) return;
+    const locked = editor.getCurrentPageShapes().filter((shape) => shape.isLocked);
+    if (locked.length > 0) {
+      editor.updateShapes(locked.map((shape) => ({ id: shape.id, type: shape.type, isLocked: false })) as any);
+    }
+    editor.updateInstanceState({ isReadonly: false });
+    setEditingEnabled(true);
+  }, []);
   // M7 — in-flight "being handwritten" reveal timers, keyed by shapeId. Only
   // ever populated for a freshly-created write/draw-freehand shape during
   // genuine forward autoplay (applyStateAtStep's own `animate` flag) — see
@@ -1951,12 +1966,12 @@ export default function TldrawCanvas({
               once already enabled (nothing left to opt into). */}
           {audience !== "child" && (
             <button
-              onClick={() => setEditingEnabled(true)}
+              onClick={handleEnableEditing}
               disabled={isPlaying || editingEnabled}
-              title={editingEnabled ? "Editing enabled" : "Unlock this canvas for your own annotations"}
+              title={editingEnabled ? "Editing enabled" : "Unlock the generated diagram and add your own annotations"}
               style={isPlaying || editingEnabled ? BTN_DISABLED : BTN_MUTED}
             >
-              {editingEnabled ? "✓ Editing" : "✎ Edit a copy"}
+              {editingEnabled ? "✓ Editing" : "✎ Edit board"}
             </button>
           )}
         </span>

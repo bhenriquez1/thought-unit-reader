@@ -80,7 +80,6 @@ import { detectPageDomain } from "@/lib/insights/detectPageDomain";
 import { isNoninstructionalPage } from "@/lib/insights/pageRoleGate";
 import { buildStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { useSurgeonAnnotations } from "@/components/reader/useSurgeonAnnotations";
-import { surgeonAnnotationsToCanonicalEntries } from "@/lib/whiteboard/visualSceneGraph";
 import { hashDocumentId } from "@/lib/insights/requestDiagnostics";
 import { resolveDocumentIdentity } from "@/lib/insights/resolveDocumentIdentity";
 import { saveStudyGuide, getStudyGuidesByBook } from "@/lib/studyguide/studyGuideStore";
@@ -185,6 +184,7 @@ import { disambiguateBookNodes } from "@/lib/knowledge/disambiguateBookNodes";
 import { useNodeProgressList } from "@/lib/knowledge/useNodeProgress";
 import { useAdaptiveSyllabusStore } from "@/lib/syllabus/adaptiveSyllabusStore";
 import { useCurrentLearningContext } from "@/lib/context/learningContext";
+import { useCurrentPageTruth } from "@/lib/context/useCurrentPageTruth";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -2298,6 +2298,32 @@ export default function ThoughtUnitReader() {
     audience: unifiedPanelState.audience,
     depth: unifiedPanelState.depth,
   });
+  // One immutable, feature-neutral snapshot for every page specialist. Highlight
+  // state is deliberately absent: Professor, Whiteboard, Chief Resident and the
+  // Highlight Agent are sibling consumers of this truth, never of each other.
+  const neutralCanonicalPageUnits = useMemo(() => canonicalLeftPanelUnits.map((unit) => ({
+    id: unit.evidenceRefId ?? unit.id,
+    text: unit.exactText,
+    title: unit.title,
+    canonicalType: unit.category,
+    priorityTier: unit.priorityTier,
+    page: unit.page,
+    reason: unit.reason,
+  })), [canonicalLeftPanelUnits]);
+  const activeCurrentPageTruth = useCurrentPageTruth({
+    documentId: resolvedDocumentId,
+    bookId,
+    documentTitle: uploadedFile?.name ?? bookId,
+    pageNumber: currentPage,
+    totalPages: pdfPageCount || 0,
+    pageText: pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
+    textReady: pageTextReady,
+    pageTruthKey,
+    canonicalUnits: neutralCanonicalPageUnits,
+    pageRole: currentPageRole ?? null,
+    domain: detectPageDomain(pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""),
+    activeCanonicalUnitId: pageKnowledgeNodeId,
+  });
   // Keep ref in sync so the finalHighlightAnchors effect can read pageRole without TDZ issues.
   currentPageRoleRef.current = currentPageRole ?? null;
   DEV && console.log("[TRACE LIVE_WIRING]", {
@@ -2362,10 +2388,10 @@ export default function ThoughtUnitReader() {
     [canonicalLeftPanelUnits],
   );
   const surgeonAnnotations = useSurgeonAnnotations({
-    pageTruthKey,
-    documentId:       resolvedDocumentId,
-    pageNumber:        currentPage,
-    pageText:          pageTextByPage.get(`${bookId}:${currentPage}`) ?? "",
+    pageTruthKey:      activeCurrentPageTruth.pageTruthKey,
+    documentId:       activeCurrentPageTruth.documentId,
+    pageNumber:       activeCurrentPageTruth.pageNumber,
+    pageText:         activeCurrentPageTruth.pageText,
     pageImageDataUrl:  pageImageByPage.get(`${bookId}:${currentPage}`) ?? null,
     previousPageText:  pageTextByPage.get(`${bookId}:${currentPage - 1}`) ?? null,
     nextPageText:      pageTextByPage.get(`${bookId}:${currentPage + 1}`) ?? null,
@@ -2376,21 +2402,12 @@ export default function ThoughtUnitReader() {
     enabled:           !!bookId && !!fileUrl,
   });
 
-  // Deterministic Scene Builder input — SurgeonAnnotationPlan's grounded annotations,
-  // never Claude/image-generation, converted to CanonicalEntryInput[] for the
-  // already-built VisualSceneGraph pipeline. Built from wholePageAnnotations, NOT
-  // groundedAnnotations — the latter is density-limited for PDF-margin-note
-  // readability (max 8, mechanism/procedure sharing one slot), which has nothing
-  // to do with how much the Whiteboard needs to teach the page well; reusing it
-  // here was silently starving the Whiteboard of content that the SAME page read
-  // already produced. Same one page read either way — just a fuller view of it.
-  // When this is empty (not yet loaded/cached, or degraded), WhiteboardPanel
-  // stays empty. It never substitutes NoteCards from the independent study-model
-  // pipeline, so a failed Surgeon read cannot produce a plausible but unrelated
-  // Professor lesson.
+  // Whiteboard reads neutral canonical page units from CurrentPageTruth. It no
+  // longer consumes Highlight Agent / Surgeon output, so either specialist may
+  // fail or retry without changing the other's source.
   const whiteboardCanonicalEntries = useMemo(
-    () => surgeonAnnotationsToCanonicalEntries(surgeonAnnotations.wholePageAnnotations, resolvedDocumentId, currentPage),
-    [surgeonAnnotations.wholePageAnnotations, resolvedDocumentId, currentPage],
+    () => [...activeCurrentPageTruth.canonicalUnits],
+    [activeCurrentPageTruth],
   );
 
   // ── Unified wiring trace — prints one page's full data-flow chain, for
@@ -6189,10 +6206,7 @@ export default function ThoughtUnitReader() {
           <div className="flex-1 overflow-hidden" style={{ display: notesSubTab === "teaching" ? "flex" : "none", flexDirection: "column" }}>
             <ChiefResidentPanel
               studyModel={currentPageStudyModel}
-              pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-              bookId={bookId}
-              currentPage={currentPage}
-              pageTruthKey={pageTruthKey}
+              pageTruth={activeCurrentPageTruth}
               bookTitle={uploadedFile?.name}
               activeNote={activeNote}
               onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
@@ -7609,7 +7623,7 @@ export default function ThoughtUnitReader() {
                   lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
                   currentPage={currentPage}
                   pageTruthKey={pageTruthKey}
-                  pageTeachingType={surgeonAnnotations.plan?.pageRole ?? null}
+                  pageTeachingType={activeCurrentPageTruth.pageRole}
                   autoStartProfessor={professorAutoStart}
                   onProfessorSurfaceChange={(surface) => setProfessorSurface(surface)}
                   onAnchorStep={(id) => {
@@ -7620,18 +7634,13 @@ export default function ThoughtUnitReader() {
                   bookId={bookId}
                   resolvedDocumentId={resolvedDocumentId}
                   bookTitle={uploadedFile?.name}
-                  // SurgeonAnnotationPlan.pageThesis is authoritative — it's the same
-                  // shared page-understanding pass that also drives highlighting and
-                  // pageTeachingType. currentPageStudyModel comes from a separate
-                  // synthesis pipeline that reads the page independently, so it is
-                  // deliberately not a title fallback here.
-                  pageTitle={surgeonAnnotations.plan?.pageThesis ?? null}
+                  pageTitle={currentPageStudyModel?.pageThesis ?? null}
                   knowledgeNodeId={pageKgNodeIdRef.current}
                   onOpenChiefResident={handleOpenChiefResident}
                   whiteboardGrammar={activePack.whiteboardGrammar}
                   canonicalEntries={whiteboardCanonicalEntries}
-                  canonicalStatus={surgeonAnnotations.status}
-                  onReanalyzeCanonical={surgeonAnnotations.reanalyze}
+                  pageTruth={activeCurrentPageTruth}
+                  canonicalStatus={activeCurrentPageTruth.canonicalUnits.length > 0 ? "success" : activeCurrentPageTruth.textReady ? "error" : "loading"}
                 />
               </ErrorBoundary>
             </div>
@@ -7752,10 +7761,7 @@ export default function ThoughtUnitReader() {
         <ChiefResidentModalShell
           onClose={() => setShowChiefResident(false)}
           studyModel={currentPageStudyModel}
-          pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-          bookId={bookId}
-          currentPage={currentPage}
-          pageTruthKey={pageTruthKey}
+          pageTruth={activeCurrentPageTruth}
           bookTitle={uploadedFile?.name}
           activeNote={null}
           onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}

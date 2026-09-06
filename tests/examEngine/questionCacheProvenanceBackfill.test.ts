@@ -85,7 +85,7 @@ describe("getOrGenerateQuestions — cache-hit path re-stamps provenance instead
   it("REQUIRED: a full cache hit (no fetch needed) still backfills sourceDocumentId from the current opts", async () => {
     const stored = [baseQuestion({ id: "cached-1", sourceDocumentId: undefined, sourceKnowledgeNodeIds: undefined })];
     const store = new Map<string, unknown>();
-    store.set("book-1::concept-1::recognition::simulation", { questions: stored });
+    store.set("dat::book-1::concept-1::recognition::simulation", { questions: stored });
 
     (global as unknown as { indexedDB: unknown }).indexedDB = {
       open: () => {

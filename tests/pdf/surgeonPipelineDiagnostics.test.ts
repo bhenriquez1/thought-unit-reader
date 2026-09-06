@@ -84,7 +84,7 @@ describe("useSurgeonAnnotations.ts — [SURGEON_PIPELINE_DIAGNOSTIC] planner/gro
   });
 });
 
-describe("RightPanel.tsx — 'Grounded on This Page' renders from the SAME array as the PDF overlay", () => {
+describe("RightPanel.tsx — Source evidence renders from the SAME array as the PDF overlay", () => {
   let src: string;
   beforeAll(() => { src = fs.readFileSync(RIGHT_PANEL_FILE, "utf8"); });
 
@@ -93,11 +93,13 @@ describe("RightPanel.tsx — 'Grounded on This Page' renders from the SAME array
     expect(src).toMatch(/groundedAnnotations\?:\s*GroundedSurgeonAnnotation\[\];/);
   });
 
-  it("renders a-la-carte from groundedAnnotations.map, not from canonicalLeftPanelUnits", () => {
-    const idx = src.indexOf("Grounded on This Page");
+  it("renders the active grounded evidence derived from groundedAnnotations, not from canonicalLeftPanelUnits", () => {
+    const idx = src.indexOf("🔬 Source evidence");
     expect(idx).toBeGreaterThan(-1);
     const block = src.slice(idx, idx + 1500);
-    expect(block).toMatch(/groundedAnnotations\.map/);
+    expect(src).toMatch(/const activeGroundedAnnotations = useMemo/);
+    expect(src).toMatch(/groundedAnnotations\.filter/);
+    expect(block).toMatch(/activeGroundedAnnotations\.map/);
     expect(block).toMatch(/a\.groundedText/);
   });
 });

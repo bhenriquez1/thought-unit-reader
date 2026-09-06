@@ -29,8 +29,8 @@
 import type { TeachingAudience } from "@/pages/api/chief-resident-teaching";
 import { REALTIME_DELEGATION_TOOLS, type RealtimeDelegationToolDefinition } from "./chiefResidentAgent";
 
-export const DEFAULT_VOICE_MODEL = "gpt-4o-realtime-preview";
-export const DEFAULT_VOICE = "alloy";
+export const DEFAULT_VOICE_MODEL = "gpt-realtime";
+export const DEFAULT_VOICE = "marin";
 
 export interface VoiceSessionSourceContext {
   /** Full source text for the current page — same content-authority
@@ -83,14 +83,22 @@ export interface RealtimeTurnDetectionConfig {
   type: "server_vad";
   threshold: number;
   silence_duration_ms: number;
+  create_response: true;
+  interrupt_response: true;
 }
 
 export interface RealtimeSessionRequestBody {
+  type: "realtime";
   model: string;
-  voice: string;
-  modalities: ["audio", "text"];
+  output_modalities: ["audio"];
   instructions: string;
-  turn_detection: RealtimeTurnDetectionConfig;
+  audio: {
+    input: {
+      transcription: { model: "gpt-4o-mini-transcribe" };
+      turn_detection: RealtimeTurnDetectionConfig;
+    };
+    output: { voice: string };
+  };
   /** CR3 — the same two delegation tools every voice session offers.
    *  Optional in the type only so existing tests/fixtures built before CR3
    *  don't need updating; buildVoiceSessionRequest always sets it. */
@@ -110,53 +118,50 @@ export function buildVoiceSessionRequest(
   opts?: VoiceSessionRequestOptions,
 ): RealtimeSessionRequestBody {
   return {
+    type: "realtime",
     model: opts?.model || DEFAULT_VOICE_MODEL,
-    voice: opts?.voice || DEFAULT_VOICE,
-    modalities: ["audio", "text"],
+    output_modalities: ["audio"],
     instructions: buildVoiceSessionInstructions(ctx),
-    turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 600 },
+    audio: {
+      input: {
+        transcription: { model: "gpt-4o-mini-transcribe" },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          silence_duration_ms: 600,
+          create_response: true,
+          interrupt_response: true,
+        },
+      },
+      output: { voice: opts?.voice || DEFAULT_VOICE },
+    },
     tools: REALTIME_DELEGATION_TOOLS,
     tool_choice: "auto",
   };
 }
 
-export interface VoiceSessionCredentials {
-  /** Short-lived, single-session token — safe to hand to the browser. Never
-   *  the real OPENAI_API_KEY. */
-  clientSecret: string;
-  expiresAt: string;
+export interface VoiceCallAnswer {
+  /** SDP answer only. Authentication remains on Avrrio's server. */
+  answerSdp: string;
   model: string;
-  voice: string;
+  requestId?: string;
 }
 
-export type VoiceSessionParseResult =
-  | { ok: true; session: VoiceSessionCredentials }
+export type VoiceCallAnswerParseResult =
+  | { ok: true; answer: VoiceCallAnswer }
   | { ok: false; error: string };
 
 /**
- * Pure. Validates the shape of OpenAI's realtime session-creation response
- * before handing anything back to the client — fails closed (an error
- * result, never a guessed/partial credential) if the expected
- * client_secret.value field is missing.
+ * Pure. Validates the SDP answer before handing it to the browser. OpenAI's
+ * standard API key and the full upstream response never leave the server.
  */
-export function parseVoiceSessionResponse(
+export function parseVoiceCallAnswer(
   raw: unknown,
   requestedModel: string,
-  requestedVoice: string,
-): VoiceSessionParseResult {
-  if (!raw || typeof raw !== "object") {
-    return { ok: false, error: "Realtime session endpoint returned an empty response." };
+  requestId?: string,
+): VoiceCallAnswerParseResult {
+  if (typeof raw !== "string" || !raw.trim().startsWith("v=")) {
+    return { ok: false, error: "Realtime call endpoint did not return a valid SDP answer." };
   }
-  const obj = raw as Record<string, unknown>;
-  const clientSecretObj = obj.client_secret as Record<string, unknown> | undefined;
-  const clientSecret = clientSecretObj?.value;
-  if (typeof clientSecret !== "string" || !clientSecret) {
-    return { ok: false, error: "Realtime session response did not include a client secret." };
-  }
-  const expiresAtRaw = clientSecretObj?.expires_at;
-  const expiresAt = typeof expiresAtRaw === "number"
-    ? new Date(expiresAtRaw * 1000).toISOString()
-    : new Date(Date.now() + 60_000).toISOString();
-
-  return { ok: true, session: { clientSecret, expiresAt, model: requestedModel, voice: requestedVoice } };
+  return { ok: true, answer: { answerSdp: raw, model: requestedModel, requestId } };
 }

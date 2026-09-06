@@ -39,8 +39,8 @@ describe("components/whiteboard/TldrawCanvas.tsx — child-simplified playback t
     expect(before).toMatch(/audience !== "child" && \(/);
   });
 
-  it("REQUIRED: 'Edit a copy' (opt-in student drawing) is hidden for audience: \"child\"", () => {
-    const idx = TLDRAW_CANVAS.indexOf("Unlock this canvas for your own annotations");
+  it("REQUIRED: generated-board editing is hidden for audience: \"child\"", () => {
+    const idx = TLDRAW_CANVAS.indexOf("Unlock the generated diagram and add your own annotations");
     expect(idx).toBeGreaterThan(-1);
     const before = TLDRAW_CANVAS.slice(Math.max(0, idx - 400), idx);
     expect(before).toMatch(/audience !== "child" && \(/);
@@ -62,7 +62,7 @@ describe("components/whiteboard/TldrawCanvas.tsx — child-simplified playback t
     expect(TLDRAW_CANVAS).toMatch(/>All<\/button>/);
     expect(TLDRAW_CANVAS).toMatch(/<option value="slow">Slow<\/option>/);
     expect(TLDRAW_CANVAS).toMatch(/&#x2193; SVG/);
-    expect(TLDRAW_CANVAS).toMatch(/✎ Edit a copy/);
+    expect(TLDRAW_CANVAS).toMatch(/✎ Edit board/);
   });
 });
 

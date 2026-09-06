@@ -23,6 +23,7 @@ import {
   type ChiefResidentDelegationTarget,
 } from "@/lib/chiefResident/chiefResidentAgent";
 import ChiefResidentVoiceCall from "@/components/notelab/ChiefResidentVoiceCall";
+import type { CurrentPageTruth } from "@/lib/context/currentPageTruth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,13 +40,8 @@ interface TeachingTurn {
 
 interface ChiefResidentPanelProps {
   studyModel: CurrentPageStudyModel | null;
-  pageText: string;
-  bookId: string;
-  currentPage: number;
-  /** Canonical page identity — part of the frozen snapshot every streamed
-   *  response is validated against before rendering. Same value used
-   *  throughout the app (pageTruthKey = bookId::page::t). */
-  pageTruthKey: string;
+  /** The same immutable source snapshot used by every page specialist. */
+  pageTruth: CurrentPageTruth;
   bookTitle?: string;
   activeNote: UltraNote | null;
   onRecallSaved?: (setId: string) => void;
@@ -178,14 +174,12 @@ async function streamTeachingSession(
 
 export default function ChiefResidentPanel({
   studyModel,
-  pageText,
-  bookId,
-  currentPage,
-  pageTruthKey,
+  pageTruth,
   bookTitle,
   activeNote,
   onRecallSaved,
 }: ChiefResidentPanelProps) {
+  const { bookId, pageNumber: currentPage, pageTruthKey, pageText, documentId } = pageTruth;
   const teachingAudience = useCurrentLearningContext(state => state.teachingAudience) as TeachingAudience;
   const [selectedMode, setSelectedMode] = useState<TeachingMode | null>(null);
   const [sessionMessages, setSessionMessages] = useState<TeachingTurn[]>([]);
@@ -281,7 +275,7 @@ export default function ChiefResidentPanel({
     setIsStreaming(true);
 
     const frozen: ChiefResidentFrozenSnapshot = {
-      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+      documentId, pageNumber: currentPage, pageTruthKey, pageText: src,
     };
     try {
       let accumulated = "";
@@ -300,7 +294,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [getSourceText, bookTitle, teachingAudience, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
+  }, [getSourceText, bookTitle, teachingAudience, documentId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const sendUserReply = useCallback(async () => {
     const msg = userInput.trim();
@@ -317,7 +311,7 @@ export default function ChiefResidentPanel({
     abortRef.current = new AbortController();
 
     const frozen: ChiefResidentFrozenSnapshot = {
-      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+      documentId, pageNumber: currentPage, pageTruthKey, pageText: src,
     };
     try {
       let accumulated = "";
@@ -337,7 +331,7 @@ export default function ChiefResidentPanel({
       setIsStreaming(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
+  }, [userInput, isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, documentId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const requestSummary = useCallback(async () => {
     if (isStreaming || !selectedMode) return;
@@ -352,7 +346,7 @@ export default function ChiefResidentPanel({
     abortRef.current = new AbortController();
 
     const frozen: ChiefResidentFrozenSnapshot = {
-      documentId: bookId, pageNumber: currentPage, pageTruthKey, pageText: src,
+      documentId, pageNumber: currentPage, pageTruthKey, pageText: src,
     };
     try {
       let accumulated = "";
@@ -371,7 +365,7 @@ export default function ChiefResidentPanel({
     } finally {
       setIsStreaming(false);
     }
-  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, bookId, currentPage, pageTruthKey, finalizeAssistantTurn]);
+  }, [isStreaming, selectedMode, teachingAudience, sessionMessages, getSourceText, bookTitle, documentId, currentPage, pageTruthKey, finalizeAssistantTurn]);
 
   const sendToRecall = useCallback(async () => {
     if (!activeNote) return;
