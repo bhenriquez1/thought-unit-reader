@@ -24,32 +24,38 @@ import fs from "fs";
 import path from "path";
 
 const CANVAS_SRC = fs.readFileSync(path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx"), "utf8");
+const AGENT_SRC = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/whiteboardArtistAgent.ts"), "utf8");
 const DIRECTOR_SRC = fs.readFileSync(path.resolve(__dirname, "../../pages/api/professor-lesson-plan.ts"), "utf8");
 const AGENT_PROMPT_SRC = fs.readFileSync(path.resolve(__dirname, "../../pages/api/professor-tldraw-agent.ts"), "utf8");
 
-describe("TldrawCanvas.tsx — empty-container/richness rejection is unconditional, not STRICT-only (L12)", () => {
-  it("REQUIRED: no 'PROFESSOR_AGENT_STRICT &&' guard remains anywhere in the file", () => {
-    expect(CANVAS_SRC).not.toMatch(/PROFESSOR_AGENT_STRICT\s*&&/);
+// WA1 — this describe block's checks all live in lib/whiteboard/
+// whiteboardArtistAgent.ts now (extracted out of TldrawCanvas.tsx's
+// formerly-inline ensureRuntimeAgentVisualStep loop), except the last test's
+// "does not throw out of ensureRuntimeAgentVisualStep in production" claim,
+// which is about the thin wrapper that stays in TldrawCanvas.tsx.
+describe("whiteboardArtistAgent.ts — empty-container/richness rejection is unconditional, not STRICT-only (L12)", () => {
+  it("REQUIRED: no 'WHITEBOARD_ARTIST_STRICT &&' guard remains anywhere in the file", () => {
+    expect(AGENT_SRC).not.toMatch(/WHITEBOARD_ARTIST_STRICT\s*&&/);
   });
 
   it("REQUIRED: the pass-0 richness/empty-container block is gated only on passIndex === 0", () => {
-    expect(CANVAS_SRC).toMatch(/if \(passIndex === 0\) \{\s*\n\s*const richnessRatio/);
+    expect(AGENT_SRC).toMatch(/if \(passIndex === 0\) \{\s*\n\s*const richnessRatio/);
   });
 
-  it("REQUIRED: PROFESSOR_AGENT_STRICT is still read and still passed to resolveProfessorAgentFailure — it now controls only stop-vs-fallback behavior, not reachability of the checks", () => {
-    expect(CANVAS_SRC).toMatch(/const PROFESSOR_AGENT_STRICT = process\.env\.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT === "true";/);
-    expect(CANVAS_SRC).toMatch(/resolveProfessorAgentFailure\(PROFESSOR_AGENT_STRICT, fallbackReason\)/);
+  it("REQUIRED: WHITEBOARD_ARTIST_STRICT is still read and still passed to resolveProfessorAgentFailure — it now controls only stop-vs-fallback behavior, not reachability of the checks", () => {
+    expect(AGENT_SRC).toMatch(/const WHITEBOARD_ARTIST_STRICT = process\.env\.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT === "true";/);
+    expect(AGENT_SRC).toMatch(/resolveProfessorAgentFailure\(WHITEBOARD_ARTIST_STRICT, fallbackReason\)/);
   });
 
-  it("a rejection here does not throw out of ensureRuntimeAgentVisualStep in production — it's caught, and playback continues on the deterministic fallback layout", () => {
+  it("a rejection here does not throw out of runWhiteboardArtistStep — it's caught and returned as a 'fallback' result, which TldrawCanvas.tsx's ensureRuntimeAgentVisualStep wrapper only rethrows (stopping playback) when shouldStopPlayback is true — never in production", () => {
     // resolveProfessorAgentFailure(strict=false, reason) => shouldStopPlayback: false,
-    // so the catch block's `if (failure.shouldStopPlayback) { ...; throw error; }`
-    // is skipped in production, and the function falls through to its own
-    // documented "existing deterministic layout; Professor playback never stalls" comment.
-    const densitySrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
-    expect(densitySrc).toMatch(/shouldStopPlayback: strict/);
-    expect(CANVAS_SRC).toMatch(/if \(failure\.shouldStopPlayback\) \{/);
-    expect(CANVAS_SRC).toMatch(/existing deterministic layout; Professor playback never stalls/);
+    // so the wrapper's `if (result.outcome === "fallback" && result.failure?.shouldStopPlayback ...)`
+    // is skipped in production, and applyStateAtStep continues using the
+    // existing deterministic layout — Professor playback never stalls.
+    const professorTldrawAgentSrc = fs.readFileSync(path.resolve(__dirname, "../../lib/whiteboard/professorTldrawAgent.ts"), "utf8");
+    expect(professorTldrawAgentSrc).toMatch(/shouldStopPlayback: strict/);
+    expect(AGENT_SRC).toMatch(/outcome: "fallback", localIds, diagnostic,/);
+    expect(CANVAS_SRC).toMatch(/if \(result\.outcome === "fallback" && result\.failure\?\.shouldStopPlayback && planRef\.current\) \{/);
   });
 });
 
