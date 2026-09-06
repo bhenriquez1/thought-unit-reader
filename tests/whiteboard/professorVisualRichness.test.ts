@@ -2,15 +2,17 @@
 // Stabilization item 6 — Whiteboard visual richness, originally measure-
 // only. L12 (Whiteboard visual-execution correction) made the richness-ratio
 // and empty-container checks below enforce unconditionally in every
-// environment — they used to be gated behind PROFESSOR_AGENT_STRICT (default
-// false, never set true anywhere in the repo), so they were computed but
-// never actually rejected a live production response.
+// environment — they used to be gated behind WHITEBOARD_ARTIST_STRICT
+// (default false, never set true anywhere in the repo), so they were
+// computed but never actually rejected a live production response.
 //
-// components/whiteboard/TldrawCanvas.tsx's ensureRuntimeAgentVisualStep
-// tracks, per agent run: totalActions, trivialActions, freehandCount (in
-// addition to the existing executeActions/correctionActions/cameraCommands/
-// nontrivialVisualCount/actualTldrawShapeDelta/fallbackReason), and a
-// calculated visualRichnessRatio = nontrivialVisualCount / totalActions.
+// lib/whiteboard/whiteboardArtistAgent.ts's runWhiteboardArtistStep (WA1 —
+// extracted from TldrawCanvas.tsx's formerly-inline ensureRuntimeAgentVisualStep
+// loop into its own narrow-mission module) tracks, per agent run:
+// totalActions, trivialActions, freehandCount (in addition to the existing
+// executeActions/correctionActions/cameraCommands/nontrivialVisualCount/
+// actualTldrawShapeDelta/fallbackReason), and a calculated visualRichnessRatio
+// = nontrivialVisualCount / totalActions.
 // This file:
 //   1. Proves the metrics are actually wired (source-inspection — no
 //      jsdom/tldraw-editor harness in this repo for a real render).
@@ -27,15 +29,16 @@ import { isNontrivialProfessorAgentAction } from "../../lib/whiteboard/professor
 import type { ProfessorTeachingAction } from "../../lib/whiteboard/professorLessonPlan";
 
 const CANVAS_FILE = path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx");
+const AGENT_FILE = path.resolve(__dirname, "../../lib/whiteboard/whiteboardArtistAgent.ts");
 
 // ── Part 1: wiring guards ───────────────────────────────────────────────────
 
-describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabilization item 6)", () => {
+describe("whiteboardArtistAgent.ts — visual richness instrumentation is wired (stabilization item 6)", () => {
   let src: string;
-  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+  beforeAll(() => { src = fs.readFileSync(AGENT_FILE, "utf8"); });
 
-  it("REQUIRED: ProfessorAgentDiagnostic carries totalActions, trivialActions, freehandCount, and visualRichnessRatio", () => {
-    const idx = src.indexOf("interface ProfessorAgentDiagnostic {");
+  it("REQUIRED: WhiteboardArtistDiagnostic carries totalActions, trivialActions, freehandCount, and visualRichnessRatio", () => {
+    const idx = src.indexOf("interface WhiteboardArtistDiagnostic {");
     const block = src.slice(idx, src.indexOf("}", idx + 200));
     expect(block).toMatch(/totalActions: number; trivialActions: number; freehandCount: number;/);
     expect(block).toMatch(/visualRichnessRatio: number;/);
@@ -49,9 +52,13 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
     expect(block).toMatch(/freehandCount \+= verified\.actions\.filter\(action => action\.type === "draw-freehand"\)\.length;/);
   });
 
-  it("REQUIRED: visualRichnessRatio is computed as nontrivialVisualCount / totalActions, guarded against divide-by-zero, in BOTH the success and fallback diagnostic updates", () => {
+  it("REQUIRED: visualRichnessRatio is computed as nontrivialVisualCount / totalActions, guarded against divide-by-zero — via the single shared snapshot() helper both the success and fallback diagnostics read from, so the two can never drift apart", () => {
     const occurrences = (src.match(/visualRichnessRatio: totalActions > 0 \? nontrivialVisualCount \/ totalActions : 0,/g) ?? []).length;
-    expect(occurrences).toBe(2);
+    expect(occurrences).toBe(1);
+    expect(src).toMatch(/const snapshot = \(\): WhiteboardArtistDiagnostic => \(\{/);
+    // The fallback path spreads the SAME snapshot() rather than recomputing
+    // visualRichnessRatio a second time — see WA1's extraction.
+    expect(src).toMatch(/\.\.\.snapshot\(\), fallbackUsed: failure\.fallbackUsed, fallbackReason,/);
   });
 
   // R2 — the richness ratio is enforced, closing exactly the gap this
@@ -59,11 +66,11 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
   // pass at a ratio of 0.10).
   //
   // L12 (Whiteboard visual-execution correction) — this and empty_containers
-  // used to be gated behind PROFESSOR_AGENT_STRICT (default false, never set
-  // true anywhere in the repo), so neither ever actually rejected a live
+  // used to be gated behind WHITEBOARD_ARTIST_STRICT (default false, never
+  // set true anywhere in the repo), so neither ever actually rejected a live
   // production response — WD3's density diagnostic was computed every pass
   // but never acted on. Both now run unconditionally in every environment;
-  // PROFESSOR_AGENT_STRICT continues to control only whether a rejection
+  // WHITEBOARD_ARTIST_STRICT continues to control only whether a rejection
   // stops playback outright (dev/test) or degrades to the deterministic
   // fallback layout (production) — see resolveProfessorAgentFailure.
   it("REQUIRED (R2): a new low_visual_richness rejection site exists, unconditional (not STRICT-gated), applied only after the zero-nontrivial case is already ruled out", () => {
@@ -86,13 +93,16 @@ describe("TldrawCanvas.tsx — visual richness instrumentation is wired (stabili
     );
   });
 
-  it("REQUIRED (L12): the richness/empty-container block is reachable regardless of PROFESSOR_AGENT_STRICT — no 'PROFESSOR_AGENT_STRICT &&' guard remains on it", () => {
+  it("REQUIRED (L12): the richness/empty-container block is reachable regardless of WHITEBOARD_ARTIST_STRICT — no 'WHITEBOARD_ARTIST_STRICT &&' guard remains on it", () => {
     const idx = src.indexOf("if (passIndex === 0) {");
     expect(idx).toBeGreaterThan(-1);
-    expect(src).not.toMatch(/if \(PROFESSOR_AGENT_STRICT && passIndex === 0\)/);
+    expect(src).not.toMatch(/if \(WHITEBOARD_ARTIST_STRICT && passIndex === 0\)/);
   });
+});
 
+describe("TldrawCanvas.tsx — the DEV debug strip surfaces the agent's metrics for a developer inspecting a real run", () => {
   it("the DEV debug strip surfaces the new metrics for a developer inspecting a real run", () => {
+    const src = fs.readFileSync(CANVAS_FILE, "utf8");
     const idx = src.indexOf('data-testid="professor-agent-debug-strip"');
     const block = src.slice(idx, idx + 900);
     expect(block).toMatch(/total=\{agentDiagnostic\.totalActions\} trivial=\{agentDiagnostic\.trivialActions\} freehand=\{agentDiagnostic\.freehandCount\} richness=\{agentDiagnostic\.visualRichnessRatio\.toFixed\(2\)\}/);
@@ -230,21 +240,21 @@ describe("Visual richness — the R2 strict-mode gate correctly rejects what the
 //    professorTldrawAgent.test.ts's computeVisualDensityDiagnostic suite for
 //    behavioral coverage of the density math itself — this is wiring-only,
 //    same source-inspection convention as Part 1 above).
-describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density correction)", () => {
+describe("whiteboardArtistAgent.ts — empty-container rejection (Whiteboard density correction)", () => {
   let src: string;
-  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+  beforeAll(() => { src = fs.readFileSync(AGENT_FILE, "utf8"); });
 
   it("REQUIRED: computeVisualDensityDiagnostic is imported and computed once per pass", () => {
     expect(src).toMatch(/computeVisualDensityDiagnostic,/);
     expect(src).toMatch(/density = computeVisualDensityDiagnostic\(verified\.actions, request\.step\.focusBounds\);/);
   });
 
-  it("REQUIRED: ProfessorAgentDiagnostic carries the density diagnostic, populated in both the success and fallback updates", () => {
-    const idx = src.indexOf("interface ProfessorAgentDiagnostic {");
+  it("REQUIRED: WhiteboardArtistDiagnostic carries the density diagnostic, read by both the success and fallback paths off the single shared snapshot() helper", () => {
+    const idx = src.indexOf("interface WhiteboardArtistDiagnostic {");
     const block = src.slice(idx, src.indexOf("}", idx + 200));
     expect(block).toMatch(/density: VisualDensityDiagnostic;/);
     const occurrences = (src.match(/\n\s*density,\n/g) ?? []).length;
-    expect(occurrences).toBe(2);
+    expect(occurrences).toBe(1); // only inside snapshot() — the fallback path spreads it, never redeclares it
   });
 
   it("REQUIRED: the rejection floor matches the correction's own named example — count >= 3 AND ratio >= 0.5 (5 shapes, 3 empty = 60%)", () => {
@@ -256,7 +266,7 @@ describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density cor
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("empty_containers"\);/);
   });
 
-  it("REQUIRED (L12): runs unconditionally, alongside (not instead of) the richness-floor check — both live in the same unconditional block, no PROFESSOR_AGENT_STRICT guard", () => {
+  it("REQUIRED (L12): runs unconditionally, alongside (not instead of) the richness-floor check — both live in the same unconditional block, no WHITEBOARD_ARTIST_STRICT guard", () => {
     const idx = src.indexOf('throw new ProfessorAgentRequestError("low_visual_richness");');
     const block = src.slice(idx, idx + 1300);
     expect(block).toMatch(/tooManyEmptyContainers/);
@@ -282,9 +292,9 @@ describe("TldrawCanvas.tsx — empty-container rejection (Whiteboard density cor
 // nothing once the labels are stripped. See professorTldrawAgent.test.ts's
 // computeVisualDensityDiagnostic suite for behavioral coverage of the
 // label-dependent/label-independent math itself — this is wiring-only.
-describe("TldrawCanvas.tsx — label-dependent-only rejection (L17 acceptance-test enforcement)", () => {
+describe("whiteboardArtistAgent.ts — label-dependent-only rejection (L17 acceptance-test enforcement)", () => {
   let src: string;
-  beforeAll(() => { src = fs.readFileSync(CANVAS_FILE, "utf8"); });
+  beforeAll(() => { src = fs.readFileSync(AGENT_FILE, "utf8"); });
 
   it("REQUIRED: the floor/ceiling constants exist with the documented reasoning", () => {
     expect(src).toMatch(/const LABEL_DEPENDENT_COUNT_FLOOR = 2;/);
@@ -298,7 +308,7 @@ describe("TldrawCanvas.tsx — label-dependent-only rejection (L17 acceptance-te
     expect(src).toMatch(/throw new ProfessorAgentRequestError\("label_dependent_only"\);/);
   });
 
-  it("REQUIRED: runs unconditionally alongside empty_containers/low_visual_richness, in the same unconditional block, no PROFESSOR_AGENT_STRICT guard", () => {
+  it("REQUIRED: runs unconditionally alongside empty_containers/low_visual_richness, in the same unconditional block, no WHITEBOARD_ARTIST_STRICT guard", () => {
     const idx = src.indexOf('throw new ProfessorAgentRequestError("label_dependent_only");');
     expect(idx).toBeGreaterThan(-1);
     const emptyContainersIdx = src.indexOf('throw new ProfessorAgentRequestError("empty_containers");');
@@ -307,7 +317,7 @@ describe("TldrawCanvas.tsx — label-dependent-only rejection (L17 acceptance-te
     const gateIdx = src.indexOf("if (passIndex === 0) {");
     expect(gateIdx).toBeGreaterThan(-1);
     expect(gateIdx).toBeLessThan(emptyContainersIdx);
-    expect(src.slice(gateIdx, idx)).not.toMatch(/PROFESSOR_AGENT_STRICT/);
+    expect(src.slice(gateIdx, idx)).not.toMatch(/WHITEBOARD_ARTIST_STRICT/);
   });
 
   it("REQUIRED: label_dependent_only is a real ProfessorAgentFailureReason value", () => {

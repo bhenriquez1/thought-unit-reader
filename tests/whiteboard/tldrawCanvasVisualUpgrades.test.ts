@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 
 const CANVAS_FILE = path.resolve(__dirname, "../../components/whiteboard/TldrawCanvas.tsx");
+const AGENT_FILE = path.resolve(__dirname, "../../lib/whiteboard/whiteboardArtistAgent.ts");
 
 describe("TldrawCanvas.tsx — EDGE_COLOR is actually applied (was dead code)", () => {
   let src: string;
@@ -42,13 +43,17 @@ describe("TldrawCanvas.tsx — official-agent-style observe → draw → inspect
     expect(src).toMatch(/origin: shapeId\.startsWith\("shape:prof-agent-"\)/);
   });
 
-  it("executes at most three passes and captures updated canvas context before every pass", () => {
-    const loop = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
-    expect(loop).toMatch(/PROFESSOR_AGENT_MAX_PASSES/);
-    expect(loop).toMatch(/passIndex < PROFESSOR_AGENT_MAX_PASSES/);
-    expect(loop).toMatch(/const updatedCanvas = await captureAgentContext\(editor\)/);
-    expect(loop).toMatch(/passIndex === 0 \? "execute" as const : "inspect" as const/);
-    expect(loop).toMatch(/verified\.complete && !verified\.needsCorrection/);
+  it("executes at most three passes and captures updated canvas context before every pass — the pass loop itself lives in whiteboardArtistAgent.ts (WA1), the wrapper in TldrawCanvas.tsx supplies captureAgentContext as the injected captureCanvas dependency", () => {
+    const wrapper = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
+    expect(wrapper).toMatch(/captureCanvas: \(\) => captureAgentContext\(editor\)/);
+    expect(wrapper).toMatch(/runWhiteboardArtistStep\(/);
+
+    const agentSrc = fs.readFileSync(AGENT_FILE, "utf8");
+    expect(agentSrc).toMatch(/WHITEBOARD_ARTIST_MAX_PASSES/);
+    expect(agentSrc).toMatch(/passIndex < WHITEBOARD_ARTIST_MAX_PASSES/);
+    expect(agentSrc).toMatch(/const updatedCanvas = await deps\.captureCanvas\(\)/);
+    expect(agentSrc).toMatch(/passIndex === 0 \? "execute" as const : "inspect" as const/);
+    expect(agentSrc).toMatch(/verified\.complete && !verified\.needsCorrection/);
   });
 
   it("reveals verified tool calls incrementally instead of placing one completed picture", () => {
@@ -69,12 +74,14 @@ describe("TldrawCanvas.tsx — official-agent-style observe → draw → inspect
     expect(src).toMatch(/type: "draw", x, y/);
     expect(src).toMatch(/b64Vecs\.encodePoints\(points\)/);
     expect(src).toMatch(/isComplete: true, isClosed: s\.closed/);
-    expect(src).toMatch(/"no_visual_actions"/);
-    expect(src).toMatch(/existing deterministic layout; Professor playback never stalls/);
+    const agentSrc = fs.readFileSync(AGENT_FILE, "utf8");
+    expect(agentSrc).toMatch(/"no_visual_actions"/);
+    expect(agentSrc).toMatch(/existing deterministic layout; Professor playback never stalls/);
   });
 
   it("shows classified rendered-editor diagnostics and supports strict development mode", () => {
-    expect(src).toMatch(/NEXT_PUBLIC_PROFESSOR_AGENT_STRICT/);
+    const agentSrc = fs.readFileSync(AGENT_FILE, "utf8");
+    expect(agentSrc).toMatch(/NEXT_PUBLIC_PROFESSOR_AGENT_STRICT/);
     expect(src).toMatch(/data-testid="professor-agent-debug-strip"/);
     expect(src).toMatch(/nontrivialRendered/);
     expect(src).toMatch(/afterShapeIds\.has/);
@@ -87,12 +94,15 @@ describe("TldrawCanvas.tsx — official-agent-style observe → draw → inspect
     expect(src).toMatch(/ungrounded decorative stroke can augment/);
   });
 
-  it("returns the visible status to deterministic fallback when the bounded agent loop times out", () => {
-    const loop = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
-    expect(loop).toMatch(/let timedOut = false/);
-    expect(loop).toMatch(/timedOut = true;\s*controller\.abort\(\)/);
-    expect(loop).toMatch(/timedOut \? "timeout"/);
-    expect(loop).toMatch(/setAgentVisualStatus\("fallback"\)/);
+  it("returns the visible status to deterministic fallback when the bounded agent loop times out — timeout detection stays in TldrawCanvas.tsx's wrapper (it owns the AbortController), classification and the 'fallback' status live in whiteboardArtistAgent.ts", () => {
+    const wrapper = src.slice(src.indexOf("const ensureRuntimeAgentVisualStep"), src.indexOf("// ── Narration: single ordered queue"));
+    expect(wrapper).toMatch(/let timedOut = false/);
+    expect(wrapper).toMatch(/timedOut = true;\s*controller\.abort\(\)/);
+    expect(wrapper).toMatch(/isTimedOut: \(\) => timedOut/);
+
+    const agentSrc = fs.readFileSync(AGENT_FILE, "utf8");
+    expect(agentSrc).toMatch(/deps\.isTimedOut\(\) \? "timeout"/);
+    expect(agentSrc).toMatch(/deps\.onStatus\?\.\("fallback"\)/);
   });
 });
 

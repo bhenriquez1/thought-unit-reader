@@ -72,99 +72,22 @@ import {
   sliceTextForReveal, slicePointsForReveal, REVEAL_FRAME_COUNT,
 } from "@/lib/whiteboard/handwritingReveal";
 import {
-  buildProfessorTldrawAgentRequest,
-  requestProfessorTldrawAgent,
-  verifyProfessorTldrawAgentResponse,
   isNontrivialProfessorAgentAction,
-  computeVisualDensityDiagnostic,
-  ProfessorAgentRequestError,
-  resolveProfessorAgentFailure,
   type ProfessorAgentCanvasContext,
   type ProfessorAgentFailureReason,
-  type VisualDensityDiagnostic,
 } from "@/lib/whiteboard/professorTldrawAgent";
+import {
+  runWhiteboardArtistStep,
+  EMPTY_WHITEBOARD_ARTIST_DIAGNOSTIC,
+  WHITEBOARD_ARTIST_MAX_PASSES,
+  type WhiteboardArtistDiagnostic,
+  type WhiteboardArtistStatus,
+} from "@/lib/whiteboard/whiteboardArtistAgent";
 
 const SPEECH_OWNER = "whiteboard" as const;
 // A warm, deliberate voice for a "professor" delivery — see pages/api/tts.ts;
 // falls back to browser speech automatically when OPENAI_API_KEY is unset.
 const PROFESSOR_VOICE = "onyx";
-const PROFESSOR_AGENT_MAX_PASSES = 3;
-const PROFESSOR_AGENT_STRICT = process.env.NEXT_PUBLIC_PROFESSOR_AGENT_STRICT === "true";
-// L12 (Whiteboard visual-execution correction) — the richness-ratio and
-// empty-container checks below used to be gated behind PROFESSOR_AGENT_STRICT
-// (default false; nothing in this repo ever set it true), so WD3's density
-// diagnostic was computed every pass but never actually rejected a live
-// production response — the only check that ever ran in production was the
-// much weaker nontrivialVisualCount === 0 floor below, which a response of
-// "9 generic boxes + 1 real arrow" still satisfies at a richness ratio of
-// just 0.10 (proven by tests/whiteboard/professorVisualRichness.test.ts).
-// Both checks now run unconditionally in every environment. PROFESSOR_AGENT_
-// STRICT still controls only resolveProfessorAgentFailure's
-// shouldStopPlayback — a rejection here degrades to the deterministic M7
-// layout (which always self-labels every shape) in production, and stops
-// playback outright only in strict dev/test mode.
-const VISUAL_RICHNESS_RATIO_FLOOR = 0.3;
-const VISUAL_RICHNESS_COUNT_FLOOR = 3;
-// Correction (Whiteboard density) — "if it creates five shapes and three of
-// them are empty containers, the step should be rejected and replanned."
-// Both conditions must hold: an absolute floor (a single stray empty shape
-// among many real ones isn't a systemic problem) AND a ratio ceiling (empty
-// containers must be at least HALF of what got drawn, not just present).
-const EMPTY_CONTAINER_COUNT_FLOOR = 3;
-const EMPTY_CONTAINER_RATIO_CEILING = 0.5;
-// L17 — the correction's own acceptance test: "if removing the text labels
-// makes the Whiteboard meaningless, it isn't sufficiently visual." A step
-// full of LABELED generic boxes (the "Reactants -> Products" failure mode)
-// already clears the empty-container check above — each box IS labeled,
-// so none of them are "empty" — but still fails this test once the labels
-// are stripped. Only enforced once there's enough label-dependent content
-// to judge (a single simple labeled shape isn't a violation on its own),
-// mirroring EMPTY_CONTAINER_COUNT_FLOOR's own reasoning; the ratio floor is
-// a minimum proportion, not a maximum, so it's a floor rather than a ceiling.
-const LABEL_DEPENDENT_COUNT_FLOOR = 2;
-const LABEL_INDEPENDENT_RATIO_FLOOR = 0.4;
-
-const EMPTY_DENSITY_DIAGNOSTIC: VisualDensityDiagnostic = {
-  meaningfulPrimitiveCount: 0, emptyContainerCount: 0, totalShapeCount: 0,
-  usedCanvasBounds: null, activeTeachingBounds: null, canvasUtilizationRatio: 0,
-  labelDependentShapeCount: 0, labelIndependentMeaningfulCount: 0,
-};
-
-interface ProfessorAgentDiagnostic {
-  eligible: boolean; agentTriggered: boolean; currentPass: number;
-  executeActions: number; correctionActions: number; cameraCommands: number;
-  nontrivialVisualCount: number; fallbackUsed: boolean;
-  fallbackReason: ProfessorAgentFailureReason | null; agentDurationMs: number;
-  actualTldrawShapeDelta: number;
-  /** Stabilization item 6 (measure first, don't enforce yet) — total
-   *  verified actions across all passes, how many of those are trivial
-   *  (isNontrivialProfessorAgentAction === false: plain boxes and labels),
-   *  and how many are real freehand/sketch strokes. nontrivialVisualCount
-   *  above is a NARROWER count (nontrivial actions that both verified AND
-   *  actually rendered a tldraw shape) — totalActions/trivialActions here
-   *  are the wider "what did the agent propose" picture nontrivialVisualCount
-   *  alone can't answer. Instrumentation only: nothing reads these to reject
-   *  a response yet. */
-  totalActions: number; trivialActions: number; freehandCount: number;
-  /** nontrivialVisualCount / totalActions (0 when totalActions is 0). A
-   *  response that clears the current nontrivial-floor with one real arrow
-   *  buried among nine generic boxes reports a LOW ratio here even though it
-   *  currently passes — exactly the gap stabilization item 6 asks to
-   *  surface before anyone decides whether to gate on it. */
-  visualRichnessRatio: number;
-  /** Correction (Whiteboard density) — the LAST pass-0 response's own
-   *  density diagnostic (see computeVisualDensityDiagnostic). Reflects
-   *  whichever pass most recently ran, success or fallback. */
-  density: VisualDensityDiagnostic;
-}
-const EMPTY_AGENT_DIAGNOSTIC: ProfessorAgentDiagnostic = {
-  eligible: false, agentTriggered: false, currentPass: 0, executeActions: 0,
-  correctionActions: 0, cameraCommands: 0, nontrivialVisualCount: 0,
-  fallbackUsed: false, fallbackReason: null, agentDurationMs: 0,
-  actualTldrawShapeDelta: 0,
-  totalActions: 0, trivialActions: 0, freehandCount: 0, visualRichnessRatio: 0,
-  density: EMPTY_DENSITY_DIAGNOSTIC,
-};
 
 // ── Tier colors (unchanged semantics: red=danger/trap, gold=master, …) ─────
 const TIER_COLOR: Record<string, string> = {
@@ -536,8 +459,8 @@ export default function TldrawCanvas({
   const agentAttemptedStepIdsRef = useRef<Set<number>>(new Set());
   const agentAbortRef = useRef<AbortController | null>(null);
   const agentSemanticRoleByShapeIdRef = useRef<Map<string, string>>(new Map());
-  const [agentVisualStatus, setAgentVisualStatus] = useState<"idle" | "observing" | "drawing" | "inspecting" | "fallback">("idle");
-  const [agentDiagnostic, setAgentDiagnostic] = useState<ProfessorAgentDiagnostic>(EMPTY_AGENT_DIAGNOSTIC);
+  const [agentVisualStatus, setAgentVisualStatus] = useState<WhiteboardArtistStatus>("idle");
+  const [agentDiagnostic, setAgentDiagnostic] = useState<WhiteboardArtistDiagnostic>(EMPTY_WHITEBOARD_ARTIST_DIAGNOSTIC);
   const onAnchorClickRef = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const onProfessorSurfaceChangeRef = useRef(onProfessorSurfaceChange);
@@ -1009,8 +932,13 @@ export default function TldrawCanvas({
     };
   }, [applyStateAtStep, registerRuntimeAgentActions]);
 
-  /** Bounded observe/draw/inspect loop. Every pass sees the freshly rendered
-   * editor state; production falls back, strict development/test stops. */
+  /** Thin adapter around the Whiteboard Artist Agent (lib/whiteboard/
+   *  whiteboardArtistAgent.ts's runWhiteboardArtistStep) — this component
+   *  owns everything the agent itself must NOT: the live tldraw Editor
+   *  (via captureAgentContext/revealRuntimeAgentActions, injected below),
+   *  abort/timeout lifecycle, and the decision to actually pause playback
+   *  on a strict-mode failure. The agent module owns the bounded observe/
+   *  draw/inspect/correct decision loop and every accept/reject threshold. */
   const ensureRuntimeAgentVisualStep = useCallback(async (editor: Editor, stepId: number) => {
     const plan = planRef.current;
     if (!plan || agentAttemptedStepIdsRef.current.has(stepId)) return;
@@ -1026,146 +954,31 @@ export default function TldrawCanvas({
       controller.abort();
     }, 30_000);
     const planIdentity = buildProfessorLessonCacheKey(plan.sourceSnapshot);
-    const startedAt = performance.now();
-    const initialEditorShapeCount = editor.getCurrentPageShapeIds().size;
-    let executeActions = 0;
-    let correctionActions = 0;
-    let cameraCommands = 0;
-    let nontrivialVisualCount = 0;
-    let totalActions = 0;
-    let trivialActions = 0;
-    let freehandCount = 0;
-    let currentPass = 0;
-    // Correction (Whiteboard density) — the last pass-0 response's own
-    // density diagnostic, held outside the loop so it's still available in
-    // the catch block's fallback diagnostic snapshot below.
-    let density: VisualDensityDiagnostic = EMPTY_DENSITY_DIAGNOSTIC;
-    setAgentDiagnostic({ ...EMPTY_AGENT_DIAGNOSTIC, eligible: true, agentTriggered: true });
-
     try {
-      for (let passIndex = 0; passIndex < PROFESSOR_AGENT_MAX_PASSES; passIndex++) {
-        currentPass = passIndex + 1;
-        const pass = passIndex === 0 ? "execute" as const : "inspect" as const;
-        setAgentVisualStatus(pass === "execute" ? "observing" : "inspecting");
-        const updatedCanvas = await captureAgentContext(editor);
-        const request = buildProfessorTldrawAgentRequest({
-          plan, stepId, pass, canvas: updatedCanvas,
+      const result = await runWhiteboardArtistStep(
+        {
+          plan, stepId,
           priorAgentLocalIds: agentLocalIdsByStepRef.current.get(stepId) ?? [],
-        });
-        if (!request) throw new ProfessorAgentRequestError("visual_needed_false");
-        const response = await requestProfessorTldrawAgent(request, controller.signal);
-        if (buildProfessorLessonCacheKey(planRef.current?.sourceSnapshot ?? plan.sourceSnapshot) !== planIdentity) {
-          throw new ProfessorAgentRequestError("aborted");
-        }
-        const verified = verifyProfessorTldrawAgentResponse(request, response);
-        if (response.actions.length > 0 && verified.actions.length === 0) {
-          throw new ProfessorAgentRequestError("verification_reject");
-        }
-        if (passIndex === 0) executeActions = verified.actions.length;
-        else correctionActions += verified.actions.length;
-        cameraCommands += verified.actions.filter(action => action.type === "move-camera").length;
-        totalActions += verified.actions.length;
-        trivialActions += verified.actions.filter(action => !isNontrivialProfessorAgentAction(action)).length;
-        freehandCount += verified.actions.filter(action => action.type === "draw-freehand").length;
-        density = computeVisualDensityDiagnostic(verified.actions, request.step.focusBounds);
-        agentLocalIdsByStepRef.current.set(stepId, [
-          ...(agentLocalIdsByStepRef.current.get(stepId) ?? []), ...verified.localIds,
-        ]);
-        if (verified.actions.length > 0) {
-          setAgentVisualStatus("drawing");
-          const rendered = await revealRuntimeAgentActions(editor, stepId, verified.actions);
-          nontrivialVisualCount += rendered.nontrivialRendered;
-          console.log("[PROFESSOR_VISUAL_AGENT_ACTIONS]", {
-            lessonId: request.identity.lessonId, stepId, pass: currentPass,
-            actionTypes: verified.actions.map(action => action.type),
-            actionIds: verified.actions.map(action => action.actionId),
-            resultingShapeIds: rendered.resultingShapeIds,
-            rejectedActionCount: verified.rejectedActionCount,
-          });
-        }
-        setAgentDiagnostic({
-          eligible: true, agentTriggered: true, currentPass, executeActions,
-          correctionActions, cameraCommands, nontrivialVisualCount,
-          fallbackUsed: false, fallbackReason: null,
-          agentDurationMs: Math.round(performance.now() - startedAt),
-          actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
-          totalActions, trivialActions, freehandCount,
-          visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
-          density,
-        });
-        if (passIndex === 0 && nontrivialVisualCount === 0) {
-          throw new ProfessorAgentRequestError("no_visual_actions");
-        }
-        // See VISUAL_RICHNESS_RATIO_FLOOR's comment above — only reachable
-        // once the zero-nontrivial case above has already been ruled out, so
-        // this is specifically the "technically cleared the floor but is
-        // still mostly generic boxes" case.
-        if (passIndex === 0) {
-          const richnessRatio = totalActions > 0 ? nontrivialVisualCount / totalActions : 0;
-          const passesRichnessFloor =
-            richnessRatio >= VISUAL_RICHNESS_RATIO_FLOOR || nontrivialVisualCount >= VISUAL_RICHNESS_COUNT_FLOOR;
-          if (!passesRichnessFloor) {
-            throw new ProfessorAgentRequestError("low_visual_richness");
-          }
-          // Correction (Whiteboard density) — "if it creates five shapes and
-          // three of them are empty containers, the step should be rejected
-          // and replanned." A richness-floor pass (above) can still hide
-          // this: an ellipse/diamond/hexagon/cloud counts as "nontrivial" by
-          // isNontrivialProfessorAgentAction's own (looser, single-action)
-          // definition even with no label ever attached to it — see WD2's
-          // attachToLocalId fix and this diagnostic's own doc comment.
-          const tooManyEmptyContainers =
-            density.emptyContainerCount >= EMPTY_CONTAINER_COUNT_FLOOR
-            && density.totalShapeCount > 0
-            && density.emptyContainerCount / density.totalShapeCount >= EMPTY_CONTAINER_RATIO_CEILING;
-          if (tooManyEmptyContainers) {
-            throw new ProfessorAgentRequestError("empty_containers");
-          }
-          // L17 — the empty-container check above only catches UNLABELED
-          // generic boxes. A step can be entirely LABELED generic boxes
-          // joined by one arrow (exactly "Reactants -> Products," the
-          // correction's own named failure) and still clear both checks
-          // above — every box has a label, so none are "empty." This is
-          // the acceptance test itself: if the labels were stripped, would
-          // anything here still mean something?
-          const tooLabelDependent =
-            density.labelDependentShapeCount >= LABEL_DEPENDENT_COUNT_FLOOR
-            && (density.labelDependentShapeCount + density.labelIndependentMeaningfulCount) > 0
-            && (density.labelIndependentMeaningfulCount / (density.labelDependentShapeCount + density.labelIndependentMeaningfulCount)) < LABEL_INDEPENDENT_RATIO_FLOOR;
-          if (tooLabelDependent) {
-            throw new ProfessorAgentRequestError("label_dependent_only");
-          }
-        }
-        if (verified.complete && !verified.needsCorrection) break;
+          signal: controller.signal,
+        },
+        {
+          captureCanvas: () => captureAgentContext(editor),
+          renderActions: (actions) => revealRuntimeAgentActions(editor, stepId, actions),
+          isStale: () => buildProfessorLessonCacheKey(planRef.current?.sourceSnapshot ?? plan.sourceSnapshot) !== planIdentity,
+          isTimedOut: () => timedOut,
+          onStatus: setAgentVisualStatus,
+          onDiagnostic: setAgentDiagnostic,
+        },
+      );
+      agentLocalIdsByStepRef.current.set(stepId, result.localIds);
+      // Matches the original inline loop's own guard: a strict-mode failure
+      // only stops playback if the component still has a plan to stop it
+      // for (diagnostic state above is otherwise-inert UI and safe to set
+      // regardless).
+      if (result.outcome === "fallback" && result.failure?.shouldStopPlayback && planRef.current) {
+        setIsPlaying(false);
+        throw new Error(`whiteboard-artist-fallback:${result.failure.reason}`);
       }
-      setAgentVisualStatus("idle");
-    } catch (error) {
-      const fallbackReason: ProfessorAgentFailureReason = timedOut ? "timeout"
-        : error instanceof ProfessorAgentRequestError ? error.reason
-          : controller.signal.aborted ? "aborted" : "network_error";
-      const failure = resolveProfessorAgentFailure(PROFESSOR_AGENT_STRICT, fallbackReason);
-      if (planRef.current) {
-        setAgentVisualStatus("fallback");
-        setAgentDiagnostic({
-          eligible: true, agentTriggered: true, currentPass, executeActions,
-          correctionActions, cameraCommands, nontrivialVisualCount,
-          fallbackUsed: failure.fallbackUsed, fallbackReason,
-          agentDurationMs: Math.round(performance.now() - startedAt),
-          actualTldrawShapeDelta: editor.getCurrentPageShapeIds().size - initialEditorShapeCount,
-          totalActions, trivialActions, freehandCount,
-          visualRichnessRatio: totalActions > 0 ? nontrivialVisualCount / totalActions : 0,
-          density,
-        });
-        console.warn("[PROFESSOR_VISUAL_AGENT_FALLBACK]", {
-          lessonId: planIdentity, stepId, reason: fallbackReason,
-        });
-        if (failure.shouldStopPlayback) {
-          setIsPlaying(false);
-          throw error;
-        }
-      }
-      // No verified visual actions means applyStateAtStep continues using
-      // the existing deterministic layout; Professor playback never stalls.
     } finally {
       window.clearTimeout(timeout);
       if (agentAbortRef.current === controller) agentAbortRef.current = null;
@@ -1809,7 +1622,7 @@ export default function TldrawCanvas({
       const reason: ProfessorAgentFailureReason = !directorStep?.visualNeeded
         ? "visual_needed_false" : "not_triggered";
       setAgentDiagnostic({
-        ...EMPTY_AGENT_DIAGNOSTIC,
+        ...EMPTY_WHITEBOARD_ARTIST_DIAGNOSTIC,
         eligible: Boolean(directorStep?.visualNeeded && directorStep.focusBounds),
         fallbackUsed: false,
         fallbackReason: reason,
@@ -2082,7 +1895,7 @@ export default function TldrawCanvas({
         )}
         {DEV && (
           <span data-testid="professor-agent-debug-strip" style={{ fontSize: 9, color: agentDiagnostic.fallbackReason ? "#fca5a5" : "#a7f3d0", fontFamily: "monospace", flexShrink: 0 }}>
-            agent eligible={String(agentDiagnostic.eligible)} triggered={String(agentDiagnostic.agentTriggered)} pass={agentDiagnostic.currentPass}/{PROFESSOR_AGENT_MAX_PASSES}
+            agent eligible={String(agentDiagnostic.eligible)} triggered={String(agentDiagnostic.agentTriggered)} pass={agentDiagnostic.currentPass}/{WHITEBOARD_ARTIST_MAX_PASSES}
             {" · "}exec={agentDiagnostic.executeActions} correct={agentDiagnostic.correctionActions} camera={agentDiagnostic.cameraCommands}
             {" · "}nontrivial={agentDiagnostic.nontrivialVisualCount} shapeΔ={agentDiagnostic.actualTldrawShapeDelta}
             {" · "}total={agentDiagnostic.totalActions} trivial={agentDiagnostic.trivialActions} freehand={agentDiagnostic.freehandCount} richness={agentDiagnostic.visualRichnessRatio.toFixed(2)}
