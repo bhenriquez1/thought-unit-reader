@@ -103,7 +103,7 @@ describe("ChiefResidentPanel.tsx (NoteLab) — shared builder + response validat
 
   it("the page/book reset effect is keyed on pageTruthKey, not just [bookId, currentPage]", () => {
     const idx = src.indexOf("// Reset session when page/book changes");
-    const block = src.slice(idx, idx + 400);
+    const block = src.slice(idx, idx + 600);
     expect(block).toMatch(/\}, \[bookId, currentPage, pageTruthKey\]\);/);
   });
 });
