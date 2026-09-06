@@ -118,11 +118,23 @@ describe("lib/notelab/composeNotebookScene.ts — composeNoteNotebookSceneInBack
   });
 
   it("passes relatedConceptKnowledge into the real synthesis call", () => {
-    expect(fn).toMatch(/relatedConceptKnowledge,\s*\n\s*\}\);/);
+    expect(fn).toMatch(/relatedConceptKnowledge,\s*\n\s*\};/);
+  });
+
+  // ND1 — the AI call itself is now the NoteLab Designer Agent's bounded
+  // quality-checked step (lib/notelab/notebookDesignerAgent.ts's
+  // runNotebookDesignerStep), not a bare generateNotebookScene call — see
+  // tests/notelab/notebookDesignerAgent.test.ts for real behavioral
+  // coverage of that module. This file stays wiring-only: does
+  // composeNotebookScene.ts actually invoke it and use its result.
+  it("REQUIRED (ND1): the AI call is routed through runNotebookDesignerStep, not a bare generateNotebookScene call", () => {
+    expect(COMPOSE_SRC).toMatch(/import \{ runNotebookDesignerStep \} from "\.\/notebookDesignerAgent";/);
+    const idx = fn.indexOf("const { scene, diagnostic, retried } = await runNotebookDesignerStep(");
+    expect(idx).toBeGreaterThan(-1);
   });
 
   it("REQUIRED: folds the note's deterministic (student/derived) content into the AI scene before saving (NU3 — Study Page migration)", () => {
-    const generateIdx = fn.indexOf("const scene = await generateNotebookScene");
+    const generateIdx = fn.indexOf("const { scene, diagnostic, retried } = await runNotebookDesignerStep(");
     const mergeIdx = fn.indexOf("mergeDeterministicContentIntoScene(scene, existingNote,", generateIdx);
     const saveIdx = fn.indexOf('notebookSceneStatus: "ready"', generateIdx);
     expect(generateIdx).toBeGreaterThan(-1);
@@ -135,7 +147,7 @@ describe("lib/notelab/composeNotebookScene.ts — composeNoteNotebookSceneInBack
   });
 
   it("REQUIRED: re-reads the note fresh immediately before the final write — never overwrites edits made while synthesis was in flight", () => {
-    const generateCallIdx = fn.indexOf("const scene = await generateNotebookScene");
+    const generateCallIdx = fn.indexOf("const { scene, diagnostic, retried } = await runNotebookDesignerStep(");
     const finalReadIdx = fn.indexOf("getNotesByBookAsync(savedNote.bookId)", generateCallIdx);
     const saveIdx = fn.indexOf('notebookSceneStatus: "ready"', generateCallIdx);
     expect(finalReadIdx).toBeGreaterThan(-1);
@@ -156,8 +168,9 @@ describe("lib/notelab/composeNotebookScene.ts — composeNoteNotebookSceneInBack
     expect(catchBlock).toMatch(/notebookSceneStatus: "failed",/);
   });
 
-  it("logs generation diagnostics — visualPlanGenerated, visualPrimitiveCount, persistenceSaveSuccess", () => {
-    expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{\s*\n\s*noteId: savedNote\.id, visualPlanGenerated: true, visualPrimitiveCount: scene\.blocks\.length,\s*\n\s*\}\);/);
+  it("logs generation diagnostics — visualPlanGenerated, visualPrimitiveCount, persistenceSaveSuccess, and (ND1) the quality diagnostic's own pass/reject/retry outcome", () => {
+    expect(fn).toMatch(/noteId: savedNote\.id, visualPlanGenerated: true, visualPrimitiveCount: scene\.blocks\.length,/);
+    expect(fn).toMatch(/qualityPassed: diagnostic\.passed, rejectReasons: diagnostic\.rejectReasons, retried,/);
     expect(fn).toMatch(/console\.log\("\[NOTELAB_GENERATE_DIAGNOSTIC\]", \{ noteId: savedNote\.id, persistenceSaveSuccess: persisted \}\);/);
   });
 });

@@ -16,7 +16,8 @@
 import {
   saveUltraNote, getNotesByBookAsync, isUltraNotePersisted, type UltraNote,
 } from "./ultraNoteStore";
-import { generateNotebookScene, summarizeExistingNotebookScene } from "./notebookPlanner";
+import { requestNotebookPlan, finalizeNotebookScene, summarizeExistingNotebookScene } from "./notebookPlanner";
+import { runNotebookDesignerStep } from "./notebookDesignerAgent";
 import { gatherConceptNotebookContent } from "./conceptAccumulation";
 import { mergeDeterministicContentIntoScene } from "./deterministicNotebookBlocks";
 import { getCanonicalUnitsByPage } from "@/lib/canonical/store";
@@ -85,21 +86,35 @@ export async function composeNoteNotebookSceneInBackground(savedNote: UltraNote,
       ? await gatherConceptNotebookContent(savedNote.knowledgeNodeId, savedNote.id)
       : null;
 
-    const scene = await generateNotebookScene(units, {
+    const baseOpts = {
       bookId: savedNote.bookId,
       bookTitle: savedNote.bookTitle,
       pageNumber: savedNote.pageNumber,
       studentNotes: existingNote.studentNotes ?? null,
       existingNotebookSummary: existingNote.notebookScene ? summarizeExistingNotebookScene(existingNote.notebookScene) : null,
       relatedConceptKnowledge,
+    };
+
+    // ND1 — the NoteLab Designer Agent's bounded quality check: generate
+    // once, and if the result is too thin/ungrounded/text-heavy, generate
+    // exactly one more time with concrete corrective feedback. Never more
+    // than one retry (see notebookDesignerAgent.ts's own header comment on
+    // why — this pipeline's single AI call already runs close to the
+    // platform's serverless timeout ceiling).
+    const { scene, diagnostic, retried } = await runNotebookDesignerStep({
+      generate: async (correctionFeedback) => {
+        const plan = await requestNotebookPlan(units, { ...baseOpts, correctionFeedback });
+        return { plan, scene: finalizeNotebookScene(plan, units, baseOpts) };
+      },
     });
     // Correction (NoteLab pipeline diagnostics) — "Add diagnostics:
     // visualPlanGenerated / visualPrimitiveCount / ... /
-    // persistenceSaveSuccess / persistenceLoadSuccess." generateNotebookScene
-    // throwing lands in the catch below, never silently returning
+    // persistenceSaveSuccess / persistenceLoadSuccess." A thrown error from
+    // the designer step lands in the catch below, never silently returning
     // undefined, so reaching this line already proves visualPlanGenerated.
     console.log("[NOTELAB_GENERATE_DIAGNOSTIC]", {
       noteId: savedNote.id, visualPlanGenerated: true, visualPrimitiveCount: scene.blocks.length,
+      qualityPassed: diagnostic.passed, rejectReasons: diagnostic.rejectReasons, retried,
     });
 
     // Correction (Study Page migration) — the AI scene never sees the
