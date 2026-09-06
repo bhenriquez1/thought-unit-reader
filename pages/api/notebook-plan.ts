@@ -99,7 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as Partial<RequestBody>;
-  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, existingNotebookSummary, relatedConceptKnowledge, styleProfile } = body;
+  const { units, bookTitle, pageNumber, professorExplanation, studentNotes, supplementalSources, existingNotebookSummary, relatedConceptKnowledge, correctionFeedback, styleProfile } = body;
 
   if (!Array.isArray(units)) {
     return res.status(400).json({ error: "'units' must be an array." });
@@ -117,6 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasExistingNotebookSummary: !!existingNotebookSummary,
     hasRelatedConceptKnowledge: !!relatedConceptKnowledge,
     hasStyleProfile: !!styleProfile,
+    hasCorrectionFeedback: !!correctionFeedback,
   });
 
   const input: Parameters<typeof openai.responses.parse>[0] = {
@@ -136,6 +137,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           supplementalSources: supplementalSources ?? null,
           existingNotebookSummary: existingNotebookSummary ?? null,
           relatedConceptKnowledge: relatedConceptKnowledge ?? null,
+          correctionFeedback: correctionFeedback ?? null,
         }),
       },
     ],

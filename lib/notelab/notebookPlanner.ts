@@ -199,6 +199,12 @@ export interface NoteSynthesisSources {
    *  that accumulation surfacing as prompt context, not a note-identity
    *  change (UltraNote's own storage key stays bookId+pageNumber). */
   relatedConceptKnowledge?: string | null;
+  /** ND1 (NoteLab Designer Agent) — set only on a corrective retry pass,
+   *  after lib/notelab/notebookDesignerAgent.ts's quality diagnostic found
+   *  the FIRST attempt too thin/ungrounded/text-heavy. Describes exactly
+   *  what was wrong so the model can address it directly, rather than a
+   *  blind identical retry. Never set on a first attempt. */
+  correctionFeedback?: string | null;
 }
 
 /** Turns an already-composed VisualNotebookScene into the short text
@@ -238,6 +244,12 @@ export function buildNotebookPlannerUserPrompt(
   }
   if (opts.relatedConceptKnowledge?.trim()) {
     extraSections.push(`── RELATED NOTES ON THIS SAME CONCEPT, FROM OTHER PAGES/SOURCES (context only, never a grounding source) ──\n${opts.relatedConceptKnowledge.trim()}`);
+  }
+  // ND1 — placed LAST and phrased as a direct correction, not just more
+  // background material, so the model treats it as the most actionable
+  // instruction in the prompt rather than one more context section to weigh.
+  if (opts.correctionFeedback?.trim()) {
+    extraSections.push(`── YOUR PREVIOUS ATTEMPT NEEDS CORRECTION ──\n${opts.correctionFeedback.trim()}`);
   }
   const extraBlock = extraSections.length ? `\n\n${extraSections.join("\n\n")}` : "";
 
