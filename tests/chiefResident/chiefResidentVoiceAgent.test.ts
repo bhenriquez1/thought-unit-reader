@@ -33,6 +33,12 @@ describe("buildVoiceSessionInstructions", () => {
     expect(instructions).toMatch(/never use markdown, emoji, bullet points, or headers/i);
   });
 
+  it("CR3: mentions the two delegation tools are available, to use sparingly", () => {
+    const instructions = buildVoiceSessionInstructions(BASE_CTX);
+    expect(instructions).toMatch(/DELEGATION/);
+    expect(instructions).toMatch(/two tools available/i);
+  });
+
   it("includes title and page number when provided", () => {
     const instructions = buildVoiceSessionInstructions({ ...BASE_CTX, title: "General Chemistry", pageNumber: 42 });
     expect(instructions).toContain('Document: "General Chemistry"');
@@ -80,6 +86,12 @@ describe("buildVoiceSessionRequest", () => {
   it("embeds the built instructions in the request body", () => {
     const req = buildVoiceSessionRequest(BASE_CTX);
     expect(req.instructions).toContain(BASE_CTX.sourceText);
+  });
+
+  it("CR3: declares the two delegation tools with auto tool_choice", () => {
+    const req = buildVoiceSessionRequest(BASE_CTX);
+    expect(req.tool_choice).toBe("auto");
+    expect(req.tools?.map((t) => t.name)).toEqual(["delegate_to_notelab", "delegate_to_whiteboard"]);
   });
 });
 

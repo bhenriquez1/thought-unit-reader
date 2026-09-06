@@ -12,12 +12,24 @@
 // talk over each other — the same discipline every other speech-producing
 // surface in this app already follows.
 //
+// CR3 — also handles the Realtime API's function-call events for the two
+// delegation tools declared in buildVoiceSessionRequest
+// (chiefResidentAgent.ts's REALTIME_DELEGATION_TOOLS). Validation and the
+// once-per-session offer gate are the pure agent module's job
+// (parseRealtimeDelegationToolCall/shouldOfferDelegation) — this hook only
+// owns reading the event off the data channel and sending the required
+// function_call_output/response.create acknowledgement back so the model's
+// turn continues naturally, exactly the "thin adapter" split every other
+// agent module in this codebase follows.
+//
 // Could not be exercised end-to-end in this sandbox: there is no real
 // microphone/WebRTC environment here, and no OPENAI_API_KEY to actually
 // reach the Realtime API. This file is exercised only by TypeScript's own
 // checking and by source-inspection wiring tests
 // (tests/chiefResident/chiefResidentVoiceWiring.test.ts) — not by a live
-// call.
+// call. The exact function-call event shape read below (response.output_
+// item.done carrying a "function_call" item) reflects OpenAI's documented
+// Realtime API behavior but is likewise unverified against a live session.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -28,6 +40,12 @@ import {
   notifySpeechError,
   isSpeechStale,
 } from "@/lib/speech/speechController";
+import {
+  parseRealtimeDelegationToolCall,
+  shouldOfferDelegation,
+  type ChiefResidentDelegation,
+  type ChiefResidentDelegationTarget,
+} from "./chiefResidentAgent";
 import type { VoiceSessionSourceContext } from "./chiefResidentVoiceAgent";
 
 const SPEECH_OWNER = "chief-resident-voice" as const;
@@ -47,6 +65,9 @@ export interface UseChiefResidentVoiceSessionResult {
   transcript: VoiceTranscriptEntry[];
   isMuted: boolean;
   connectionStage: VoiceConnectionStage;
+  /** CR3 — set at most once per target per call (see shouldOfferDelegation),
+   *  the same delegation contract the text mode uses. */
+  delegation: ChiefResidentDelegation | null;
   connect: (ctx: VoiceSessionSourceContext) => Promise<void>;
   disconnect: () => void;
   toggleMute: () => void;
@@ -64,6 +85,7 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [connectionStage, setConnectionStage] = useState<VoiceConnectionStage>("idle");
+  const [delegation, setDelegation] = useState<ChiefResidentDelegation | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -72,6 +94,11 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
   const tokenRef = useRef<number | null>(null);
   const assistantBufferRef = useRef<string>("");
   const generationRef = useRef(0);
+  // CR3 — same once-per-target-per-session discipline as the text mode's
+  // offeredDelegationsRef (components/notelab/ChiefResidentPanel.tsx), kept
+  // as a separate set here since a text session and a voice call never
+  // share React state.
+  const offeredDelegationsRef = useRef<Set<ChiefResidentDelegationTarget>>(new Set());
 
   const cleanup = useCallback(() => {
     dataChannelRef.current?.close();
@@ -102,8 +129,35 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     setConnectionStage("ended");
   }, [cleanup]);
 
+  // CR3 — sends a client event over the data channel (function_call_output
+  // acknowledgement, then response.create) so the model's turn continues
+  // naturally instead of hanging after it invokes a delegation tool.
+  const sendDataChannelEvent = useCallback((event: Record<string, unknown>) => {
+    if (dataChannelRef.current?.readyState !== "open") return;
+    dataChannelRef.current.send(JSON.stringify(event));
+  }, []);
+
+  // CR3 — a delegation tool call always gets acknowledged back to the model
+  // (so it can narrate what just happened and keep talking), regardless of
+  // whether this module actually offers it to the student — only the
+  // ACKNOWLEDGEMENT differs, mirroring how a malformed [[DELEGATE: ...]]
+  // directive in the text mode is still stripped even when no delegation
+  // results (resolveChiefResidentTurn's fail-closed behavior).
+  const acknowledgeToolCall = useCallback((callId: string, output: Record<string, unknown>) => {
+    sendDataChannelEvent({
+      type: "conversation.item.create",
+      item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) },
+    });
+    sendDataChannelEvent({ type: "response.create" });
+  }, [sendDataChannelEvent]);
+
   const handleDataChannelMessage = useCallback((event: MessageEvent) => {
-    let msg: { type?: string; delta?: string; transcript?: string };
+    let msg: {
+      type?: string;
+      delta?: string;
+      transcript?: string;
+      item?: { type?: string; name?: string; arguments?: string; call_id?: string };
+    };
     try {
       msg = JSON.parse(event.data);
     } catch {
@@ -120,19 +174,36 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     } else if (msg.type === "conversation.item.input_audio_transcription.completed" && typeof msg.transcript === "string") {
       const text = msg.transcript.trim();
       if (text) setTranscript((prev) => [...prev, { role: "user", text }]);
+    } else if (msg.type === "response.output_item.done" && msg.item?.type === "function_call") {
+      const { name, arguments: rawArguments, call_id: callId } = msg.item;
+      if (typeof name !== "string" || typeof rawArguments !== "string" || typeof callId !== "string") return;
+      const parsed = parseRealtimeDelegationToolCall(name, rawArguments);
+      if (!parsed) {
+        acknowledgeToolCall(callId, { status: "not_offered", reason: "malformed_or_unrecognized" });
+        return;
+      }
+      if (!shouldOfferDelegation(parsed.target, offeredDelegationsRef.current)) {
+        acknowledgeToolCall(callId, { status: "not_offered", reason: "already_offered_this_session" });
+        return;
+      }
+      offeredDelegationsRef.current.add(parsed.target);
+      setDelegation(parsed);
+      acknowledgeToolCall(callId, { status: "offered_to_student" });
     } else if (msg.type === "error") {
       console.error("[CHIEF_RESIDENT_VOICE_REALTIME_ERROR]", msg);
       setStatus("error");
       setConnectionStage("error");
       setError("The live voice session reported a protocol error.");
     }
-  }, []);
+  }, [acknowledgeToolCall]);
 
   const connect = useCallback(async (ctx: VoiceSessionSourceContext) => {
     if (status === "connecting" || status === "connected") return;
     setStatus("connecting");
     setError(null);
     setTranscript([]);
+    setDelegation(null);
+    offeredDelegationsRef.current = new Set();
     const generation = ++generationRef.current;
     const isCurrent = () => generationRef.current === generation && !isSpeechStale(tokenRef.current ?? -1);
 
@@ -233,5 +304,5 @@ export function useChiefResidentVoiceSession(): UseChiefResidentVoiceSessionResu
     });
   }, []);
 
-  return { status, error, transcript, isMuted, connectionStage, connect, disconnect, toggleMute };
+  return { status, error, transcript, isMuted, connectionStage, delegation, connect, disconnect, toggleMute };
 }
